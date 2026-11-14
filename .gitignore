@@ -10,6 +10,7 @@ node_modules/
 /hosting-server/.wrangler/
 /hosting-server/.sites-runtime/
 .openai/hosting.json
+/hosting-server/.openai/hosting.json
 .openai/local/
 .env
 .env.*
