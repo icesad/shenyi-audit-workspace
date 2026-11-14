@@ -1,0 +1,27 @@
+.qa-annex{margin:0 auto;padding:22px 0;width:min(100%,780px);border-top:1px solid #d5dfd9;color:#152e33}
+.qa-title{font-size:1.15rem;margin:0 0 8px}
+.qa-info,.qa-status{font-size:.85rem;color:#526b6c;margin:6px 0;line-height:1.45}
+.qa-card{margin:12px 0 0;padding:14px;border:1px solid #dae4dd;border-radius:8px;background:#fff}
+.qa-head{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap}
+.qa-meta{flex:1 1 215px;min-width:0}
+.qa-meta h4{font-size:.95rem;margin:0}
+.qa-filename{margin:5px 0 0;color:#526b6c;font-size:.85rem;overflow-wrap:anywhere}
+.qa-download{white-space:nowrap}
+.qa-img,.qa-canvas{display:block;margin:12px auto 0;max-width:100%;height:auto;border:1px solid #e3ebe6;background:#fff}
+.qa-img{max-height:980px;object-fit:contain}
+.qa-pdf{margin-top:12px;border-top:1px solid #e3ebe6;padding-top:8px}
+.qa-pdf>summary{cursor:pointer;color:#235f55;font-size:.9rem}
+.qa-pdf-tools{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:10px 0;flex-wrap:wrap}
+.qa-page-view{margin:0;max-width:100%;overflow:hidden}
+.qa-seal-tools{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;margin-top:10px}
+.qa-seal-tools .qa-status{flex-basis:100%;margin:0}
+.qa-seal-tools[hidden],.qa-seal-marker[hidden]{display:none}
+.qa-seal-stage{position:relative;width:fit-content;max-width:100%;margin:12px auto 0;line-height:0;outline:1px solid #e3ebe6}
+.qa-seal-stage>.qa-img,.qa-seal-stage>.qa-canvas{border:0;margin:0}
+.qa-seal-stage[data-placing=yes]{outline:2px dashed #296859}
+.qa-seal-stage[data-placing=yes]>.qa-img,.qa-seal-stage[data-placing=yes]>.qa-canvas{cursor:crosshair}
+.qa-seal-marker{position:absolute;width:22px;height:22px;border:2px solid #ab3d33;border-radius:50%;background:#ab3d3324;box-shadow:0 0 0 1px #fff;transform:translate(-50%,-50%);pointer-events:none}
+.qa-seal-marker::after{position:absolute;inset:7px;border-radius:50%;background:#ab3d33;content:""}
+.qa-seal-stage[data-placing=yes] .qa-seal-marker{border-color:#286657;background:#28665724}
+.qa-seal-stage[data-placing=yes] .qa-seal-marker::after{background:#286657}
+@media print{.qa-annex{display:none!important}}

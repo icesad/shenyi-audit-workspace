@@ -1,0 +1,12 @@
+{
+  "sourceCommit": "29a88a9283d60a608114647d8a218d1927bb45b3",
+  "description": "旧版静态应用兼容性测试夹具，仅含浏览器启动所需文件；从 git 对应提交的 dist 原样提取。",
+  "files": {
+    "index.html": "be0e2a0d0c9e261895727bb56d24bbfcb03d4317d06e6be868effb5f9f34c18b",
+    "calc.js": "af47e2c88ba600b5c17307159df8154a1feeff5645f063e8919956d059b9a093",
+    "rule-catalog.js": "39ddb18b6eea8cccca5c606021ad2748cabbf88794bba8741c47dbb5d1dd27cd",
+    "regions.js": "06a5aa49312fc16501404a6d26b41d04ac725cce18f2dc296cb87bf78765c0f0",
+    "backup-restore.js": "baca320b8810f4b8be0e4771b07c4465d2b017075fa61ce21badf9f66660a10b",
+    "app.js": "cd773a3d67372025340164bc1648e05877048dc3abf60fcf42886f1f79168fb5"
+  }
+}

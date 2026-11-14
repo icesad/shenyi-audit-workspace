@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-14",
+  "scopeRule": "只改用户明确点名范围；未提及页面、布局、字段、公式与存储键保持原样",
+  "items": [
+    {"id":"COLLAB-001","title":"私有GitHub源码仓库与跨设备协作文档","status":"in_progress","acceptance":["远程Private验证","安全源码快照","Windows/Mac运行说明","新手教程","实际push与远程SHA核对"]},
+    {"id":"COLLAB-002","title":"邀请米老师并完成首个反馈/验收练习","status":"waiting_for_input","needs":"米老师GitHub用户名；不收密码/验证码","acceptance":["按授权邀请并接受","能看见私有仓库","完成一条脱敏Issue"]},
+    {"id":"COLLAB-003","title":"按账号方案配置并验证main保护","status":"planned","notes":"CODEOWNERS和书面PR约定不等于强制保护；实际能力未验证前不宣称启用"},
+    {"id":"REPORT-063","title":"四来源报告草稿与成本导航修正业务验收","status":"local_tested_not_released","branch":"work/report-four-sources","acceptance":["本年TB/上年报告/上年TB/本年底稿同项目来源","金额单位和映射人工核对","草稿可编辑保存及Word导出","缺证据不造意见","原布局指定范围内","真实脱敏样本和Mac实机验收"]},
+    {"id":"AUDIT-FULL","title":"使用授权真实样本核对全套原模板底稿、TB及报告","status":"needs_business_validation","notes":"算术校验、编制草稿不等于完成审计；真实原件留在仓库外"},
+    {"id":"QUOTE-PENDING","title":"自动报价记录和分页可编辑预览后续接续","status":"not_integrated","notes":"此前未发布工作在原工作区外单独保留；本次不擅自并入"},
+    {"id":"MAC-001","title":"Mac Safari真实设备验证","status":"planned","notes":"Chromium与Windows测试不能代表已在Mac实机通过"},
+    {"id":"DEPLOY-001","title":"恢复原Sites发布通道并独立发布验收版本","status":"blocked_external","notes":"GitHub推送不等于原网站发布；不改变现有站点访问范围"}
+  ]
+}

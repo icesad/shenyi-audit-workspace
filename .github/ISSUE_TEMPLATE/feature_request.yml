@@ -1,0 +1,22 @@
+name: 功能需求
+description: 一条需求一件事，写清允许范围与验收
+title: "[需求] 页面 - 简述"
+body:
+  - type: textarea
+    id: request
+    attributes:
+      label: 需要做什么
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 只改哪些地方；不要动哪些地方
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准与参考示意（仅脱敏内容）
+    validations:
+      required: true

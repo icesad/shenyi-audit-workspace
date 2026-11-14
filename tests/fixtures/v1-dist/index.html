@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="审计服务三地参考测算与工时预算工作台。历史参考规则需人工核验，非现行统一收费标准。">
+  <title>衡度 · 审计报价工作台</title><link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="#"><span class="brand-mark">衡</span><span>衡度<small>AUDIT QUOTE</small></span></a>
+    <div class="workspace-label">事务所工作空间</div>
+    <nav aria-label="工作台导航">
+      <button class="nav-item active" data-view="quote"><span>▥</span> 报价测算 <small>01</small></button>
+      <button class="nav-item" data-view="budget"><span>◷</span> 工时预算 <small>02</small></button>
+      <button class="nav-item" data-view="rules"><span>▤</span> 规则与依据 <small>03</small></button>
+      <button class="nav-item" data-view="history"><span>◴</span> 本机记录 <small>04</small></button>
+    </nav>
+    <div class="side-note"><span class="live-dot"></span> 浏览器本地计算<p>不上传客户财务数据。<br>仅点击保存后写入本机。</p><span class="version">原型 v0.1 · 待业务验证</span></div>
+  </aside>
+  <main>
+    <header class="topbar"><span>工作台 <b>/</b> <span id="breadcrumb">报价测算</span></span><span class="privacy-pill">◈ 本地数据 · 非正式报价</span></header>
+    <section class="page-heading"><div><div class="eyebrow">PRICING WORKBENCH</div><h1 id="page-title">把报价依据，摆在同一张桌上。</h1><p id="page-subtitle">选择省级地区，与河北、上海参考口径对比；未配置地区不产生报价。</p></div><div class="heading-actions"><button class="btn" id="demo">载入演示</button><button class="btn primary" id="save">保存到本机 <span>↗</span></button></div></section>
+    <div class="notice"><span>i</span><div><strong>参考测算，不是各地现行统一定价。</strong> 广西、河北历史规则待人工复核；上海采用本所自定义预算。当前演示金额不用于直接承诺客户。审计服务不得约定以审计结果或特定目的为收费条件；正式条款须由事务所审核。</div></div>
+    <section id="view-quote" class="view">
+      <div class="panel client-panel"><div class="section-title"><h2><span class="step">01</span> 客户与业务</h2><span>金额单位：万元</span></div>
+        <form id="client-form" novalidate><div class="fields client-fields">
+          <label class="wide">客户名称<input name="clientName" maxlength="100" placeholder="输入客户名称"></label>
+          <label>客户所在地<select name="location"></select></label>
+          <label>审计年度<input name="year" type="number" min="2000" max="2100" step="1"></label>
+          <label>业务类型<select name="service"><option>年度财务报表审计</option></select></label>
+          <label>资产总额 <small>万元</small><input name="assets" type="number" min="0" step="0.000001" inputmode="decimal"></label>
+          <label>营业收入 <small>万元</small><input name="revenue" type="number" min="0" step="0.000001" inputmode="decimal"></label>
+          <label>净利润 <small>万元 · 可为负</small><input name="profit" type="number" step="0.000001" inputmode="decimal"></label>
+          <label>执行团队所在地<select name="team"></select></label>
+        </div></form><div class="form-foot"><span>净利润暂不参与计费。客户所在地会同步首个比较地区；执行团队所在地不自动改变收费规则。</span><button class="text-button" id="clear-client">清空客户信息</button></div><p class="error" id="client-error" role="alert"></p>
+      </div>
+      <div class="section-title comparison-heading"><h2><span class="step">02</span> 三地参考对比</h2><span>同一客户 · 独立口径 · 明细可追溯</span></div>
+      <div class="province-control"><label>选择比较省级地区 <select id="comparison-province" aria-label="选择比较省级地区"></select></label><p class="muted" id="province-hint"></p></div><div id="comparison" class="comparison"></div>
+      <div class="bottom-grid">
+        <section class="panel negotiation"><div class="section-title"><h2><span class="step">03</span> 议价工作区</h2><span class="badge neutral">内部可见</span></div>
+          <form id="quote-form" novalidate><div class="fields two">
+            <label class="full">报价基础<select name="basis"><option value="budget">本所工时预算</option><option value="gx">广西历史参考</option><option value="hb">河北历史参考</option><option value="sh">上海自定义参考</option><option value="manual">手工输入报价</option></select></label>
+            <label>手工基准价 <small>元</small><input name="manual" type="number" min="0" step="0.01"></label>
+            <label>优惠幅度 <small>% · 10 即九折</small><input name="discount" type="number" min="0" max="100" step="0.01"></label>
+            <label>附加费用 <small>元</small><input name="extra" type="number" min="0" step="0.01"></label>
+            <label>另计税率 <small>% · 0 为不另计</small><input name="tax" type="number" min="0" max="100" step="0.01"></label>
+            <label class="full">调整原因 / 费用口径<textarea name="reason" rows="2" maxlength="1000" placeholder="如：仅供初步沟通，是否含税及差旅范围待确认"></textarea></label>
+          </div></form><p class="error" id="quote-error" role="alert"></p>
+        </section>
+        <section class="panel quote-summary"><div class="section-title"><h2>本次报价草稿</h2><span class="badge">DRAFT</span></div><div class="big-total" id="final-price">—</div><p class="muted" id="basis-description">依据本所工时预算计算</p><dl id="summary-lines"></dl><div class="summary-note" id="summary-note"></div><button class="btn primary full-btn" id="preview">预览客户报价草稿 <span>↗</span></button><button class="text-button" id="csv">导出内部对比 CSV</button><p class="tiny">客户版不展示内部预算、折扣过程或其他地区对比。</p></section>
+      </div>
+    </section>
+    <section id="view-budget" class="view" hidden><div class="panel"><div class="section-title"><h2>工时 × 人员级差费率</h2><button class="btn" id="add-role">＋ 添加人员级别</button></div><p class="muted">这里是收费预算，不是员工工资成本。初始费率为演示数据，请按本所制度调整。</p><div class="table-scroll"><table><thead><tr><th>人员级别</th><th>预计工时（小时）</th><th>收费费率（元 / 小时）</th><th>小计</th><th></th></tr></thead><tbody id="budget-rows"></tbody></table></div><div class="budget-total"><span>预算合计</span><strong id="budget-total">—</strong></div><p class="error" id="budget-error" role="alert"></p><div class="info-box">上海自定义参考默认使用这份预算，不代表上海地区行业平均价。报价基础选“本所工时预算”时，同步采用此处结果。</div></div></section>
+    <section id="view-rules" class="view" hidden><div class="panel"><div class="section-title"><h2>可配置规则库</h2><span class="badge amber">历史参考 · 待复核</span></div><p class="muted">修改只影响当前浏览器草稿，不会更改原始来源。每次保存会保留输入与规则快照。</p><div id="rule-tabs" class="tabs"></div><div id="rule-editor"></div></div><div class="panel sources"><h2>报价依据与适用边界</h2><div id="source-list"></div><p>本原型只支持单一年度、单一主体的财务报表审计初步测算，不覆盖集团合并、上市、专项审计等复杂场景。业务承接与正式报价仍需事务所审核。</p></div></section>
+    <section id="view-history" class="view" hidden><div class="panel"><div class="section-title"><h2>本机报价记录</h2><button class="btn" id="export-backup">导出备份 JSON</button></div><p class="muted">仅存于此浏览器，不跨设备同步。清理浏览器数据可能丢失记录；备份文件含客户数据，请妥善保管。</p><div class="backup-import"><label>导入备份 JSON <input id="import-backup-file" type="file" accept=".json,application/json"></label><p class="muted">先预览，再确认合并；相同记录跳过，同编号内容不一致则全部拒绝。请选择本工具导出的 JSON，原始异常数据 TXT 不能直接导入。</p><p id="import-backup-status" role="status" aria-live="polite">尚未选择备份。</p><button id="import-backup-confirm" class="btn" type="button" disabled>确认合并到本机</button></div><div id="history-list"></div><div class="history-actions"><button class="btn danger" id="clear-history">删除所有本机记录</button></div></div></section>
+    <footer><span>衡度 · 审计报价工作台</span><span>可解释的测算，留有依据的议价。 <b>v0.1</b></span></footer>
+  </main>
+</div>
+<dialog id="quote-dialog"><div class="dialog-toolbar"><h2>客户报价草稿</h2><button class="btn" id="close-preview">关闭</button><button class="btn primary" id="print">打印 / 保存 PDF</button></div><div class="draft-reminder">预览不代表批准。所有导出均标记“草稿 · 待审核”，打印时不会包含内部成本与计算过程。</div><article id="customer-preview"></article></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="calc.js"></script><script src="rule-catalog.js"></script><script src="regions.js"></script><script src="backup-restore.js"></script><script src="app.js"></script>
+</body></html>

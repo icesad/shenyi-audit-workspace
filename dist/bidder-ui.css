@@ -1,0 +1,59 @@
+@media screen {
+  #bidder-picker {margin:14px 0}
+  .bidder-picker-actions,.bidder-toolbar,.bidder-row-actions {display:flex;gap:.65rem;align-items:end;flex-wrap:wrap}
+  .bidder-picker-actions label {flex:1 1 260px;max-width:550px;min-width:0}
+  .bidder-catalog {display:grid;gap:.6rem;margin:1rem 0 1.6rem}
+  .bidder-row {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.65rem;padding:.75rem 1rem;border:1px solid #dae5de;border-radius:8px}
+  .bidder-row>div:first-child {min-width:0;overflow-wrap:anywhere}
+  .bidder-row strong,.bidder-row span {display:block}.bidder-row span {margin:.3rem 0 0}
+  #bidder-editor-form {border-top:1px solid #dae5de;padding-top:1.2rem}
+  .bidder-cert-grid>div {min-width:0}.bidder-cert-grid input[type=file] {max-width:100%}
+  .bidder-cert-grid p,#bidder-picker-status,#bidder-editor-status {overflow-wrap:anywhere}
+  #bidder-picker select,#bidder-editor-form select,#bidder-editor-form input:not([type=file]) {box-sizing:border-box;display:block;width:100%;min-width:0;height:40px;margin-top:.4rem;padding:0 .65rem;color:inherit;font:inherit;background:#fafcf9;border:1px solid #d8e2da;border-radius:6px}
+}
+@media screen and (max-width:760px){
+  #bidder-picker select,#bidder-editor-form select,#bidder-editor-form input:not([type=file]){height:44px}
+  .bidder-picker-actions label{flex-basis:100%}
+}
+@media screen {
+  .credential-summary,.credential-actions {display:flex;align-items:center;justify-content:space-between;gap:8px 18px;flex-wrap:wrap}
+  .credential-summary {margin:16px 0 8px}
+  .credential-summary p {margin:5px 0;overflow-wrap:anywhere}
+  #credentials-list:not([hidden]) {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:8px}
+  #credentials-list[hidden],.credential-actions [hidden]{display:none}
+  #credentials-list .credential-item {display:flex;gap:4px 12px;align-items:baseline;flex-wrap:wrap}
+  #credentials-list .credential-item span {font-size:.875rem}
+}
+
+@media screen{
+  .bidder-import-panel{margin:1rem 0 1.35rem;padding:1rem;background:#f6f9f7;border:1px solid #dae5de;border-radius:10px}
+  .bidder-import-panel h3{margin:0;font-size:1rem}
+  .bidder-import-panel input[type=file]{display:block;width:min(100%,530px);margin-top:.5rem;border:1px dashed #9dbbb0;border-radius:6px;background:#fff;padding:.65rem}
+  .bidder-import-panel [role=status]{overflow-wrap:anywhere}
+  .bidder-import-rows{display:grid;gap:.6rem}
+  .bidder-import-inventory{font-size:.86rem;overflow-wrap:anywhere}
+  .bidder-import-inventory ul{max-height:12rem;overflow:auto;padding-left:1.4rem}
+  .bidder-sign-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,235px),1fr))}
+  .bidder-private-image{display:block;max-width:min(100%,360px);max-height:160px;object-fit:contain;background:#f4f6f4;border:1px solid #dae5de;border-radius:6px;margin:.35rem 0}
+  .bidder-private-image[hidden],#bidder-import-clear[hidden]{display:none}
+}
+
+@media screen {
+  .bidder-file-card {border:1px solid #dce7df;border-radius:8px;background:#fafcf9;padding:.75rem .8rem}
+  .bidder-file-card>strong {display:block}
+  .bidder-file-card [data-file-origin=archive] {color:#266050;font-weight:600}
+  .bidder-file-label {position:relative;display:inline-flex;margin-right:.55rem;cursor:pointer}
+  .bidder-file-label .bidder-file-native {position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .bidder-file-label .bidder-file-native:focus-visible + span {outline:3px solid #b8d7b9;outline-offset:2px}
+  .bidder-file-label .bidder-file-native:disabled + span {opacity:.45;cursor:not-allowed}
+  .bidder-file-card .text-button {margin-right:.55rem}
+  .bidder-import-result {align-items:flex-start;background:#fff}
+  .bidder-import-result>div {flex:1 1 300px}
+  .bidder-import-checklist {display:grid;gap:.32rem;list-style:none;padding:0;margin:.55rem 0}
+  .bidder-import-checklist li {display:grid;grid-template-columns:minmax(5.5rem,1fr) minmax(0,3fr);gap:.65rem;background:#f6f9f6;border-radius:5px;padding:.28rem .5rem}
+  .bidder-import-checklist li span {margin:0;overflow-wrap:anywhere}
+  .bidder-import-checklist [data-import-state=filled] span {color:#266050}
+  .bidder-import-checklist [data-import-state=rejected] span {color:var(--red)}
+  .bidder-import-checklist [data-import-state=missing] span {color:var(--muted)}
+  #bidder-archive-current:not([hidden]) {background:#eaf5ef;color:#245847;border:1px solid #c4ded0;border-radius:7px;padding:.55rem .7rem}
+}

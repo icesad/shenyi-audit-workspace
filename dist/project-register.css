@@ -1,0 +1,23 @@
+/* Keep the requested twenty-two columns intact; only this region scrolls. */
+.pr-scroll {max-width:100%;min-width:0;overflow-x:auto;border:1px solid #dce7df;border-radius:8px;margin-top:1rem}
+.pr-table {width:100%;min-width:3700px;border-collapse:collapse;table-layout:fixed;font-size:13px}
+.pr-table th,.pr-table td {border-right:1px solid #e1e8e2;border-bottom:1px solid #e1e8e2;padding:.65rem .55rem;vertical-align:top;text-align:left;overflow-wrap:anywhere;white-space:normal}
+.pr-table th {background:#edf3ed;color:#355143;font-weight:650}
+.pr-table th:first-child {width:48px}.pr-table th:nth-child(3),.pr-table th:nth-child(4) {width:190px}.pr-table th:nth-child(5) {width:225px}.pr-table th:nth-child(7) {width:120px}.pr-table th:nth-child(10) {width:100px}.pr-table th:nth-child(11) {width:140px}.pr-table th:nth-child(12),.pr-table th:nth-child(13),.pr-table th:nth-child(14) {width:175px}.pr-table th:nth-child(15),.pr-table th:nth-child(16) {width:115px}.pr-table th:nth-child(17) {width:160px}.pr-table th:nth-child(18) {width:140px}.pr-table th:nth-child(19) {width:185px}
+.pr-table input,.pr-table select,.pr-table textarea {display:block;width:100%;min-width:0;box-sizing:border-box;font:inherit;padding:.5rem;border:1px solid #cbd6cc;border-radius:5px;background:white;color:inherit}
+.pr-table input:disabled,.pr-table select:disabled {background:#f3f5f2;color:#657366}.pr-table strong,.pr-table .pr-file {display:block;margin:0 0 .5rem}.pr-table .btn {margin:.2rem .25rem .2rem 0;font-size:12px;white-space:normal;min-height:32px;padding:.35rem .5rem}
+.pr-status {font-size:12px;line-height:1.5;margin:.4rem 0 0;color:#285645}.pr-status:empty {display:none}.pr-status.error {color:#a44032}.pr-file {font-size:12px;color:var(--muted,#66766c)}.pr-empty {padding:1rem!important;color:var(--muted,#66766c)}
+/* Project-only contract review controls. */
+#view-project .pw-contract>label {display:block;margin:1rem 0 .6rem}
+#view-project .pw-contract>label>input,#view-project .pw-contract>label>select {display:block;max-width:100%;margin-top:.4rem}
+#view-project .pw-contract>.btn {margin:.5rem .5rem .5rem 0;white-space:normal}
+#view-project #project-contract-review label {display:flex;align-items:flex-start;gap:.6rem;padding:.6rem 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+#view-project #project-contract-review input[type=checkbox] {flex:0 0 auto;width:18px;height:18px;margin-top:3px}
+
+.pr-table [hidden] {display:none!important}.pr-site-preset {margin-bottom:.4rem}.pr-preparation-time,.pr-preparation-prior {display:block}.pr-preparation-prior {margin-top:.4rem;color:var(--muted,#66766c);font-size:12px}
+
+.pr-table th:nth-child(8),.pr-table th:nth-child(9) {width:175px}.pr-tax-note {display:block;margin-top:.4rem;color:var(--muted,#66766c);font-size:12px}
+
+.pr-table th:nth-child(20),.pr-table th:nth-child(21){width:240px}
+
+.pr-table th:nth-child(2) {width:245px}.pr-table th:nth-child(6),.pr-table th:nth-child(22) {width:140px}

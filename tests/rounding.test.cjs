@@ -1,0 +1,4 @@
+const {test}=require('node:test'),a=require('node:assert/strict'),C=require('../dist/calc.js');
+function calc(y,u,t='0'){return C.applyAdjustment({baseCents:C.money(y),discountPercent:'0',extraYuan:'0',taxPercent:t,roundingUnit:u})}
+test('rounding hundreds/thousands exact half boundaries and no rounding',()=>{for(const [y,u,n]of [['42379.65','hundred',4240000],['42379.65','thousand',4200000],['42499.99','thousand',4200000],['42500','thousand',4300000],['42450','hundred',4250000],['49.99','hundred',0]])a.equal(calc(y,u).totalCents,n);a.equal(calc('42379.65','none').totalCents,4237965);});
+test('rounded inclusive total and tax breakdown remain exact and bounded',()=>{for(const t of ['0','0.07','6','13','100']){const r=calc('42379.65','thousand',t);a.equal(r.subtotalCents+r.taxCents,r.totalCents);a.equal(r.totalCents%100000,0);}a.throws(()=>calc('100','bad'));a.throws(()=>calc('90071992547409.91','hundred','100'));});

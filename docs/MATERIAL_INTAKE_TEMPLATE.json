@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "instructions": "每份原始文件登记一条；示例仅定义字段，不含真实客户数据；未脱敏资料不得入代码仓库。",
+  "fields": [
+    "material_id",
+    "firm_code",
+    "module",
+    "project_type",
+    "original_filename",
+    "relative_path",
+    "version_date",
+    "sha256",
+    "provided_by",
+    "authorization_scope",
+    "sensitivity",
+    "redaction_status",
+    "expected_output_reference",
+    "manual_steps_reference",
+    "reviewer",
+    "status",
+    "open_questions"
+  ],
+  "records": []
+}

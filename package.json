@@ -1,0 +1,21 @@
+{
+  "name": "shenyi-audit-workspace",
+  "version": "0.61.0",
+  "private": true,
+  "description": "审易私有协作开发源码；不包含客户业务资料",
+  "engines": {"node": "^24.15.0"},
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "start": "node scripts/serve.mjs",
+    "test": "node scripts/test.mjs",
+    "test:unit": "node scripts/test.mjs --unit --strict",
+    "test:strict": "node scripts/test.mjs --strict",
+    "test:tools": "node --test scripts/dev-tools.test.cjs",
+    "check:repo": "node scripts/check-repository.mjs",
+    "build": "node hosting-server/scripts/build-root.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "30.1.3",
+    "playwright": "1.62.1"
+  }
+}

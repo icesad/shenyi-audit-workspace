@@ -1,0 +1,10 @@
+.quote-extras {margin:.9rem 0;color:inherit}
+.quote-extras .qe-head,.quote-extras .qe-list li {display:flex;align-items:center;justify-content:space-between;gap:.8rem}
+.quote-extras .qe-head h3 {margin:0}
+.quote-extras .qe-label {display:grid;max-width:32rem;gap:.35rem;font-weight:600}
+.quote-extras input[type=file] {min-width:0;width:100%;box-sizing:border-box;padding:.55rem;border:1px dashed #aec5bc;border-radius:.35rem}
+.quote-extras .qe-list {list-style:none;padding:0;margin:.65rem 0}
+.quote-extras .qe-list li {border-bottom:1px solid #dfe8e2;padding:.35rem 0}
+.quote-extras .qe-list span,.quote-extras .qe-status {overflow-wrap:anywhere}
+.quote-extras .qe-list button {flex:none}
+.quote-extras .qe-status {margin:.35rem 0}

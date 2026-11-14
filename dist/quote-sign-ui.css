@@ -1,0 +1,29 @@
+/* Quote formats and review dialog, isolated from the older quote document styles. */
+.qs-formats{margin:16px 0 10px;padding:10px 12px;border:1px solid #c9d8ce;border-radius:9px;min-inline-size:0;background:#fff9}
+.qs-formats legend{padding:0 4px;font-weight:700;color:var(--ink)}
+.qs-check{display:flex;gap:8px;align-items:center;font-size:14px;cursor:pointer;min-width:0}
+.qs-check input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);flex:none;margin:0}
+.qs-formats .qs-check+.qs-check{margin-top:8px}
+.qs-details{font-size:13px;margin:8px 0}.qs-details summary{cursor:pointer;color:var(--accent)}
+.qs-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,195px),1fr));gap:8px 14px;margin:8px 0}
+.qs-fields label,.qs-body>label{display:block;font-size:13px}
+.qs-fields input,.qs-fields select,.qs-body textarea{display:block;width:100%;min-width:0;margin-top:4px;box-sizing:border-box;border:1px solid #d5e0d8;border-radius:6px;padding:.5rem .55rem;font:inherit;background:#fff}
+#quote-sign-review{margin:0 0 6px;width:100%;border-color:#9ab4a7;color:var(--accent);text-align:center}
+.qs-dialog{box-sizing:border-box;width:min(910px,calc(100vw - 28px));max-height:min(88vh,980px);padding:0;border:1px solid #ccd8cf;border-radius:12px;color:var(--ink);background:#fff;overflow:auto}
+.qs-dialog::backdrop{background:#132d29a3}
+.qs-dialog .dialog-toolbar{position:sticky;top:0;z-index:1;align-items:center;background:#fff;border-bottom:1px solid #e2e9e2;padding:13px 20px}
+.qs-dialog .dialog-toolbar h2{font-size:19px;margin:0;margin-right:auto}
+.qs-body{padding:10px 20px 18px}.qs-body>label{margin:10px 0}.qs-body textarea{resize:vertical}
+.qs-body input[type=file]{display:block;margin-top:4px;width:min(100%,500px);background:#f8faf7}
+.qs-caption{font-weight:700;overflow-wrap:anywhere}
+.qs-rows{display:grid;gap:10px;margin:10px 0}
+.qs-row{min-width:0;padding:10px 13px;border:1px solid #e0e8e1;border-radius:8px;background:#fbfdfb}
+.qs-row h3{margin:0 0 7px;font-size:15px;overflow-wrap:anywhere}
+.qs-row p{margin:.25rem 0}
+.qs-sign-kinds{display:flex;flex-wrap:wrap;gap:10px 16px}
+.qs-uncertain{font-weight:700;color:var(--amber)}
+.qs-evidence{font-size:12px;color:#51655c;overflow-wrap:anywhere}
+.qs-confirm{display:grid;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid #dce6de}
+.qs-confirm .btn{justify-self:start}
+@media(max-width:600px){.qs-body{padding:10px 12px 15px}.qs-dialog .dialog-toolbar{padding:10px 12px}.qs-sign-kinds{gap:7px 12px}}
+@media print{.qs-dialog,#quote-format-tools{display:none!important}}
