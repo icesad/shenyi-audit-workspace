@@ -2,7 +2,7 @@
 
 记录日期：2026-11-15。GitHub 地址：<https://github.com/icesad/shenyi-audit-workspace>。
 
-最新检查点为[M4A普通员工职级调整](BUSINESS_ROLE_MANAGEMENT.md)Windows本地候选已验，精确合同[见此](BUSINESS_ROLE_MANAGEMENT_CONTRACT.md)。M4整体仍进行中。[M3 Windows本地阶段门](M3_LOCAL_ACCEPTANCE.md)已独立通过，可以进入隔离M4研发；正式M2/M3身份/远程配置/最高owner恢复、Mac/真实跨电脑和生产仍未完成。完整Goal active，未push/main/上线；下文各旧阶段保留当时证据。
+最新检查点为M4B[项目授权、采集任务与资料核对公共基础](PROJECT_ACCESS_COLLECTION.md)，Windows本地候选已验证：2202通过、0失败、0跳过，15组旧原生兼容和本轮严格设备原生独立验收通过；共享演示库仅空schema升级，旧数据保持。当前分支`codex/project-access-collection`。采集工作区的新建路径待产品选择，正常项目创建入口未开放，旧正式立项中标报价约束不改。前片[M4A普通员工职级管理](BUSINESS_ROLE_MANAGEMENT.md)保留2000项历史基线。M4整体/完整Goal继续，正式M2/M3、Mac/真实跨电脑及生产仍未完成；未push/main/上线。一键可达，既有演示项目不自动变成新授权项目。
 
 ## 版本不混淆
 

@@ -1,6 +1,7 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {authenticated,consume,limitedPasswordWork} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
+import {prepareProjectAccessRevocation,finishProjectAccessRevocation} from './project-access-policy.mjs';
 import {memberAccessAuthority,memberAccessOverview,memberAccessOwner,memberAccessTarget,memberIdentityRevision,memberListQuery,listMemberAccessTargets} from './member-access-policy.mjs';
 import {ApiError,ID,deny,invalid,json,readJson,transaction} from './http-utils.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
@@ -24,11 +25,13 @@ function disableMember(db,actorId,kind,teamId,target,at){
     .map(row=>({...row,revision:trustedIncrement(row.revision)}));
   const membershipCount=db.prepare('SELECT COUNT(*) n FROM team_memberships WHERE team_id=? AND user_id=?').get(teamId,target.id).n;
   if(target.revision>Number.MAX_SAFE_INTEGER-(1+2*membershipCount+(kind==='administrator'?2:0)))conflict();
+  const projectRevocations=prepareProjectAccessRevocation(db,{actorId,teamId,userId:target.id,reason:'member.disabled',at});
   db.prepare("UPDATE team_users SET status='disabled' WHERE user_id=? AND status='active'").run(target.id);
   db.prepare("UPDATE team_memberships SET status='disabled' WHERE team_id=? AND user_id=?").run(teamId,target.id);
   db.prepare("UPDATE team_operators SET status='revoked' WHERE team_id=? AND user_id=?").run(teamId,target.id);
   db.prepare('UPDATE team_sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL').run(at,target.id);
   for(const table of ['team_task_assignments','team_project_grants','team_attachment_grants','team_admin_grants'])db.prepare(`UPDATE ${table} SET status='revoked' WHERE team_id=? AND user_id=? AND status='active'`).run(teamId,target.id);
+  finishProjectAccessRevocation(db,projectRevocations);
   for(const task of tasks){const changed=db.prepare(`INSERT INTO team_task_versions(team_id,task_id,revision) VALUES (?,?,?)
     ON CONFLICT(team_id,task_id) DO UPDATE SET revision=excluded.revision WHERE team_task_versions.revision=?`).run(teamId,task.task_id,task.revision+1,task.revision);if(changed.changes!==1)conflict();}
   db.prepare('UPDATE team_invitations SET expires_at=MIN(expires_at,?) WHERE team_id=? AND invited_by=? AND accepted_at IS NULL').run(at,teamId,target.id);

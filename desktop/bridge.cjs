@@ -6,7 +6,7 @@ const APP_URL = 'shenyi://app/index.html';
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 function input(value, keys) {
   if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some(key=>!keys.includes(key))) throw Error('操作参数无效。');
-  for (const key of ['teamId','taskId','attachmentId','userId']) if (keys.includes(key) && (typeof value[key]!=='string'||!ID.test(value[key]))) throw Error('任务或成员标识无效。');
+  for (const key of ['teamId','projectId','taskId','attachmentId','submissionId','userId']) if (keys.includes(key) && (typeof value[key]!=='string'||!ID.test(value[key]))) throw Error('任务或成员标识无效。');
   return value;
 }
 async function readChosenFile(filename) {
@@ -64,6 +64,14 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('business-role-management-access',arg=>{noArgs(arg);return client.getBusinessRoleManagementAccess();});
   handle('business-role-members',arg=>client.listBusinessRoleMembers(input(arg,['teamId','q','after','limit'])));
   handle('business-role-change',arg=>client.changeBusinessRole(input(arg,['teamId','userId','revision','role','currentPassword','confirmed'])));
+  handle('project-access',arg=>{noArgs(arg);return client.getProjectAccess();});
+  handle('projects',arg=>client.listProjects(input(arg,['teamId','q','after','limit'])));
+  handle('project',arg=>client.getProject(input(arg,['teamId','projectId'])));
+  handle('project-members',arg=>client.listProjectMembers(input(arg,['teamId','projectId','q','after','limit'])));
+  handle('project-access-change',arg=>client.changeProjectAccess(input(arg,['teamId','projectId','revision','userId','memberRevision','read','manage','review','currentPassword','confirmed'])));
+  handle('project-tasks',arg=>client.listProjectTasks(input(arg,['teamId','projectId','q','after','limit'])));
+  handle('project-task-create',arg=>client.createProjectTask(input(arg,['teamId','projectId','revision','title','instructions','confirmed'])));
+  handle('project-submissions',arg=>client.listProjectSubmissions(input(arg,['teamId','projectId','taskId','after','limit'])));
   handle('business-members',arg=>client.listTeamBusinessMembers(input(arg,['teamId','q','after','limit'])));
   handle('team-administrators',arg=>client.listTeamAdministrators(input(arg===undefined?{}:arg,['q','after','limit'])));
   handle('business-member-disable',arg=>client.disableTeamBusinessMember(input(arg,['teamId','userId','revision','currentPassword'])));
@@ -148,6 +156,19 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
     // The operating-system dialog owns path selection/overwrite confirmation.
     // Fresh HEAD reduces unfinished saves after revocation; network authority
     // and the subsequent local write are not one atomic transaction.
+    await fs.writeFile(selected.filePath,file.bytes);
+    return {saved:true,filename:path.basename(selected.filePath),byteLength:file.bytes.length};
+  });
+  handle('project-submission-download',async arg=>{
+    input(arg,['teamId','projectId','taskId','submissionId']);
+    const assertSession=client.guardSession();assertSession();
+    const file=await client.getProjectSubmissionFile(arg);assertSession();
+    const selected=await dialog.showSaveDialog(window,{title:'保存项目采集原件副本',defaultPath:safeDownloadName(file.contentDisposition),buttonLabel:'保存副本'});
+    if(selected.canceled||!selected.filePath)return {canceled:true};assertSession();
+    const access=await client.authorizeProjectSubmissionDownload(arg);assertSession();
+    if(access?.canDownload!==true||Object.keys(access).length!==1)throw new ClientError('INVALID_RESPONSE','无法确认资料保存权限，请刷新项目后重试。');
+    // OS selection owns overwrite consent. Permission and a local write are
+    // not a distributed transaction; recheck the same narrow file first.
     await fs.writeFile(selected.filePath,file.bytes);
     return {saved:true,filename:path.basename(selected.filePath),byteLength:file.bytes.length};
   });

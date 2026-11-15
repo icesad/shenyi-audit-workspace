@@ -1,8 +1,32 @@
-# 团队采集授权原型（M1/M2/M3/M4A）
+# 团队采集授权原型（M1/M2/M3/M4A/M4B）
 
-M2新增独立账号、本机HTTP、定向邀请、原件提交与版本控制，以及手机号/微信的合成身份适配边界；最新运行说明见[本机桌面预览](../../docs/M2_LOCAL_TEAM_PREVIEW.md)和[正式身份方案](../../docs/PHONE_WECHAT_AUTH_PLAN.md)。下文读取范围描述M1模块，不能误读为M2没有写入接口；生产及设备/支付能力仍未完成。
+M2新增独立账号、本机HTTP、定向邀请、原件提交与版本控制，以及手机号/微信的合成身份适配边界；最新运行说明见[本机桌面预览](../../docs/M2_LOCAL_TEAM_PREVIEW.md)和[正式身份方案](../../docs/PHONE_WECHAT_AUTH_PLAN.md)。下文读取范围描述M1模块，不能误读为M2没有写入接口；正式身份供应商、生产部署和订阅支付仍未完成。
 
-M4A新增[普通员工业务职级管理](../../docs/BUSINESS_ROLE_MANAGEMENT.md)：`business-role-schema.sql`、`business-role-policy.mjs`、`business-role-api.mjs`提供独立strict设备/技术管理员鉴权、SQL最小成员范围、当前密码与CAS/ABA、同事务改role并撤旧session/lease/grants及未完成票、逐task版本更新和专用audit；原件/身份映射/binding保持，不赠项目或邀请权。仅新增一审计表/一索引，当前51表/89对象，原50表/87定义与所有旧行启动时保持；普通9/review14，无新增账号或自动职级变化。后文M3C的50/87等为该阶段历史，不代表当前schema。正式身份/远程配置、Mac/真实跨电脑/安装更新和生产仍未完成。
+M4A新增[普通员工业务职级管理](../../docs/BUSINESS_ROLE_MANAGEMENT.md)：`business-role-schema.sql`、`business-role-policy.mjs`、`business-role-api.mjs`提供独立strict设备/技术管理员鉴权、SQL最小成员范围、当前密码与CAS/ABA、同事务改role并撤旧session/lease/grants及未完成票、逐task版本更新和专用audit；原件/身份映射/binding保持，不赠项目或邀请权。该阶段新增一审计表/一索引，达到51表/89对象，原50表/87定义与所有旧行启动时保持；普通9/review14，无新增账号或自动职级变化。后文M3C的50/87等亦为该阶段历史，不代表当前schema。正式身份/远程配置、Mac/真实跨电脑/安装更新和生产仍未完成。
+
+## 当前M4B公共项目授权与资料核对
+
+[执行合同](../../docs/PROJECT_ACCESS_COLLECTION_CONTRACT.md)对应`project-access-schema.sql`、`project-access-policy.mjs`、`project-access-api.mjs`和独立`project-review-api.mjs`。当前54表/105个非sqlite对象；新增3表、2索引及11触发器，原51表/89对象定义及全部旧行保全。普通9/review14共享演示库不自动增加项目sidecar、owner、review ACL、任务或账号；旧project/UUID/原件及既有专业规则保持。
+
+只有可信服务端流程可调用`registerManagedProject`登记既有真实project的不可变创建者和来源元数据；无公开登记或补owner接口。有效普通manager/partner按显式read或当前owner ACL取得项目列表；`ProjectView`仅含`id/title/status/revision/canRead/canManageAccess/canCreateTask/canReview`。owner不隐含read，manage不隐含review；仅owner可重验当前密码、CAS并明确授权其他普通senior，read＋manage可新建服务端UUID/open/版本0的采集任务，随后须通过原任务分工明确指派junior。read＋独立review才可读取项目提交和原件，旧本人history与独立附件grant路径不扩权。
+
+9个桌面窄RPC及服务端入口如下；路径中的`:teamId/:projectId/:taskId/:submissionId`均是固定作用域ID，不能由renderer传任意URL或本机路径。
+
+| 窄RPC | HTTP入口 |
+|---|---|
+| `getProjectAccess` | `GET /api/auth/project-access` |
+| `listProjects` | `GET /api/teams/:teamId/projects` |
+| `getProject` | `GET /api/teams/:teamId/projects/:projectId` |
+| `listProjectMembers` | `GET /api/teams/:teamId/projects/:projectId/members` |
+| `changeProjectAccess` | `POST /api/teams/:teamId/projects/:projectId/access` |
+| `listProjectTasks` | `GET /api/teams/:teamId/projects/:projectId/tasks` |
+| `createProjectTask` | `POST /api/teams/:teamId/projects/:projectId/tasks` |
+| `listProjectSubmissions` | `GET /api/teams/:teamId/projects/:projectId/tasks/:taskId/submissions` |
+| `downloadProjectSubmission` | 同作用域`.../submissions/:submissionId/file`的`GET`及保存前fresh `HEAD`，由main组合 |
+
+新处理器自身要求真实strict设备context和当前lease，诊断模式不能使用；SQL作用域先于搜索/分页，未授权与不存在统一404。高风险授权以当前密码、project revision及target身份epoch复核；完整read=false移出同时撤该项目assignment/attachment grants，受影响task版本各增一次，实际变更撤目标旧session/lease。调职/停用同事务撤新owner/review ACL，保留creator历史而不因升职复活；正常改密/本人换机不永久丢owner。冻结项目按权限可读、不可写，归档拒绝；所有CAS/撤权/审计失败原子回滚。原件HEAD任何状态均空body且不读blob；main经GET→保存框→fresh HEAD及同会话guard后才写副本，未知写结果不自动重发。
+
+**正式项目或先行采集工作区的创建路径仍待用户决定。**当前`POST /api/teams/:teamId/projects`为404，无创建项目RPC/按钮，也不从旧seed或自由姓名推断owner。严格原生证据中的受信任合成登记不是正常创建功能，未迁移旧中标报价正式立项或专业签发。当前桌面总76个RPC、13个表单/19个密码输入，M4A等旧数字仅描述其引入阶段。
 
 后续新增[员工邀请与本人激活](../../docs/EMPLOYEE_INVITATION_ACTIVATION.md)：业务邀请要求当前manager/partner＋独立member.invite；技术管理员使用独立operator来源，低权限误授grant仍拒绝。新账号本人验证设密，既有孤立账号必须当前密码且复用ID，不自动发会话或业务grants。未配SMS如实关闭，真实供应商、多团队及恢复政策未完成。
 
@@ -24,11 +48,11 @@ M4A新增[普通员工业务职级管理](../../docs/BUSINESS_ROLE_MANAGEMENT.md
 
 [成员停用](../../docs/MEMBER_DEACTIVATION.md)由member-access-api/policy/schema提供：技术管理员仅本team单历史归属业务成员，管理员仅新member.disable授权owner；新2表/3epoch trigger，body/KDF/txn复核、任务版本CAS、会话/grant及在途授权失效、专用audit同事务，原件/身份映射/历史保留。新owner加入普通恢复链保护；未开放自授权或重新启用。review-only seed新增两独立合成身份，普通seed不增权。
 
-状态：隔离的本机合成数据实验；没有挂载到既有网页/Sites服务，不对公网监听。不能用它声称生产登录、设备绑定、订阅或团队软件已经完成。
+状态：隔离的本机合成数据实验；没有挂载到既有网页/Sites服务，不对公网监听。不能用它声称生产登录、生产设备部署、订阅或完整团队软件已经完成。
 
-架构见 [ADR 0001](../../docs/adr/0001-team-runtime.md)，产品权限见 [团队需求](../../docs/TEAM_PRODUCT_REQUIREMENTS.md)。当前工作项为 `TEAM-M3`；[M2本地候选阶段门](../../docs/M2_LOCAL_ACCEPTANCE.md)通过，正式身份供应商和生产集成尚未完成。
+架构见 [ADR 0001](../../docs/adr/0001-team-runtime.md)，产品权限见 [团队需求](../../docs/TEAM_PRODUCT_REQUIREMENTS.md)。当前工作项为 `TEAM-M4`；[M2本地候选阶段门](../../docs/M2_LOCAL_ACCEPTANCE.md)通过，正式身份供应商和生产集成尚未完成。
 
-[M3A设备底座](../../docs/DEVICE_IDENTITY_FOUNDATION.md)新增 `device-schema.sql`、`device-policy.mjs`、`device-api.mjs` 和 `device-gate.mjs`，共享codec在 `shared/device-proof.cjs`。M3B [正常客户端接入](../../docs/DESKTOP_DEVICE_SESSION.md)已完成Windows本地验收：两正常一键入口固定 `deviceProofRequired:true`，methods明确required/serverId/protocolVersion，受保护GET `/api/auth/devices/connection`供持钥心跳使用；无严格context或非strict诊断不能返回connected。单独处理器的默认参数及旧M2夹具仍可作隔离诊断，不能冒充正常入口或外部版本。M3B没有schema迁移，旧46表/76对象及全部演示行保持，不自动给任何演示账号绑定。M3C后续已接[换机申请/审核/激活](../../docs/DEVICE_REPLACEMENT.md)，新增四表/一个唯一索引/六身份epoch触发器，当前50表/87非sqlite对象；旧定义和旧行保持，review预览只增加独立合成device.replace owner至14用户，普通9不变。Mac、最高owner自身恢复及生产仍未完成。
+[M3A设备底座](../../docs/DEVICE_IDENTITY_FOUNDATION.md)新增 `device-schema.sql`、`device-policy.mjs`、`device-api.mjs` 和 `device-gate.mjs`，共享codec在 `shared/device-proof.cjs`。M3B [正常客户端接入](../../docs/DESKTOP_DEVICE_SESSION.md)已完成Windows本地验收：两正常一键入口固定 `deviceProofRequired:true`，methods明确required/serverId/protocolVersion，受保护GET `/api/auth/devices/connection`供持钥心跳使用；无严格context或非strict诊断不能返回connected。单独处理器的默认参数及旧M2夹具仍可作隔离诊断，不能冒充正常入口或外部版本。M3B没有schema迁移，旧46表/76对象及全部演示行保持，不自动给任何演示账号绑定。M3C后续已接[换机申请/审核/激活](../../docs/DEVICE_REPLACEMENT.md)，新增四表/一个唯一索引/六身份epoch触发器，该阶段达到50表/87非sqlite对象；旧定义和旧行保持，review预览只增加独立合成device.replace owner至14用户，普通9不变。Mac、最高owner自身恢复及生产仍未完成。
 
 ## 文件与可信入口
 
@@ -38,12 +62,13 @@ M4A新增[普通员工业务职级管理](../../docs/BUSINESS_ROLE_MANAGEMENT.md
 - `collection-api.mjs`：Web `Request/Response` 处理器；只接受服务端存储的有效opaque bearer会话。
 - `auth-api.mjs`、`application-api.mjs`：密码/会话、统一分发、限流及来源边界；`collection-write-api.mjs`、`invitations-api.mjs`提供M2的受限写入。
 - `identity-schema.sql`、`phone-api.mjs`、`wechat-api.mjs`：手机号映射/SMS挑战及微信事务。`identityProviders`只从服务端注入；无配置时明确503，`GET /api/auth/methods`如实返回能力。只给标记正确的M2实验库增加表，旧客户库不自动迁移。
+- `project-access-schema.sql`、`project-access-policy.mjs`、`project-access-api.mjs`、`project-review-api.mjs`：M4B可信登记、最小项目目录、创建者授权、采集任务创建及独立资料核对；所有公开路径均另核strict设备会话。
 
 测试用 `DatabaseSync(':memory:')` 执行schema，不读旧IndexedDB或平台资料库。生产仓储接口与数据库选型尚需验证；同步SQL实验不等于生产并发/容量测试。
 
 ## 已实现的读取范围
 
-所有路径前缀为 `/api/teams/:teamId/collection`，仅GET。
+下表保留M1读取模块的范围，路径前缀为 `/api/teams/:teamId/collection`，仅描述GET；M4B项目路径见上表，不改变此模块的本人history与附件规则。
 
 | 路径 | 响应/条件 |
 |---|---|
@@ -68,7 +93,7 @@ M1测试预置会话不等于账号注册/密码登录。M2已加入合成账号
 
 未知资源与已存在但无权资源使用同一404内容，避免泄露对象存在性。错误只给通用代码和说明，不输出SQL/路径/凭据。所有响应`private,no-store`、`nosniff`，不开放CORS；跨站请求拒绝。
 
-项目标题/财务/结构列专门存入合成秘密标记以验证未下发。任务标题/说明本身必须由有权人员仅填写所需采集上下文；DTO白名单不能自动脱敏一段人为塞入的敏感正文。正式数据进入前需按任务材料范围审核。
+M1旧采集DTO的项目标题/财务/结构列专门存入合成秘密标记以验证未下发；M4B独立项目目录仅按授权返回最小安全标题及能力，不返回财务或完整结构。任务标题/说明本身必须由有权人员仅填写所需采集上下文；DTO白名单不能自动脱敏一段人为塞入的敏感正文。正式数据进入前需按任务材料范围审核。
 
 ## 验证命令与证据边界
 
@@ -77,8 +102,12 @@ M1测试预置会话不等于账号注册/密码登录。M2已加入合成账号
 ```sh
 node --test tests/team-collection-access.test.cjs
 node --test tests/team-collection-access.test.cjs tests/account-profile.test.cjs tests/account-client.test.cjs scripts/dev-tools.test.cjs
+node --test tests/team-project-access-core.test.cjs tests/team-project-access-security.test.cjs tests/team-desktop-project-access-client.test.cjs tests/team-desktop-project-access-ui.test.cjs tests/team-desktop-project-entry.test.cjs
+node desktop/project-access-smoke.cjs
 ```
 
-该测试无需额外npm依赖。新增文件会被现有`npm test`和可移植子集runner发现；没有为通过测试改旧断言。检查结果、独立审查和下一里程碑写在根目录`进度.md`。
+M4B专项从仓库根目录运行；真实Windows原生脚本使用随机端口strict HTTP、fresh落盘SQLite、14个合成身份和4个OSvault客户端，不连接共享演示服务。证据目录为`D:/codex-temp/shenyi-project-access-20261115/real-electron-synthetic/run-*/`，含5张图/6阶段SQLite/report；验证新采集任务→显式指派→junior上传、独立review与合法副本、撤review挂起保存零写入及COMMIT丢回复只一次POST。Open/Save为限定合成路径的测试拦截；旧strict-false handler在途body撤后重授由独立安全场景另验，不混作正常strict原生层。最终全量2202通过、0失败/0跳过，15项旧原生兼容通过；详见根目录[进度](../../进度.md)。
 
-上述M1命令提供处理器/真实SQL证据；M2另有真实loopback HTTP、Windows桌面及合成身份专项，见本机预览与进度。真实密码找回/短信/微信、生产数据库、对象存储、客户端/系统密钥、支付和Mac仍未验收，也不代表客户审计业务验收。未来对象存储预签名票据、搜索索引、异步导出和共享缓存需要延续同一范围规则，不能绕过这里的判定。
+上述M1 SQL测试无需额外npm依赖；M4B DOM使用根目录锁定依赖，原生专项还需按[桌面说明](../../desktop/README.md)安装固定Electron依赖。新增文件会被现有`npm test`和可移植子集runner发现；没有为通过测试改旧断言。检查结果、独立审查和下一里程碑写在根目录`进度.md`。
+
+上述M1命令提供处理器/真实SQL证据；M2另有真实loopback HTTP、Windows桌面及合成身份专项，见本机预览与进度。真实密码找回/短信/微信、生产数据库、对象存储、跨物理电脑、支付和Mac仍未验收；Windows本机OS密钥与设备会话已由M3专项验证，也不代表客户审计业务验收。未来对象存储预签名票据、搜索索引、异步导出和共享缓存需要延续同一范围规则，不能绕过这里的判定。
