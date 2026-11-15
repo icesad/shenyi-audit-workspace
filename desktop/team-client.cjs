@@ -22,6 +22,11 @@ function passwordInput(value) {
   if (typeof value !== 'string' || value.length < 1 || value.length > 1024) throw failure('INVALID_INPUT', '请填写账号密码。');
   return value;
 }
+function invitationCodeInput(value){if(typeof value!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(value)||Buffer.from(value,'base64url').toString('base64url')!==value)throw failure('INVALID_INPUT','请填写本次收到的完整邀请码。');return value;}
+function invitationView(value,expectedTeam){
+  if(!value||typeof value.teamId!=='string'||!ID.test(value.teamId)||(expectedTeam&&value.teamId!==expectedTeam)||!['intern','assistant'].includes(value.role)||typeof value.phoneMasked!=='string'||!/^[+0-9* ]{7,32}$/.test(value.phoneMasked)||!value.phoneMasked.includes('*')||!Number.isSafeInteger(value.expiresAt))throw failure('INVALID_RESPONSE','邀请信息格式无效。');
+  return {teamId:value.teamId,role:value.role,phoneMasked:value.phoneMasked,expiresAt:value.expiresAt};
+}
 function cleanSession(value) {
   if (!value?.account || typeof value.account.id !== 'string' || typeof value.account.displayName !== 'string' || !Array.isArray(value.memberships) || !Number.isSafeInteger(value.expiresAt)) throw failure('INVALID_RESPONSE', '账号服务返回格式无效。');
   return {account: {id: value.account.id, displayName: value.account.displayName}, expiresAt: value.expiresAt,
@@ -55,7 +60,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   async function revokeResponseToken(bytes){
     try{const data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));if(typeof data?.token==='string'&&/^[A-Za-z0-9_-]{43}$/.test(data.token))await detachedPost('/api/auth/logout',{},data.token);}catch{}
   }
-  async function request(route, {method = 'GET', body, authenticated = true, binary = false, unavailableMessage,temporaryBearer,discardSessionOnChange=false} = {}) {
+  async function request(route, {method = 'GET', body, authenticated = true, binary = false, unavailableMessage,temporaryBearer,discardSessionOnChange=false,messagesOverride} = {}) {
     if (authenticated && !token && !temporaryBearer) throw failure('SIGN_IN_REQUIRED', '请先登录。', 401);
     const at = generation, bearer = temporaryBearer||token;
     let response;
@@ -71,7 +76,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     if (!response.ok) {
       const messages = {400:'提交内容无效，请检查后重试。',401:'账号或密码无效，请检查后重试。',403:'当前操作未获授权。',404:'任务不存在或当前账号无权访问。',409:'任务状态或版本已更新，请刷新后重试。',413:'资料超过12 MiB，请选择较小的文件。',429:'尝试过于频繁，请稍后重试。'};
       // Do not forward arbitrary provider messages, stack traces, or response bodies.
-      throw failure(`HTTP_${response.status}`, response.status === 503 && unavailableMessage ? unavailableMessage : messages[response.status] || '团队服务暂时无法完成操作。', response.status);
+      throw failure(`HTTP_${response.status}`, response.status === 503 && unavailableMessage ? unavailableMessage : messagesOverride?.[response.status]||messages[response.status] || '团队服务暂时无法完成操作。', response.status);
     }
     const bytes = await boundedBytes(response, binary ? MAX_FILE_BYTES : 1024 * 1024);
     if (at !== generation) {if(discardSessionOnChange)await revokeResponseToken(bytes);throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');}
@@ -88,8 +93,30 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   wechat=createWechatLogin({policy:wechatPolicy,openAuthorization,request,now,error:failure,getGeneration:()=>generation,isSignedIn:()=>!!token,
     cancelRemote:(route,body)=>detachedPost(route,body),revokeTemporary:bearer=>detachedPost('/api/auth/logout',{},bearer),
     adoptSession:data=>{if(typeof data?.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.token))throw failure('INVALID_RESPONSE','账号服务返回格式无效。');const value=cleanSession(data);current=value;token=data.token;generation++;return snapshot();}});
+  const onboardingRequest=(route,options)=>request(route,{...options,unavailableMessage:'员工邀请或手机号验证服务尚未开通或暂不可用。',messagesOverride:{400:'验证内容无效，请核对后重试。',404:'邀请码或手机号无效，或邀请已失效；管理操作也可能未获授权。',409:'当前账号或邀请状态不适用于激活，请联系管理员核对。',410:'本次验证已过期，请重新获取。'}});
+  const invitationPath=teamId=>'/api/teams/'+id(teamId)+'/employee-invitations';
+  function activationTarget(input,keys){exactKeys(input,keys);if(token)throw failure('SIGN_OUT_REQUIRED','请先退出当前账号再激活受邀账号。');return {invitationCode:invitationCodeInput(input.invitationCode),phone:phoneInput(input.phone)};}
   function path(teamId, taskId) { return `/api/teams/${id(teamId)}/collection/tasks${taskId ? '/' + id(taskId) : ''}`; }
   return Object.freeze({
+    async getOnboardingStatus(){const data=await onboardingRequest('/api/auth/onboarding/capabilities',{authenticated:false});if(typeof data?.available!=='boolean'||data.invitationOnly!==true)throw failure('INVALID_RESPONSE','员工激活服务状态无效。');return {available:data.available,invitationOnly:true};},
+    async getInvitationAccess(input){exactKeys(input,['teamId']);const data=await onboardingRequest(invitationPath(input.teamId)+'/access');if(typeof data?.canInvite!=='boolean')throw failure('INVALID_RESPONSE','邀请权限状态无效。');return {canInvite:data.canInvite};},
+    async createEmployeeInvitation(input){
+      exactKeys(input,['teamId','phone','role']);if(!['intern','assistant'].includes(input.role))throw failure('INVALID_INPUT','邀请职级只可选择实习生或助理。');
+      const data=await onboardingRequest(invitationPath(input.teamId),{method:'POST',body:{phone:phoneInput(input.phone),role:input.role}}),view=invitationView(data,input.teamId);
+      if(typeof data.invitationId!=='string'||!ID.test(data.invitationId))throw failure('INVALID_RESPONSE','邀请信息格式无效。');
+      return {...view,invitationId:data.invitationId,invitationCode:invitationCodeInput(data.invitationCode)};
+    },
+    async listEmployeeInvitations(input){exactKeys(input,['teamId']);const data=await onboardingRequest(invitationPath(input.teamId));if(!Array.isArray(data?.invitations)||data.invitations.length>50)throw failure('INVALID_RESPONSE','邀请列表格式无效。');return {invitations:data.invitations.map(item=>{const view=invitationView(item,input.teamId);if(typeof item.invitationId!=='string'||!ID.test(item.invitationId)||!['pending','revoked','accepted','expired'].includes(item.status))throw failure('INVALID_RESPONSE','邀请列表格式无效。');return {...view,invitationId:item.invitationId,status:item.status};})};},
+    async revokeEmployeeInvitation(input){exactKeys(input,['teamId','invitationId']);const data=await onboardingRequest(invitationPath(input.teamId)+'/'+id(input.invitationId)+'/revoke',{method:'POST',body:{}});if(data?.revoked!==true)throw failure('INVALID_RESPONSE','撤销结果无效。');return {revoked:true};},
+    async previewEmployeeInvitation(input){const body=activationTarget(input,['invitationCode','phone']);return invitationView(await onboardingRequest('/api/auth/onboarding/preview',{method:'POST',authenticated:false,body}));},
+    async requestEmployeeActivation(input){const body=activationTarget(input,['invitationCode','phone']);const data=await onboardingRequest('/api/auth/onboarding/challenges',{method:'POST',authenticated:false,body});if(typeof data?.challengeId!=='string'||!ID.test(data.challengeId)||!Number.isSafeInteger(data.expiresAt))throw failure('INVALID_RESPONSE','员工验证信息格式无效。');return {challengeId:data.challengeId,expiresAt:data.expiresAt};},
+    async activateEmployee(input){
+      const body=activationTarget(input,['invitationCode','phone','challengeId','code','password','displayName','accept']);
+      const displayName=input.displayName??'';
+      if(typeof input.challengeId!=='string'||!ID.test(input.challengeId)||typeof input.code!=='string'||!/^\d{6}$/.test(input.code)||input.accept!==true||typeof displayName!=='string'||[...displayName].length>80||/[\x00-\x1f\x7f]/.test(displayName))throw failure('INVALID_INPUT','请填写验证资料并确认加入邀请中的团队。');
+      const data=await onboardingRequest('/api/auth/onboarding/activate',{method:'POST',authenticated:false,body:{...body,challengeId:input.challengeId,code:input.code,password:passwordInput(input.password),displayName:displayName.trim(),accept:true}});
+      if(data?.activated!==true)throw failure('INVALID_RESPONSE','账号激活结果无效。');return {activated:true};
+    },
     async getAuthMethods() {
       const data = await request('/api/auth/methods', {authenticated:false});
       const keys=['demoUsername','phonePassword','phoneVerification','wechat','recovery'];

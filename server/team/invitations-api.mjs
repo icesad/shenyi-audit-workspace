@@ -4,7 +4,11 @@ import {readTeamContext} from './repository.mjs';
 import {ID, deny, invalid, json, readJson, transaction, conflict} from './http-utils.mjs';
 const digest = value => createHash('sha256').update(value).digest('hex');
 function canInvite(db, identity, teamId) {
-  return readTeamContext(db, identity, teamId) && db.prepare("SELECT 1 FROM team_admin_grants WHERE team_id=? AND user_id=? AND permission='member.invite' AND status='active'").get(teamId, identity.userId);
+  const context = readTeamContext(db, identity, teamId);
+  return context && ['manager','partner'].includes(context.role) && db.prepare(`SELECT 1 FROM team_admin_grants AS grant
+    JOIN team_users AS account ON account.user_id=grant.user_id
+    WHERE grant.team_id=? AND grant.user_id=? AND grant.permission='member.invite' AND grant.status='active'
+      AND account.status='active'`).get(teamId, identity.userId);
 }
 export async function handleInvitationRequest(request, {db, now}) {
   const url = new URL(request.url), match = /^\/api\/teams\/([^/]+)\/invitations$/.exec(url.pathname);

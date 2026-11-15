@@ -37,6 +37,14 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   }
   handle('login',arg=>client.login(input(arg,['username','password'])));
   handle('auth-methods',()=>client.getAuthMethods());
+  handle('onboarding-status',()=>client.getOnboardingStatus());
+  handle('invitation-access',arg=>client.getInvitationAccess(input(arg,['teamId'])));
+  handle('invitation-create',arg=>client.createEmployeeInvitation(input(arg,['teamId','phone','role'])));
+  handle('invitation-list',arg=>client.listEmployeeInvitations(input(arg,['teamId'])));
+  handle('invitation-revoke',arg=>client.revokeEmployeeInvitation(input(arg,['teamId','invitationId'])));
+  handle('activation-preview',arg=>client.previewEmployeeInvitation(input(arg,['invitationCode','phone'])));
+  handle('activation-challenge',arg=>client.requestEmployeeActivation(input(arg,['invitationCode','phone'])));
+  handle('activation-complete',arg=>client.activateEmployee(input(arg,['invitationCode','phone','challengeId','code','password','displayName','accept'])));
   handle('phone-login',arg=>client.loginPhone(input(arg,['phone','password'])));
   handle('phone-challenge',arg=>client.requestPhoneBind(input(arg,['phone'])));
   handle('phone-bind',arg=>client.bindPhone(input(arg,['challengeId','code','currentPassword'])));

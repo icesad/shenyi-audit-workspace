@@ -10,13 +10,19 @@ async function main(){
     const page=await app.firstWindow();const errors=[];page.on('pageerror',error=>errors.push(error.message));
     await page.getByRole('heading',{name:'登录团队账号',exact:true}).waitFor();
     assert.equal(await page.evaluate(()=>typeof require),'undefined');assert.equal(await page.evaluate(()=>typeof process),'undefined');
-    assert.deepEqual((await page.evaluate(()=>Object.keys(window.shenyiTeam))).sort(),['login','getSession','logout','listTasks','getTask','getSubmissions','chooseAndUpload','downloadAttachment','getAuthMethods','loginPhone','requestPhoneBind','bindPhone','startWechatLogin','pollWechatLogin','cancelWechatLogin','linkWechatAccount'].sort());
+    assert.deepEqual((await page.evaluate(()=>Object.keys(window.shenyiTeam))).sort(),['login','getSession','logout','listTasks','getTask','getSubmissions','chooseAndUpload','downloadAttachment','getAuthMethods','loginPhone','requestPhoneBind','bindPhone','startWechatLogin','pollWechatLogin','cancelWechatLogin','linkWechatAccount','getOnboardingStatus','getInvitationAccess','createEmployeeInvitation','listEmployeeInvitations','revokeEmployeeInvitation','previewEmployeeInvitation','requestEmployeeActivation','activateEmployee'].sort());
     const preferences=await app.evaluate(({BrowserWindow})=>{const p=BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences();return {nodeIntegration:p.nodeIntegration,contextIsolation:p.contextIsolation,sandbox:p.sandbox,webSecurity:p.webSecurity};});
     assert.deepEqual(preferences,{nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true});
     await page.locator('#identity-methods-message').filter({hasText:'正式方向：手机号＋密码'}).waitFor();
     const capabilities=await page.evaluate(async()=>window.shenyiTeam.getAuthMethods());assert.equal(capabilities.ok,true);
     assert.deepEqual(capabilities.value.methods,{demoUsername:true,phonePassword:true,phoneVerification:false,wechat:false,recovery:false});
     assert.equal(capabilities.value.desktopWechatReady,false);
+    const onboarding=await page.evaluate(()=>window.shenyiTeam.getOnboardingStatus());assert.equal(onboarding.ok,true);assert.deepEqual(onboarding.value,{available:false,invitationOnly:true});
+    await page.locator('#activation-panel > summary').click();
+    await page.locator('#activation-service-status').filter({hasText:'尚未开通'}).waitFor();
+    assert.equal(await page.locator('#activation-send-code').isDisabled(),true);assert.equal(await page.locator('#activation-submit').isDisabled(),true);
+    await page.screenshot({path:path.join(directory,'activation-unavailable.png'),fullPage:true});
+    await page.locator('#activation-panel > summary').click();
     assert.equal(await page.locator('#wechat-login').isDisabled(),true);assert.match(await page.locator('#wechat-login').textContent(),/未开通/);
     await page.locator('#login-mode').selectOption('phone');assert.equal(await page.locator('#username').getAttribute('placeholder'),'输入已验证绑定的手机号');
     await page.screenshot({path:path.join(directory,'phone-login.png'),fullPage:true});
@@ -26,7 +32,8 @@ async function main(){
     await page.getByRole('button',{name:'登录工作空间',exact:false}).click();
     await page.locator('.task-button').first().waitFor();await page.locator('.task-button').first().click();
     await page.getByRole('heading',{name:'我的提交记录',exact:true}).waitFor();
-    const passwords=await page.locator('input[type=password]').evaluateAll(fields=>fields.map(field=>field.value));assert.equal(passwords.length,3);assert.ok(passwords.every(value=>value===''));
+    assert.equal(await page.locator('#employee-invitations-panel').isVisible(),false);
+    const passwords=await page.locator('input[type=password]').evaluateAll(fields=>fields.map(field=>field.value));assert.equal(passwords.length,4);assert.ok(passwords.every(value=>value===''));
     const publicSession=await page.evaluate(async()=>window.shenyiTeam.getSession());assert.equal(publicSession.ok,true);assert.ok(!('token'in publicSession.value));
     assert.equal(await page.evaluate(()=>Object.values(localStorage).some(value=>value.includes('Bearer '))),false);
     await page.locator('#phone-bind-panel > summary').click();
@@ -40,7 +47,7 @@ async function main(){
     // Attempt this last: Playwright otherwise waits for a navigation which the
     // app correctly prevented before allowing subsequent locator interactions.
     const before=page.url();await page.evaluate(()=>{location.href='https://example.com/';});await page.waitForTimeout(100);assert.equal(page.url(),before);
-    const report={status:'PASS',electron:await app.evaluate(()=>process.versions.electron),preferences,rendererHasNode:false,tokenInRenderer:false,login:true,phoneLoginMode:true,unconfiguredIdentity:{smsDisabled:true,wechatDisabled:true,recovery:false},scopedTasks:true,detail:true,logoutClearsDom:true,externalNavigationDenied:true,pageErrors:errors,screenshots:['login.png','phone-login.png','phone-unavailable.png','task.png'],notVerified:['native-file-dialog','real-SMS','real-WeChat','OS-install-signature','device-binding','macOS','production']};
+    const report={status:'PASS',electron:await app.evaluate(()=>process.versions.electron),preferences,rendererHasNode:false,tokenInRenderer:false,login:true,phoneLoginMode:true,unconfiguredIdentity:{smsDisabled:true,wechatDisabled:true,recovery:false,activationDisabled:true},unprivilegedInvitationsHidden:true,scopedTasks:true,detail:true,logoutClearsDom:true,externalNavigationDenied:true,pageErrors:errors,screenshots:['login.png','phone-login.png','phone-unavailable.png','activation-unavailable.png','task.png'],notVerified:['native-file-dialog','real-SMS','real-WeChat','OS-install-signature','device-binding','macOS','production']};
     await fs.writeFile(path.join(directory,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
   }finally{await app.close();}
 }

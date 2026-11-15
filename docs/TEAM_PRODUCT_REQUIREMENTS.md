@@ -95,6 +95,8 @@
 
 登录标识已确认手机号＋密码和微信扫码；短信/微信接入资料尚未具备。是否允许同一人加入多个团队、团队所有权交接和管理员恢复规则，需要产品负责人确认；未确认前按测试场景探索，不发布不可逆账户归属逻辑。
 
+M2邀请激活候选见[定向激活方案](EMPLOYEE_INVITATION_ACTIVATION.md)：当前经理/合伙人＋独立邀请授权的交集才可邀请实习生/助理，低权限误授grant也不越过采集边界。新员工本人验证设密，既有无团队账号须当前密码复用；已有任意成员归属保守拒绝新增，不把它当成已批准的多团队商业政策。真实SMS、团队创建/首管理员及所有权恢复仍需各自完成，激活不自动分配业务资料或付费席位。
+
 安全实现参考：[OWASP Password Storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)、[Authorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html)、[Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)，2026-11-15 核验。具体依赖版本在实际选型时复核。
 
 ## 6. 桌面端和电脑绑定

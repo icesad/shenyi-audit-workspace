@@ -9,6 +9,7 @@ export function initializeTeamDatabase(db) {
     const metadata = tables.some(row => row.name === 'team_database_metadata') && db.prepare("SELECT value FROM team_database_metadata WHERE name='prototype-version'").get();
     if (metadata?.value !== '2') throw new Error('Not an isolated M2 database; no automatic migration');
     db.exec(readFileSync(fileURLToPath(new URL('./identity-schema.sql', import.meta.url)), 'utf8'));
+    db.exec(readFileSync(fileURLToPath(new URL('./activation-schema.sql', import.meta.url)), 'utf8'));
     db.exec('PRAGMA foreign_keys = ON'); return;
   }
   db.exec('BEGIN IMMEDIATE');
@@ -16,6 +17,7 @@ export function initializeTeamDatabase(db) {
     db.exec(readFileSync(fileURLToPath(new URL('./schema.sql', import.meta.url)), 'utf8'));
     db.prepare('INSERT INTO team_database_metadata VALUES (?,?)').run('prototype-version', '2');
     db.exec(readFileSync(fileURLToPath(new URL('./identity-schema.sql', import.meta.url)), 'utf8'));
+    db.exec(readFileSync(fileURLToPath(new URL('./activation-schema.sql', import.meta.url)), 'utf8'));
     db.exec('COMMIT'); db.exec('PRAGMA foreign_keys = ON');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
