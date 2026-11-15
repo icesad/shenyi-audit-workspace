@@ -98,3 +98,11 @@ GitHub仓库不替代原网站登录；GitHub合并不自动触发网站升级�
 完整可移植806通过/0失败/0跳过，独立新53项及原生3图/报告复核通过，无剩余P1/P2。真实Electron证明确认不一致0请求、错密可重试、成功全旧session401/foreign保留、旧pwd拒/新pwd以同ID/权限phone登录；默认预览不提交改密。共享库schema定义、23业务表/原session/meta和演示密码保持，详见进度。
 
 用户已确定前期由产品负责人（当前用户）人工审核团队与首管理员，员工通过邀请激活；下一M2按该路线实现，首管理员不自动获得审计资料/职级。未推送、未进入main、未上线；一键入口可达，完整Goal继续active。真实资源/恢复、Mac/设备及商业化尚未完成。
+
+## 2026-11-15 M2进行中：人工开通和首技术管理员
+
+`codex/manual-team-onboarding`接续`8e8ac98`，[人工开通候选](MANUAL_TEAM_ONBOARDING.md)已实现独立reviewer录入/密码＋CAS审核、一次性票及首管理员本人验证。只有激活才建团队；technicaladmin无审计membership、业务grants或自动session，可通过独立来源邀请员工。低职级误授grant、跨team、旧票复活和重复激活均拒绝。
+
+完整913通过/0失败/0跳过；独立39项对抗及代码/原生四图复核无剩余P1/P2。真实Electron＋loopbackHTTP/SQLite＋明确合成SMS闭环、默认未配禁用与旧会话/改密兼容均PASS。旧demo原26表/全部行保持，仅追加8空表；普通9用户不授reviewer。37窄IPC、8form、11密码输入。详细命令、备份与日志见根目录进度。
+
+一键审核预览 `Start-Team-Review-Preview.cmd` 已实际启动，独立合成数据目录；真实SMS缺席，不能直接激活。未推送、未进入main、未上线；M2及完整Goal保持进行中，真实审核账号部署、主体/SMS/HTTPS、组织恢复/移交、设备绑定、Mac和付费生产关卡仍待完成。

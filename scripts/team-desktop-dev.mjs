@@ -10,6 +10,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {createRequire} from 'node:module';
 import {initializeTeamDatabase,seedDemoTeamData} from '../server/team/database.mjs';
 import {startTeamServer} from '../server/team/dev-server.mjs';
+import {seedProvisioningDemo} from '../server/team/provisioning-demo.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 async function main() {
@@ -19,15 +20,19 @@ async function main() {
   let electron;
   try { electron=require('electron'); } catch { throw new Error('请先在desktop目录按锁文件安装Electron依赖，参见desktop/README.md。'); }
   if (typeof electron!=='string'||!existsSync(electron)) throw new Error('Electron运行时未完整安装，请参见desktop/README.md。');
-  const directory=process.platform==='win32'?'D:/codex-temp/shenyi-team-preview':path.join(os.homedir(),'.local/share/shenyi-team-preview');
+  const reviewDemo=process.env.SHENYI_TEAM_REVIEW_DEMO==='1';
+  if(process.env.SHENYI_TEAM_REVIEW_DEMO!==undefined&&!reviewDemo)throw new Error('审核演示开关无效；仅支持显式值1。');
+  const demoName=reviewDemo?'shenyi-team-review-preview':'shenyi-team-preview';
+  const directory=process.platform==='win32'?'D:/codex-temp/'+demoName:path.join(os.homedir(),'.local/share',demoName);
   await mkdir(directory,{recursive:true});
   const db=new DatabaseSync(path.join(directory,'team-demo.sqlite'));
   let service;
   try {
-    initializeTeamDatabase(db);await seedDemoTeamData(db);
+    initializeTeamDatabase(db);await seedDemoTeamData(db);if(reviewDemo)await seedProvisioningDemo(db);
     service=await startTeamServer({db});
   } catch (error) { db.close();if(error.code==='EADDRINUSE')throw new Error('本机8774端口已占用。未切换端口或结束已有进程；请核对已有团队服务。');throw error; }
   console.log('审易团队采集：纯合成演示，本机8774；不读原浏览器资料，不用于生产。');
+  if(reviewDemo)console.log('独立人工开通演示：reviewer-demo / ShenyiDemo!2026；无短信供应商，不能完成手机号激活。');
   const child=spawn(electron,[path.join(root,'desktop')],{cwd:root,windowsHide:false,stdio:['ignore','inherit','inherit'],env:{...process.env,SHENYI_TEAM_API:service.address.url,SHENYI_DESKTOP_DATA_DIR:path.join(directory,'desktop-data')}});
   let stopping=false;
   const stop=async()=>{if(stopping)return;stopping=true;await service.close();db.close();};

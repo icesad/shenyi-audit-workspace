@@ -29,6 +29,15 @@ function invitationView(value,expectedTeam){
   return {teamId:value.teamId,role:value.role,phoneMasked:value.phoneMasked,expiresAt:value.expiresAt};
 }
 function sessionIdInput(value){if(typeof value!=='string'||!SESSION_ID.test(value))throw failure('INVALID_INPUT','登录会话标识无效，请刷新后重试。');return value;}
+function teamNameInput(value){if(typeof value!=='string'||!value.isWellFormed())throw failure('INVALID_INPUT','团队名称需要1至80个字符。');const clean=value.normalize('NFKC').trim();if(!clean||[...clean].length>80||/[\p{Cc}\p{Cf}]/u.test(clean))throw failure('INVALID_INPUT','团队名称需要1至80个字符。');return clean;}
+function provisioningView(value){
+  if(!value||typeof value.id!=='string'||!ID.test(value.id)||typeof value.teamId!=='string'||!ID.test(value.teamId)||typeof value.teamName!=='string'||!value.teamName.isWellFormed()||!value.teamName.trim()||[...value.teamName].length>80||/[\x00-\x1f\x7f]/.test(value.teamName)||typeof value.phoneMasked!=='string'||!/^[+0-9* ]{7,32}$/.test(value.phoneMasked)||!value.phoneMasked.includes('*')||!['pending','approved','rejected','revoked','activated'].includes(value.status)||!Number.isSafeInteger(value.revision)||value.revision<1||!Number.isSafeInteger(value.createdAt)||value.createdAt<0||(value.expiresAt!==null&&(!Number.isSafeInteger(value.expiresAt)||value.expiresAt<value.createdAt)))throw failure('INVALID_RESPONSE','团队审核信息格式无效。');
+  return {id:value.id,teamId:value.teamId,teamName:value.teamName,phoneMasked:value.phoneMasked,status:value.status,revision:value.revision,createdAt:value.createdAt,expiresAt:value.expiresAt};
+}
+function firstAdministratorView(value){
+  if(!value||typeof value.teamId!=='string'||!ID.test(value.teamId)||typeof value.teamName!=='string'||!value.teamName.isWellFormed()||!value.teamName.trim()||[...value.teamName].length>80||/[\x00-\x1f\x7f]/.test(value.teamName)||typeof value.phoneMasked!=='string'||!/^[+0-9* ]{7,32}$/.test(value.phoneMasked)||!value.phoneMasked.includes('*')||!Number.isSafeInteger(value.expiresAt)||value.expiresAt<=0)throw failure('INVALID_RESPONSE','首管理员邀请信息格式无效。');
+  return {teamId:value.teamId,teamName:value.teamName,phoneMasked:value.phoneMasked,expiresAt:value.expiresAt};
+}
 function securityPasswordInput(value){passwordInput(value);if(Buffer.byteLength(value)>512)throw failure('INVALID_INPUT','当前密码内容无效，请核对后重试。');return value;}
 function sessionView(value){
   if(!value||typeof value.id!=='string'||!SESSION_ID.test(value.id)||typeof value.isCurrent!=='boolean'||!Number.isSafeInteger(value.expiresAt)||value.expiresAt<=0||(value.createdAt!==null&&(!Number.isSafeInteger(value.createdAt)||value.createdAt<0||value.createdAt>value.expiresAt)))throw failure('INVALID_RESPONSE','登录会话列表格式无效。');
@@ -102,6 +111,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     adoptSession:data=>{if(typeof data?.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.token))throw failure('INVALID_RESPONSE','账号服务返回格式无效。');const value=cleanSession(data);current=value;token=data.token;generation++;return snapshot();}});
   const onboardingRequest=(route,options)=>request(route,{...options,unavailableMessage:'员工邀请或手机号验证服务尚未开通或暂不可用。',messagesOverride:{400:'验证内容无效，请核对后重试。',404:'邀请码或手机号无效，或邀请已失效；管理操作也可能未获授权。',409:'当前账号或邀请状态不适用于激活，请联系管理员核对。',410:'本次验证已过期，请重新获取。'}});
   const sessionsRequest=(route,options)=>request(route,{...options,messagesOverride:{403:'当前密码验证未通过，请核对后重试。',404:'无法访问该登录会话，请刷新列表。',409:'账号或登录状态已改变，请刷新后重试。'}});
+  const provisioningRequest=(route,options)=>request(route,{...options,unavailableMessage:'团队开通或手机号验证服务尚未开通或暂不可用。',messagesOverride:{400:'团队开通资料无效，请核对后重试。',403:'当前密码验证未通过或操作未获授权。',404:'无法访问本次开通申请或邀请，请核对后重试。',409:'申请、账号或授权状态已改变，请刷新后核对。',410:'本次验证已过期，请重新获取。'}});
   async function bulkRevokeSessions(input,all){
     exactKeys(input,['currentPassword']);const data=await sessionsRequest('/api/auth/sessions/'+(all?'revoke-all':'revoke-others'),{method:'POST',body:{currentPassword:securityPasswordInput(input.currentPassword)}});
     if(!Number.isSafeInteger(data?.revokedCount)||data.revokedCount<(all?1:0)||data.signedOut!==all)throw failure('INVALID_RESPONSE','登录退出结果格式无效。');
@@ -111,6 +121,37 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   function activationTarget(input,keys){exactKeys(input,keys);if(token)throw failure('SIGN_OUT_REQUIRED','请先退出当前账号再激活受邀账号。');return {invitationCode:invitationCodeInput(input.invitationCode),phone:phoneInput(input.phone)};}
   function path(teamId, taskId) { return `/api/teams/${id(teamId)}/collection/tasks${taskId ? '/' + id(taskId) : ''}`; }
   return Object.freeze({
+    async getTeamProvisioningAccess(){const data=await provisioningRequest('/api/operations/team-requests/access');if(typeof data?.canReview!=='boolean')throw failure('INVALID_RESPONSE','团队审核权限状态无效。');return {canReview:data.canReview};},
+    async listTeamProvisioningRequests(){
+      const data=await provisioningRequest('/api/operations/team-requests');if(!Array.isArray(data?.requests)||data.requests.length>50)throw failure('INVALID_RESPONSE','团队审核列表格式无效。');
+      const requests=data.requests.map(provisioningView);if(new Set(requests.map(item=>item.id)).size!==requests.length)throw failure('INVALID_RESPONSE','团队审核列表格式无效。');return {requests};
+    },
+    async createTeamProvisioningRequest(input){
+      exactKeys(input,['teamName','adminPhone']);const teamName=teamNameInput(input.teamName),data=await provisioningRequest('/api/operations/team-requests',{method:'POST',body:{teamName,adminPhone:phoneInput(input.adminPhone)}}),view=provisioningView(data?.request);
+      if(view.status!=='pending'||view.teamName!==teamName)throw failure('INVALID_RESPONSE','无法确认开通申请，请刷新列表核对。');return {request:view};
+    },
+    async reviewTeamProvisioningRequest(input){
+      exactKeys(input,['requestId','decision','revision','currentPassword']);if(!['approve','reject','revoke'].includes(input.decision)||!Number.isSafeInteger(input.revision)||input.revision<1)throw failure('INVALID_INPUT','请选择有效的审核操作并刷新申请版本。');
+      const requestId=id(input.requestId),data=await provisioningRequest('/api/operations/team-requests/'+requestId+'/review',{method:'POST',body:{decision:input.decision,revision:input.revision,currentPassword:securityPasswordInput(input.currentPassword)}}),view=provisioningView(data?.request);
+      if(view.id!==requestId||view.revision<=input.revision||view.status!==({approve:'approved',reject:'rejected',revoke:'revoked'})[input.decision])throw failure('INVALID_RESPONSE','无法确认审核结果，请刷新列表核对。');
+      return {request:view,...(input.decision==='approve'?{invitationCode:invitationCodeInput(data.invitationCode)}:{})};
+    },
+    async getTeamAdministration(){
+      const data=await provisioningRequest('/api/auth/team-administration');if(!Array.isArray(data?.teams)||data.teams.length>50)throw failure('INVALID_RESPONSE','团队管理信息格式无效。');
+      const teams=data.teams.map(item=>{if(!item||typeof item.teamId!=='string'||!ID.test(item.teamId)||typeof item.teamName!=='string'||!item.teamName.isWellFormed()||!item.teamName.trim()||[...item.teamName].length>80||/[\x00-\x1f\x7f]/.test(item.teamName))throw failure('INVALID_RESPONSE','团队管理信息格式无效。');return {teamId:item.teamId,teamName:item.teamName};});
+      if(new Set(teams.map(item=>item.teamId)).size!==teams.length)throw failure('INVALID_RESPONSE','团队管理信息格式无效。');return {teams};
+    },
+    async previewFirstAdministrator(input){const body=activationTarget(input,['invitationCode','phone']);return firstAdministratorView(await provisioningRequest('/api/auth/first-administrator/preview',{method:'POST',authenticated:false,body}));},
+    async requestFirstAdministratorActivation(input){
+      const body=activationTarget(input,['invitationCode','phone']),data=await provisioningRequest('/api/auth/first-administrator/challenges',{method:'POST',authenticated:false,body});
+      if(typeof data?.challengeId!=='string'||!ID.test(data.challengeId)||!Number.isSafeInteger(data.expiresAt)||data.expiresAt<=0)throw failure('INVALID_RESPONSE','首管理员验证信息格式无效。');return {challengeId:data.challengeId,expiresAt:data.expiresAt};
+    },
+    async activateFirstAdministrator(input){
+      const body=activationTarget(input,['invitationCode','phone','challengeId','code','password','displayName','accept']),displayName=input.displayName??'';
+      if(typeof input.challengeId!=='string'||!ID.test(input.challengeId)||typeof input.code!=='string'||!/^\d{6}$/.test(input.code)||input.accept!==true||typeof displayName!=='string'||!displayName.isWellFormed()||[...displayName].length>80||/[\x00-\x1f\x7f]/.test(displayName))throw failure('INVALID_INPUT','请填写本人验证资料并确认开通团队。');
+      const data=await provisioningRequest('/api/auth/first-administrator/activate',{method:'POST',authenticated:false,body:{...body,challengeId:input.challengeId,code:input.code,password:passwordInput(input.password),displayName:displayName.trim(),accept:true}});
+      if(data?.activated!==true)throw failure('INVALID_RESPONSE','无法确认首管理员激活结果，请使用手机号登录核对。');return {activated:true};
+    },
     async changeOwnPassword(input){
       exactKeys(input,['currentPassword','newPassword']);
       if(typeof input.newPassword!=='string'||[...input.newPassword].length<12||[...input.newPassword].length>128||Buffer.byteLength(input.newPassword)>512)throw failure('INVALID_INPUT','新密码需要12至128个字符。');

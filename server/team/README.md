@@ -2,7 +2,9 @@
 
 M2新增独立账号、本机HTTP、定向邀请、原件提交与版本控制，以及手机号/微信的合成身份适配边界；最新运行说明见[本机桌面预览](../../docs/M2_LOCAL_TEAM_PREVIEW.md)和[正式身份方案](../../docs/PHONE_WECHAT_AUTH_PLAN.md)。下文读取范围描述M1模块，不能误读为M2没有写入接口；生产及设备/支付能力仍未完成。
 
-后续新增[员工邀请与本人激活](../../docs/EMPLOYEE_INVITATION_ACTIVATION.md)：`activation-schema.sql`及`employee-invitations-api.mjs`只在隔离M2库加表/接口，新旧邀请均要求当前manager/partner＋独立member.invite。低权限误授grant仍拒绝；新账号本人验证设密，既有孤立账号必须当前密码且复用ID，不自动发会话或业务grants。未配SMS如实关闭，正式团队建立/首管理员/多团队及恢复政策未完成。
+后续新增[员工邀请与本人激活](../../docs/EMPLOYEE_INVITATION_ACTIVATION.md)：业务邀请要求当前manager/partner＋独立member.invite；技术管理员使用独立operator来源，低权限误授grant仍拒绝。新账号本人验证设密，既有孤立账号必须当前密码且复用ID，不自动发会话或业务grants。未配SMS如实关闭，真实供应商、多团队及恢复政策未完成。
+
+[人工团队开通](../../docs/MANUAL_TEAM_ONBOARDING.md)由`provisioning-schema.sql`、`provisioning-api.mjs`和`administration-policy.mjs`提供：独立reviewer录入/当前密码及CAS审核，首管理员本人验证后才建team/profile/operator，不加审计membership。八张新表同事务追加，旧业务邀请表及外键保留；operator员工邀请独立表/挑战，不伪造partner。没有公开授予reviewer权的API，显式合成fixture在`provisioning-demo.mjs`，普通demo不增权；生产账号建立/主体审核仍需单独完成。
 
 [个人会话管理](../../docs/ACCOUNT_SESSION_MANAGEMENT.md)由`session-schema.sql`/`sessions-api.mjs`提供稳定非凭据管理ID、本人有效会话分页及当前密码重验后的指定/其他/全部退出。旧会话不改token/期限/状态、不推算时间，所有登录方式统一发放元数据；不暴露摘要或同事数据。此项与业务角色授权、M3设备绑定分别验证。
 

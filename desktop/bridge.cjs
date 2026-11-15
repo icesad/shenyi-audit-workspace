@@ -37,6 +37,15 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   }
   handle('login',arg=>client.login(input(arg,['username','password'])));
   handle('auth-methods',()=>client.getAuthMethods());
+  const noArgs=arg=>{if(arg!==undefined)throw Error('操作参数无效。');};
+  handle('team-review-access',arg=>{noArgs(arg);return client.getTeamProvisioningAccess();});
+  handle('team-review-list',arg=>{noArgs(arg);return client.listTeamProvisioningRequests();});
+  handle('team-review-create',arg=>client.createTeamProvisioningRequest(input(arg,['teamName','adminPhone'])));
+  handle('team-review-decide',arg=>client.reviewTeamProvisioningRequest(input(arg,['requestId','decision','revision','currentPassword'])));
+  handle('team-administration',arg=>{noArgs(arg);return client.getTeamAdministration();});
+  handle('first-admin-preview',arg=>client.previewFirstAdministrator(input(arg,['invitationCode','phone'])));
+  handle('first-admin-challenge',arg=>client.requestFirstAdministratorActivation(input(arg,['invitationCode','phone'])));
+  handle('first-admin-complete',arg=>client.activateFirstAdministrator(input(arg,['invitationCode','phone','challengeId','code','password','displayName','accept'])));
   handle('password-change',arg=>client.changeOwnPassword(input(arg,['currentPassword','newPassword'])));
   handle('account-sessions',arg=>client.listAccountSessions(input(arg===undefined?{}:arg,['limit','after'])));
   handle('account-session-revoke',arg=>client.revokeAccountSession(input(arg,['sessionId','currentPassword'])));
