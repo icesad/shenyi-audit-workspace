@@ -20,6 +20,9 @@
 | 看模块和文件对应关系 | [架构与数据边界](docs/ARCHITECTURE.md) |
 | 知道现在究竟完成到哪里 | [当前状态](docs/STATUS.md) |
 | 接续之前的目标和需求 | [GOAL](GOAL.md) / [BACKLOG](BACKLOG.json) |
+| 团队权限、桌面端、年订阅与两位负责人分工 | [团队产品需求](docs/TEAM_PRODUCT_REQUIREMENTS.md) |
+| 国内上线手续、域名/阿里云/支付与阶段验收 | [商业化路线图](docs/COMMERCIALIZATION_ROADMAP.md) |
+| 持续开发Goal提示词与本机检查点 | [Goal提示词](docs/COMMERCIALIZATION_GOAL.txt) / [进度](进度.md) |
 | 提交修改、约束改动范围 | [贡献约定](CONTRIBUTING.md) |
 | 哪些资料不能上传、出了问题怎么办 | [安全说明](SECURITY.md) |
 

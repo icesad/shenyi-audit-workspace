@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-14",
+  "updatedAt": "2026-11-15",
   "scopeRule": "只改用户明确点名范围；未提及页面、布局、字段、公式与存储键保持原样",
   "items": [
     {"id":"COLLAB-001","title":"私有GitHub源码仓库与跨设备协作文档","status":"in_progress","acceptance":["远程Private验证","安全源码快照","Windows/Mac运行说明","新手教程","实际push与远程SHA核对"]},
@@ -10,6 +10,16 @@
     {"id":"AUDIT-FULL","title":"使用授权真实样本核对全套原模板底稿、TB及报告","status":"needs_business_validation","notes":"算术校验、编制草稿不等于完成审计；真实原件留在仓库外"},
     {"id":"QUOTE-PENDING","title":"自动报价记录和分页可编辑预览后续接续","status":"not_integrated","notes":"此前未发布工作在原工作区外单独保留；本次不擅自并入"},
     {"id":"MAC-001","title":"Mac Safari真实设备验证","status":"planned","notes":"Chromium与Windows测试不能代表已在Mac实机通过"},
-    {"id":"DEPLOY-001","title":"恢复原Sites发布通道并独立发布验收版本","status":"blocked_external","notes":"GitHub推送不等于原网站发布；不改变现有站点访问范围"}
+    {"id":"DEPLOY-001","title":"恢复原Sites发布通道并独立发布验收版本","status":"blocked_external","notes":"历史Sites分发任务，非新国内服务端上线命令；GitHub推送不等于原网站发布；不改变现有站点访问范围"},
+    {"id":"TEAM-M0","title":"团队商业化需求、路线、Goal和手续提醒","status":"completed_local","owner":"Codex","documents":["docs/TEAM_PRODUCT_REQUIREMENTS.md","docs/COMMERCIALIZATION_ROADMAP.md","docs/COMMERCIALIZATION_GOAL.txt","进度.md"],"acceptance":["用户选择写入","现有架构证据核对","官方手续来源核验","Goal结构校验","独立复核","实际创建Goal与提醒后分别记录结果"],"evidence":"进度.md；本地完成，未进入main或远程；完整商业化Goal仍active"},
+    {"id":"TEAM-M1","title":"桌面及服务端架构ADR与四角色授权原型","status":"planned","dependsOn":["TEAM-M0"],"acceptance":["一个桌面候选的最小实验计划","团队/项目/任务/字段/附件默认拒绝","两团队四角色正反例","直访搜索统计导出权限","独立agent验收"]},
+    {"id":"TEAM-M2","title":"独立账号、桌面端和采集纵向闭环","status":"planned","dependsOn":["TEAM-M1"],"acceptance":["账号密码及真实身份验证策略","团队邀请与会话撤销","低权限仅见已指派任务","不接真实客户资料"]},
+    {"id":"TEAM-M3","title":"首版Windows/Mac设备绑定与撤销换机","status":"planned","dependsOn":["TEAM-M2"],"acceptance":["公钥挑战与重放拒绝","设备数并发离线策略确认","撤销旧会话失效","双平台原生证据分别记录"]},
+    {"id":"TEAM-M4","title":"各业务模块团队授权和显式迁移适配","status":"planned","dependsOn":["TEAM-M3"],"acceptance":["专业规则米老师确认","服务端覆盖各数据出口","原件UUID/CAS/冻结兼容","获准迁移与恢复验证"]},
+    {"id":"TEAM-M5","title":"团队年费、员工席位、主动续费与支付闭环","status":"planned","dependsOn":["TEAM-M4"],"acceptance":["商业细则确认","服务端权益账本","模拟支付验签幂等及对账退款异常","未授权不真实扣款"]},
+    {"id":"TEAM-M6","title":"后期整体UI升级与官网","status":"planned","dependsOn":["TEAM-M5"],"acceptance":["用户确认视觉方向和购买入口","易用性任务走查","业务规则回归","官网不夸大能力"]},
+    {"id":"TEAM-M7","title":"国内部署候选、签名更新及恢复演练","status":"planned","dependsOn":["TEAM-M6"],"acceptance":["国内环境模板与预算","主体资源资质齐备","Win/Mac安装升级实机","备份恢复及回滚","权限安全独立复核"]},
+    {"id":"TEAM-M8","title":"试点及经授权的正式上线验收","status":"planned","dependsOn":["TEAM-M7"],"acceptance":["双方各自签收","所需备案及许可实际状态","生产支付对账退款","真实发布URL与版本","未完成外部关卡不称Goal完成"]},
+    {"id":"LAUNCH-ADMIN","title":"主体、域名、阿里云、备案、商户及续期手续","status":"preparation","notes":"与研发按依赖并行；尚无域名和服务器，主体省份未知；无购买/申请/签约授权；提醒只追踪行政准备和真实日期，不监控Goal完成"}
   ]
 }
