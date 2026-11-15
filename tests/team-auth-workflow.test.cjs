@@ -174,7 +174,8 @@ test('password change checks current password and revokes every old session atom
   const f = await fixture(t);
   const a = await login(f), b = await login(f);
   const wrong = await call(f, '/api/auth/password', {method: 'POST', token: a.token, body: {currentPassword: 'wrong-password', newPassword: 'A-replacement-password!'}});
-  assert.equal(wrong.response.status, 401);
+  assert.equal(wrong.response.status, 403);
+  assert.equal(wrong.json.error.code, 'VERIFICATION_FAILED');
   assert.equal((await session(f, a.token)).response.status, 200);
   const changed = await call(f, '/api/auth/password', {method: 'POST', token: a.token, body: {currentPassword: PASSWORD, newPassword: 'A-replacement-password!'}});
   assert.equal(changed.response.status, 200); assert.deepEqual(changed.json, {signedOut: true}); privacy(changed);

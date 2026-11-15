@@ -97,12 +97,17 @@ export async function handleAuthRequest(request, {db, now = Date.now}) {
   consume(db, 'password:' + digest(identity.userId), at, 15 * 60_000, 10);
   const body = await readJson(request, ['currentPassword', 'newPassword']);
   if (typeof body.currentPassword !== 'string' || Buffer.byteLength(body.currentPassword) > 512 || !validPassword(body.newPassword)) invalid();
+  // Streamed bodies may finish after the original login or its owner changed.
+  const actor = authenticated(db, request, now());
+  if (actor.userId !== identity.userId) signInRequired();
   return limitedPasswordWork(db, async () => {
     const previous = db.prepare('SELECT password_hash,revision FROM team_credentials WHERE user_id=?').get(identity.userId);
-    if (!previous || !await verifyPassword(body.currentPassword, previous.password_hash)) signInRequired();
+    if (!previous) throw new ApiError(409, 'CREDENTIAL_CHANGED', '账号状态已改变，请重新登录。');
+    if (!await verifyPassword(body.currentPassword, previous.password_hash)) throw new ApiError(403, 'VERIFICATION_FAILED', '当前密码验证未通过，请核对后重试。');
     const encoded = await hashPassword(body.newPassword);
     return transaction(db, () => {
-      authenticated(db, request, now());
+      const freshActor = authenticated(db, request, now());
+      if (freshActor.userId !== identity.userId) signInRequired();
       const changed = db.prepare('UPDATE team_credentials SET password_hash=?,revision=revision+1 WHERE user_id=? AND password_hash=? AND revision=?').run(encoded, identity.userId, previous.password_hash, previous.revision);
       if (changed.changes !== 1) throw new ApiError(409, 'CREDENTIAL_CHANGED', '账号状态已改变，请重新登录。');
       db.prepare('UPDATE team_sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL').run(now(), identity.userId);

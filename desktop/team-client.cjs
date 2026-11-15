@@ -111,6 +111,13 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   function activationTarget(input,keys){exactKeys(input,keys);if(token)throw failure('SIGN_OUT_REQUIRED','请先退出当前账号再激活受邀账号。');return {invitationCode:invitationCodeInput(input.invitationCode),phone:phoneInput(input.phone)};}
   function path(teamId, taskId) { return `/api/teams/${id(teamId)}/collection/tasks${taskId ? '/' + id(taskId) : ''}`; }
   return Object.freeze({
+    async changeOwnPassword(input){
+      exactKeys(input,['currentPassword','newPassword']);
+      if(typeof input.newPassword!=='string'||[...input.newPassword].length<12||[...input.newPassword].length>128||Buffer.byteLength(input.newPassword)>512)throw failure('INVALID_INPUT','新密码需要12至128个字符。');
+      const data=await request('/api/auth/password',{method:'POST',body:{currentPassword:securityPasswordInput(input.currentPassword),newPassword:input.newPassword},messagesOverride:{400:'当前密码或新密码格式无效，请核对后重试。',403:'当前密码验证未通过，请核对后重试。',409:'账号状态已改变，请重新登录核对。'}});
+      if(data?.signedOut!==true)throw failure('INVALID_RESPONSE','无法确认改密结果，请使用新密码重新登录核对。');
+      clear();return {signedOut:true};
+    },
     async listAccountSessions(input={}){
       exactKeys(input,['limit','after']);const params=new URLSearchParams(),limit=input.limit??20;
       if(!Number.isSafeInteger(limit)||limit<1||limit>50)throw failure('INVALID_INPUT','每次只能读取1至50个登录会话。');

@@ -9,14 +9,15 @@
   let onboardingAvailable=false,onboardingReady=false,onboardingStatusEpoch=0,activationEpoch=0,activationWorking=false,activationPreview=null,activationChallenge=null;
   let invitationEpoch=0,invitationWorking=false,invitationAllowed=false;
   let accountIdentityEpoch=0,accountSessionsEpoch=0,accountSessionRows=[],accountSessionsHasMore=false,accountSessionsLoaded=false,accountSessionsWorking=false,accountSessionsMutation=null;
+  let passwordChangeEpoch=0,passwordChangeMutation=null;
   function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
   function message(id,text,error=false){const node=byId(id);node.textContent=text||'';node.classList.toggle('error',error);}
   function wechatActive(){return ['starting','pending','binding_required','linking'].includes(wechatState);}
   function updateIdentityControls(){const active=wechatActive(),ready=methodsReady&&methods.wechat&&desktopWechatReady;byId('ordinary-login-fields').hidden=active;byId('login-view').classList.toggle('wechat-active',active);for(const id of ['username','password','login-submit'])byId(id).disabled=busy||active;byId('wechat-login').disabled=busy||!ready||wechatActive();byId('wechat-login').textContent=!methods.wechat?'微信扫码登录 · 未开通':!desktopWechatReady?'微信扫码登录 · 桌面配置未就绪':'微信扫码登录';byId('wechat-message').textContent=!methods.wechat?'尚未配置微信登录，当前不能扫码授权。':!desktopWechatReady?'服务端已配置微信能力，桌面授权配置未就绪，当前不能发起授权。':'将在系统浏览器中授权；完成后请返回此窗口。首次关联需确认本人现有员工账号。';byId('wechat-progress').hidden=wechatState==='idle';byId('wechat-link-fields').hidden=!['binding_required','linking'].includes(wechatState);byId('wechat-link-fields').disabled=busy||wechatWorking||wechatState!=='binding_required';byId('wechat-link-submit').disabled=busy||wechatWorking||wechatState!=='binding_required';byId('wechat-cancel').hidden=!wechatActive();byId('wechat-cancel').disabled=!wechatActive();for(const option of byId('login-mode').options)option.disabled=option.value==='phone'?!methods.phonePassword:!methods.demoUsername;byId('phone-bind-fields').disabled=busy||!methods.phoneVerification;byId('send-bind-code').disabled=busy||!methods.phoneVerification;byId('bind-phone-submit').disabled=busy||!methods.phoneVerification||!challengeId||challengeExpiresAt<=Date.now();byId('bind-code').disabled=busy||!methods.phoneVerification||!challengeId;byId('bind-current-password').disabled=busy||!methods.phoneVerification||!challengeId;byId('phone-service-status').textContent=methods.phoneVerification?'短信服务已配置；仍需完成本次验证码和当前账号密码验证。':'短信验证尚未开通，当前不能绑定手机号。';}
-  function setBusy(value){busy=value;for(const node of document.querySelectorAll('button,input,select'))node.disabled=value;updateIdentityControls();updateOnboardingControls();updateAccountSessionsControls();}
+  function setBusy(value){busy=value;for(const node of document.querySelectorAll('button,input,select'))node.disabled=value;updateIdentityControls();updateOnboardingControls();updateAccountSessionsControls();updatePasswordChangeControls();}
   function clearPhoneProof(clearPhone=true){challengeId='';challengeExpiresAt=0;challengePhone='';byId('bind-code').value='';byId('bind-current-password').value='';if(clearPhone)byId('bind-phone').value='';updateIdentityControls();}
   function resetWechat(notify=true){const active=wechatActive();wechatEpoch++;clearTimeout(wechatTimer);wechatTimer=null;wechatState='idle';wechatWorking=false;wechatExpiresAt=0;byId('wechat-link-phone').value='';byId('wechat-link-password').value='';message('wechat-status','');if(notify&&active&&typeof api?.cancelWechatLogin==='function')void Promise.resolve().then(()=>api.cancelWechatLogin()).catch(()=>{});updateIdentityControls();}
-  function showLogin(){accountIdentityEpoch++;resetAccountSessions();resetWechat();resetActivation(true,true);resetInvitations();session=null;teamId='';tasks=[];selected=null;submissions=[];revision=0;hasMore=false;viewEpoch++;byId('workspace-view').hidden=true;byId('session-actions').hidden=true;byId('login-view').hidden=false;for(const id of ['username','password','search'])byId(id).value='';for(const id of ['account-name','role-label','task-count','workspace-message','phone-bind-message'])byId(id).textContent='';clearPhoneProof();byId('phone-bind-panel').open=false;byId('task-list').replaceChildren();byId('team-select').replaceChildren();byId('task-detail').replaceChildren();setBusy(false);}
+  function showLogin(){accountIdentityEpoch++;resetAccountSessions();resetPasswordChange();resetWechat();resetActivation(true,true);resetInvitations();session=null;teamId='';tasks=[];selected=null;submissions=[];revision=0;hasMore=false;viewEpoch++;byId('workspace-view').hidden=true;byId('session-actions').hidden=true;byId('login-view').hidden=false;for(const id of ['username','password','search'])byId(id).value='';for(const id of ['account-name','role-label','task-count','workspace-message','phone-bind-message'])byId(id).textContent='';clearPhoneProof();byId('phone-bind-panel').open=false;byId('task-list').replaceChildren();byId('team-select').replaceChildren();byId('task-detail').replaceChildren();setBusy(false);}
   async function call(name,arg){if(!api)throw {code:'DESKTOP_REQUIRED',message:'请使用审易桌面客户端打开此页面。'};const result=await api[name](arg);if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED')showLogin();throw result?.error||{message:'操作未完成，请重试。'};}return result.value;}
   async function loadIdentityMethods(){const at=++methodsEpoch;if(typeof api?.getAuthMethods!=='function'){methodsReady=false;desktopWechatReady=false;message('identity-methods-message','当前桌面身份接口未更新；仍可使用明确标注的合成演示账号。');updateIdentityControls();return;}try{const value=await call('getAuthMethods');if(at!==methodsEpoch)return;methods=value.methods;methodsReady=true;desktopWechatReady=value.desktopWechatReady===true&&['startWechatLogin','pollWechatLogin','cancelWechatLogin','linkWechatAccount'].every(name=>typeof api[name]==='function');message('identity-methods-message',methods.phonePassword?'正式方向：手机号＋密码。需先完成手机号验证绑定；合成演示账号保持独立。':'手机号登录尚未开放；合成演示账号不代表正式身份已验证。');}catch{if(at!==methodsEpoch)return;methodsReady=false;desktopWechatReady=false;message('identity-methods-message','身份服务状态暂不可读取，未启用手机号验证或微信扫码。',true);methods={demoUsername:true,phonePassword:false,phoneVerification:false,wechat:false,recovery:false};}updateIdentityControls();}
   async function wechatCall(name,arg,at){const result=await api[name](arg);if(at!==wechatEpoch)throw {code:'STALE_WECHAT'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message',result.error.message||'登录已失效，请重新登录。',true);}throw result?.error||{message:'微信授权暂时无法完成，请重新开始。'};}return result.value;}
@@ -111,6 +112,73 @@
   byId('account-sessions-more').addEventListener('click',()=>void loadAccountSessions(true));
   byId('account-sessions-revoke-others').addEventListener('click',()=>void revokeAccountSessions('revokeOtherSessions'));
   byId('account-sessions-revoke-all').addEventListener('click',()=>void revokeAccountSessions('revokeAllSessions'));
+  function passwordChangeApiReady(){return typeof api?.changeOwnPassword==='function';}
+  function passwordChangePending(){return !!passwordChangeMutation&&sameAccountSessionsActor(passwordChangeMutation.actor);}
+  function currentPasswordChangeView(at,actor){return at===passwordChangeEpoch&&sameAccountSessionsActor(actor)&&byId('password-change-panel').open;}
+  function clearPasswordChangeInputs(){for(const id of ['password-change-current','password-change-new','password-change-confirm'])byId(id).value='';}
+  function updatePasswordChangeControls(){
+    const ready=!!session&&passwordChangeApiReady()&&byId('password-change-panel').open,locked=busy||passwordChangePending();
+    for(const id of ['password-change-current','password-change-new','password-change-confirm'])byId(id).disabled=!ready||locked;
+    byId('password-change-submit').disabled=!ready||locked||['password-change-current','password-change-new','password-change-confirm'].some(id=>!byId(id).value);
+    // Clearing the local form does not promise to cancel an already submitted write.
+    byId('password-change-clear').disabled=false;
+  }
+  function resetPasswordChange(close=true){
+    passwordChangeEpoch++;clearPasswordChangeInputs();message('password-change-message','');
+    if(!passwordChangePending())passwordChangeMutation=null;
+    if(close)byId('password-change-panel').open=false;updatePasswordChangeControls();
+  }
+  function passwordChangeUncertain(error){return !error?.code||['SERVICE_UNAVAILABLE','INVALID_RESPONSE','OPERATION_FAILED'].includes(error.code)||(typeof error.code==='string'&&error.code.startsWith('HTTP_5'));}
+  async function submitPasswordChange(event){
+    event.preventDefault();if(!session||busy||passwordChangePending()||!passwordChangeApiReady()||!byId('password-change-panel').open)return;
+    const currentPassword=byId('password-change-current').value,newPassword=byId('password-change-new').value,confirmation=byId('password-change-confirm').value;
+    let invalid='';
+    if(!currentPassword||!newPassword||!confirmation)invalid='请填写当前密码、新密码和确认新密码。';
+    else if([...newPassword].length<12||[...newPassword].length>128)invalid='新密码需12至128个字符，请重新填写。';
+    else if(newPassword!==confirmation)invalid='两次输入的新密码不一致，请重新填写。';
+    if(invalid){clearPasswordChangeInputs();message('password-change-message',invalid,true);updatePasswordChangeControls();return;}
+    const at=passwordChangeEpoch,actor=accountSessionsActor(),operation={actor};passwordChangeMutation=operation;updatePasswordChangeControls();message('password-change-message','正在验证当前密码并修改密码…');
+    let failureMessage='',failureUncertain=false;
+    try{
+      const result=await api.changeOwnPassword({currentPassword,newPassword});
+      // A prior login's 401 or success must not clear a newer account generation.
+      if(!sameAccountSessionsActor(actor))return;
+      if(!result?.ok){
+        if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message',result.error.message||'当前登录已失效，请重新登录。',true);return;}
+        throw result?.error||{code:'INVALID_RESPONSE'};
+      }
+      if(result.value?.signedOut!==true)throw {code:'INVALID_RESPONSE'};
+      // Even a closed panel must honor a confirmed password change for this login.
+      showLogin();message('login-message','密码已修改，全部旧登录已退出，请使用新密码重新登录。');
+    }catch(error){
+      if(!sameAccountSessionsActor(actor))return;
+      failureUncertain=passwordChangeUncertain(error);
+      failureMessage=failureUncertain?'未能确认改密结果；已提交的请求可能已完成，可用新密码重新登录核对。':error.message||'改密请求未通过，请核对后重试。';
+      if(currentPasswordChangeView(at,actor))message('password-change-message',failureMessage,true);
+    }finally{
+      if(passwordChangeMutation===operation)passwordChangeMutation=null;
+      if(sameAccountSessionsActor(actor)){
+        clearPasswordChangeInputs();updatePasswordChangeControls();
+        if(at!==passwordChangeEpoch&&failureMessage){
+          if(byId('password-change-panel').open)message('password-change-message',failureMessage,true);
+          else message('workspace-message',failureMessage,failureUncertain);
+        }
+      }
+    }
+  }
+  function closePasswordChange(close=true){const pending=passwordChangePending();resetPasswordChange(close);if(pending&&session)message('workspace-message','已清除改密输入；已提交的请求仍可能完成，可用新密码重新登录核对。');}
+  byId('password-change-panel').querySelector('summary').addEventListener('click',()=>{if(byId('password-change-panel').open)closePasswordChange(false);});
+  byId('password-change-panel').addEventListener('toggle',()=>{
+    if(byId('password-change-panel').open){
+      // Native opening is synchronous but toggle is queued: never erase new input.
+      if(passwordChangePending())message('password-change-message','改密请求仍在处理中，请稍候核对。');
+      else if(!passwordChangeApiReady())message('password-change-message','当前桌面改密接口尚未就绪，请更新后重试。',true);
+      updatePasswordChangeControls();
+    }else closePasswordChange(false);
+  });
+  for(const id of ['password-change-current','password-change-new','password-change-confirm'])byId(id).addEventListener('input',updatePasswordChangeControls);
+  byId('password-change-form').addEventListener('submit',event=>void submitPasswordChange(event));
+  byId('password-change-clear').addEventListener('click',()=>closePasswordChange());
   function onboardingApiReady(){return ['getOnboardingStatus','previewEmployeeInvitation','requestEmployeeActivation','activateEmployee'].every(name=>typeof api?.[name]==='function');}
   function updateOnboardingControls(){
     const ready=onboardingReady&&onboardingApiReady(),proof=!!activationChallenge&&activationChallenge.expiresAt>Date.now();
@@ -212,7 +280,7 @@
   byId('wechat-cancel').addEventListener('click',()=>{if(!wechatActive())return;resetWechat();terminalWechat('canceled','本次微信授权已取消，可重新开始。');});
   byId('wechat-link-submit').addEventListener('click',async()=>{if(busy||wechatWorking||wechatState!=='binding_required')return;if(wechatExpiresAt&&wechatExpiresAt<=Date.now()){terminalWechat('expired','本次微信授权已过期，请重新开始。',true);return;}const phone=byId('wechat-link-phone').value,password=byId('wechat-link-password').value;if(!phone.trim()||!password){message('wechat-status','请填写本人现有账号的已验证手机号和密码。',true);return;}const at=wechatEpoch;wechatState='linking';wechatWorking=true;message('wechat-status','正在验证账号并确认关联…');updateIdentityControls();try{await applyWechatResult(await wechatCall('linkWechatAccount',{phone,password},at),at);}catch(error){if(at===wechatEpoch){if(['HTTP_410','TRANSACTION_EXPIRED'].includes(error.code))terminalWechat('expired','本次微信授权已过期，请重新开始。',true);else if(error.code==='WECHAT_NOT_LINKABLE'){resetWechat();terminalWechat('failed','本次微信授权状态已改变，请重新开始。',true);}else{wechatState='binding_required';message('wechat-status',error.message||'关联未完成，请核对账号后重试或取消。',true);}}}finally{if(at===wechatEpoch){byId('wechat-link-password').value='';wechatWorking=false;updateIdentityControls();}}});
   for(const id of ['wechat-link-phone','wechat-link-password'])byId(id).addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();byId('wechat-link-submit').click();}});
-  window.addEventListener('beforeunload',()=>{resetAccountSessions();resetWechat();resetActivation(true,true);resetInvitations();});
+  window.addEventListener('beforeunload',()=>{resetAccountSessions();resetPasswordChange();resetWechat();resetActivation(true,true);resetInvitations();});
   function detailEmpty(){const wrap=el('div',undefined,'detail-empty');wrap.append(el('span','▤','empty-symbol'),el('h2','从左侧选择任务'),el('p','任务要求和你的提交记录将在这里显示。'));byId('task-detail').replaceChildren(wrap);}
   function statusChip(status){return el('span',statuses[status]||'状态待核对','status-chip '+status);}
   function renderTasks(){const list=byId('task-list');list.replaceChildren();byId('task-count').textContent=tasks.length?tasks.length+' 项已加载':'';byId('load-more').hidden=!hasMore;
@@ -230,7 +298,7 @@
   async function selectTask(taskId){const at=++viewEpoch;setBusy(true);message('workspace-message','正在读取任务…');try{const key={teamId,taskId};const [detail,history]=await Promise.all([call('getTask',key),call('getSubmissions',key)]);if(at!==viewEpoch)return;selected=detail.task;submissions=history.submissions;revision=history.revision;renderTasks();renderDetail();message('workspace-message','只展示当前任务和你的提交记录。');}catch(error){if(at===viewEpoch){selected=null;submissions=[];renderDetail();message('workspace-message',error.message,true);}}finally{if(at===viewEpoch){setBusy(false);renderDetail();}}}
   async function uploadSelected(){if(!selected||busy)return;const taskId=selected.id,at=viewEpoch;setBusy(true);message('workspace-message','请选择资料；确认后将提交至本机团队服务。');try{const result=await call('chooseAndUpload',{teamId,taskId,revision});if(at!==viewEpoch)return;if(result.canceled){message('workspace-message','已取消，未提交资料。');return;}await selectTask(taskId);if(selected){const updated=tasks.find(task=>task.id===taskId);if(updated)updated.status=selected.status;renderTasks();}message('workspace-message','资料已提交，原件与提交记录已保存。');}catch(error){message('workspace-message',error.message,true);}finally{setBusy(false);renderDetail();}}
   async function downloadItem(attachmentId){if(!selected||busy)return;setBusy(true);message('workspace-message','正在核验原件下载权限…');try{const result=await call('downloadAttachment',{teamId,taskId:selected.id,attachmentId});message('workspace-message',result.canceled?'已取消，未保存副本。':'原件副本已保存：'+result.filename);}catch(error){message('workspace-message',error.message,true);}finally{setBusy(false);renderDetail();}}
-  async function enter(value){accountIdentityEpoch++;resetAccountSessions();resetWechat(false);resetActivation(true,true);resetInvitations();session=value;viewEpoch++;clearPhoneProof();message('phone-bind-message','');byId('phone-bind-panel').open=false;byId('login-view').hidden=true;byId('workspace-view').hidden=false;byId('session-actions').hidden=false;byId('account-name').textContent=session.account.displayName;byId('password').value='';const select=byId('team-select');select.replaceChildren();for(const member of session.memberships){const option=el('option',member.teamId);option.value=member.teamId;select.append(option);}teamId=session.memberships[0]?.teamId||'';updateRole();void loadIdentityMethods();void loadOnboardingStatus();void loadInvitationAccess();if(teamId)await loadTasks();else{tasks=[];renderTasks();detailEmpty();message('workspace-message','当前账号尚未加入可用团队。');}}
+  async function enter(value){accountIdentityEpoch++;resetAccountSessions();resetPasswordChange();resetWechat(false);resetActivation(true,true);resetInvitations();session=value;viewEpoch++;clearPhoneProof();message('phone-bind-message','');byId('phone-bind-panel').open=false;byId('login-view').hidden=true;byId('workspace-view').hidden=false;byId('session-actions').hidden=false;byId('account-name').textContent=session.account.displayName;byId('password').value='';const select=byId('team-select');select.replaceChildren();for(const member of session.memberships){const option=el('option',member.teamId);option.value=member.teamId;select.append(option);}teamId=session.memberships[0]?.teamId||'';updateRole();void loadIdentityMethods();void loadOnboardingStatus();void loadInvitationAccess();if(teamId)await loadTasks();else{tasks=[];renderTasks();detailEmpty();message('workspace-message','当前账号尚未加入可用团队。');}}
   function updateRole(){byId('role-label').textContent=labels[session?.memberships.find(member=>member.teamId===teamId)?.role]||'未指派角色';}
   byId('login-form').addEventListener('submit',async event=>{event.preventDefault();if(busy)return;resetWechat();resetActivation(true,true);const phoneMode=byId('login-mode').value==='phone';if(phoneMode&&(!methodsReady||!methods.phonePassword)){message('login-message','手机号登录尚未开放。',true);return;}setBusy(true);message('login-message','正在登录…');try{const value=await call(phoneMode?'loginPhone':'login',phoneMode?{phone:byId('username').value,password:byId('password').value}:{username:byId('username').value,password:byId('password').value});message('login-message','');await enter(value);}catch(error){message('login-message',error.message,true);}finally{byId('password').value='';setBusy(false);}});
   byId('login-mode').addEventListener('change',()=>{resetWechat();resetActivation(true,true);byId('username').value='';byId('password').value='';clearPhoneProof();message('login-message','');byId('username').placeholder=byId('login-mode').value==='phone'?'输入已验证绑定的手机号':'输入团队账号';byId('username').inputMode=byId('login-mode').value==='phone'?'tel':'text';});
@@ -238,7 +306,7 @@
   byId('send-bind-code').addEventListener('click',async()=>{if(busy||!session)return;if(!methodsReady||!methods.phoneVerification){message('phone-bind-message','短信验证服务尚未开通，未发送验证码。',true);return;}const at=viewEpoch,phone=byId('bind-phone').value;clearPhoneProof(false);setBusy(true);message('phone-bind-message','正在请求短信验证…');try{const result=await call('requestPhoneBind',{phone});if(at!==viewEpoch||byId('bind-phone').value!==phone)return;challengeId=result.challengeId;challengeExpiresAt=result.expiresAt;challengePhone=phone;message('phone-bind-message','验证码发送请求已完成，请填写收到的验证码及当前账号密码。');}catch(error){if(at===viewEpoch)message('phone-bind-message',error.message,true);}finally{if(at===viewEpoch)setBusy(false);}});
   byId('phone-bind-form').addEventListener('submit',async event=>{event.preventDefault();if(busy||!session)return;if(!challengeId||challengeExpiresAt<=Date.now()||byId('bind-phone').value!==challengePhone){clearPhoneProof(false);message('phone-bind-message','本次验证码已失效，请重新获取。',true);return;}const at=viewEpoch,proof={challengeId,code:byId('bind-code').value,currentPassword:byId('bind-current-password').value};let completed=false;setBusy(true);try{const result=await call('bindPhone',proof);if(at!==viewEpoch)return;completed=true;message('phone-bind-message','手机号已验证并绑定：'+result.phoneMasked);}catch(error){if(at===viewEpoch)message('phone-bind-message',error.message,true);}finally{if(at===viewEpoch){if(completed)clearPhoneProof();else{byId('bind-code').value='';byId('bind-current-password').value='';}setBusy(false);}}});
   byId('logout').addEventListener('click',async()=>{if(busy)return;setBusy(true);try{await call('logout');showLogin();message('login-message','已退出，当前窗口中的账号和任务资料已清除。');}catch(error){showLogin();message('login-message',error.message,true);}finally{setBusy(false);}});
-  byId('refresh').addEventListener('click',()=>{void loadInvitationAccess();loadTasks();});byId('load-more').addEventListener('click',()=>loadTasks(true));byId('team-select').addEventListener('change',()=>{resetAccountSessions();teamId=byId('team-select').value;updateRole();void loadInvitationAccess();loadTasks();});byId('search-form').addEventListener('submit',event=>{event.preventDefault();loadTasks();});
+  byId('refresh').addEventListener('click',()=>{void loadInvitationAccess();loadTasks();});byId('load-more').addEventListener('click',()=>loadTasks(true));byId('team-select').addEventListener('change',()=>{resetAccountSessions();resetPasswordChange();teamId=byId('team-select').value;updateRole();void loadInvitationAccess();loadTasks();});byId('search-form').addEventListener('submit',event=>{event.preventDefault();loadTasks();});
   if(!api){message('login-message','此页面需要审易桌面客户端，请从桌面启动入口打开。',true);byId('login-submit').disabled=true;}
   updateIdentityControls();updateOnboardingControls();if(api){void loadIdentityMethods();void loadOnboardingStatus();}
 })();

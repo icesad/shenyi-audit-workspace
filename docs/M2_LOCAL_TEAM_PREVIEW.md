@@ -1,6 +1,6 @@
 # M2：本机团队采集桌面预览
 
-日期：2026-11-15；工作项`TEAM-M2`。本文件记录实际本地实现及验收边界，不是正式产品上线说明。当前`codex/account-session-management`从邀请激活提交`d7ecc01`接续，微信桌面为`04a014b`、身份为`37476da`、桌面采集为`31b9369`，未修改既有`dist/`应用、平台账号服务或客户浏览器库。
+日期：2026-11-15；工作项`TEAM-M2`。本文件记录实际本地实现及验收边界，不是正式产品上线说明。当前`codex/personal-password-change`从会话提交`911b53a`接续，邀请激活为`d7ecc01`、微信桌面为`04a014b`、身份为`37476da`、桌面采集为`31b9369`，未修改既有`dist/`应用、平台账号服务或客户浏览器库。
 
 ## 可以验证什么
 
@@ -65,6 +65,7 @@ node server/team/dev-server.mjs --demo --data-dir D:/codex-temp/shenyi-m2-202611
 8. 桌面微信专项：`node --test tests/team-desktop-wechat.test.cjs tests/team-desktop-wechat-ui.test.cjs`；`node desktop/wechat-smoke.cjs`另验证真实Electron与随机端口真实HTTP/SQLite合成往返。后者拦截OS opener且直接派发合成HTTPS回调，不能称真实系统浏览器/微信验收。后续24项preload与4处密码清空见第9项。
 9. [员工邀请激活](EMPLOYEE_INVITATION_ACTIVATION.md)：新增8个窄操作，总计24项preload、4处密码清空。`node desktop/activation-smoke.cjs`以真实Electron/HTTP/SQLite和合成SMS走创建/撤销/本人确认/手机号登录，激活本身不授予任务、项目、附件或管理权限。新旧邀请均要求当前经理/合伙人＋独立邀请授权；误授低权限grant和降职后旧邀请均拒绝。
 10. [个人登录会话](ACCOUNT_SESSION_MANAGEMENT.md)：再增4个窄操作，当前共28项preload、5处密码清空。`node desktop/sessions-smoke.cjs`验证本人多登录、稳定非凭据ID、未知旧时间、当前密码重验和退出指定/其他/当前/全部；另一端撤销后桌面下次请求清退，他人不受影响。不是电脑绑定或生产验收。
+11. [本人改密](PERSONAL_PASSWORD_CHANGE.md)：当前共29项preload、6个form、8密码输入。`node desktop/password-smoke.cjs`在独立内存库验证旧密码错误可重试、成功全部旧会话退出、新手机号密码同身份/范围重新登录，其他用户不受影响；默认共享预览只填写清空，不提交改密，不改变演示密码。
 
 已修复的实际问题：服务端401触发退出页时旧busy状态可能使输入框永久禁用；现在退出页清空旧账号/任务DOM并解除busy，保留真实DOM回归。
 

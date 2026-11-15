@@ -99,6 +99,10 @@ M2邀请激活候选见[定向激活方案](EMPLOYEE_INVITATION_ACTIVATION.md)�
 
 M2[个人会话管理](ACCOUNT_SESSION_MANAGEMENT.md)候选已按本账号范围实现列表和当前密码重验的撤销，四角色仅管理本人安全，不扩展业务或同事权限。稳定管理ID不等于Bearer或设备ID，旧登录时间不编造；正式电脑数/并发/离线仍待M3策略确认。
 
+后续已确认前期由产品负责人（当前用户）人工审核开通团队及首管理员，员工通过邀请激活。审核流程、首管理员的团队管理权限仍需实现；不因首管理员身份默认获得审计资料、签发资格或合伙人职级，也不把该选择当成真实客户开通/收款授权。多团队、所有权移交及恢复细则继续待确认。
+
+[本人改密](PERSONAL_PASSWORD_CHANGE.md)候选已接桌面，旧密码错误可重试、确认成功后全部旧登录退出，8处秘密输入清空；默认SMS缺席不阻断当前密码修改，不混同短信找回。
+
 安全实现参考：[OWASP Password Storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)、[Authorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html)、[Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)，2026-11-15 核验。具体依赖版本在实际选型时复核。
 
 ## 6. 桌面端和电脑绑定

@@ -6,6 +6,8 @@ M2新增独立账号、本机HTTP、定向邀请、原件提交与版本控制�
 
 [个人会话管理](../../docs/ACCOUNT_SESSION_MANAGEMENT.md)由`session-schema.sql`/`sessions-api.mjs`提供稳定非凭据管理ID、本人有效会话分页及当前密码重验后的指定/其他/全部退出。旧会话不改token/期限/状态、不推算时间，所有登录方式统一发放元数据；不暴露摘要或同事数据。此项与业务角色授权、M3设备绑定分别验证。
 
+[本人改密](../../docs/PERSONAL_PASSWORD_CHANGE.md)沿用`/api/auth/password`，错密403可重试，请求体后/事务中重查同一发起账号；CAS更新与全部旧会话撤销原子，不更换手机号/角色。没有新schema或真实用户密码操作；默认SMS缺席不影响当前密码验证。
+
 状态：隔离的本机合成数据实验；没有挂载到既有网页/Sites服务，不对公网监听。不能用它声称生产登录、设备绑定、订阅或团队软件已经完成。
 
 架构见 [ADR 0001](../../docs/adr/0001-team-runtime.md)，产品权限见 [团队需求](../../docs/TEAM_PRODUCT_REQUIREMENTS.md)。当前工作项为 `TEAM-M2`，M1为已交付读取原型。
