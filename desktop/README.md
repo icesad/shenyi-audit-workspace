@@ -38,7 +38,7 @@ Windows预览用户数据默认放`D:/codex-temp/shenyi-desktop-preview`，可�
 
 - renderer只加载`shenyi://app/index.html`，资源映射限固定HTML/CSS/JS/原标识；严格CSP，不开放网络、iframe、动态外链和通用文件协议。
 - `nodeIntegration:false`、`contextIsolation:true`、`sandbox:true`，不关闭webSecurity；权限请求、新窗口、外部导航、webview和renderer下载拒绝。
-- preload共暴露49个窄操作：8个账号/采集、4个手机号/能力、4个微信事务、8个邀请/激活、4个个人会话、1个本人改密、8个人工开通/首管理员、2个找回密码、5个恢复审批、4个任务管理及1个提交能力操作。每个IPC均检查当前窗口、主frame与固定页面来源；没有通用fetch/IPC、路径读写、URL打开或命令执行。renderer无法指定外链。
+- preload共暴露54个窄操作：8个账号/采集、4个手机号/能力、4个微信事务、8个邀请/激活、4个个人会话、1个本人改密、8个人工开通/首管理员、2个找回密码、5个恢复审批、4个任务管理、1个提交能力及5个成员停用操作。每个IPC均检查当前窗口、主frame与固定页面来源；没有通用fetch/IPC、路径读写、URL打开或命令执行。renderer无法指定外链。
 - main固定API地址、禁止重定向、超时/响应体限额。token不回renderer、不写localStorage；响应只保留账号/任务/提交的明确字段。迟到的旧账号响应拒绝。
 - 上传文件只能来自用户原生对话框选择，读取前检查常规文件及12MiB上限，按原始字节提交；renderer不能传本机文件路径。下载只在授权后通过原生保存对话框指定路径，不向renderer下发原件字节或路径。
 - 对话框期间账号变化会取消旧账号操作。退出/401清空账号、团队、任务与输入状态，登录表单解除busy。已合法保存的文件不能承诺远程追回。
@@ -59,9 +59,10 @@ node recovery-review-smoke.cjs
 node task-management-smoke.cjs
 node upload-preflight-smoke.cjs
 node download-preflight-smoke.cjs
+node member-deactivation-smoke.cjs
 ```
 
-第一项需要根项目锁文件的jsdom；覆盖HTTP客户端和IPC/文件边界、真实DOM的撤销后再登录及XSS文本呈现，并检查身份能力、首绑状态清理、49项白名单及未配置入口。微信专项另见`tests/team-desktop-wechat.test.cjs`和`team-desktop-wechat-ui.test.cjs`。第二项只对本机合成服务，用`assistant-b`执行一次真实上传/下载/哈希/退出，会改变该合成任务状态，应使用新演示数据目录。第三项需要根项目Playwright和已安装Electron，运行真实Electron renderer的登录/任务/退出和安全偏好检查；截图/报告写到`D:/codex-temp/shenyi-desktop-runtime`或`SHENYI_DESKTOP_EVIDENCE_DIR`。
+第一项需要根项目锁文件的jsdom；覆盖HTTP客户端和IPC/文件边界、真实DOM的撤销后再登录及XSS文本呈现，并检查身份能力、首绑状态清理、54项白名单及未配置入口。微信专项另见`tests/team-desktop-wechat.test.cjs`和`team-desktop-wechat-ui.test.cjs`。第二项只对本机合成服务，用`assistant-b`执行一次真实上传/下载/哈希/退出，会改变该合成任务状态，应使用新演示数据目录。第三项需要根项目Playwright和已安装Electron，运行真实Electron renderer的登录/任务/退出和安全偏好检查；截图/报告写到`D:/codex-temp/shenyi-desktop-runtime`或`SHENYI_DESKTOP_EVIDENCE_DIR`。
 
 第四项以Node24运行真实Electron＋隔离内存SQLite/随机端口HTTP，供应商明确合成；仅测试bootstrap重写client transport映射和浏览器opener，生产main/preload/renderer及服务处理器沿用。记录opener调用收据、直接派发合成HTTPS回调，再走真实HTTP轮询/关联/兑换；不访问微信、不展示假二维码、不修改共享demo。默认结果在`D:/codex-temp/shenyi-wechat-desktop-20261115/real-electron-synthetic/`。首次关联、再次登录、取消回调拒绝和过期通过也不等于OS浏览器、手机或微信平台验收。
 
@@ -84,5 +85,7 @@ node download-preflight-smoke.cjs
 第十二项验证[上传前置授权](../docs/UPLOAD_PREFLIGHT.md)：只读管理者按钮禁用且强制RPC也不打开picker；本人指派可提交。三次fresh能力/同版本/同账号检查分别在选择前、读取前和传输前执行，最后POST仍核权/CAS。真实Electron专项只拦截明确合成fixture的picker，记录取消、选择期间版本/撤权/冻结和原件hash证据，不接共享演示库。
 
 第十三项验证[原件副本保存前授权](../docs/DOWNLOAD_PREFLIGHT.md)：main GET后只在确认保存路径、fresh HEAD仍有附件权限且同一登录代次时写副本；取消/撤附件权限/撤会话均零写入。双窗口Electron＋隔离落盘SQLite及合成原件，normal服务/main/disk三方字节与hash一致，401回登录并清资料，保存框为明确测试拦截。网络核权和本地IO非原子，不能收回已合法副本；仍49窄IPC。
+
+第十四项验证[成员停用](../docs/MEMBER_DEACTIVATION.md)：独立technicaladmin管理本团队业务成员，独立member.disable owner处理管理员。审核入口显式增加administrator-demo、access-reviewer-demo，合成密码同ShenyiDemo!2026；普通9用户不增权，review13用户。两身份都无审计membership或资料grant。四窗口原生验证错密可重试、停intern阻止挂起保存、停partner、owner停管理员及旧登录401清空，原件/历史保留，3专用audit事件一致；保存框明确为测试拦截。总54操作、10form/16密码输入，重启不会自动复活已停用账号。
 
 官方来源：[Electron安全](https://www.electronjs.org/docs/latest/tutorial/security)、[protocol](https://www.electronjs.org/docs/latest/api/protocol)、[进程模型](https://www.electronjs.org/docs/latest/tutorial/process-model)、[发布记录](https://releases.electronjs.org/release?channel=stable)，2026-11-15核验。

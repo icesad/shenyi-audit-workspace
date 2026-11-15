@@ -6,7 +6,7 @@ const APP_URL = 'shenyi://app/index.html';
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 function input(value, keys) {
   if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some(key=>!keys.includes(key))) throw Error('操作参数无效。');
-  for (const key of ['teamId','taskId','attachmentId']) if (keys.includes(key) && (typeof value[key]!=='string'||!ID.test(value[key]))) throw Error('任务标识无效。');
+  for (const key of ['teamId','taskId','attachmentId','userId']) if (keys.includes(key) && (typeof value[key]!=='string'||!ID.test(value[key]))) throw Error('任务或成员标识无效。');
   return value;
 }
 async function readChosenFile(filename) {
@@ -40,6 +40,11 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('recovery-challenge',arg=>client.requestPasswordRecovery(input(arg,['phone'])));
   handle('recovery-complete',arg=>client.recoverPassword(input(arg,['challengeId','code','newPassword','recoveryProof'])));
   const noArgs=arg=>{if(arg!==undefined)throw Error('操作参数无效。');};
+  handle('member-management-access',arg=>{noArgs(arg);return client.getMemberManagementAccess();});
+  handle('business-members',arg=>client.listTeamBusinessMembers(input(arg,['teamId','q','after','limit'])));
+  handle('team-administrators',arg=>client.listTeamAdministrators(input(arg===undefined?{}:arg,['q','after','limit'])));
+  handle('business-member-disable',arg=>client.disableTeamBusinessMember(input(arg,['teamId','userId','revision','currentPassword'])));
+  handle('team-administrator-disable',arg=>client.disableTeamAdministrator(input(arg,['teamId','userId','revision','currentPassword'])));
   handle('recovery-review-status',arg=>{noArgs(arg);return client.getRecoveryReviewStatus();});
   handle('recovery-review-create',arg=>client.createRecoveryReviewRequest(input(arg,['challengeId','code'])));
   handle('recovery-review-access',arg=>{noArgs(arg);return client.getRecoveryReviewAccess();});

@@ -61,6 +61,22 @@ function taskMemberView(value){
   if(!value||typeof value.id!=='string'||!ID.test(value.id)||typeof value.displayName!=='string'||!value.displayName.isWellFormed()||!value.displayName.trim()||[...value.displayName].length>80||/[\p{Cc}\p{Cf}]/u.test(value.displayName)||!ROLES.has(value.role))throw failure('INVALID_RESPONSE','任务分工成员资料格式无效。');return {id:value.id,displayName:value.displayName,role:value.role};
 }
 function taskRevisionInput(value){if(!Number.isSafeInteger(value)||value<0||value>=Number.MAX_SAFE_INTEGER)throw failure('INVALID_INPUT','请刷新任务后再提交分工或退回。');return value;}
+function memberText(value){return typeof value==='string'&&value.isWellFormed()&&!!value.trim()&&[...value].length<=80&&!/[\p{Cc}\p{Cf}]/u.test(value);}
+function memberView(value,administrator){
+  if(!value||typeof value.id!=='string'||!ID.test(value.id)||!memberText(value.displayName)||!['active','disabled'].includes(value.status)||!Number.isSafeInteger(value.revision)||value.revision<0||(administrator?value.role!=='administrator':!ROLES.has(value.role)))throw failure('INVALID_RESPONSE','成员状态格式无效，请刷新后核对。');
+  const result={id:value.id,displayName:value.displayName,role:value.role,status:value.status,revision:value.revision};
+  if(administrator){if(typeof value.teamId!=='string'||!ID.test(value.teamId)||!memberText(value.teamName))throw failure('INVALID_RESPONSE','管理员团队资料格式无效。');result.teamId=value.teamId;result.teamName=value.teamName;}
+  return result;
+}
+function memberQuery(input,keys){
+  exactKeys(input,keys);const limit=input.limit??20,params=new URLSearchParams();
+  if(!Number.isSafeInteger(limit)||limit<1||limit>50||input.q!==undefined&&(typeof input.q!=='string'||!input.q.isWellFormed()||input.q.length>80||/[\p{Cc}\p{Cf}]/u.test(input.q)))throw failure('INVALID_INPUT','请使用80个字符以内的姓名搜索，每次最多读取50人。');
+  if(input.q!==undefined)params.set('q',input.q);if(input.after!==undefined)params.set('after',id(input.after));if(input.limit!==undefined)params.set('limit',String(limit));return {limit,suffix:params.size?'?'+params:''};
+}
+function memberPage(data,limit,administrator){
+  if(!Array.isArray(data?.members)||data.members.length>limit||typeof data.hasMore!=='boolean'||data.hasMore&&data.members.length!==limit)throw failure('INVALID_RESPONSE','成员列表格式无效，请刷新后核对。');
+  const members=data.members.map(value=>memberView(value,administrator));if(new Set(members.map(value=>value.id)).size!==members.length)throw failure('INVALID_RESPONSE','成员列表格式无效，请刷新后核对。');return {members,hasMore:data.hasMore};
+}
 function submissionView(item) {
   if (!item || !ID.test(item.id) || !ID.test(item.attachmentId) || typeof item.filename !== 'string' || !/^[a-f0-9]{64}$/i.test(item.sha256) || !Number.isSafeInteger(item.byteLength) || item.byteLength < 0 || item.byteLength > MAX_FILE_BYTES || !Number.isSafeInteger(item.createdAt)) throw failure('INVALID_RESPONSE', '提交记录返回格式无效。');
   return {id: item.id, attachmentId: item.attachmentId, filename: item.filename, sha256: item.sha256, byteLength: item.byteLength, createdAt: item.createdAt};
@@ -129,7 +145,22 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   const invitationPath=teamId=>'/api/teams/'+id(teamId)+'/employee-invitations';
   function activationTarget(input,keys){exactKeys(input,keys);if(token)throw failure('SIGN_OUT_REQUIRED','请先退出当前账号再激活受邀账号。');return {invitationCode:invitationCodeInput(input.invitationCode),phone:phoneInput(input.phone)};}
   function path(teamId, taskId) { return `/api/teams/${id(teamId)}/collection/tasks${taskId ? '/' + id(taskId) : ''}`; }
+  const membersRequest=(route,options)=>request(route,{...options,messagesOverride:{400:'停用资料无效，请核对后重试。',403:'当前密码验证未通过，请核对后重试。',404:'无法访问该成员或当前操作未获授权。',409:'成员、分工或授权状态已改变，请刷新列表后核对。'}});
+  async function disableMember(input,administrator){
+    exactKeys(input,['teamId','userId','revision','currentPassword']);if(!Number.isSafeInteger(input.revision)||input.revision<0||input.revision>=Number.MAX_SAFE_INTEGER)throw failure('INVALID_INPUT','请刷新成员状态后再停用。');
+    const route='/api/teams/'+id(input.teamId)+'/'+(administrator?'administrators':'business-members')+'/'+id(input.userId)+'/disable';
+    const data=await membersRequest(route,{method:'POST',body:{revision:input.revision,currentPassword:securityPasswordInput(input.currentPassword)}});if(data?.disabled!==true)throw failure('INVALID_RESPONSE','无法确认停用结果，请刷新成员列表核对。');return {disabled:true};
+  }
   return Object.freeze({
+    async getMemberManagementAccess(input){
+      if(input!==undefined)throw failure('INVALID_INPUT','成员管理权限不接受额外参数。');const data=await membersRequest('/api/auth/member-management/access');
+      if(!Array.isArray(data?.teams)||data.teams.length>100||typeof data.canReviewAdministrators!=='boolean')throw failure('INVALID_RESPONSE','成员管理权限状态无效。');
+      const teams=data.teams.map(team=>{if(typeof team?.teamId!=='string'||!ID.test(team.teamId)||!memberText(team.teamName))throw failure('INVALID_RESPONSE','成员管理团队格式无效。');return {teamId:team.teamId,teamName:team.teamName};});if(new Set(teams.map(team=>team.teamId)).size!==teams.length)throw failure('INVALID_RESPONSE','成员管理团队格式无效。');return {teams,canReviewAdministrators:data.canReviewAdministrators};
+    },
+    async listTeamBusinessMembers(input){const {limit,suffix}=memberQuery(input,['teamId','q','after','limit']);return memberPage(await membersRequest('/api/teams/'+id(input.teamId)+'/business-members'+suffix),limit,false);},
+    async listTeamAdministrators(input={}){const {limit,suffix}=memberQuery(input,['q','after','limit']);return memberPage(await membersRequest('/api/administration/team-administrators'+suffix),limit,true);},
+    disableTeamBusinessMember:input=>disableMember(input,false),
+    disableTeamAdministrator:input=>disableMember(input,true),
     async getTaskManagement(input){
       exactKeys(input,['teamId','taskId']);const data=await request(path(input.teamId,input.taskId)+'/management');if(typeof data?.canManage!=='boolean')throw failure('INVALID_RESPONSE','任务管理权限状态无效。');if(!data.canManage)return {canManage:false};
       if(!Number.isSafeInteger(data.revision)||data.revision<0||!['open','submitted','returned','closed'].includes(data.status)||!Array.isArray(data.assignees)||data.assignees.length>50||typeof data.hasMoreAssignees!=='boolean'||(data.hasMoreAssignees&&data.assignees.length!==50))throw failure('INVALID_RESPONSE','任务分工状态格式无效。');

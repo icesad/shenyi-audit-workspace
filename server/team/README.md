@@ -20,6 +20,8 @@ M2新增独立账号、本机HTTP、定向邀请、原件提交与版本控制�
 
 [原件副本保存复查](../../docs/DOWNLOAD_PREFLIGHT.md)让现附件路径支持HEAD，与GET共用session/team/task/独立附件grant SQL，仅读取附件名，不materialize bytes。HEAD全部结果空body，其他采集接口仍GET；main保存选框后fresh HEAD＋同generation才写副本，无新schema或preload操作，原件GET字节及冻结可读不变。
 
+[成员停用](../../docs/MEMBER_DEACTIVATION.md)由member-access-api/policy/schema提供：技术管理员仅本team单历史归属业务成员，管理员仅新member.disable授权owner；新2表/3epoch trigger，body/KDF/txn复核、任务版本CAS、会话/grant及在途授权失效、专用audit同事务，原件/身份映射/历史保留。新owner加入普通恢复链保护；未开放自授权或重新启用。review-only seed新增两独立合成身份，普通seed不增权。
+
 状态：隔离的本机合成数据实验；没有挂载到既有网页/Sites服务，不对公网监听。不能用它声称生产登录、设备绑定、订阅或团队软件已经完成。
 
 架构见 [ADR 0001](../../docs/adr/0001-team-runtime.md)，产品权限见 [团队需求](../../docs/TEAM_PRODUCT_REQUIREMENTS.md)。当前工作项为 `TEAM-M2`，M1为已交付读取原型。
