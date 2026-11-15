@@ -97,6 +97,8 @@
 
 M2邀请激活候选见[定向激活方案](EMPLOYEE_INVITATION_ACTIVATION.md)：当前经理/合伙人＋独立邀请授权的交集才可邀请实习生/助理，低权限误授grant也不越过采集边界。新员工本人验证设密，既有无团队账号须当前密码复用；已有任意成员归属保守拒绝新增，不把它当成已批准的多团队商业政策。真实SMS、团队创建/首管理员及所有权恢复仍需各自完成，激活不自动分配业务资料或付费席位。
 
+M2[个人会话管理](ACCOUNT_SESSION_MANAGEMENT.md)候选已按本账号范围实现列表和当前密码重验的撤销，四角色仅管理本人安全，不扩展业务或同事权限。稳定管理ID不等于Bearer或设备ID，旧登录时间不编造；正式电脑数/并发/离线仍待M3策略确认。
+
 安全实现参考：[OWASP Password Storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)、[Authorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html)、[Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)，2026-11-15 核验。具体依赖版本在实际选型时复核。
 
 ## 6. 桌面端和电脑绑定

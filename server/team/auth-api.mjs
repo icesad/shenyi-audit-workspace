@@ -1,4 +1,4 @@
-import {createHash, randomBytes} from 'node:crypto';
+import {createHash, randomBytes, randomUUID} from 'node:crypto';
 import {hashPassword, verifyPassword, validPassword} from './passwords.mjs';
 import {readSession} from './repository.mjs';
 import {ApiError, json, readJson, invalid, getBearer, transaction} from './http-utils.mjs';
@@ -36,11 +36,22 @@ export async function limitedPasswordWork(db, action) {
   work.set(db, busy + 1);
   try { return await action(); } finally { work.set(db, work.get(db) - 1); }
 }
+/** Stable, non-credential management IDs; never invent legacy creation times. */
+export function ensureSessionMetadata(db, userId) {
+  const rows=db.prepare(`SELECT session.token_hash FROM team_sessions AS session
+    LEFT JOIN team_session_metadata AS metadata ON metadata.token_hash=session.token_hash
+    WHERE metadata.token_hash IS NULL${userId===undefined?'':' AND session.user_id=?'}`)
+    .all(...(userId===undefined?[]:[userId]));
+  const insert=db.prepare('INSERT INTO team_session_metadata(session_id,token_hash,created_at) VALUES (?,?,NULL) ON CONFLICT(token_hash) DO NOTHING');
+  for(const row of rows)insert.run(randomUUID(),row.token_hash);
+}
 /** Must be called after authoritative identity checks, within a transaction. */
 export function issueSession(db, userId, at) {
   if (!db.prepare("SELECT 1 FROM team_users WHERE user_id=? AND status='active'").get(userId)) signInRequired();
   const token=randomBytes(32).toString('base64url'),expiresAt=at+8*60*60_000;
-  db.prepare('INSERT INTO team_sessions VALUES (?,?,?,NULL)').run(digest(token),userId,expiresAt);
+  const tokenHash=digest(token);
+  db.prepare('INSERT INTO team_sessions VALUES (?,?,?,NULL)').run(tokenHash,userId,expiresAt);
+  db.prepare('INSERT INTO team_session_metadata(session_id,token_hash,created_at) VALUES (?,?,?)').run(randomUUID(),tokenHash,at);
   return {token,...accountView(db,{userId},expiresAt)};
 }
 
@@ -67,10 +78,9 @@ export async function handleAuthRequest(request, {db, now = Date.now}) {
         const fresh = db.prepare(`SELECT credential.password_hash,credential.revision,account.status FROM team_credentials AS credential
           JOIN team_users AS account ON account.user_id=credential.user_id WHERE credential.user_id=?`).get(row.user_id);
         if (fresh?.password_hash !== row.password_hash || fresh?.revision !== row.revision || fresh?.status !== 'active') signInRequired();
-        const token = randomBytes(32).toString('base64url'), expiresAt = now() + 8 * 60 * 60_000;
-        db.prepare('INSERT INTO team_sessions VALUES (?,?,?,NULL)').run(digest(token), row.user_id, expiresAt);
+        const session=issueSession(db,row.user_id,now());
         db.prepare('DELETE FROM team_auth_limits WHERE bucket=?').run('login:' + digest(username));
-        return json({token, ...accountView(db, {userId: row.user_id}, expiresAt)});
+        return json(session);
       });
     });
   }

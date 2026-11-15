@@ -6,6 +6,7 @@ const API_BASE = 'http://127.0.0.1:8774';
 const MAX_FILE_BYTES = 12 * 1024 * 1024;
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const ROLES = new Set(['intern', 'assistant', 'manager', 'partner']);
+const SESSION_ID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 class ClientError extends Error {
   constructor(code, message, status = 0) { super(message); this.code = code; this.status = status; }
 }
@@ -26,6 +27,12 @@ function invitationCodeInput(value){if(typeof value!=='string'||!/^[A-Za-z0-9_-]
 function invitationView(value,expectedTeam){
   if(!value||typeof value.teamId!=='string'||!ID.test(value.teamId)||(expectedTeam&&value.teamId!==expectedTeam)||!['intern','assistant'].includes(value.role)||typeof value.phoneMasked!=='string'||!/^[+0-9* ]{7,32}$/.test(value.phoneMasked)||!value.phoneMasked.includes('*')||!Number.isSafeInteger(value.expiresAt))throw failure('INVALID_RESPONSE','邀请信息格式无效。');
   return {teamId:value.teamId,role:value.role,phoneMasked:value.phoneMasked,expiresAt:value.expiresAt};
+}
+function sessionIdInput(value){if(typeof value!=='string'||!SESSION_ID.test(value))throw failure('INVALID_INPUT','登录会话标识无效，请刷新后重试。');return value;}
+function securityPasswordInput(value){passwordInput(value);if(Buffer.byteLength(value)>512)throw failure('INVALID_INPUT','当前密码内容无效，请核对后重试。');return value;}
+function sessionView(value){
+  if(!value||typeof value.id!=='string'||!SESSION_ID.test(value.id)||typeof value.isCurrent!=='boolean'||!Number.isSafeInteger(value.expiresAt)||value.expiresAt<=0||(value.createdAt!==null&&(!Number.isSafeInteger(value.createdAt)||value.createdAt<0||value.createdAt>value.expiresAt)))throw failure('INVALID_RESPONSE','登录会话列表格式无效。');
+  return {id:value.id,isCurrent:value.isCurrent,createdAt:value.createdAt,expiresAt:value.expiresAt};
 }
 function cleanSession(value) {
   if (!value?.account || typeof value.account.id !== 'string' || typeof value.account.displayName !== 'string' || !Array.isArray(value.memberships) || !Number.isSafeInteger(value.expiresAt)) throw failure('INVALID_RESPONSE', '账号服务返回格式无效。');
@@ -94,10 +101,30 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     cancelRemote:(route,body)=>detachedPost(route,body),revokeTemporary:bearer=>detachedPost('/api/auth/logout',{},bearer),
     adoptSession:data=>{if(typeof data?.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.token))throw failure('INVALID_RESPONSE','账号服务返回格式无效。');const value=cleanSession(data);current=value;token=data.token;generation++;return snapshot();}});
   const onboardingRequest=(route,options)=>request(route,{...options,unavailableMessage:'员工邀请或手机号验证服务尚未开通或暂不可用。',messagesOverride:{400:'验证内容无效，请核对后重试。',404:'邀请码或手机号无效，或邀请已失效；管理操作也可能未获授权。',409:'当前账号或邀请状态不适用于激活，请联系管理员核对。',410:'本次验证已过期，请重新获取。'}});
+  const sessionsRequest=(route,options)=>request(route,{...options,messagesOverride:{403:'当前密码验证未通过，请核对后重试。',404:'无法访问该登录会话，请刷新列表。',409:'账号或登录状态已改变，请刷新后重试。'}});
+  async function bulkRevokeSessions(input,all){
+    exactKeys(input,['currentPassword']);const data=await sessionsRequest('/api/auth/sessions/'+(all?'revoke-all':'revoke-others'),{method:'POST',body:{currentPassword:securityPasswordInput(input.currentPassword)}});
+    if(!Number.isSafeInteger(data?.revokedCount)||data.revokedCount<(all?1:0)||data.signedOut!==all)throw failure('INVALID_RESPONSE','登录退出结果格式无效。');
+    if(data.signedOut)clear();return {revokedCount:data.revokedCount,signedOut:data.signedOut};
+  }
   const invitationPath=teamId=>'/api/teams/'+id(teamId)+'/employee-invitations';
   function activationTarget(input,keys){exactKeys(input,keys);if(token)throw failure('SIGN_OUT_REQUIRED','请先退出当前账号再激活受邀账号。');return {invitationCode:invitationCodeInput(input.invitationCode),phone:phoneInput(input.phone)};}
   function path(teamId, taskId) { return `/api/teams/${id(teamId)}/collection/tasks${taskId ? '/' + id(taskId) : ''}`; }
   return Object.freeze({
+    async listAccountSessions(input={}){
+      exactKeys(input,['limit','after']);const params=new URLSearchParams(),limit=input.limit??20;
+      if(!Number.isSafeInteger(limit)||limit<1||limit>50)throw failure('INVALID_INPUT','每次只能读取1至50个登录会话。');
+      if(input.limit!==undefined)params.set('limit',String(limit));if(input.after!==undefined)params.set('after',sessionIdInput(input.after));
+      const data=await sessionsRequest('/api/auth/sessions'+(params.size?'?'+params:''));
+      if(!Array.isArray(data?.sessions)||data.sessions.length>limit||typeof data.hasMore!=='boolean'||(data.hasMore&&data.sessions.length===0))throw failure('INVALID_RESPONSE','登录会话列表格式无效。');
+      const sessions=data.sessions.map(sessionView);if(new Set(sessions.map(item=>item.id)).size!==sessions.length||sessions.filter(item=>item.isCurrent).length>1)throw failure('INVALID_RESPONSE','登录会话列表格式无效。');return {sessions,hasMore:data.hasMore};
+    },
+    async revokeAccountSession(input){
+      exactKeys(input,['sessionId','currentPassword']);const data=await sessionsRequest('/api/auth/sessions/'+sessionIdInput(input.sessionId)+'/revoke',{method:'POST',body:{currentPassword:securityPasswordInput(input.currentPassword)}});
+      if(data?.revoked!==true||typeof data.signedOut!=='boolean')throw failure('INVALID_RESPONSE','登录退出结果格式无效。');if(data.signedOut)clear();return {revoked:true,signedOut:data.signedOut};
+    },
+    revokeOtherSessions:input=>bulkRevokeSessions(input,false),
+    revokeAllSessions:input=>bulkRevokeSessions(input,true),
     async getOnboardingStatus(){const data=await onboardingRequest('/api/auth/onboarding/capabilities',{authenticated:false});if(typeof data?.available!=='boolean'||data.invitationOnly!==true)throw failure('INVALID_RESPONSE','员工激活服务状态无效。');return {available:data.available,invitationOnly:true};},
     async getInvitationAccess(input){exactKeys(input,['teamId']);const data=await onboardingRequest(invitationPath(input.teamId)+'/access');if(typeof data?.canInvite!=='boolean')throw failure('INVALID_RESPONSE','邀请权限状态无效。');return {canInvite:data.canInvite};},
     async createEmployeeInvitation(input){

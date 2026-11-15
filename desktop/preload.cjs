@@ -5,6 +5,10 @@ const invoke=(name,arg)=>ipcRenderer.invoke('shenyi:'+name,arg);
 contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   login:credentials=>invoke('login',credentials),
   getAuthMethods:()=>invoke('auth-methods'),
+  listAccountSessions:query=>invoke('account-sessions',query),
+  revokeAccountSession:proof=>invoke('account-session-revoke',proof),
+  revokeOtherSessions:proof=>invoke('account-sessions-revoke-others',proof),
+  revokeAllSessions:proof=>invoke('account-sessions-revoke-all',proof),
   getOnboardingStatus:()=>invoke('onboarding-status'),
   getInvitationAccess:team=>invoke('invitation-access',team),
   createEmployeeInvitation:invite=>invoke('invitation-create',invite),

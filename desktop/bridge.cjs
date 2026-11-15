@@ -37,6 +37,10 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   }
   handle('login',arg=>client.login(input(arg,['username','password'])));
   handle('auth-methods',()=>client.getAuthMethods());
+  handle('account-sessions',arg=>client.listAccountSessions(input(arg===undefined?{}:arg,['limit','after'])));
+  handle('account-session-revoke',arg=>client.revokeAccountSession(input(arg,['sessionId','currentPassword'])));
+  handle('account-sessions-revoke-others',arg=>client.revokeOtherSessions(input(arg,['currentPassword'])));
+  handle('account-sessions-revoke-all',arg=>client.revokeAllSessions(input(arg,['currentPassword'])));
   handle('onboarding-status',()=>client.getOnboardingStatus());
   handle('invitation-access',arg=>client.getInvitationAccess(input(arg,['teamId'])));
   handle('invitation-create',arg=>client.createEmployeeInvitation(input(arg,['teamId','phone','role'])));

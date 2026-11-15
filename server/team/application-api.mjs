@@ -5,6 +5,7 @@ import {handleTeamCollectionRequest} from './collection-api.mjs';
 import {handlePhoneRequest} from './phone-api.mjs';
 import {handleWechatRequest,isWechatConfigured} from './wechat-api.mjs';
 import {handleEmployeeInvitationRequest} from './employee-invitations-api.mjs';
+import {handleAccountSessionsRequest} from './sessions-api.mjs';
 import {ApiError, json} from './http-utils.mjs';
 
 /** Local M2 application boundary. No fake registration/phone verification. */
@@ -26,7 +27,8 @@ export async function handleTeamApplicationRequest(request, {db, now = Date.now,
       const sms=typeof identityProviders.sms?.send==='function'&&Buffer.isBuffer(identityProviders.phonePepper)&&identityProviders.phonePepper.length>=32;
       return json({mode:'local-preview',methods:{demoUsername:true,phonePassword:true,phoneVerification:sms,wechat:isWechatConfigured(identityProviders),recovery:sms&&typeof identityProviders.recovery?.authorize==='function'}});
     }
-    return await handleEmployeeInvitationRequest(request,options)
+    return await handleAccountSessionsRequest(request,options)
+      || await handleEmployeeInvitationRequest(request,options)
       || await handlePhoneRequest(request,options)
       || await handleWechatRequest(request,options)
       || await handleAuthRequest(request,options)

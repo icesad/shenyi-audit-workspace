@@ -4,6 +4,8 @@ M2新增独立账号、本机HTTP、定向邀请、原件提交与版本控制�
 
 后续新增[员工邀请与本人激活](../../docs/EMPLOYEE_INVITATION_ACTIVATION.md)：`activation-schema.sql`及`employee-invitations-api.mjs`只在隔离M2库加表/接口，新旧邀请均要求当前manager/partner＋独立member.invite。低权限误授grant仍拒绝；新账号本人验证设密，既有孤立账号必须当前密码且复用ID，不自动发会话或业务grants。未配SMS如实关闭，正式团队建立/首管理员/多团队及恢复政策未完成。
 
+[个人会话管理](../../docs/ACCOUNT_SESSION_MANAGEMENT.md)由`session-schema.sql`/`sessions-api.mjs`提供稳定非凭据管理ID、本人有效会话分页及当前密码重验后的指定/其他/全部退出。旧会话不改token/期限/状态、不推算时间，所有登录方式统一发放元数据；不暴露摘要或同事数据。此项与业务角色授权、M3设备绑定分别验证。
+
 状态：隔离的本机合成数据实验；没有挂载到既有网页/Sites服务，不对公网监听。不能用它声称生产登录、设备绑定、订阅或团队软件已经完成。
 
 架构见 [ADR 0001](../../docs/adr/0001-team-runtime.md)，产品权限见 [团队需求](../../docs/TEAM_PRODUCT_REQUIREMENTS.md)。当前工作项为 `TEAM-M2`，M1为已交付读取原型。
