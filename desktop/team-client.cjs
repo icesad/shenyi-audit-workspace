@@ -13,6 +13,14 @@ function id(value) { if (typeof value !== 'string' || !ID.test(value)) throw fai
 function exactKeys(value, keys) {
   if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some(key => !keys.includes(key))) throw failure('INVALID_INPUT', '操作参数无效。');
 }
+function phoneInput(value) {
+  if (typeof value !== 'string' || value.length > 32 || !/^(?:\+86)?1[3-9]\d{9}$/.test(value.trim())) throw failure('INVALID_INPUT', '请填写有效的中国大陆手机号。');
+  return value.trim();
+}
+function passwordInput(value) {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 1024) throw failure('INVALID_INPUT', '请填写账号密码。');
+  return value;
+}
 function cleanSession(value) {
   if (!value?.account || typeof value.account.id !== 'string' || typeof value.account.displayName !== 'string' || !Array.isArray(value.memberships) || !Number.isSafeInteger(value.expiresAt)) throw failure('INVALID_RESPONSE', '账号服务返回格式无效。');
   return {account: {id: value.account.id, displayName: value.account.displayName}, expiresAt: value.expiresAt,
@@ -43,7 +51,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch} = {
   let token = null, current = null, generation = 0;
   const clear = () => { token = null; current = null; generation++; };
   const snapshot = () => current ? structuredClone(current) : null;
-  async function request(route, {method = 'GET', body, authenticated = true, binary = false} = {}) {
+  async function request(route, {method = 'GET', body, authenticated = true, binary = false, unavailableMessage} = {}) {
     if (authenticated && !token) throw failure('SIGN_IN_REQUIRED', '请先登录。', 401);
     const at = generation, bearer = token;
     let response;
@@ -54,9 +62,9 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch} = {
     if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');
     if (response.status === 401 && authenticated) { clear(); throw failure('SIGN_IN_REQUIRED', '登录已失效，请重新登录。', 401); }
     if (!response.ok) {
-      const messages = {400:'提交内容无效，请检查后重试。',403:'当前操作未获授权。',404:'任务不存在或当前账号无权访问。',409:'任务状态或版本已更新，请刷新后重试。',413:'资料超过12 MiB，请选择较小的文件。',429:'尝试过于频繁，请稍后重试。'};
+      const messages = {400:'提交内容无效，请检查后重试。',401:'账号或密码无效，请检查后重试。',403:'当前操作未获授权。',404:'任务不存在或当前账号无权访问。',409:'任务状态或版本已更新，请刷新后重试。',413:'资料超过12 MiB，请选择较小的文件。',429:'尝试过于频繁，请稍后重试。'};
       // Do not forward arbitrary provider messages, stack traces, or response bodies.
-      throw failure(`HTTP_${response.status}`, messages[response.status] || '团队服务暂时无法完成操作。', response.status);
+      throw failure(`HTTP_${response.status}`, response.status === 503 && unavailableMessage ? unavailableMessage : messages[response.status] || '团队服务暂时无法完成操作。', response.status);
     }
     const bytes = await boundedBytes(response, binary ? MAX_FILE_BYTES : 1024 * 1024);
     if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');
@@ -66,6 +74,12 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch} = {
   }
   function path(teamId, taskId) { return `/api/teams/${id(teamId)}/collection/tasks${taskId ? '/' + id(taskId) : ''}`; }
   return Object.freeze({
+    async getAuthMethods() {
+      const data = await request('/api/auth/methods', {authenticated:false});
+      const keys=['demoUsername','phonePassword','phoneVerification','wechat','recovery'];
+      if(data?.mode!=='local-preview'||!data.methods||!keys.every(key=>typeof data.methods[key]==='boolean')) throw failure('INVALID_RESPONSE','身份服务状态格式无效。');
+      return {mode:data.mode,methods:Object.fromEntries(keys.map(key=>[key,data.methods[key]]))};
+    },
     async login(input) {
       exactKeys(input, ['username', 'password']);
       if (typeof input.username !== 'string' || input.username.length < 1 || input.username.length > 128 || typeof input.password !== 'string' || input.password.length < 1 || input.password.length > 1024) throw failure('INVALID_INPUT', '请填写账号和密码。');
@@ -75,6 +89,28 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch} = {
       if (typeof data.token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(data.token)) throw failure('INVALID_RESPONSE', '账号服务返回格式无效。');
       current = cleanSession(data); token = data.token;
       return snapshot();
+    },
+    async loginPhone(input) {
+      exactKeys(input,['phone','password']);
+      const body={phone:phoneInput(input.phone),password:passwordInput(input.password)};
+      clear();const at=generation;
+      const data=await request('/api/auth/phone/login',{method:'POST',body,authenticated:false});
+      if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新登录。');
+      if(typeof data.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.token))throw failure('INVALID_RESPONSE','账号服务返回格式无效。');
+      current=cleanSession(data);token=data.token;return snapshot();
+    },
+    async requestPhoneBind(input) {
+      exactKeys(input,['phone']);
+      const result=await request('/api/auth/phone/challenges',{method:'POST',body:{phone:phoneInput(input.phone),purpose:'bind'},unavailableMessage:'短信验证服务尚未开通或暂不可用，未完成手机号验证。'});
+      if(typeof result?.challengeId!=='string'||!ID.test(result.challengeId)||!Number.isSafeInteger(result.expiresAt))throw failure('INVALID_RESPONSE','验证服务返回格式无效。');
+      return {challengeId:result.challengeId,expiresAt:result.expiresAt};
+    },
+    async bindPhone(input) {
+      exactKeys(input,['challengeId','code','currentPassword']);
+      if(typeof input.challengeId!=='string'||!ID.test(input.challengeId)||typeof input.code!=='string'||!/^\d{6}$/.test(input.code))throw failure('INVALID_INPUT','请填写本次收到的6位验证码。');
+      const result=await request('/api/auth/phone/bind',{method:'POST',body:{challengeId:input.challengeId,code:input.code,currentPassword:passwordInput(input.currentPassword)},unavailableMessage:'短信验证服务尚未开通或暂不可用，未完成手机号验证。'});
+      if(result?.phoneVerified!==true||typeof result.phoneMasked!=='string'||!/^[+0-9* ]{7,32}$/.test(result.phoneMasked)||!result.phoneMasked.includes('*'))throw failure('INVALID_RESPONSE','手机号验证结果格式无效。');
+      return {phoneVerified:true,phoneMasked:result.phoneMasked};
     },
     async getSession() { if (!token) return null; const data = await request('/api/auth/session'); current = cleanSession(data); return snapshot(); },
     async logout() { try { if (token) await request('/api/auth/logout', {method:'POST',body:{}}); } finally { clear(); } return {signedOut:true}; },

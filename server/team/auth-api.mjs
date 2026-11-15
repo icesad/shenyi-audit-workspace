@@ -10,14 +10,14 @@ export const normalizeUsername = value => typeof value === 'string' && /^[a-z0-9
 const signInRequired = () => { throw new ApiError(401, 'SIGN_IN_REQUIRED', '账号或密码无效，请重新登录。'); };
 const tooMany = () => { throw new ApiError(429, 'TOO_MANY_ATTEMPTS', '操作过于频繁，请稍后重试。'); };
 
-function consume(db, bucket, now, window, maximum) {
+export function consume(db, bucket, now, window, maximum) {
   const row = db.prepare('SELECT window_start,attempts FROM team_auth_limits WHERE bucket=?').get(bucket);
   const start = !row || now < row.window_start || now - row.window_start >= window ? now : row.window_start;
   const attempts = start === row?.window_start ? row.attempts : 0;
   if (attempts >= maximum) tooMany();
   db.prepare('INSERT INTO team_auth_limits VALUES (?,?,?) ON CONFLICT(bucket) DO UPDATE SET window_start=excluded.window_start,attempts=excluded.attempts').run(bucket, start, attempts + 1);
 }
-function accountView(db, identity, expiresAt) {
+export function accountView(db, identity, expiresAt) {
   const row = db.prepare('SELECT display_name FROM team_credentials WHERE user_id=?').get(identity.userId);
   const memberships = db.prepare(`SELECT membership.team_id,membership.role FROM team_memberships AS membership
     JOIN teams AS team ON team.team_id=membership.team_id
@@ -30,11 +30,18 @@ export function authenticated(db, request, at) {
   if (!identity) signInRequired();
   return {...identity, token};
 }
-async function limitedPasswordWork(db, action) {
+export async function limitedPasswordWork(db, action) {
   const busy = work.get(db) || 0;
   if (busy >= 2) tooMany();
   work.set(db, busy + 1);
   try { return await action(); } finally { work.set(db, work.get(db) - 1); }
+}
+/** Must be called after authoritative identity checks, within a transaction. */
+export function issueSession(db, userId, at) {
+  if (!db.prepare("SELECT 1 FROM team_users WHERE user_id=? AND status='active'").get(userId)) signInRequired();
+  const token=randomBytes(32).toString('base64url'),expiresAt=at+8*60*60_000;
+  db.prepare('INSERT INTO team_sessions VALUES (?,?,?,NULL)').run(digest(token),userId,expiresAt);
+  return {token,...accountView(db,{userId},expiresAt)};
 }
 
 export async function handleAuthRequest(request, {db, now = Date.now}) {

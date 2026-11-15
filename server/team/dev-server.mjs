@@ -9,7 +9,7 @@ import {handleTeamApplicationRequest} from './application-api.mjs';
 import {json} from './http-utils.mjs';
 
 /** Loopback-only demo listener. Tests may request port=0; no public host option. */
-export async function startTeamServer({db,port=8774,now=Date.now} = {}) {
+export async function startTeamServer({db,port=8774,now=Date.now,identityProviders={}} = {}) {
   if (!db?.prepare || !Number.isInteger(port) || port<0 || port>65535) throw new Error('Invalid local server options');
   let origin;
   const server = http.createServer(async (incoming,outgoing) => {
@@ -20,7 +20,7 @@ export async function startTeamServer({db,port=8774,now=Date.now} = {}) {
       else {
         const options={method:incoming.method,headers:incoming.headers};
         if (!['GET','HEAD'].includes(incoming.method)) { options.body=Readable.toWeb(incoming);options.duplex='half'; }
-        response=await handleTeamApplicationRequest(new Request(new URL(incoming.url,origin),options),{db,now});
+        response=await handleTeamApplicationRequest(new Request(new URL(incoming.url,origin),options),{db,now,identityProviders});
       }
     } catch { response=json({error:{code:'SERVICE_UNAVAILABLE',message:'团队服务暂不可用。'}},503); }
     outgoing.writeHead(response.status,Object.fromEntries(response.headers));

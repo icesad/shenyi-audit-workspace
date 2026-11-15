@@ -2,19 +2,32 @@ import {handleAuthRequest} from './auth-api.mjs';
 import {handleCollectionWriteRequest} from './collection-write-api.mjs';
 import {handleInvitationRequest} from './invitations-api.mjs';
 import {handleTeamCollectionRequest} from './collection-api.mjs';
+import {handlePhoneRequest} from './phone-api.mjs';
+import {handleWechatRequest,isWechatConfigured} from './wechat-api.mjs';
 import {ApiError, json} from './http-utils.mjs';
 
 /** Local M2 application boundary. No fake registration/phone verification. */
-export async function handleTeamApplicationRequest(request, {db, now = Date.now} = {}) {
+export async function handleTeamApplicationRequest(request, {db, now = Date.now,identityProviders={}} = {}) {
   try {
     const at = now();
     if (!Number.isSafeInteger(at) || at < 0) throw new Error('Invalid clock');
+    const url=new URL(request.url),options={db,now,identityProviders};
+    // A provider's top-level browser callback is cross-site by design. Only this
+    // exact GET endpoint uses state/code checks instead of the data API origin gate.
+    if(url.pathname==='/api/auth/wechat/callback'&&request.method==='GET')return await handleWechatRequest(request,options);
     const origin = request.headers.get('Origin');
     if (request.headers.get('Sec-Fetch-Site') === 'cross-site' || (origin && ![new URL(request.url).origin,'shenyi://app'].includes(origin))) {
       return json({error:{code:'CROSS_SITE_DENIED',message:'请在审易客户端中操作。'}},403);
     }
-    const options = {db,now};
-    return await handleAuthRequest(request,options)
+    if(url.pathname==='/api/auth/methods'){
+      if(url.search)return json({error:{code:'INVALID_QUERY',message:'查询参数无效。'}},400);
+      if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
+      const sms=typeof identityProviders.sms?.send==='function'&&Buffer.isBuffer(identityProviders.phonePepper)&&identityProviders.phonePepper.length>=32;
+      return json({mode:'local-preview',methods:{demoUsername:true,phonePassword:true,phoneVerification:sms,wechat:isWechatConfigured(identityProviders),recovery:sms&&typeof identityProviders.recovery?.authorize==='function'}});
+    }
+    return await handlePhoneRequest(request,options)
+      || await handleWechatRequest(request,options)
+      || await handleAuthRequest(request,options)
       || await handleInvitationRequest(request,options)
       || await handleCollectionWriteRequest(request,options)
       || await handleTeamCollectionRequest(request,options);

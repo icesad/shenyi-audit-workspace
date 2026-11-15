@@ -1,6 +1,6 @@
 # M2：本机团队采集桌面预览
 
-日期：2026-11-15；工作项`TEAM-M2`。本文件记录实际本地实现及验收边界，不是正式产品上线说明。当前分支接续`16943ab`，未修改既有`dist/`应用、平台账号服务或客户浏览器库。
+日期：2026-11-15；工作项`TEAM-M2`。本文件记录实际本地实现及验收边界，不是正式产品上线说明。当前身份分支`codex/phone-wechat-identity`接续桌面采集提交`31b9369`，未修改既有`dist/`应用、平台账号服务或客户浏览器库。
 
 ## 可以验证什么
 
@@ -41,7 +41,7 @@ node server/team/dev-server.mjs --demo --data-dir D:/codex-temp/shenyi-m2-202611
 
 底层各账号仍分别生成随机salt、异步scrypt密码摘要，数据库不存明文密码；会话为随机32字节opaque token，库中只留SHA-256摘要。密码参数选用当前OWASP列出的scrypt配置，正式身份组件仍须结合上线栈评估Argon2id及其他运营条件。[OWASP密码存储](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)、[Node异步scrypt](https://nodejs.org/docs/latest-v24.x/api/crypto.html#cryptoscryptpassword-salt-keylen-options-callback)
 
-正式登录方式现已确定为手机号＋密码和微信扫码，见[正式身份方案](PHONE_WECHAT_AUTH_PLAN.md)；账号注册/验证、恢复流程和组织归属及供应商接入仍需实现。现在的定向邀请要求已有账号登录且身份与邀请匹配，不发送邮件或短信，不冒充已经验证真实手机号或微信身份。
+正式登录方式现已确定为手机号＋密码和微信扫码，见[正式身份方案](PHONE_WECHAT_AUTH_PLAN.md)。本地已实现手机号首次验证绑定/密码登录、默认关闭的额外证明恢复边界，以及微信短期事务/回调/强关联/单次兑换的服务端适配契约；测试供应商均为明确合成。桌面可切换手机号模式、展开当前账号首绑面板；默认SMS未配，无法发送或绑定。微信桌面按钮保持禁用，外部浏览器往返尚未接入。生产注册/激活、恢复政策和组织归属、真实供应商仍未完成。现在的定向邀请要求已有账号登录且身份与邀请匹配，不发送邮件或短信，不冒充已经验证真实手机号或微信身份。
 
 ## 关键服务端规则
 
@@ -61,6 +61,7 @@ node server/team/dev-server.mjs --demo --data-dir D:/codex-temp/shenyi-m2-202611
 4. `npm run test:unit`是可移植子集，不能代替原生桌面、Mac或客户业务测试。当前日志及精确数量见根目录`进度.md`，不得沿用旧数量冒充新执行。
 5. 主进程客户端真实HTTP联调脚本：`node desktop/integration-smoke.cjs --local-demo`。它会修改明确的合成任务，不在生产运行；字节/hash/退出闭环不等于窗口交互通过。
 6. 原生Electron验收必须另有真实运行版本、登录/任务/选择文件/保存/退出、截图和Windows记录。官方二进制未就绪或窗口未验时不能标M2桌面部分通过。
+7. 身份专项：`node --test tests/team-phone-identity.test.cjs tests/team-wechat-identity.test.cjs tests/team-identity-http.test.cjs tests/team-identity-races.test.cjs tests/team-desktop-identity.test.cjs`。真实Electron的`desktop/smoke.cjs`还检查手机号模式、未配短信/微信禁用、两处密码清空，报告分开记录未验的真实SMS/微信和Mac。
 
 已修复的实际问题：服务端401触发退出页时旧busy状态可能使输入框永久禁用；现在退出页清空旧账号/任务DOM并解除busy，保留真实DOM回归。
 

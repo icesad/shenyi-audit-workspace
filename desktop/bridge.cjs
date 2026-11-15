@@ -36,6 +36,10 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
     });
   }
   handle('login',arg=>client.login(input(arg,['username','password'])));
+  handle('auth-methods',()=>client.getAuthMethods());
+  handle('phone-login',arg=>client.loginPhone(input(arg,['phone','password'])));
+  handle('phone-challenge',arg=>client.requestPhoneBind(input(arg,['phone'])));
+  handle('phone-bind',arg=>client.bindPhone(input(arg,['challengeId','code','currentPassword'])));
   handle('session',()=>client.getSession());
   handle('logout',()=>client.logout());
   handle('tasks',arg=>client.listTasks(input(arg,['teamId','q','after','limit'])));

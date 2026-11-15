@@ -50,3 +50,28 @@
 - [RFC8252](https://www.rfc-editor.org/rfc/rfc8252.html)、[RFC6749第10.12节](https://www.rfc-editor.org/rfc/rfc6749.html#section-10.12)：原生应用外部浏览器授权、回调CSRF防护依据。
 
 本轮微信原始开发文档无法由工具直接读取，未用社区转载替代。具体资质、域名及接口权限须在微信官方控制台/可访问原文和真实响应中重新核验；上述桌面中转/首次绑定是工程建议，不是已验证的微信原生桌面SDK能力。
+
+## 7. M2已实现的本地身份边界（2026-11-15）
+
+分支`codex/phone-wechat-identity`接续`31b9369`。`server/team/identity-schema.sql`只给具有M2隔离库标记的数据库增加身份表；拒绝未知库，不迁移旧平台或客户数据。现有合成库升级前已做SQLite在线备份，位置见根目录`进度.md`。
+
+| 入口 | 当前行为 |
+|---|---|
+| `GET /api/auth/methods` | 只返回本机预览能力布尔值，无供应商秘密；默认短信、微信、恢复均false |
+| `POST /api/auth/phone/challenges` | 首绑或恢复用途；验证码上下文HMAC、5分钟、最多5次、发送限额；无SMS适配器直接503 |
+| `POST /api/auth/phone/bind` | 当前有效会话＋当前密码＋本次验证码，只给当前员工ID首次绑定已验证手机号；不覆盖/合并其他账号 |
+| `POST /api/auth/phone/login` | 已验证手机号＋密码，复用同一内部员工ID、团队与任务范围；异步计算后重新校验凭据与账号状态 |
+| `POST /api/auth/phone/reset` | 默认关闭；除短信证明外，必须由可信恢复适配器批准额外恢复凭据；成功原子改密并撤销旧会话，不采用短信单独找回 |
+| `POST /api/auth/wechat/transactions` | 创建5分钟事务、随机state及轮询秘密；校验应用配置和微信授权URL；保存摘要 |
+| `GET /api/auth/wechat/callback` | 仅准确GET回调例外允许跨站；校验state、code单次性、AppID，异步交换后拒绝被取消/过期事务；不在回调页面输出身份或令牌 |
+| `POST /api/auth/wechat/transactions/:id/status`、`cancel` | 持本事务秘密查询/取消；不向其他发起端泄露身份 |
+| `POST /api/auth/wechat/transactions/:id/link` | 首次关联需当前已验证手机号账号的会话、当前密码及发起端S256证明；不自动建用户、入团队或加职级 |
+| `POST /api/auth/wechat/transactions/:id/exchange` | 同一发起端证明、当前身份映射和账号版本；仅成功一次发放审易会话 |
+
+供应商通过服务端`identityProviders`显式注入。SMS需要`phonePepper`（至少32字节）与`sms.send`；微信需要`appId`、准确HTTPS `redirectUri`、`createAuthorizationUrl`与`exchangeCode`；恢复需要`recovery.authorize`。这些是测试适配契约，不是已经完成某家供应商SDK或真实发送。pepper和AppSecret不得写入Git或桌面。当前启动器没有注入这些供应商。
+
+桌面新增4个窄操作：能力读取、手机号登录、请求首绑验证码、确认首绑；总计12项IPC白名单。默认仍可用明确标记的合成演示账号，也可切换手机号＋密码。登录后首绑面板按服务能力禁用；换手机号、退出、401及操作完成会清空验证上下文和秘密字段。微信入口现在始终禁用：未配服务显示“未开通”，即使服务已配也显示“桌面待接入”，因为系统浏览器往返尚未实现。没有二维码或成功占位响应。
+
+验证：完整可移植子集564/564；其后新增的2项桌面状态回归和6项确定性竞态通过（最新桌面身份15＋竞态6合计21/21；与564有重叠，不重复累计）。独立手机号21、微信19、HTTP3均通过。HTTP中微信回调使用直接派发的合成HTTPS Request，轮询/兑换走真实loopback HTTP；不是微信平台、真实TLS或手机测试。真实Electron验证手机号模式、未配SMS/微信禁用、令牌不进renderer和退出清空，独立安全agent复核无剩余P1/P2。精确命令/日志见`进度.md`。
+
+下一检查点仍是M2：桌面窄系统浏览器入口和微信事务往返、首次关联确认界面、注册/激活及恢复政策。真实供应商、HTTPS回调域名、手机和Mac实机分别留待具备条件后验收。设备绑定属于M3，不能把身份S256证明当作电脑绑定已完成。

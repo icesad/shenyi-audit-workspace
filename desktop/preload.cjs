@@ -4,6 +4,10 @@ const {contextBridge,ipcRenderer}=require('electron');
 const invoke=(name,arg)=>ipcRenderer.invoke('shenyi:'+name,arg);
 contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   login:credentials=>invoke('login',credentials),
+  getAuthMethods:()=>invoke('auth-methods'),
+  loginPhone:credentials=>invoke('phone-login',credentials),
+  requestPhoneBind:phone=>invoke('phone-challenge',phone),
+  bindPhone:proof=>invoke('phone-bind',proof),
   getSession:()=>invoke('session'),
   logout:()=>invoke('logout'),
   listTasks:query=>invoke('tasks',query),
