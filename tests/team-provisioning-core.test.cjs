@@ -132,5 +132,5 @@ test('an existing marked prototype upgrades all additive auth tables atomically 
   db.exec=function(sql){if(sql.includes('CREATE TABLE IF NOT EXISTS team_session_metadata'))throw new Error('synthetic schema-step failure');return exec.call(this,sql);};
   assert.throws(()=>initializeTeamDatabase(db),/synthetic schema-step failure/);db.exec=exec;
   assert.deepEqual(db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name").all(),before);assert.equal(db.prepare("SELECT status FROM team_users WHERE user_id='preserved'").get().status,'active');
-  initializeTeamDatabase(db);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_schema WHERE type='table' AND name LIKE 'team_%'").get().n,before.length+9);assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+  initializeTeamDatabase(db);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_schema WHERE type='table' AND name LIKE 'team_%'").get().n,before.length+13);assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
 });

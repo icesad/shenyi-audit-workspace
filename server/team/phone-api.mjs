@@ -8,6 +8,7 @@ import {
 } from './auth-api.mjs';
 import {hashPassword, validPassword, verifyPassword} from './passwords.mjs';
 import {ApiError, ID, invalid, json, readJson, transaction} from './http-utils.mjs';
+import {reviewedRecovery,validateReviewedRecovery,consumeReviewedRecovery} from './recovery-review-policy.mjs';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 const DUMMY_HASH = 'scrypt$32768$8$3$' + '0'.repeat(32) + '$' + '0'.repeat(64);
@@ -32,6 +33,7 @@ function providersForSms(identityProviders) {
   return {sms: identityProviders.sms, pepper: identityProviders.phonePepper};
 }
 function recoveryProvider(identityProviders) {
+  if(reviewedRecovery(identityProviders))return null;
   if (typeof identityProviders.recovery?.authorize !== 'function') throw new ApiError(503, 'RECOVERY_NOT_CONFIGURED', '账号恢复流程尚未开通。');
   return identityProviders.recovery;
 }
@@ -95,6 +97,13 @@ function currentChallengeForBind(db, request, row, now) {
   const fresh = liveChallenge(db, row.challenge_id, 'bind', now());
   if (fresh.user_id !== identity.userId || fresh.session_hash !== digest(identity.token) || !sameCredential(fresh, credential(db, identity.userId))) genericChallengeError();
   return {fresh, identity};
+}
+
+/** Server-only SMS proof, including unknown-owner challenges. Public approval
+ * requests return an indistinguishable receipt for unroutable verified phones. */
+export function verifyRecoveryRequestChallenge(db,challengeId,code,pepper,at,{reserve=true}={}){
+  const row=reserve?reserveAttempt(db,challengeId,'reset',at):liveChallenge(db,challengeId,'reset',at);if(!validMac(row,code,pepper))genericChallengeError();
+  return {row,eligible:!!row.user_id&&samePhoneOwner(db,row,at)&&sameCredential(row,credential(db,row.user_id))};
 }
 
 export async function handlePhoneRequest(request, {db, now = Date.now, identityProviders = {}}) {
@@ -206,15 +215,19 @@ export async function handlePhoneRequest(request, {db, now = Date.now, identityP
   const row = reserveAttempt(db, body.challengeId, 'reset', now());
   if (!validMac(row, body.code, pepper) || !row.user_id || !samePhoneOwner(db, row,now()) || !sameCredential(row, credential(db, row.user_id))) genericChallengeError();
   const previous = credential(db, row.user_id);
-  let approved;
-  try { approved = await recovery.authorize({userId: row.user_id, challengeId: row.challenge_id, recoveryProof: body.recoveryProof}); }
-  catch { genericChallengeError(); }
-  if (approved !== true) genericChallengeError();
+  if(reviewedRecovery(identityProviders))validateReviewedRecovery(db,row.user_id,row.challenge_id,body.recoveryProof,now());
+  else{
+    let approved;
+    try { approved = await recovery.authorize({userId: row.user_id, challengeId: row.challenge_id, recoveryProof: body.recoveryProof}); }
+    catch { genericChallengeError(); }
+    if (approved !== true) genericChallengeError();
+  }
   return limitedPasswordWork(db, async () => {
     const encoded = await hashPassword(body.newPassword);
     return transaction(db, () => {
       const fresh = liveChallenge(db, row.challenge_id, 'reset', now()), current = credential(db, row.user_id);
       if (!validMac(fresh,body.code,pepper)||!samePhoneOwner(db, fresh,now()) || !sameCredential(fresh, current) || current.password_hash !== previous.password_hash || current.revision !== previous.revision) genericChallengeError();
+      if(reviewedRecovery(identityProviders))consumeReviewedRecovery(db,row.user_id,row.challenge_id,body.recoveryProof,now());
       consumeChallenge(db, fresh, now());
       const changed = db.prepare('UPDATE team_credentials SET password_hash=?,revision=revision+1 WHERE user_id=? AND password_hash=? AND revision=?').run(encoded, row.user_id, previous.password_hash, previous.revision);
       if (changed.changes !== 1) credentialConflict();

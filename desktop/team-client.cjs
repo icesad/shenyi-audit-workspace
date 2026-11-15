@@ -38,6 +38,11 @@ function firstAdministratorView(value){
   if(!value||typeof value.teamId!=='string'||!ID.test(value.teamId)||typeof value.teamName!=='string'||!value.teamName.isWellFormed()||!value.teamName.trim()||[...value.teamName].length>80||/[\x00-\x1f\x7f]/.test(value.teamName)||typeof value.phoneMasked!=='string'||!/^[+0-9* ]{7,32}$/.test(value.phoneMasked)||!value.phoneMasked.includes('*')||!Number.isSafeInteger(value.expiresAt)||value.expiresAt<=0)throw failure('INVALID_RESPONSE','首管理员邀请信息格式无效。');
   return {teamId:value.teamId,teamName:value.teamName,phoneMasked:value.phoneMasked,expiresAt:value.expiresAt};
 }
+function recoveryReviewView(value){
+  const string=(item,max)=>typeof item==='string'&&item.isWellFormed()&&!!item.trim()&&[...item].length<=max&&!/[\p{Cc}\p{Cf}]/u.test(item);
+  if(!value||typeof value.id!=='string'||!ID.test(value.id)||typeof value.teamId!=='string'||!ID.test(value.teamId)||!string(value.teamName,80)||!string(value.displayName,80)||typeof value.phoneMasked!=='string'||!/^[+0-9* ]{7,32}$/.test(value.phoneMasked)||!value.phoneMasked.includes('*')||!['employee','administrator'].includes(value.targetKind)||!['pending','approved','rejected','revoked','consumed','expired'].includes(value.status)||!Number.isSafeInteger(value.revision)||value.revision<1||!Number.isSafeInteger(value.createdAt)||value.createdAt<0||!Number.isSafeInteger(value.expiresAt)||value.expiresAt<=value.createdAt)throw failure('INVALID_RESPONSE','恢复审核资料格式无效。');
+  return {id:value.id,teamId:value.teamId,teamName:value.teamName,displayName:value.displayName,phoneMasked:value.phoneMasked,targetKind:value.targetKind,status:value.status,revision:value.revision,createdAt:value.createdAt,expiresAt:value.expiresAt};
+}
 function securityPasswordInput(value){passwordInput(value);if(Buffer.byteLength(value)>512)throw failure('INVALID_INPUT','当前密码内容无效，请核对后重试。');return value;}
 function sessionView(value){
   if(!value||typeof value.id!=='string'||!SESSION_ID.test(value.id)||typeof value.isCurrent!=='boolean'||!Number.isSafeInteger(value.expiresAt)||value.expiresAt<=0||(value.createdAt!==null&&(!Number.isSafeInteger(value.createdAt)||value.createdAt<0||value.createdAt>value.expiresAt)))throw failure('INVALID_RESPONSE','登录会话列表格式无效。');
@@ -121,6 +126,22 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   function activationTarget(input,keys){exactKeys(input,keys);if(token)throw failure('SIGN_OUT_REQUIRED','请先退出当前账号再激活受邀账号。');return {invitationCode:invitationCodeInput(input.invitationCode),phone:phoneInput(input.phone)};}
   function path(teamId, taskId) { return `/api/teams/${id(teamId)}/collection/tasks${taskId ? '/' + id(taskId) : ''}`; }
   return Object.freeze({
+    async getRecoveryReviewStatus(){const data=await request('/api/auth/recovery-requests/capabilities',{authenticated:false});if(typeof data?.reviewed!=='boolean'||typeof data.available!=='boolean'||(!data.reviewed&&data.available))throw failure('INVALID_RESPONSE','恢复审核服务状态无效。');return {reviewed:data.reviewed,available:data.available};},
+    async createRecoveryReviewRequest(input){
+      exactKeys(input,['challengeId','code']);if(token)throw failure('SIGN_OUT_REQUIRED','请先退出当前账号再申请恢复。');
+      if(typeof input.challengeId!=='string'||!ID.test(input.challengeId)||typeof input.code!=='string'||!/^\d{6}$/.test(input.code))throw failure('INVALID_INPUT','请填写本次收到的6位恢复验证码。');
+      const data=await request('/api/auth/recovery-requests',{method:'POST',authenticated:false,body:{challengeId:input.challengeId,code:input.code},unavailableMessage:'恢复审核服务尚未开通或暂不可用。',messagesOverride:{400:'本次手机号验证或申请无效，请重新核对。'}});
+      if(typeof data?.requestId!=='string'||!ID.test(data.requestId)||data.status!=='pending'||!Number.isSafeInteger(data.revision)||data.revision<1||!Number.isSafeInteger(data.expiresAt)||data.expiresAt<=0)throw failure('INVALID_RESPONSE','无法确认恢复申请，请核对后联系管理员。');return {requestId:data.requestId,status:'pending',revision:data.revision,expiresAt:data.expiresAt};
+    },
+    async getRecoveryReviewAccess(){const data=await provisioningRequest('/api/account/recovery-reviews/access');if(typeof data?.canReview!=='boolean')throw failure('INVALID_RESPONSE','恢复审核权限状态无效。');return {canReview:data.canReview};},
+    async listRecoveryReviewRequests(){const data=await provisioningRequest('/api/account/recovery-reviews');if(!Array.isArray(data?.requests)||data.requests.length>50)throw failure('INVALID_RESPONSE','恢复审核列表格式无效。');const requests=data.requests.map(recoveryReviewView);if(new Set(requests.map(item=>item.id)).size!==requests.length)throw failure('INVALID_RESPONSE','恢复审核列表格式无效。');return {requests};},
+    async reviewRecoveryReviewRequest(input){
+      exactKeys(input,['requestId','decision','revision','currentPassword']);if(!['approve','reject','revoke'].includes(input.decision)||!Number.isSafeInteger(input.revision)||input.revision<1)throw failure('INVALID_INPUT','请核对恢复申请版本及审核操作。');
+      const requestId=id(input.requestId),data=await request('/api/account/recovery-reviews/'+requestId+'/review',{method:'POST',body:{decision:input.decision,revision:input.revision,currentPassword:securityPasswordInput(input.currentPassword)},messagesOverride:{403:'当前密码验证未通过或审核未获授权。',404:'无法访问该恢复申请。',409:'恢复申请或授权已更新，请刷新核对。'}}),view=recoveryReviewView(data?.request);
+      if(view.id!==requestId||view.revision<=input.revision||view.status!==({approve:'approved',reject:'rejected',revoke:'revoked'})[input.decision])throw failure('INVALID_RESPONSE','无法确认恢复审核结果，请刷新记录核对。');
+      if(input.decision!=='approve')return {request:view};
+      if(typeof data.recoveryProof!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.recoveryProof)||Buffer.from(data.recoveryProof,'base64url').toString('base64url')!==data.recoveryProof)throw failure('INVALID_RESPONSE','无法确认一次性恢复凭据，请刷新记录核对。');return {request:view,recoveryProof:data.recoveryProof};
+    },
     async requestPasswordRecovery(input){
       exactKeys(input,['phone']);if(token)throw failure('SIGN_OUT_REQUIRED','请先退出当前账号再找回密码。');
       const data=await request('/api/auth/phone/challenges',{method:'POST',authenticated:false,body:{phone:phoneInput(input.phone),purpose:'reset'},unavailableMessage:'账号恢复或短信服务尚未开通或暂不可用，未完成密码恢复。',messagesOverride:{400:'手机号或恢复资料无效，请核对后重试。'}});

@@ -7,6 +7,8 @@ import {handleWechatRequest,isWechatConfigured} from './wechat-api.mjs';
 import {handleEmployeeInvitationRequest} from './employee-invitations-api.mjs';
 import {handleAccountSessionsRequest} from './sessions-api.mjs';
 import {handleTeamProvisioningRequest} from './provisioning-api.mjs';
+import {handleRecoveryReviewRequest} from './recovery-review-api.mjs';
+import {recoveryConfigured} from './recovery-review-policy.mjs';
 import {ApiError, json} from './http-utils.mjs';
 
 /** Local M2 application boundary. No fake registration/phone verification. */
@@ -26,9 +28,10 @@ export async function handleTeamApplicationRequest(request, {db, now = Date.now,
       if(url.search)return json({error:{code:'INVALID_QUERY',message:'查询参数无效。'}},400);
       if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
       const sms=typeof identityProviders.sms?.send==='function'&&Buffer.isBuffer(identityProviders.phonePepper)&&identityProviders.phonePepper.length>=32;
-      return json({mode:'local-preview',methods:{demoUsername:true,phonePassword:true,phoneVerification:sms,wechat:isWechatConfigured(identityProviders),recovery:sms&&typeof identityProviders.recovery?.authorize==='function'}});
+      return json({mode:'local-preview',methods:{demoUsername:true,phonePassword:true,phoneVerification:sms,wechat:isWechatConfigured(identityProviders),recovery:sms&&recoveryConfigured(identityProviders)}});
     }
     return await handleAccountSessionsRequest(request,options)
+      || await handleRecoveryReviewRequest(request,options)
       || await handleTeamProvisioningRequest(request,options)
       || await handleEmployeeInvitationRequest(request,options)
       || await handlePhoneRequest(request,options)

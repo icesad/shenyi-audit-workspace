@@ -68,6 +68,7 @@ node server/team/dev-server.mjs --demo --data-dir D:/codex-temp/shenyi-m2-202611
 11. [本人改密](PERSONAL_PASSWORD_CHANGE.md)：该阶段29项preload、6个form、8密码输入。`node desktop/password-smoke.cjs`在独立内存库验证旧密码错误可重试、成功全部旧会话退出、新手机号密码同身份/范围重新登录，其他用户不受影响；默认共享预览只填写清空，不提交改密，不改变演示密码。
 12. [人工团队开通](MANUAL_TEAM_ONBOARDING.md)：当前37项preload、8个form、11密码输入。独立平台审核员录入/密码审核，首技术管理员本人验证后仅有员工邀请权，不建立审计membership或资料授权。`node desktop/provisioning-smoke.cjs`验证真实Electron/HTTP/SQLite与合成SMS闭环；`Start-Team-Review-Preview.cmd`单独启用本机审核演示，普通9用户demo不增权。真实SMS缺席时激活如实禁用。
 13. [找回密码](PASSWORD_RECOVERY.md)：当前39项preload、9个form、14密码输入。登录页手机号验证码＋独立恢复授权和新密码确认，成功撤本人旧登录且不自动登录；新快照封住同值重绑旧挑战。`node desktop/recovery-smoke.cjs`真实Electron/HTTP/SQLite验证，SMS/authorizer明确合成。用户已选团队管理员审核员工、产品负责人审核管理员本人，审批签发链继续实现，默认恢复保持禁用。
+14. [内建恢复审批](RECOVERY_APPROVAL.md)：当前44项preload、9form/15密码输入。短信验证提交申请，own operator审核员工、独立owner审核管理员，密码/CAS批准拒绝撤销，内建票消费＋重设同事务。`node desktop/recovery-review-smoke.cjs`双窗口真实Electron+HTTP/SQL及明确合成SMS验证，自审/撤销票拒绝，业务范围保持；真实服务缺SMS仍available=false。旧external恢复路径单独作兼容，不等同内建审批。
 
 已修复的实际问题：服务端401触发退出页时旧busy状态可能使输入框永久禁用；现在退出页清空旧账号/任务DOM并解除busy，保留真实DOM回归。
 

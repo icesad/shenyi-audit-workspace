@@ -40,6 +40,11 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('recovery-challenge',arg=>client.requestPasswordRecovery(input(arg,['phone'])));
   handle('recovery-complete',arg=>client.recoverPassword(input(arg,['challengeId','code','newPassword','recoveryProof'])));
   const noArgs=arg=>{if(arg!==undefined)throw Error('操作参数无效。');};
+  handle('recovery-review-status',arg=>{noArgs(arg);return client.getRecoveryReviewStatus();});
+  handle('recovery-review-create',arg=>client.createRecoveryReviewRequest(input(arg,['challengeId','code'])));
+  handle('recovery-review-access',arg=>{noArgs(arg);return client.getRecoveryReviewAccess();});
+  handle('recovery-review-list',arg=>{noArgs(arg);return client.listRecoveryReviewRequests();});
+  handle('recovery-review-decide',arg=>client.reviewRecoveryReviewRequest(input(arg,['requestId','decision','revision','currentPassword'])));
   handle('team-review-access',arg=>{noArgs(arg);return client.getTeamProvisioningAccess();});
   handle('team-review-list',arg=>{noArgs(arg);return client.listTeamProvisioningRequests();});
   handle('team-review-create',arg=>client.createTeamProvisioningRequest(input(arg,['teamName','adminPhone'])));

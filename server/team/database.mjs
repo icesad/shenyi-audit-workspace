@@ -2,6 +2,7 @@ import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {hashPassword} from './passwords.mjs';
 import {ensureSessionMetadata} from './auth-api.mjs';
+import {installRecoveryEpochTriggers} from './recovery-review-epochs.mjs';
 
 export function initializeTeamDatabase(db) {
   db.exec('PRAGMA foreign_keys = ON');
@@ -15,6 +16,8 @@ export function initializeTeamDatabase(db) {
     try {
       db.exec(readFileSync(fileURLToPath(new URL('./provisioning-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./recovery-schema.sql', import.meta.url)), 'utf8'));
+      db.exec(readFileSync(fileURLToPath(new URL('./recovery-review-schema.sql', import.meta.url)), 'utf8'));
+      installRecoveryEpochTriggers(db);
       db.exec(readFileSync(fileURLToPath(new URL('./session-schema.sql', import.meta.url)), 'utf8'));
       ensureSessionMetadata(db);
       db.exec('COMMIT');
@@ -29,6 +32,8 @@ export function initializeTeamDatabase(db) {
     db.exec(readFileSync(fileURLToPath(new URL('./activation-schema.sql', import.meta.url)), 'utf8'));
     db.exec(readFileSync(fileURLToPath(new URL('./provisioning-schema.sql', import.meta.url)), 'utf8'));
     db.exec(readFileSync(fileURLToPath(new URL('./recovery-schema.sql', import.meta.url)), 'utf8'));
+    db.exec(readFileSync(fileURLToPath(new URL('./recovery-review-schema.sql', import.meta.url)), 'utf8'));
+    installRecoveryEpochTriggers(db);
     db.exec(readFileSync(fileURLToPath(new URL('./session-schema.sql', import.meta.url)), 'utf8'));
     db.exec('COMMIT'); db.exec('PRAGMA foreign_keys = ON');
   } catch (error) { db.exec('ROLLBACK'); throw error; }

@@ -10,7 +10,7 @@ async function main(){
     const page=await app.firstWindow();const errors=[];page.on('pageerror',error=>errors.push(error.message));
     await page.getByRole('heading',{name:'登录团队账号',exact:true}).waitFor();
     assert.equal(await page.evaluate(()=>typeof require),'undefined');assert.equal(await page.evaluate(()=>typeof process),'undefined');
-    assert.deepEqual((await page.evaluate(()=>Object.keys(window.shenyiTeam))).sort(),['login','getSession','logout','listTasks','getTask','getSubmissions','chooseAndUpload','downloadAttachment','getAuthMethods','loginPhone','requestPhoneBind','bindPhone','startWechatLogin','pollWechatLogin','cancelWechatLogin','linkWechatAccount','getOnboardingStatus','getInvitationAccess','createEmployeeInvitation','listEmployeeInvitations','revokeEmployeeInvitation','previewEmployeeInvitation','requestEmployeeActivation','activateEmployee','listAccountSessions','revokeAccountSession','revokeOtherSessions','revokeAllSessions','changeOwnPassword','requestPasswordRecovery','recoverPassword','getTeamProvisioningAccess','listTeamProvisioningRequests','createTeamProvisioningRequest','reviewTeamProvisioningRequest','getTeamAdministration','previewFirstAdministrator','requestFirstAdministratorActivation','activateFirstAdministrator'].sort());
+    assert.deepEqual((await page.evaluate(()=>Object.keys(window.shenyiTeam))).sort(),['login','getSession','logout','listTasks','getTask','getSubmissions','chooseAndUpload','downloadAttachment','getAuthMethods','loginPhone','requestPhoneBind','bindPhone','startWechatLogin','pollWechatLogin','cancelWechatLogin','linkWechatAccount','getOnboardingStatus','getInvitationAccess','createEmployeeInvitation','listEmployeeInvitations','revokeEmployeeInvitation','previewEmployeeInvitation','requestEmployeeActivation','activateEmployee','listAccountSessions','revokeAccountSession','revokeOtherSessions','revokeAllSessions','changeOwnPassword','getRecoveryReviewStatus','createRecoveryReviewRequest','getRecoveryReviewAccess','listRecoveryReviewRequests','reviewRecoveryReviewRequest','requestPasswordRecovery','recoverPassword','getTeamProvisioningAccess','listTeamProvisioningRequests','createTeamProvisioningRequest','reviewTeamProvisioningRequest','getTeamAdministration','previewFirstAdministrator','requestFirstAdministratorActivation','activateFirstAdministrator'].sort());
     const preferences=await app.evaluate(({BrowserWindow})=>{const p=BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences();return {nodeIntegration:p.nodeIntegration,contextIsolation:p.contextIsolation,sandbox:p.sandbox,webSecurity:p.webSecurity};});
     assert.deepEqual(preferences,{nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true});
     await page.locator('#identity-methods-message').filter({hasText:'正式方向：手机号＋密码'}).waitFor();
@@ -27,6 +27,8 @@ async function main(){
     assert.equal(await page.locator('#first-admin-send-code').isDisabled(),true);assert.equal(await page.locator('#first-admin-submit').isDisabled(),true);
     await page.screenshot({path:path.join(directory,'first-admin-unavailable.png'),fullPage:true});await page.locator('#first-admin-panel > summary').click();
     await page.locator('#recovery-panel > summary').click();await page.locator('#recovery-status').filter({hasText:'尚未开通'}).waitFor();
+    const reviewStatus=await page.evaluate(()=>window.shenyiTeam.getRecoveryReviewStatus());assert.equal(reviewStatus.ok,true);assert.equal(reviewStatus.value.available,false);assert.equal(typeof reviewStatus.value.reviewed,'boolean');
+    assert.equal(await page.locator('#recovery-review-request').isDisabled(),true);
     for(const id of ['recovery-phone','recovery-send-code','recovery-submit'])assert.equal(await page.locator('#'+id).isDisabled(),true);
     await page.screenshot({path:path.join(directory,'recovery-unavailable.png'),fullPage:true});await page.locator('#recovery-panel > summary').click();
     assert.equal(await page.locator('#wechat-login').isDisabled(),true);assert.match(await page.locator('#wechat-login').textContent(),/未开通/);
@@ -40,7 +42,8 @@ async function main(){
     await page.getByRole('heading',{name:'我的提交记录',exact:true}).waitFor();
     assert.equal(await page.locator('#employee-invitations-panel').isVisible(),false);
     assert.equal(await page.locator('#team-provisioning-panel').isVisible(),false);
-    const passwords=await page.locator('input[type=password]').evaluateAll(fields=>fields.map(field=>field.value));assert.equal(passwords.length,14);assert.ok(passwords.every(value=>value===''));
+    assert.equal(await page.locator('#recovery-reviews-panel').isVisible(),false);
+    const passwords=await page.locator('input[type=password]').evaluateAll(fields=>fields.map(field=>field.value));assert.equal(passwords.length,15);assert.ok(passwords.every(value=>value===''));
     const publicSession=await page.evaluate(async()=>window.shenyiTeam.getSession());assert.equal(publicSession.ok,true);assert.ok(!('token'in publicSession.value));
     assert.equal(await page.evaluate(()=>Object.values(localStorage).some(value=>value.includes('Bearer '))),false);
     await page.locator('#phone-bind-panel > summary').click();

@@ -12,6 +12,8 @@ M2新增独立账号、本机HTTP、定向邀请、原件提交与版本控制�
 
 [找回密码](../../docs/PASSWORD_RECOVERY.md)沿用独立authorizer默认关闭的`phone/reset`；`recovery-schema.sql`只追加手机号挑战快照表，reset HMAC绑定手机号版本/验证时间，SMS返回与异步授权/KDF后复查。旧无快照reset拒绝重发，bind语义保持。用户已选管理员审核员工、产品负责人审核管理员本人，审核签发/撤销链尚待接入，不以短信单独恢复或增加生产权限。
 
+[内建恢复审批](../../docs/RECOVERY_APPROVAL.md)后续已接 `recovery-review-api.mjs`/`recovery-review-policy.mjs`。reviewedRecovery显式模式：员工own operator审、管理员独立owner审，current password/CAS批准拒绝撤销，票只存hash。KDF后同密码事务再次核权并消费，不用external true绕过。新增4表及20固定epoch触发器，不改原表定义；撤权后同值恢复不救活票。`recovery-review-demo.mjs`仅显式合成预览增加独立恢复审核员，普通seed与生产无默认权限；SMS缺席仍关闭。
+
 状态：隔离的本机合成数据实验；没有挂载到既有网页/Sites服务，不对公网监听。不能用它声称生产登录、设备绑定、订阅或团队软件已经完成。
 
 架构见 [ADR 0001](../../docs/adr/0001-team-runtime.md)，产品权限见 [团队需求](../../docs/TEAM_PRODUCT_REQUIREMENTS.md)。当前工作项为 `TEAM-M2`，M1为已交付读取原型。
