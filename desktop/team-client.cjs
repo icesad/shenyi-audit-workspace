@@ -121,6 +121,17 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   function activationTarget(input,keys){exactKeys(input,keys);if(token)throw failure('SIGN_OUT_REQUIRED','请先退出当前账号再激活受邀账号。');return {invitationCode:invitationCodeInput(input.invitationCode),phone:phoneInput(input.phone)};}
   function path(teamId, taskId) { return `/api/teams/${id(teamId)}/collection/tasks${taskId ? '/' + id(taskId) : ''}`; }
   return Object.freeze({
+    async requestPasswordRecovery(input){
+      exactKeys(input,['phone']);if(token)throw failure('SIGN_OUT_REQUIRED','请先退出当前账号再找回密码。');
+      const data=await request('/api/auth/phone/challenges',{method:'POST',authenticated:false,body:{phone:phoneInput(input.phone),purpose:'reset'},unavailableMessage:'账号恢复或短信服务尚未开通或暂不可用，未完成密码恢复。',messagesOverride:{400:'手机号或恢复资料无效，请核对后重试。'}});
+      if(typeof data?.challengeId!=='string'||!ID.test(data.challengeId)||!Number.isSafeInteger(data.expiresAt)||data.expiresAt<=0)throw failure('INVALID_RESPONSE','账号恢复验证信息格式无效。');return {challengeId:data.challengeId,expiresAt:data.expiresAt};
+    },
+    async recoverPassword(input){
+      exactKeys(input,['challengeId','code','newPassword','recoveryProof']);if(token)throw failure('SIGN_OUT_REQUIRED','请先退出当前账号再找回密码。');
+      if(typeof input.challengeId!=='string'||!ID.test(input.challengeId)||typeof input.code!=='string'||!/^\d{6}$/.test(input.code)||typeof input.newPassword!=='string'||[...input.newPassword].length<12||[...input.newPassword].length>128||Buffer.byteLength(input.newPassword)>512||typeof input.recoveryProof!=='string'||!input.recoveryProof||input.recoveryProof.length>1024)throw failure('INVALID_INPUT','请填写本次验证码、独立恢复授权凭据和12至128个字符的新密码。');
+      const data=await request('/api/auth/phone/reset',{method:'POST',authenticated:false,body:{challengeId:input.challengeId,code:input.code,newPassword:input.newPassword,recoveryProof:input.recoveryProof},unavailableMessage:'账号恢复或短信服务尚未开通或暂不可用，请核对后重试。',messagesOverride:{400:'本次验证或独立恢复授权未通过，请重新核对。',409:'账号状态已改变，请重新验证后核对。'}});
+      if(data?.signedOut!==true)throw failure('INVALID_RESPONSE','无法确认密码恢复结果，请使用新密码登录核对。');clear();return {signedOut:true};
+    },
     async getTeamProvisioningAccess(){const data=await provisioningRequest('/api/operations/team-requests/access');if(typeof data?.canReview!=='boolean')throw failure('INVALID_RESPONSE','团队审核权限状态无效。');return {canReview:data.canReview};},
     async listTeamProvisioningRequests(){
       const data=await provisioningRequest('/api/operations/team-requests');if(!Array.isArray(data?.requests)||data.requests.length>50)throw failure('INVALID_RESPONSE','团队审核列表格式无效。');

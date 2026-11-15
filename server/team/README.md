@@ -10,6 +10,8 @@ M2新增独立账号、本机HTTP、定向邀请、原件提交与版本控制�
 
 [本人改密](../../docs/PERSONAL_PASSWORD_CHANGE.md)沿用`/api/auth/password`，错密403可重试，请求体后/事务中重查同一发起账号；CAS更新与全部旧会话撤销原子，不更换手机号/角色。没有新schema或真实用户密码操作；默认SMS缺席不影响当前密码验证。
 
+[找回密码](../../docs/PASSWORD_RECOVERY.md)沿用独立authorizer默认关闭的`phone/reset`；`recovery-schema.sql`只追加手机号挑战快照表，reset HMAC绑定手机号版本/验证时间，SMS返回与异步授权/KDF后复查。旧无快照reset拒绝重发，bind语义保持。用户已选管理员审核员工、产品负责人审核管理员本人，审核签发/撤销链尚待接入，不以短信单独恢复或增加生产权限。
+
 状态：隔离的本机合成数据实验；没有挂载到既有网页/Sites服务，不对公网监听。不能用它声称生产登录、设备绑定、订阅或团队软件已经完成。
 
 架构见 [ADR 0001](../../docs/adr/0001-team-runtime.md)，产品权限见 [团队需求](../../docs/TEAM_PRODUCT_REQUIREMENTS.md)。当前工作项为 `TEAM-M2`，M1为已交付读取原型。

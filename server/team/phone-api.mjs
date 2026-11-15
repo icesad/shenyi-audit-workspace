@@ -41,10 +41,14 @@ function credential(db, userId) {
     WHERE account.user_id=?`).get(userId);
 }
 function codeMac(row, code, pepper) {
-  return createHmac('sha256', pepper).update(JSON.stringify([
+  const fields=[
     row.challenge_id, row.purpose, row.user_id, row.phone, row.session_hash,
     row.credential_revision, row.expires_at, code,
-  ])).digest('hex');
+  ];
+  // Keep the original bind contract, but make recovery ownership snapshots
+  // authenticated. Editing snapshot metadata cannot revive a stale code.
+  if(row.purpose==='reset')fields.push('phone-binding.v1',row.phone_revision??null,row.phone_verified_at??null);
+  return createHmac('sha256', pepper).update(JSON.stringify(fields)).digest('hex');
 }
 function validMac(row, code, pepper) {
   if (typeof code !== 'string' || !/^\d{6}$/.test(code) || !/^[a-f0-9]{64}$/.test(row.code_mac || '')) return false;
@@ -54,7 +58,7 @@ function liveChallenge(db, challengeId, purpose, at) {
   const row = db.prepare(`SELECT * FROM team_phone_challenges WHERE challenge_id=? AND purpose=?
     AND delivery_state='sent' AND consumed_at IS NULL AND expires_at>? AND attempts<=5`).get(challengeId, purpose, at);
   if (!row) genericChallengeError();
-  return row;
+  return withPhoneBinding(db,row);
 }
 function reserveAttempt(db, challengeId, purpose, at, identity) {
   // The attempt counter is committed before asynchronous KDF/recovery work, and
@@ -65,13 +69,20 @@ function reserveAttempt(db, challengeId, purpose, at, identity) {
     ${identity ? 'AND user_id=? AND session_hash=?' : ''} RETURNING *`)
     .get(challengeId, purpose, at, ...(identity ? [identity.userId, digest(identity.token)] : []));
   if (!row) genericChallengeError();
-  return row;
+  return withPhoneBinding(db,row);
 }
 function sameCredential(row, current) {
   return current?.status === 'active' && current.revision === row.credential_revision;
 }
-function samePhoneOwner(db, row) {
-  return row.user_id && db.prepare('SELECT 1 FROM team_phone_credentials WHERE user_id=? AND phone=?').get(row.user_id, row.phone);
+function validPhoneMapping(mapping,at){return !!mapping&&Number.isSafeInteger(mapping.revision)&&mapping.revision>=1&&Number.isSafeInteger(mapping.verified_at)&&mapping.verified_at>0&&mapping.verified_at<=at;}
+function withPhoneBinding(db,row){
+  if(row.purpose!=='reset')return row;
+  const binding=db.prepare('SELECT phone_revision,verified_at FROM team_phone_challenge_bindings WHERE challenge_id=?').get(row.challenge_id);
+  return {...row,phone_revision:binding?.phone_revision??null,phone_verified_at:binding?.verified_at??null};
+}
+function samePhoneOwner(db, row,at) {
+  const mapping=row.user_id&&db.prepare('SELECT revision,verified_at FROM team_phone_credentials WHERE user_id=? AND phone=?').get(row.user_id, row.phone);
+  return validPhoneMapping(mapping,at)&&mapping.revision===row.phone_revision&&mapping.verified_at===row.phone_verified_at;
 }
 function consumeChallenge(db, row, at) {
   const changed = db.prepare(`UPDATE team_phone_challenges SET consumed_at=?
@@ -121,7 +132,8 @@ export async function handlePhoneRequest(request, {db, now = Date.now, identityP
     if (body.purpose === 'reset') recoveryProvider(identityProviders);
     const {sms, pepper} = providersForSms(identityProviders);
     const identity = body.purpose === 'bind' ? authenticated(db, request, now()) : null;
-    const owner = body.purpose === 'reset' ? db.prepare('SELECT user_id FROM team_phone_credentials WHERE phone=?').get(phone)?.user_id || null : identity.userId;
+    const mapping=body.purpose==='reset'?db.prepare('SELECT user_id,revision,verified_at FROM team_phone_credentials WHERE phone=?').get(phone):null;
+    const owner = body.purpose === 'reset' ? validPhoneMapping(mapping,now())?mapping.user_id:null : identity.userId;
     const previous = owner ? credential(db, owner) : null;
     if (identity && previous?.status !== 'active') signInError();
     consume(db, 'sms:global', now(), 60_000, 60);
@@ -131,12 +143,16 @@ export async function handlePhoneRequest(request, {db, now = Date.now, identityP
       challenge_id: randomUUID(), purpose: body.purpose, phone, user_id: owner,
       session_hash: identity ? digest(identity.token) : null,
       credential_revision: previous?.revision ?? null, expires_at: at + 5 * 60_000,
+      ...(body.purpose==='reset'?{phone_revision:owner?mapping.revision:null,phone_verified_at:owner?mapping.verified_at:null}:{}),
     };
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-    db.prepare(`INSERT INTO team_phone_challenges
-      (challenge_id,purpose,phone,user_id,session_hash,credential_revision,code_mac,expires_at,delivery_state)
-      VALUES (?,?,?,?,?,?,?,?,'sending')`).run(row.challenge_id, row.purpose, row.phone, row.user_id,
-        row.session_hash, row.credential_revision, codeMac(row, code, pepper), row.expires_at);
+    transaction(db,()=>{
+      db.prepare(`INSERT INTO team_phone_challenges
+        (challenge_id,purpose,phone,user_id,session_hash,credential_revision,code_mac,expires_at,delivery_state)
+        VALUES (?,?,?,?,?,?,?,?,'sending')`).run(row.challenge_id, row.purpose, row.phone, row.user_id,
+          row.session_hash, row.credential_revision, codeMac(row, code, pepper), row.expires_at);
+      if(row.purpose==='reset'&&owner)db.prepare('INSERT INTO team_phone_challenge_bindings VALUES (?,?,?)').run(row.challenge_id,row.phone_revision,row.phone_verified_at);
+    });
     // Unknown reset phone follows the same provider path and response contract.
     // Its null owner cannot reset an account; no existence bit is returned.
     try { await sms.send({phone, code, purpose: row.purpose, challengeId: row.challenge_id}); }
@@ -150,6 +166,7 @@ export async function handlePhoneRequest(request, {db, now = Date.now, identityP
           const active = authenticated(db, request, now());
           if (active.userId !== row.user_id || digest(active.token) !== row.session_hash || !sameCredential(row, credential(db, active.userId))) genericChallengeError();
         }
+        if(row.purpose==='reset'&&row.user_id&&!samePhoneOwner(db,row,now()))genericChallengeError();
         if (now() >= row.expires_at) genericChallengeError();
         db.prepare("UPDATE team_phone_challenges SET delivery_state='sent' WHERE challenge_id=? AND delivery_state='sending'").run(row.challenge_id);
       });
@@ -187,7 +204,7 @@ export async function handlePhoneRequest(request, {db, now = Date.now, identityP
   const body = await readJson(request, ['challengeId', 'code', 'newPassword', 'recoveryProof']);
   if (typeof body.challengeId !== 'string' || !ID.test(body.challengeId) || !validPassword(body.newPassword) || typeof body.recoveryProof !== 'string' || !body.recoveryProof || body.recoveryProof.length > 1024) invalid();
   const row = reserveAttempt(db, body.challengeId, 'reset', now());
-  if (!validMac(row, body.code, pepper) || !row.user_id || !samePhoneOwner(db, row) || !sameCredential(row, credential(db, row.user_id))) genericChallengeError();
+  if (!validMac(row, body.code, pepper) || !row.user_id || !samePhoneOwner(db, row,now()) || !sameCredential(row, credential(db, row.user_id))) genericChallengeError();
   const previous = credential(db, row.user_id);
   let approved;
   try { approved = await recovery.authorize({userId: row.user_id, challengeId: row.challenge_id, recoveryProof: body.recoveryProof}); }
@@ -197,7 +214,7 @@ export async function handlePhoneRequest(request, {db, now = Date.now, identityP
     const encoded = await hashPassword(body.newPassword);
     return transaction(db, () => {
       const fresh = liveChallenge(db, row.challenge_id, 'reset', now()), current = credential(db, row.user_id);
-      if (!samePhoneOwner(db, fresh) || !sameCredential(fresh, current) || current.password_hash !== previous.password_hash || current.revision !== previous.revision) genericChallengeError();
+      if (!validMac(fresh,body.code,pepper)||!samePhoneOwner(db, fresh,now()) || !sameCredential(fresh, current) || current.password_hash !== previous.password_hash || current.revision !== previous.revision) genericChallengeError();
       consumeChallenge(db, fresh, now());
       const changed = db.prepare('UPDATE team_credentials SET password_hash=?,revision=revision+1 WHERE user_id=? AND password_hash=? AND revision=?').run(encoded, row.user_id, previous.password_hash, previous.revision);
       if (changed.changes !== 1) credentialConflict();

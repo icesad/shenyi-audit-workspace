@@ -14,6 +14,7 @@ export function initializeTeamDatabase(db) {
     db.exec('BEGIN IMMEDIATE');
     try {
       db.exec(readFileSync(fileURLToPath(new URL('./provisioning-schema.sql', import.meta.url)), 'utf8'));
+      db.exec(readFileSync(fileURLToPath(new URL('./recovery-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./session-schema.sql', import.meta.url)), 'utf8'));
       ensureSessionMetadata(db);
       db.exec('COMMIT');
@@ -27,6 +28,7 @@ export function initializeTeamDatabase(db) {
     db.exec(readFileSync(fileURLToPath(new URL('./identity-schema.sql', import.meta.url)), 'utf8'));
     db.exec(readFileSync(fileURLToPath(new URL('./activation-schema.sql', import.meta.url)), 'utf8'));
     db.exec(readFileSync(fileURLToPath(new URL('./provisioning-schema.sql', import.meta.url)), 'utf8'));
+    db.exec(readFileSync(fileURLToPath(new URL('./recovery-schema.sql', import.meta.url)), 'utf8'));
     db.exec(readFileSync(fileURLToPath(new URL('./session-schema.sql', import.meta.url)), 'utf8'));
     db.exec('COMMIT'); db.exec('PRAGMA foreign_keys = ON');
   } catch (error) { db.exec('ROLLBACK'); throw error; }

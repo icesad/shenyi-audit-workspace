@@ -36,7 +36,7 @@ test('session list renders only time/current metadata and does not infer old log
   const f=fixture(t,{listAccountSessions:async()=>safe({sessions:[{...CURRENT,token:'BEARER_SECRET',token_hash:'DIGEST_SECRET',userId:'OTHER_USER_SECRET',ip:'IP_SECRET'},{...OTHER,device:'FAKE_DEVICE_SECRET'}],hasMore:false})});await login(f);await open(f);
   assert.match(f.rows()[0].textContent,/当前登录/);assert.match(f.rows()[1].textContent,/登录时间未记录/);assert.match(f.rows()[1].textContent,/有效至/);
   for(const secret of ['BEARER_SECRET','DIGEST_SECRET','OTHER_USER_SECRET','IP_SECRET','FAKE_DEVICE_SECRET'])assert.ok(!f.d.body.textContent.includes(secret));
-  assert.equal(f.d.querySelectorAll('form').length,8);assert.equal(f.d.querySelectorAll('input[type=password]').length,11);assert.deepEqual(f.writes,[]);
+  assert.equal(f.d.querySelectorAll('form').length,9);assert.equal(f.d.querySelectorAll('input[type=password]').length,14);assert.deepEqual(f.writes,[]);
 });
 test('pagination sends only the last management ID and merges the next personal page',async t=>{
   const f=fixture(t,{listAccountSessions:async arg=>safe(arg.after?{sessions:[SECOND],hasMore:false}:{sessions:[CURRENT,OTHER],hasMore:true})});await login(f);await open(f);assert.equal(f.id('account-sessions-more').hidden,false);f.click('account-sessions-more');await until(()=>f.rows().length===3);

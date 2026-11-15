@@ -124,7 +124,7 @@ test('additive initializer preserves original rows and SQL definitions and refus
   const f=await fixture(t),ticket=await approve(f),{initializeTeamDatabase}=await load('database.mjs'),before=f.db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name").all(),requests=f.db.prepare('SELECT * FROM team_provisioning_requests').all();initializeTeamDatabase(f.db);initializeTeamDatabase(f.db);assert.deepEqual(f.db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name").all(),before);assert.deepEqual(f.db.prepare('SELECT * FROM team_provisioning_requests').all(),requests);assert.equal(f.db.prepare('SELECT token_hash FROM team_provisioning_requests').get().token_hash,digest(ticket.invitationCode));assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(),[]);
   const other=new DatabaseSync(':memory:');try{other.exec('CREATE TABLE customer_data(original BLOB)');assert.throws(()=>initializeTeamDatabase(other),/isolated/);assert.deepEqual(other.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all().map(row=>row.name),['customer_data']);}finally{other.close();}
 });
-test('an existing marked prototype upgrades all new provisioning tables atomically with its schema step',async t=>{
+test('an existing marked prototype upgrades all additive auth tables atomically with its schema step',async t=>{
   const {initializeTeamDatabase}=await load('database.mjs'),db=new DatabaseSync(':memory:');t.after(()=>db.close());
   for(const name of ['schema.sql','identity-schema.sql','activation-schema.sql','session-schema.sql'])db.exec(readFileSync(path.resolve(__dirname,'../server/team',name),'utf8'));
   db.prepare("INSERT INTO team_database_metadata VALUES ('prototype-version','2')").run();db.prepare("INSERT INTO team_users VALUES ('preserved','active')").run();
@@ -132,5 +132,5 @@ test('an existing marked prototype upgrades all new provisioning tables atomical
   db.exec=function(sql){if(sql.includes('CREATE TABLE IF NOT EXISTS team_session_metadata'))throw new Error('synthetic schema-step failure');return exec.call(this,sql);};
   assert.throws(()=>initializeTeamDatabase(db),/synthetic schema-step failure/);db.exec=exec;
   assert.deepEqual(db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name").all(),before);assert.equal(db.prepare("SELECT status FROM team_users WHERE user_id='preserved'").get().status,'active');
-  initializeTeamDatabase(db);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_schema WHERE type='table' AND name LIKE 'team_%'").get().n,before.length+8);assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+  initializeTeamDatabase(db);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_schema WHERE type='table' AND name LIKE 'team_%'").get().n,before.length+9);assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
 });

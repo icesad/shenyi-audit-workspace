@@ -5,6 +5,8 @@ const invoke=(name,arg)=>ipcRenderer.invoke('shenyi:'+name,arg);
 contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   login:credentials=>invoke('login',credentials),
   getAuthMethods:()=>invoke('auth-methods'),
+  requestPasswordRecovery:target=>invoke('recovery-challenge',target),
+  recoverPassword:proof=>invoke('recovery-complete',proof),
   getTeamProvisioningAccess:()=>invoke('team-review-access'),
   listTeamProvisioningRequests:()=>invoke('team-review-list'),
   createTeamProvisioningRequest:request=>invoke('team-review-create',request),

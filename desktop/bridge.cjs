@@ -37,6 +37,8 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   }
   handle('login',arg=>client.login(input(arg,['username','password'])));
   handle('auth-methods',()=>client.getAuthMethods());
+  handle('recovery-challenge',arg=>client.requestPasswordRecovery(input(arg,['phone'])));
+  handle('recovery-complete',arg=>client.recoverPassword(input(arg,['challengeId','code','newPassword','recoveryProof'])));
   const noArgs=arg=>{if(arg!==undefined)throw Error('操作参数无效。');};
   handle('team-review-access',arg=>{noArgs(arg);return client.getTeamProvisioningAccess();});
   handle('team-review-list',arg=>{noArgs(arg);return client.listTeamProvisioningRequests();});
