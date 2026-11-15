@@ -4,12 +4,13 @@ import {ApiError,invalid,transaction} from './http-utils.mjs';
 import {UUID,digest,deviceServerId,currentDeviceLease,deviceConflict,deviceRequired} from './device-policy.mjs';
 import proof from '../../shared/device-proof.cjs';
 const BODY_LIMIT=17*1024*1024,NONCE_LIMIT=2048;
-const BOOTSTRAP_GET=new Set(['/api/auth/methods','/api/auth/session','/api/auth/onboarding/capabilities','/api/auth/recovery-requests/capabilities','/api/auth/devices']);
+const BOOTSTRAP_GET=new Set(['/api/auth/methods','/api/auth/session','/api/auth/onboarding/capabilities','/api/auth/recovery-requests/capabilities','/api/auth/devices','/api/auth/device-replacements']);
 const BOOTSTRAP_POST=new Set(['/api/auth/login','/api/auth/logout','/api/auth/phone/login','/api/auth/phone/challenges','/api/auth/phone/reset','/api/auth/recovery-requests',
   '/api/auth/onboarding/preview','/api/auth/onboarding/challenges','/api/auth/onboarding/activate',
   '/api/auth/first-administrator/preview','/api/auth/first-administrator/challenges','/api/auth/first-administrator/activate',
   '/api/auth/devices/enrollment-challenges','/api/auth/devices/proof-challenges','/api/auth/devices/revocation-challenges','/api/auth/devices/enroll','/api/auth/devices/prove','/api/auth/devices/revoke',
-  '/api/auth/wechat/transactions']);
+  '/api/auth/wechat/transactions',
+  '/api/auth/device-replacements/request-challenges','/api/auth/device-replacements/request','/api/auth/device-replacements/withdraw-challenges','/api/auth/device-replacements/withdraw','/api/auth/device-replacements/activate-challenges','/api/auth/device-replacements/activate']);
 export function deviceBootstrapAllowed(request){
   const url=new URL(request.url);
   // This one exact external callback keeps its own strict state/code/error

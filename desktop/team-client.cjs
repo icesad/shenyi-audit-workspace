@@ -1,6 +1,7 @@
 'use strict';
 const {createWechatLogin}=require('./wechat-login.cjs');
 const {createDeviceSession}=require('./device-session.cjs');
+const {createDeviceReplacement}=require('./device-replacement.cjs');
 
 // Main-process only. The renderer never receives bearer tokens or raw fetch.
 const API_BASE = 'http://127.0.0.1:8774';
@@ -96,8 +97,8 @@ async function boundedBytes(response, limit) {
 
 function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wechatPolicy,openAuthorization,now=Date.now,deviceIdentity} = {}) {
   if (baseUrl !== API_BASE || typeof fetchImpl !== 'function') throw failure('INVALID_SERVER', '预览版只连接本机审易服务。');
-  let token = null, current = null, generation = 0,wechat,device;
-  const clear = () => { token = null; current = null; generation++;device?.reset();wechat?.reset(); };
+  let token = null, current = null, generation = 0,wechat,device,replacement;
+  const clear = () => { replacement?.reset();token = null; current = null; generation++;device?.reset();wechat?.reset(); };
   const snapshot = () => {
     if(!current)return null;const value=structuredClone(current);
     if(device?.required){value.device=device.status();if(!device.isReady())value.memberships=[];}
@@ -151,6 +152,10 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     adopt:data=>{const value=cleanSession(data);if(typeof data.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.token))throw failure('INVALID_RESPONSE','账号服务返回格式无效。');current=value;token=data.token;generation++;return snapshot();},
     bootstrap:(route,options={})=>{const {token:bearer,minted,...settings}=options;return request(route,{...settings,...(bearer?{temporaryBearer:bearer}:{}),discardSessionOnChange:minted===true});},
     protectedRequest:route=>request(route),revoke:bearer=>detachedPost('/api/auth/logout',{},bearer)});
+  replacement=createDeviceReplacement({identity:deviceIdentity,getAccount:()=>({token,current,generation}),getContext:()=>device.getReplacementContext(),clearAccount:clear,error:failure,
+    bootstrap:(route,options={})=>{const {token:bearer,minted,...settings}=options;return request(route,{...settings,...(bearer?{temporaryBearer:bearer}:{}),discardSessionOnChange:minted===true});},
+    reviewRequest:(route,options={})=>request(route,{...options,messagesOverride:{403:'当前密码验证未通过或换机审核未获授权。',404:'无法访问该换机申请。',409:'换机申请、设备或授权已改变，请刷新核对。',410:'本次换机申请或挑战已过期，请刷新核对。'}}),
+    adopt:(data,expected,assertCurrent)=>device.adoptReplacementSession(data,expected,assertCurrent),revoke:bearer=>detachedPost('/api/auth/logout',{},bearer)});
   async function finalizeSession(data,external=()=>{},receiveReceipt){
     external();if(typeof data?.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.token)||device.required&&Buffer.from(data.token,'base64url').toString('base64url')!==data.token)throw failure('INVALID_RESPONSE','账号服务返回格式无效。');
     const value=cleanSession(data);current=value;token=data.token;generation++;const at=generation,bootstrap=data.token;
@@ -188,6 +193,13 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     getDeviceStatus(input){if(input!==undefined)throw failure('INVALID_INPUT','设备状态不接受额外参数。');return device.status();},
     async enrollDevice(input){await device.enroll(input);return snapshot();},
     async reconnectDevice(input){if(input!==undefined)throw failure('INVALID_INPUT','设备续接不接受额外参数。');await device.reconnect();return snapshot();},
+    getDeviceReplacementStatus:input=>replacement.getStatus(input),
+    requestDeviceReplacement:input=>replacement.request(input),
+    withdrawDeviceReplacement:input=>replacement.withdraw(input),
+    activateDeviceReplacement:(input,receiveReceipt)=>replacement.activate(input,receiveReceipt),
+    getDeviceReplacementReviewAccess:input=>replacement.getReviewAccess(input),
+    listDeviceReplacementReviews:input=>replacement.listReviews(input),
+    reviewDeviceReplacement:input=>replacement.review(input),
     checkDeviceConnection:()=>device.check(),
     pauseDeviceConnection:()=>device.pause(),
     async getMemberManagementAccess(input){

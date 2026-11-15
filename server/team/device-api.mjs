@@ -37,7 +37,7 @@ function liveChallenge(db,request,identity,id,purpose,at){
   const bytes=proof.challengeBytes(challengeFields(row));return {row,key,binding,bytes};
 }
 function deviceEvent(db,userId,binding,action,at){db.prepare('INSERT INTO team_device_events(event_id,user_id,device_id,action,revision,created_at) VALUES (?,?,?,?,?,?)').run(randomUUID(),userId,binding.device_id,action,safeRevision(binding.revision,1),at);}
-function leasedSession(db,identity,binding,at){
+export function leasedSession(db,identity,binding,at){
   // Only the initiating session and historical proved business sessions are
   // displaced. Other password-only bootstrap sessions cannot evict this lease.
   db.prepare(`UPDATE team_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=?
@@ -65,7 +65,7 @@ export async function handleDeviceIdentityRequest(request,{db,now=Date.now,devic
   if(!match)return null;if(url.search)invalid();const action=match[1];
   if(request.method!==(action?'POST':'GET'))return method(action?'POST':'GET');
   const identity=deviceIdentity(db,request,now());
-  if(!action){const row=db.prepare('SELECT *,CAST(revision AS TEXT) AS revision FROM team_device_bindings WHERE user_id=? ORDER BY bound_at DESC,device_id DESC LIMIT 1').get(identity.userId);return json({hasHistory:!!row,canEnroll:!row,device:bindingView(row)});}
+  if(!action){const row=db.prepare("SELECT *,CAST(revision AS TEXT) AS revision FROM team_device_bindings WHERE user_id=? ORDER BY (status='active') DESC,bound_at DESC,device_id DESC LIMIT 1").get(identity.userId);return json({hasHistory:!!row,canEnroll:!row,device:bindingView(row)});}
   const create=action.endsWith('-challenges');
   if(create){
     const purpose=action==='enrollment-challenges'?'enroll':action==='proof-challenges'?'prove':'revoke';
@@ -106,10 +106,12 @@ export async function handleDeviceIdentityRequest(request,{db,now=Date.now,devic
       const id=randomUUID();db.prepare("INSERT INTO team_device_bindings(device_id,user_id,public_key,key_fingerprint,display_name,platform,status,revision,bound_at) VALUES (?,?,?,?,?,?,'active',1,?)")
         .run(id,identity.userId,fresh.row.public_key,fresh.row.key_fingerprint,fresh.row.display_name,fresh.row.platform,at);
       binding=activeBinding(db,identity.userId);deviceEvent(db,identity.userId,binding,'bound',at);
+      safeRevision(db.prepare('SELECT CAST(version AS TEXT) AS version FROM team_recovery_identity_epochs WHERE user_id=?').get(identity.userId)?.version??0);
     }
     if(action==='revoke'){
       const revision=safeRevision(binding.revision,1);if(revision>=Number.MAX_SAFE_INTEGER)deviceConflict();
       const changed=db.prepare("UPDATE team_device_bindings SET status='revoked',revision=revision+1,revoked_at=? WHERE device_id=? AND status='active' AND revision=?").run(at,binding.device_id,revision);if(changed.changes!==1)deviceConflict();
+      safeRevision(db.prepare('SELECT CAST(version AS TEXT) AS version FROM team_recovery_identity_epochs WHERE user_id=?').get(identity.userId)?.version??0);
       db.prepare('UPDATE team_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=?').run(at,identity.userId);
       db.prepare('UPDATE team_device_leases SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=?').run(at,identity.userId);
       db.prepare('UPDATE team_device_challenges SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=? AND consumed_at IS NULL').run(at,identity.userId);

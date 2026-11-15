@@ -1,6 +1,6 @@
-# 审易团队采集桌面预览（M2/M3B）
+# 审易团队采集桌面预览（M2/M3C）
 
-独立的Electron候选壳，沿用现有审易品牌。只连接本机`http://127.0.0.1:8774`合成服务；不接原浏览器业务库，不用于正式客户资料。[正常设备会话](../docs/DESKTOP_DEVICE_SESSION.md)已接入并通过Windows本地验收；换机审批、生产HTTPS、签名/安装/更新、Mac实机及商业化能力仍未完成。
+独立的Electron候选壳，沿用现有审易品牌。只连接本机`http://127.0.0.1:8774`合成服务；不接原浏览器业务库，不用于正式客户资料。[正常设备会话](../docs/DESKTOP_DEVICE_SESSION.md)与[员工/管理员换机审批](../docs/DEVICE_REPLACEMENT.md)已通过Windows本地验收；生产HTTPS、签名/安装/更新、Mac实机、最高审核账号自身恢复及商业化能力仍未完成。
 
 ## 本机运行
 
@@ -37,11 +37,11 @@ Windows预览用户数据默认放`D:/codex-temp/shenyi-desktop-preview`，可�
 
 ## 权限与桌面安全边界
 
-M3A [OS密钥库与底座](../docs/DEVICE_IDENTITY_FOUNDATION.md)已由M3B接入正常main/preload/renderer，Windows两一键入口固定开启设备门，缺vault或旧服务不降级。首次绑定须重新输入密码并明确同意；同key持钥登录后才进入，异key/撤销历史阻断。main逐请求签名、5秒心跳、租约单飞续接及断网暂停，key目录独立于业务profile/漫游userData。`node device-identity-smoke.cjs`仍只验证无窗口底层；`node device-client-smoke.cjs`才验证正常真实窗口链路。M3C换机审批、Mac与生产仍待完成。
+M3A [OS密钥库与底座](../docs/DEVICE_IDENTITY_FOUNDATION.md)已由M3B接入正常main/preload/renderer，Windows两一键入口固定开启设备门，缺vault或旧服务不降级。首次绑定须重新输入密码并明确同意；同key持钥登录后才进入，异key/撤销历史只能走M3C受审换机。main逐请求签名、5秒心跳、租约单飞续接及断网暂停，key目录独立于业务profile/漫游userData。`node device-identity-smoke.cjs`仍只验证无窗口底层；`node device-client-smoke.cjs`验证正常绑定/在线会话，`node device-replacement-smoke.cjs`验证员工/管理员申请、审核及激活。批准不立即停旧机，明确激活才原子切换。Mac与正式服务仍待完成。
 
 - renderer只加载`shenyi://app/index.html`，资源映射限固定HTML/CSS/JS/原标识；严格CSP，不开放网络、iframe、动态外链和通用文件协议。
 - `nodeIntegration:false`、`contextIsolation:true`、`sandbox:true`，不关闭webSecurity；权限请求、新窗口、外部导航、webview和renderer下载拒绝。
-- preload共暴露57个窄操作：原54个账号/采集/身份/管理操作，加3个设备状态/明确首次绑定/重连操作。每个IPC均检查当前窗口、主frame与固定页面来源；没有通用fetch/IPC、路径读写、URL打开、自由签名或命令执行。renderer无法指定外链，token/lease secret/私钥不进入renderer。
+- preload共暴露64个窄操作：原54个账号/采集/身份/管理操作，加3个设备状态/首次绑定/重连和7个换机本人申请/领取/独立审核操作。每个IPC均检查当前窗口、主frame与固定页面来源；没有通用fetch/IPC、路径读写、URL打开、自由签名或命令执行。renderer无法指定外链，token/lease secret/私钥不进入renderer。当前10个表单/17个密码输入，阶段专项的旧数量仅为引入时历史。
 - main固定API地址、禁止重定向、超时/响应体限额。token不回renderer、不写localStorage；响应只保留账号/任务/提交的明确字段。迟到的旧账号响应拒绝。
 - 上传文件只能来自用户原生对话框选择，读取前检查常规文件及12MiB上限，按原始字节提交；renderer不能传本机文件路径。下载只在授权后通过原生保存对话框指定路径，不向renderer下发原件字节或路径。
 - 对话框期间账号变化会取消旧账号操作。退出/401清空账号、团队、任务与输入状态，登录表单解除busy。已合法保存的文件不能承诺远程追回。
@@ -64,9 +64,10 @@ node upload-preflight-smoke.cjs
 node download-preflight-smoke.cjs
 node member-deactivation-smoke.cjs
 node device-client-smoke.cjs
+node device-replacement-smoke.cjs
 ```
 
-第一项需要根项目锁文件的jsdom；覆盖HTTP客户端和IPC/文件边界、真实DOM的撤销后再登录及XSS文本呈现，并检查身份能力、首绑状态清理、57项白名单及未配置入口。微信专项另见`tests/team-desktop-wechat.test.cjs`和`team-desktop-wechat-ui.test.cjs`。第二项仅适用于独立M2诊断合成服务，用`assistant-b`执行上传/下载/哈希/退出，会改变合成任务；不适用于当前严格设备一键服务。第三项需要根项目Playwright和已安装Electron，现自建随机端口strict HTTP、fresh SQLite、真实OSvault与D盘key/profile，明确首次确认后继续全部原登录/任务/会话/密码清理/退出/导航断言；不会接触已有8774或13演示账号。证据默认`D:/codex-temp/shenyi-device-client-20261115/default-smoke/run-*/`，可用`SHENYI_DESKTOP_EVIDENCE_DIR`改证据根目录。
+第一项需要根项目锁文件的jsdom；覆盖HTTP客户端和IPC/文件边界、真实DOM的撤销后再登录及XSS文本呈现，并检查身份能力、首绑状态清理、64项白名单及未配置入口。微信专项另见`tests/team-desktop-wechat.test.cjs`和`team-desktop-wechat-ui.test.cjs`。第二项仅适用于独立M2诊断合成服务，用`assistant-b`执行上传/下载/哈希/退出，会改变合成任务；不适用于当前严格设备一键服务。第三项需要根项目Playwright和已安装Electron，现自建随机端口strict HTTP、fresh SQLite、真实OSvault与D盘key/profile，明确首次确认后继续全部原登录/任务/会话/密码清理/退出/导航断言；不会接触已有8774或14演示账号。证据默认`D:/codex-temp/shenyi-device-client-20261115/default-smoke/run-*/`，可用`SHENYI_DESKTOP_EVIDENCE_DIR`改证据根目录。
 
 第四项以Node24运行真实Electron＋隔离内存SQLite/随机端口HTTP，供应商明确合成；仅测试bootstrap重写client transport映射和浏览器opener，生产main/preload/renderer及服务处理器沿用。记录opener调用收据、直接派发合成HTTPS回调，再走真实HTTP轮询/关联/兑换；不访问微信、不展示假二维码、不修改共享demo。默认结果在`D:/codex-temp/shenyi-wechat-desktop-20261115/real-electron-synthetic/`。首次关联、再次登录、取消回调拒绝和过期通过也不等于OS浏览器、手机或微信平台验收。
 

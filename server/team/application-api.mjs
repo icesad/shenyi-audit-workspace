@@ -10,6 +10,7 @@ import {handleTeamProvisioningRequest} from './provisioning-api.mjs';
 import {handleRecoveryReviewRequest} from './recovery-review-api.mjs';
 import {handleMemberAccessRequest} from './member-access-api.mjs';
 import {handleDeviceIdentityRequest} from './device-api.mjs';
+import {handleDeviceReplacementRequest} from './device-replacement-api.mjs';
 import {authorizeDeviceRequest} from './device-gate.mjs';
 import {deviceServerId} from './device-policy.mjs';
 import {recoveryConfigured} from './recovery-review-policy.mjs';
@@ -43,7 +44,8 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
     }
     const deviceAuthorization=await authorizeDeviceRequest(request,options);
     request=deviceAuthorization.request;options.deviceContext=deviceAuthorization.context;
-    return await handleDeviceIdentityRequest(request,options)
+    return await handleDeviceReplacementRequest(request,options)
+      || await handleDeviceIdentityRequest(request,options)
       || await handleAccountSessionsRequest(request,options)
       || await handleMemberAccessRequest(request,options)
       || await handleRecoveryReviewRequest(request,options)

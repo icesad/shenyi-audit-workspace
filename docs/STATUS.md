@@ -2,7 +2,7 @@
 
 记录日期：2026-11-15。GitHub 地址：<https://github.com/icesad/shenyi-audit-workspace>。
 
-最新检查点为下文M3B：[正常Windows设备会话](DESKTOP_DEVICE_SESSION.md)已接入并验证，换机审批、Mac与正式服务尚未完成。M2本地候选通过、正式身份/配置/生产仍待完成；完整Goal active，尚未进入main或上线。以下各阶段保留各自当时的证据与边界。
+最新检查点为下文M3C：[员工/管理员换机审批](DEVICE_REPLACEMENT.md)已接入并通过Windows本地独立验收；Mac/真实跨电脑、最高审核账号恢复与正式服务尚未完成。M2本地候选通过、正式身份/配置/生产仍待完成；完整Goal active，尚未进入main或上线。以下各阶段保留各自当时的证据与边界。
 
 ## 版本不混淆
 
@@ -176,3 +176,13 @@ Node24完整portable 1552通过/0失败/0跳过，271.29秒；新4专项110项�
 真实Windows严格Electron/OSvault/随机HTTP/落盘SQL三实例验证通过：首次取消不绑定、明确确认、实际合成phone路由、断网Open不读文件、提交已COMMIT后丢响应恰1POST、fresh恢复、同keyB替A约5223ms清退并阻挂起Save零写、异key及真实撤销历史阻断。5图5DB、原件62bytes/hash与合法旧副本独立核对；默认strict smoke8图亦通过。11旧原生仅以显式test-only诊断夹具证明兼容，不混为设备证据。OS选框是合成拦截，不称真人操作。
 
 两入口本轮实际重启required=true、UUID稳定、窗口可达；两库46表/76对象及全部行与只读online before备份完全相同，普通9/review13用户与空设备表保持，没有自动给演示账号绑定。未push/main/上线，完整Goal active。下一M3C审批/撤旧/新设备激活；M2真实供应商adapter和生产配置、Mac/HTTPS/安装更新、后续业务/年费/官网及上线仍未完成。
+
+## 2026-11-15 M3C：员工/管理员换机审批已本地验证
+
+`codex/device-replacement-approval`从`e37eaab`接续，[换机流程](DEVICE_REPLACEMENT.md)已实现新key持钥＋当前密码申请、本人撤回、独立权限审核及明确激活。员工本团队技术管理员审，管理员本人产品负责人独立device.replace审；审计职级、停用、恢复、开通权限不复用，不自审/跨团队。批准不撤旧机，激活事务才消费批准、撤旧绑定/全部旧登录、发新binding与15分钟会话。revoked历史受审恢复、fresh密码登录后同key新挑战恢复、CAS/ABA/期限/MAX和审计失败回滚均验；审计权限、任务版本和原件保持。
+
+最终完整portable 1830通过/0失败/0跳过，437.96秒，新168项包含；54运行/单元源在完整运行前后hash一致。独立89安全/314UI通过，修复激活采纳后/IPC回复未交付切账号遗留业务会话P2、列表全库JS筛选及同毫秒旧终态遮新pending。正常64窄RPC、10form17密码，无私钥、lease secret或approval token到renderer。
+
+严格Windows4个OSvault/main窗口/fresh14用户/随机HTTP/落盘SQL通过，6图5DB独立重开核对：批准仍保旧，显式claim后旧端实测318ms清退、保存中失效0新增写盘；管理员仅独立owner批准，激活已COMMIT丢回复实际仅1POST并人工登录恢复。62bytes/SHA与合法副本/taskrev1保持，合成选框不称真人OS操作。13旧原生兼容分别标明11诊断及M3B严格/default，不代替新换机验收。
+
+真实两个一键入口升级至50表/87对象，旧76定义/46表原行保持，普通9不增权、review仅加一个独立合成device-reviewer-demo及credential/epoch2/ACL/marker共五行至14；没有audit/operator/membership。startup及之后全部50表行/DDL与快照相同，无auth豁免，设备/换机流程表空，未自动绑定。当前strict预览可达，未push/main/上线。完整Goal/M3仍进行；下一核本地阶段门与M4权限/模块接入，Mac/真实跨PC、最高owner恢复、真实供应商/HTTPS/安装签名及商业化仍未完成。

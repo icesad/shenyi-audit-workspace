@@ -3,6 +3,7 @@
 const fs=require('node:fs/promises'),{constants}=require('node:fs'),path=require('node:path');
 const {generateKeyPairSync,createPrivateKey,createPublicKey,randomUUID,sign,timingSafeEqual}=require('node:crypto');
 const proof=require('../shared/device-proof.cjs');
+const replacementProof=require('../shared/device-replacement-proof.cjs');
 const KEY_FILE='device-identity-v1.json',MAX_FILE_BYTES=64*1024;
 const messages={VAULT_UNAVAILABLE:'系统密钥保护暂不可用，无法读取设备身份。',VAULT_INVALID:'设备密钥文件无效，请保留原文件并联系管理员。',VAULT_STORAGE_FAILED:'设备密钥无法安全保存，原设备身份未被替换。',VAULT_DISPOSED:'设备密钥库已关闭。',PROOF_CONTEXT_INVALID:'设备证明上下文无效。'};
 function fail(code){const error=new Error(messages[code]);error.code=code;return error;}
@@ -46,6 +47,7 @@ function createDeviceKeyVault({directory,safeStorage,platform=process.platform}=
  }
  async function signChallenge(fields,context){const record=await initialize();alive();try{contextMatches(fields,context,['purpose','serverId','userId','sessionToken','bindingRevision'],record);if(fields.keyFingerprint!==record.fingerprint)throw fail('PROOF_CONTEXT_INVALID');const bytes=proof.challengeBytes(fields);return sign(null,bytes,record.key).toString('base64url');}catch{throw fail('PROOF_CONTEXT_INVALID');}}
  async function signRequest(fields,context){const record=await initialize();alive();try{contextMatches(fields,context,['serverId','userId','sessionToken','deviceId','bindingRevision','leaseId','keyFingerprint'],record);const bytes=proof.requestProofBytes(fields);return sign(null,bytes,record.key).toString('base64url');}catch{throw fail('PROOF_CONTEXT_INVALID');}}
- return Object.freeze({async getPublicIdentity(){const record=await initialize();alive();return publicIdentity(record);},signChallenge,signRequest,dispose(){disposed=true;loaded=null;}});
+ async function signReplacementChallenge(fields,context){const record=await initialize();alive();try{contextMatches(fields,context,['purpose','serverId','userId','sessionToken','oldDeviceId','oldBindingRevision','oldBindingStatus','requestId','requestRevision'],record);if(fields.keyFingerprint!==record.fingerprint)throw fail('PROOF_CONTEXT_INVALID');const bytes=replacementProof.replacementChallengeBytes(fields);return sign(null,bytes,record.key).toString('base64url');}catch{throw fail('PROOF_CONTEXT_INVALID');}}
+ return Object.freeze({async getPublicIdentity(){const record=await initialize();alive();return publicIdentity(record);},signChallenge,signRequest,signReplacementChallenge,dispose(){disposed=true;loaded=null;}});
 }
 module.exports={createDeviceKeyVault};

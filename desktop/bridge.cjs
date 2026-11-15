@@ -43,6 +43,23 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('device-status',arg=>{noArgs(arg);return client.getDeviceStatus();});
   handle('device-enroll',arg=>client.enrollDevice(input(arg,['displayName','currentPassword','confirmed'])));
   handle('device-reconnect',arg=>{noArgs(arg);return client.reconnectDevice();});
+  handle('device-replacement-status',arg=>{noArgs(arg);return client.getDeviceReplacementStatus();});
+  handle('device-replacement-request',arg=>client.requestDeviceReplacement(input(arg,['displayName','currentPassword','confirmed'])));
+  handle('device-replacement-withdraw',arg=>client.withdrawDeviceReplacement(input(arg,['requestId','revision'])));
+  handle('device-replacement-activate',async arg=>{
+    let receipt;
+    try{
+      const value=await client.activateDeviceReplacement(input(arg,['requestId','revision','confirmed']),current=>{receipt=current;});
+      receipt?.assertCurrent();return value;
+    }catch(error){
+      // This only clears the exact adopted login. A committed device switch
+      // remains committed; never restore the old binding or clear a later actor.
+      if(receipt)await receipt.rollback().catch(()=>{});throw error;
+    }
+  });
+  handle('device-replacement-review-access',arg=>{noArgs(arg);return client.getDeviceReplacementReviewAccess();});
+  handle('device-replacement-reviews',arg=>{noArgs(arg);return client.listDeviceReplacementReviews();});
+  handle('device-replacement-review',arg=>client.reviewDeviceReplacement(input(arg,['requestId','revision','decision','currentPassword'])));
   handle('member-management-access',arg=>{noArgs(arg);return client.getMemberManagementAccess();});
   handle('business-members',arg=>client.listTeamBusinessMembers(input(arg,['teamId','q','after','limit'])));
   handle('team-administrators',arg=>client.listTeamAdministrators(input(arg===undefined?{}:arg,['q','after','limit'])));

@@ -1,5 +1,7 @@
 # M3B 正常客户端设备会话执行合同
 
+本合同是M3B历史范围；新增换机权限/证明/接口和后续验收以[M3C合同](DEVICE_REPLACEMENT_CONTRACT.md)及[说明](DEVICE_REPLACEMENT.md)为准。原协议/设备状态投影保持，正常接口后续增加为64项。
+
 2026-11-15，从M3A `77f6c1d` 接续，分支 `codex/desktop-device-session`。本轮唯一实现里程碑仍M3，交付正常main/登录/业务逐请求设备证明、在线续接与暂停；M3C换机审批及正式身份/HTTPS/Mac验收仍保留。本轮不改dist/旧平台/专业规则、不接真实资料、不push/main/上线。改写前19份备份在 `D:/codex-temp/shenyi-device-client-20261115/baseline/`。
 
 ## 冻结接口与职责

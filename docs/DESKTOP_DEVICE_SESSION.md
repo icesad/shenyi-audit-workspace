@@ -1,5 +1,7 @@
 # M3B 正常桌面设备会话
 
+本页保留`e37eaab`的M3B范围；后续[换机审批M3C](DEVICE_REPLACEMENT.md)已完成Windows本地验证，现为64窄接口/10form/17密码。下文“换机尚待实现”仅指M3B当时，Mac、正式服务及最高审核账号恢复仍未完成。
+
 2026-11-15，分支 `codex/desktop-device-session`，从M3A `77f6c1d` 接续。本轮已将 [设备底座](DEVICE_IDENTITY_FOUNDATION.md) 接入正常客户端并通过Windows本地独立验收，详细证据见 [进度](../进度.md)。[执行合同](DESKTOP_DEVICE_SESSION_CONTRACT.md)记录精确接口与竞态要求，M3C换机审批、Mac与国内正式服务仍待完成。
 
 ## 登录和使用

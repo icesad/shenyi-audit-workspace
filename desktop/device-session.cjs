@@ -7,10 +7,11 @@ const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/,HEX=/^[a-f0-9]{64}$/;
 const opaque=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{43}$/.test(value)&&Buffer.from(value,'base64url').toString('base64url')===value;
 const exact=(value,keys)=>!!value&&Object.getPrototypeOf(value)===Object.prototype&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
 const text=value=>typeof value==='string'&&value.isWellFormed()&&!!value.trim()&&[...value].length<=80&&!/[\p{Cc}\p{Cf}]/u.test(value);
-const GET_BOOTSTRAP=new Set(['/api/auth/methods','/api/auth/session','/api/auth/onboarding/capabilities','/api/auth/recovery-requests/capabilities','/api/auth/devices']);
+const GET_BOOTSTRAP=new Set(['/api/auth/methods','/api/auth/session','/api/auth/onboarding/capabilities','/api/auth/recovery-requests/capabilities','/api/auth/devices','/api/auth/device-replacements']);
 const POST_BOOTSTRAP=new Set(['/api/auth/login','/api/auth/logout','/api/auth/phone/login','/api/auth/phone/challenges','/api/auth/phone/reset','/api/auth/recovery-requests',
  '/api/auth/onboarding/preview','/api/auth/onboarding/challenges','/api/auth/onboarding/activate','/api/auth/first-administrator/preview','/api/auth/first-administrator/challenges','/api/auth/first-administrator/activate',
- '/api/auth/devices/enrollment-challenges','/api/auth/devices/proof-challenges','/api/auth/devices/revocation-challenges','/api/auth/devices/enroll','/api/auth/devices/prove','/api/auth/devices/revoke','/api/auth/wechat/transactions']);
+ '/api/auth/devices/enrollment-challenges','/api/auth/devices/proof-challenges','/api/auth/devices/revocation-challenges','/api/auth/devices/enroll','/api/auth/devices/prove','/api/auth/devices/revoke','/api/auth/wechat/transactions',
+ '/api/auth/device-replacements/request-challenges','/api/auth/device-replacements/withdraw-challenges','/api/auth/device-replacements/activate-challenges','/api/auth/device-replacements/request','/api/auth/device-replacements/withdraw','/api/auth/device-replacements/activate']);
 function deviceBootstrapRequest(method,route){
  if(typeof route!=='string'||!route.startsWith('/')||route.startsWith('//')||route.includes('?')||route.includes('#'))return false;
  if(method==='GET')return GET_BOOTSTRAP.has(route);if(method!=='POST')return false;if(POST_BOOTSTRAP.has(route))return true;
@@ -128,6 +129,14 @@ function createDeviceSession({identity,getAccount,adopt,clearAccount,bootstrap,p
   try{proof.signatureBytes(signature);}catch{lease=null;work++;transition('vault_unavailable',{force:true});throw fail('DEVICE_VAULT_UNAVAILABLE','系统设备签名返回格式无效。');}
   return {headers:{'X-Shenyi-Device-Lease':currentLease.token,'X-Shenyi-Device-Nonce':fields.nonce,'X-Shenyi-Device-Body-SHA256':fields.bodySha256,'X-Shenyi-Device-Signature':signature},assertCurrent};
  }
- return Object.freeze({required,status,reset,pause,guard,prepare,finalize,enroll,reconnect,check,isReady:()=>state==='ready',isBootstrap:deviceBootstrapRequest});
+ function getReplacementContext(){return required&&local&&serverId&&device?{state,epoch,serverId,publicKey:local.publicKey,fingerprint:local.fingerprint,device:structuredClone(device)}:null;}
+ function adoptReplacementSession(data,expected,assertCurrent){
+  assertCurrent();const account=getAccount();
+  if(!exact(data,['token','account','memberships','expiresAt','device','lease'])||!opaque(data.token)||data.token===account.token||data.account?.id!==expected.userId||typeof data.account?.displayName!=='string'||!Array.isArray(data.memberships)||!data.memberships.every(member=>member&&ID.test(member.teamId)&&['intern','assistant','manager','partner'].includes(member.role))||!Number.isSafeInteger(data.expiresAt))throw fail('INVALID_RESPONSE','换机激活的业务会话格式无效，请重新登录核对。');
+  const bound=viewDevice(data.device),value=data.lease;
+  if(!exact(value,['id','token','serverId','deviceId','bindingRevision','expiresAt'])||!UUID.test(value.id)||!opaque(value.token)||value.serverId!==expected.serverId||value.deviceId!==bound.id||value.bindingRevision!==1||bound.id===expected.device.id||bound.revision!==1||bound.status!=='active'||bound.keyFingerprint!==expected.fingerprint||bound.displayName!==expected.displayName||bound.platform!==expected.platform||!Number.isSafeInteger(value.expiresAt)||value.expiresAt<=now()||value.expiresAt!==data.expiresAt||value.expiresAt>expected.challengeExpiresAt+15*60000)throw fail('INVALID_RESPONSE','换机激活的设备或业务授权状态无效，请重新登录核对。');
+  assertCurrent();device=bound;lease={...value};work++;transition('ready',{force:true});return adopt(data);
+ }
+ return Object.freeze({required,status,reset,pause,guard,prepare,finalize,enroll,reconnect,check,getReplacementContext,adoptReplacementSession,isReady:()=>state==='ready',isBootstrap:deviceBootstrapRequest});
 }
 module.exports={createDeviceSession,deviceBootstrapRequest};
