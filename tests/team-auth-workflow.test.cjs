@@ -293,10 +293,10 @@ test('project-read permission does not allow uploading another employee task or 
 
 test('explicit manager capability permits return and resubmission, stale versions do not override work', async t => {
   const f = await fixture(t); const a = await login(f), manager = await login(f, 'manager-a');
-  assert.equal((await call(f, task('/return'), {method: 'POST', token: a.token, body: {}})).response.status, 404);
-  assert.equal((await call(f, task('/return'), {method: 'POST', token: manager.token, body: {}})).response.status, 409);
+  assert.equal((await call(f, task('/return'), {method: 'POST', token: a.token, body: {revision:0}})).response.status, 404);
+  assert.equal((await call(f, task('/return'), {method: 'POST', token: manager.token, body: {revision:0}})).response.status, 409);
   assert.equal((await call(f, task('/submissions'), {method: 'POST', token: a.token, body: upload()})).response.status, 201);
-  const returned = await call(f, task('/return'), {method: 'POST', token: manager.token, body: {}});
+  const returned = await call(f, task('/return'), {method: 'POST', token: manager.token, body: {revision:1}});
   assert.equal(returned.response.status, 200);
   assert.equal((await call(f, task(), {token: a.token})).json.task.status, 'returned');
   const state = await call(f, task('/submissions'), {token: a.token}); assert.equal(state.json.revision, 2);
@@ -308,16 +308,16 @@ test('explicit manager capability permits return and resubmission, stale version
 
 test('assignment is project-management scoped, rejects cross-team users and revokes previous collector access', async t => {
   const f = await fixture(t); const a = await login(f), assistant = await login(f, 'assistant-a'), manager = await login(f, 'manager-a');
-  assert.equal((await call(f, task('/assignment'), {method: 'POST', token: a.token, body: {userId: assistant.account.id}})).response.status, 404);
+  assert.equal((await call(f, task('/assignment'), {method: 'POST', token: a.token, body: {userId: assistant.account.id,revision:0}})).response.status, 404);
   const b = await login(f, 'intern-b');
-  const bad = await call(f, task('/assignment'), {method: 'POST', token: manager.token, body: {userId: b.account.id}});
+  const bad = await call(f, task('/assignment'), {method: 'POST', token: manager.token, body: {userId: b.account.id,revision:0}});
   assert.equal(bad.response.status, 404); privacy(bad);
-  const assigned = await call(f, task('/assignment'), {method: 'POST', token: manager.token, body: {userId: assistant.account.id}});
+  const assigned = await call(f, task('/assignment'), {method: 'POST', token: manager.token, body: {userId: assistant.account.id,revision:0}});
   assert.equal(assigned.response.status, 200);
   assert.equal((await call(f, task(), {token: a.token})).response.status, 404);
   assert.equal((await call(f, task(), {token: assistant.token})).response.status, 200);
   f.run("UPDATE team_project_grants SET status='revoked' WHERE team_id='team-a' AND user_id=? AND permission='collection.manage'", manager.account.id);
-  assert.equal((await call(f, task('/assignment'), {method: 'POST', token: manager.token, body: {userId: a.account.id}})).response.status, 404);
+  assert.equal((await call(f, task('/assignment'), {method: 'POST', token: manager.token, body: {userId: a.account.id,revision:1}})).response.status, 404);
 });
 
 test('membership removal immediately prevents original download, upload and submission history access', async t => {

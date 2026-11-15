@@ -122,3 +122,11 @@ GitHub仓库不替代原网站登录；GitHub合并不自动触发网站升级�
 首轮完整1078通过；随后独立复现并修复申请写入恰过期的列表边界，新42对抗及相关114通过，最终完整1079通过/0失败/0跳过，195.59秒。双窗口真实Electron＋HTTP/SQL及合成SMS首轮/修后均PASS，独立4图复核无剩余P1/P2；默认禁用及四项旧原生兼容PASS。两库原35表所有行保持，新恢复审核seed仅显式reviewdemo追加1合成身份，普通9用户不增权。
 
 未推送/main/上线；一键预览可达，真实SMS缺席恢复仍available=false。M2和Goal继续进行；下一阶段核对M2验收缺口及首版设备绑定，Mac、生产身份/供应商及商业化不因这些检查视为已完成。
+
+## 2026-11-15 M2进行中：任务指派/退回桌面闭环
+
+`codex/collection-task-management`接续`c6f2067`，[任务管理](TASK_MANAGEMENT.md)已补桌面入口和管理写CAS/sameactor。用户确认候选仅本团队有效intern/assistant；manager/partner另须当前任务read和项目manage交集，技术管理员/误授低role不能使用。48窄IPC，9form/15秘密不变，无schema改动；管理不扩他人提交/原件授权。
+
+完整1158通过0失败0跳过，独立28对抗及35桌面、三窗口真实Electron/HTTP/SQL和4图复核通过，无剩余P1/P2。改派撤旧范围、新人无旧附件、退回重交、陈旧409需刷新，3份ID/bytes/hash保持；picker仅测试拦截合成文件，非本轮人工OS选择。两demo各39表/62schema对象及全部已有行保持，默认smoke只读通过。
+
+未推送/main/上线，一键窗口已更新可达。M2和Goal继续进行：上传“可提交”前置检查、成员停用管理入口/权限答复仍需完成；真实SMS/微信/HTTPS/Mac/设备/商业化继续分层验收，不能凭本轮通过整体收口。

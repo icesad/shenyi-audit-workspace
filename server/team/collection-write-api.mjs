@@ -4,6 +4,11 @@ import {getCollectionTask, readTeamContext} from './repository.mjs';
 import {ApiError, ID, deny, invalid, conflict, json, readJson, transaction} from './http-utils.mjs';
 
 const MAX_FILE_BYTES = 12 * 1024 * 1024;
+// User-confirmed collection assignees: active interns or assistants in this team.
+const ASSIGNEE_ROLES = Object.freeze(['intern','assistant']);
+function sameActor(db,request,identity,at){
+  const current=authenticated(db,request,at);if(current.userId!==identity.userId)deny();return current;
+}
 function taskState(db, identity, teamId, taskId) {
   const context = readTeamContext(db, identity, teamId);
   if (!context || !getCollectionTask(db, context, taskId)) deny();
@@ -23,20 +28,65 @@ function audit(db, identity, teamId, taskId, action, now) {
 function nextRevision(db, teamId, taskId) {
   db.prepare('INSERT INTO team_task_versions VALUES (?,?,1) ON CONFLICT(team_id,task_id) DO UPDATE SET revision=revision+1').run(teamId, taskId);
 }
-function assertManager(db, identity, teamId, state) {
+function canManage(db, identity, teamId, state) {
   const context = readTeamContext(db, identity, teamId);
-  if (!['manager', 'partner'].includes(context?.role) || !db.prepare(`SELECT 1 FROM team_project_grants
-    WHERE team_id=? AND project_id=? AND user_id=? AND permission='collection.manage' AND status='active'`).get(teamId, state.project_id, identity.userId)) deny();
+  return ['manager', 'partner'].includes(context?.role) && !!db.prepare(`SELECT 1 FROM team_project_grants
+    WHERE team_id=? AND project_id=? AND user_id=? AND permission='collection.manage' AND status='active'`).get(teamId, state.project_id, identity.userId);
+}
+function assertManager(db, identity, teamId, state) {
+  if(!canManage(db,identity,teamId,state))deny();
+}
+function memberView(row){
+  const displayName=[...String(row.display_name).toWellFormed().replace(/[\p{Cc}\p{Cf}]/gu,'').trim()].slice(0,80).join('')||row.user_id.slice(0,80);
+  return {id:row.user_id,displayName,role:row.role};
+}
+function currentAssignees(db,teamId,taskId){
+  const rows=db.prepare(`SELECT account.user_id,credential.display_name,member.role
+    FROM team_task_assignments AS assignment
+    JOIN team_users AS account ON account.user_id=assignment.user_id AND account.status='active'
+    JOIN team_credentials AS credential ON credential.user_id=account.user_id
+    JOIN team_memberships AS member ON member.team_id=assignment.team_id AND member.user_id=account.user_id
+      AND member.status='active' AND member.role IN ('intern','assistant','manager','partner')
+    WHERE assignment.team_id=? AND assignment.task_id=? AND assignment.status='active'
+    ORDER BY account.user_id COLLATE BINARY LIMIT 51`).all(teamId,taskId);
+  return {assignees:rows.slice(0,50).map(memberView),hasMoreAssignees:rows.length>50};
+}
+function candidateQuery(params){
+  for(const key of params.keys())if(!['q','after','limit'].includes(key)||params.getAll(key).length!==1)invalid();
+  const q=params.get('q')??'',after=params.get('after')??'',rawLimit=params.get('limit');
+  if(q.length>80||q!==q.toWellFormed()||/[\p{Cc}\p{Cf}]/u.test(q)||(params.has('after')&&!ID.test(after))||(rawLimit!==null&&!/^(?:[1-9]|[1-4][0-9]|50)$/.test(rawLimit)))invalid();
+  return {q,after,limit:rawLimit===null?20:Number(rawLimit)};
+}
+function candidateMembers(db,teamId,{q,after,limit}){
+  const where=`member.team_id=? AND member.status='active' AND member.role IN ('intern','assistant')
+    AND account.status='active'`;
+  const from=`FROM team_memberships AS member JOIN team_users AS account ON account.user_id=member.user_id
+    JOIN team_credentials AS credential ON credential.user_id=member.user_id`;
+  const escaped=q.replace(/[\\%_]/g,value=>'\\'+value),search=q?" AND credential.display_name LIKE ? ESCAPE '\\'":'',parameters=[teamId,...(q?['%'+escaped+'%']:[])];
+  if(after&&!db.prepare(`SELECT 1 ${from} WHERE ${where}${search} AND member.user_id=?`).get(...parameters,after))deny();
+  const rows=db.prepare(`SELECT member.user_id,credential.display_name,member.role ${from}
+    WHERE ${where}${search} AND member.user_id>? ORDER BY member.user_id COLLATE BINARY LIMIT ?`).all(...parameters,after,limit+1);
+  return {members:rows.slice(0,limit).map(memberView),hasMore:rows.length>limit};
 }
 export async function handleCollectionWriteRequest(request, {db, now = Date.now}) {
   const url = new URL(request.url);
-  const match = /^\/api\/teams\/([^/]+)\/collection\/tasks\/([^/]+)\/(submissions|assignment|return)$/.exec(url.pathname);
+  const match = /^\/api\/teams\/([^/]+)\/collection\/tasks\/([^/]+)\/(submissions|assignment|return|management|assignees)$/.exec(url.pathname);
   if (!match) return null;
   const [,teamId, taskId, action] = match;
   if (!ID.test(teamId) || !ID.test(taskId)) deny();
-  if (url.search) invalid();
+  if (action!=='assignees'&&url.search) invalid();
   const identity = authenticated(db, request, now());
   const state = taskState(db, identity, teamId, taskId);
+  if(action==='management'){
+    if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
+    if(!canManage(db,identity,teamId,state)||state.project_status!=='active'||state.status==='closed')return json({canManage:false});
+    return json({canManage:true,revision:state.revision,status:state.status,...currentAssignees(db,teamId,taskId)});
+  }
+  if(action==='assignees'){
+    if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
+    assertManager(db,identity,teamId,state);if(state.project_status!=='active'||state.status==='closed')conflict();
+    return json(candidateMembers(db,teamId,candidateQuery(url.searchParams)));
+  }
   if (action === 'submissions' && request.method === 'GET') {
     const rows = db.prepare(`SELECT submission.submission_id,submission.attachment_id,attachment.display_name,
       submission.content_sha256,submission.byte_length,submission.created_at FROM team_task_submissions AS submission
@@ -48,14 +98,17 @@ export async function handleCollectionWriteRequest(request, {db, now = Date.now}
   if (request.method !== 'POST') return json({error: {code: 'METHOD_NOT_ALLOWED', message: '不支持此操作。'}}, 405, {Allow: action === 'submissions' ? 'GET, POST' : 'POST'});
   if (action !== 'submissions') {
     assertManager(db, identity, teamId, state);
-    const body = await readJson(request, action === 'assignment' ? ['userId'] : []);
+    const body = await readJson(request, action === 'assignment' ? ['userId','revision'] : ['revision']);
+    if(!Number.isSafeInteger(body.revision)||body.revision<0||body.revision>=Number.MAX_SAFE_INTEGER)invalid();
     if (action === 'assignment' && (typeof body.userId !== 'string' || !ID.test(body.userId))) invalid();
+    sameActor(db,request,identity,now());
     return transaction(db, () => {
-      const freshIdentity = authenticated(db, request, now()), fresh = taskState(db, freshIdentity, teamId, taskId);
+      const freshIdentity = sameActor(db, request,identity,now()), fresh = taskState(db, freshIdentity, teamId, taskId);
       assertManager(db, freshIdentity, teamId, fresh);
-      if (fresh.project_status !== 'active') conflict();
+      if (fresh.project_status !== 'active'||fresh.status==='closed'||fresh.revision!==body.revision) conflict();
       if (action === 'assignment') {
-        if (!readTeamContext(db, {userId: body.userId}, teamId) || !db.prepare("SELECT 1 FROM team_users WHERE user_id=? AND status='active'").get(body.userId)) deny();
+        const assignee=readTeamContext(db, {userId: body.userId}, teamId);
+        if (!assignee || !ASSIGNEE_ROLES.includes(assignee.role) || !db.prepare("SELECT 1 FROM team_users WHERE user_id=? AND status='active'").get(body.userId)) deny();
         db.prepare("UPDATE team_task_assignments SET status='revoked' WHERE team_id=? AND task_id=?").run(teamId, taskId);
         db.prepare("INSERT INTO team_task_assignments VALUES (?,?,?,'active') ON CONFLICT(team_id,task_id,user_id) DO UPDATE SET status='active'").run(teamId, taskId, body.userId);
       } else if (fresh.status !== 'submitted') conflict();
@@ -76,9 +129,9 @@ export async function handleCollectionWriteRequest(request, {db, now = Date.now}
   if (bytes.length > MAX_FILE_BYTES) throw new ApiError(413, 'TOO_LARGE', '单份资料最多12MiB。');
   const sha256 = createHash('sha256').update(bytes).digest('hex'), id = randomUUID(), attachmentId = randomUUID();
   return transaction(db, () => {
-    const freshIdentity = authenticated(db, request, now()), fresh = taskState(db, freshIdentity, teamId, taskId);
+    const freshIdentity = sameActor(db, request,identity,now()), fresh = taskState(db, freshIdentity, teamId, taskId);
     if (!db.prepare("SELECT 1 FROM team_task_assignments WHERE team_id=? AND task_id=? AND user_id=? AND status='active'").get(teamId, taskId, freshIdentity.userId)) deny();
-    if (fresh.project_status !== 'active' || !['open', 'returned'].includes(fresh.status) || fresh.revision !== body.revision) conflict();
+    if (fresh.project_status !== 'active' || !['open', 'returned'].includes(fresh.status) || fresh.revision !== body.revision||!Number.isSafeInteger(fresh.revision)||fresh.revision>=Number.MAX_SAFE_INTEGER) conflict();
     const at = now();
     db.prepare('INSERT INTO team_collection_attachments VALUES (?,?,?,?,?)').run(teamId, taskId, attachmentId, body.filename, bytes);
     db.prepare('INSERT INTO team_task_submissions VALUES (?,?,?,?,?,?,?,?)').run(teamId, id, taskId, attachmentId, freshIdentity.userId, sha256, bytes.length, at);

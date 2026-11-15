@@ -57,7 +57,7 @@ test('management grant revoked while return body is pending keeps the submitted 
   const request = f.stream(TASK + '/return', manager);
   await new Promise(setImmediate);
   f.db.prepare("UPDATE team_project_grants SET status='revoked' WHERE user_id='manager-a' AND permission='collection.manage'").run();
-  request.finish({});
+  request.finish({revision:1});
   assert.equal((await request.pending).status, 404);
   assert.equal(f.db.prepare("SELECT status FROM team_collection_tasks WHERE team_id='team-a' AND task_id='task-a'").get().status, 'submitted');
   assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM team_activity').get().n, before);

@@ -77,6 +77,10 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('logout',()=>client.logout());
   handle('tasks',arg=>client.listTasks(input(arg,['teamId','q','after','limit'])));
   handle('task',arg=>client.getTask(input(arg,['teamId','taskId'])));
+  handle('task-management',arg=>client.getTaskManagement(input(arg,['teamId','taskId'])));
+  handle('task-assignees',arg=>client.listTaskAssignees(input(arg,['teamId','taskId','q','after','limit'])));
+  handle('task-assign',arg=>client.assignTask(input(arg,['teamId','taskId','userId','revision'])));
+  handle('task-return',arg=>client.returnTask(input(arg,['teamId','taskId','revision'])));
   handle('submissions',arg=>client.getSubmissions(input(arg,['teamId','taskId'])));
   handle('upload',async arg=>{
     input(arg,['teamId','taskId','revision']);

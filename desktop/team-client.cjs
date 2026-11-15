@@ -57,6 +57,10 @@ function taskView(task) {
   if (!task || !ID.test(task.id) || !['title', 'instructions', 'status'].every(key => typeof task[key] === 'string')) throw failure('INVALID_RESPONSE', '任务服务返回格式无效。');
   return {id: task.id, title: task.title, instructions: task.instructions, status: task.status};
 }
+function taskMemberView(value){
+  if(!value||typeof value.id!=='string'||!ID.test(value.id)||typeof value.displayName!=='string'||!value.displayName.isWellFormed()||!value.displayName.trim()||[...value.displayName].length>80||/[\p{Cc}\p{Cf}]/u.test(value.displayName)||!ROLES.has(value.role))throw failure('INVALID_RESPONSE','任务分工成员资料格式无效。');return {id:value.id,displayName:value.displayName,role:value.role};
+}
+function taskRevisionInput(value){if(!Number.isSafeInteger(value)||value<0||value>=Number.MAX_SAFE_INTEGER)throw failure('INVALID_INPUT','请刷新任务后再提交分工或退回。');return value;}
 function submissionView(item) {
   if (!item || !ID.test(item.id) || !ID.test(item.attachmentId) || typeof item.filename !== 'string' || !/^[a-f0-9]{64}$/i.test(item.sha256) || !Number.isSafeInteger(item.byteLength) || item.byteLength < 0 || item.byteLength > MAX_FILE_BYTES || !Number.isSafeInteger(item.createdAt)) throw failure('INVALID_RESPONSE', '提交记录返回格式无效。');
   return {id: item.id, attachmentId: item.attachmentId, filename: item.filename, sha256: item.sha256, byteLength: item.byteLength, createdAt: item.createdAt};
@@ -126,6 +130,25 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   function activationTarget(input,keys){exactKeys(input,keys);if(token)throw failure('SIGN_OUT_REQUIRED','请先退出当前账号再激活受邀账号。');return {invitationCode:invitationCodeInput(input.invitationCode),phone:phoneInput(input.phone)};}
   function path(teamId, taskId) { return `/api/teams/${id(teamId)}/collection/tasks${taskId ? '/' + id(taskId) : ''}`; }
   return Object.freeze({
+    async getTaskManagement(input){
+      exactKeys(input,['teamId','taskId']);const data=await request(path(input.teamId,input.taskId)+'/management');if(typeof data?.canManage!=='boolean')throw failure('INVALID_RESPONSE','任务管理权限状态无效。');if(!data.canManage)return {canManage:false};
+      if(!Number.isSafeInteger(data.revision)||data.revision<0||!['open','submitted','returned','closed'].includes(data.status)||!Array.isArray(data.assignees)||data.assignees.length>50||typeof data.hasMoreAssignees!=='boolean'||(data.hasMoreAssignees&&data.assignees.length!==50))throw failure('INVALID_RESPONSE','任务分工状态格式无效。');
+      const assignees=data.assignees.map(taskMemberView);if(new Set(assignees.map(item=>item.id)).size!==assignees.length)throw failure('INVALID_RESPONSE','任务分工状态格式无效。');return {canManage:true,revision:data.revision,status:data.status,assignees,hasMoreAssignees:data.hasMoreAssignees};
+    },
+    async listTaskAssignees(input){
+      exactKeys(input,['teamId','taskId','q','after','limit']);const params=new URLSearchParams(),limit=input.limit??20;
+      if(!Number.isSafeInteger(limit)||limit<1||limit>50||input.q!==undefined&&(typeof input.q!=='string'||input.q.length>80||/[\p{Cc}\p{Cf}]/u.test(input.q)))throw failure('INVALID_INPUT','请使用80个字符以内的姓名搜索，每次最多读取50人。');
+      if(input.q!==undefined)params.set('q',input.q);if(input.after!==undefined)params.set('after',id(input.after));if(input.limit!==undefined)params.set('limit',String(limit));
+      const data=await request(path(input.teamId,input.taskId)+'/assignees'+(params.size?'?'+params:''));if(!Array.isArray(data?.members)||data.members.length>limit||typeof data.hasMore!=='boolean'||(data.hasMore&&data.members.length!==limit))throw failure('INVALID_RESPONSE','可指派成员列表格式无效。');const members=data.members.map(taskMemberView);if(new Set(members.map(item=>item.id)).size!==members.length)throw failure('INVALID_RESPONSE','可指派成员列表格式无效。');return {members,hasMore:data.hasMore};
+    },
+    async assignTask(input){
+      exactKeys(input,['teamId','taskId','userId','revision']);const revision=taskRevisionInput(input.revision),data=await request(path(input.teamId,input.taskId)+'/assignment',{method:'POST',body:{userId:id(input.userId),revision}});
+      if(!Number.isSafeInteger(data?.revision)||data.revision!==revision+1)throw failure('INVALID_RESPONSE','无法确认任务分工结果，请刷新任务核对。');return {revision:data.revision};
+    },
+    async returnTask(input){
+      exactKeys(input,['teamId','taskId','revision']);const revision=taskRevisionInput(input.revision),data=await request(path(input.teamId,input.taskId)+'/return',{method:'POST',body:{revision}});
+      if(!Number.isSafeInteger(data?.revision)||data.revision!==revision+1)throw failure('INVALID_RESPONSE','无法确认任务退回结果，请刷新任务核对。');return {revision:data.revision};
+    },
     async getRecoveryReviewStatus(){const data=await request('/api/auth/recovery-requests/capabilities',{authenticated:false});if(typeof data?.reviewed!=='boolean'||typeof data.available!=='boolean'||(!data.reviewed&&data.available))throw failure('INVALID_RESPONSE','恢复审核服务状态无效。');return {reviewed:data.reviewed,available:data.available};},
     async createRecoveryReviewRequest(input){
       exactKeys(input,['challengeId','code']);if(token)throw failure('SIGN_OUT_REQUIRED','请先退出当前账号再申请恢复。');
