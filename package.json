@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "start": "node scripts/serve.mjs",
+    "dev:team": "node scripts/team-desktop-dev.mjs",
     "test": "node scripts/test.mjs",
     "test:unit": "node scripts/test.mjs --unit --strict",
     "test:strict": "node scripts/test.mjs --strict",

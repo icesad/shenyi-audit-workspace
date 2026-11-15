@@ -1,0 +1,38 @@
+#!/usr/bin/env node
+// Local synthetic development launcher, not an installer or production service.
+import path from 'node:path';
+import os from 'node:os';
+import {existsSync} from 'node:fs';
+import {mkdir} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+import {spawn} from 'node:child_process';
+import {DatabaseSync} from 'node:sqlite';
+import {createRequire} from 'node:module';
+import {initializeTeamDatabase,seedDemoTeamData} from '../server/team/database.mjs';
+import {startTeamServer} from '../server/team/dev-server.mjs';
+
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+async function main() {
+  if (!/^24\./.test(process.versions.node) || Number(process.versions.node.split('.')[1])<15) throw new Error('请使用Node.js 24.15以上24.x启动。');
+  if (process.argv.length>2) throw new Error('此入口不接受生产服务器或客户资料参数。');
+  const require=createRequire(path.join(root,'desktop/package.json'));
+  let electron;
+  try { electron=require('electron'); } catch { throw new Error('请先在desktop目录按锁文件安装Electron依赖，参见desktop/README.md。'); }
+  if (typeof electron!=='string'||!existsSync(electron)) throw new Error('Electron运行时未完整安装，请参见desktop/README.md。');
+  const directory=process.platform==='win32'?'D:/codex-temp/shenyi-team-preview':path.join(os.homedir(),'.local/share/shenyi-team-preview');
+  await mkdir(directory,{recursive:true});
+  const db=new DatabaseSync(path.join(directory,'team-demo.sqlite'));
+  let service;
+  try {
+    initializeTeamDatabase(db);await seedDemoTeamData(db);
+    service=await startTeamServer({db});
+  } catch (error) { db.close();if(error.code==='EADDRINUSE')throw new Error('本机8774端口已占用。未切换端口或结束已有进程；请核对已有团队服务。');throw error; }
+  console.log('审易团队采集：纯合成演示，本机8774；不读原浏览器资料，不用于生产。');
+  const child=spawn(electron,[path.join(root,'desktop')],{cwd:root,windowsHide:false,stdio:['ignore','inherit','inherit'],env:{...process.env,SHENYI_TEAM_API:service.address.url,SHENYI_DESKTOP_DATA_DIR:path.join(directory,'desktop-data')}});
+  let stopping=false;
+  const stop=async()=>{if(stopping)return;stopping=true;await service.close();db.close();};
+  process.once('SIGINT',()=>{child.kill();void stop();});process.once('SIGTERM',()=>{child.kill();void stop();});
+  child.once('error',async()=>{await stop();process.exitCode=1;console.error('桌面进程启动失败，团队演示服务已停止。');});
+  child.once('exit',async code=>{await stop();process.exitCode=code===0?0:1;});
+}
+main().catch(error=>{console.error(error.message||'团队演示启动失败。');process.exitCode=1;});

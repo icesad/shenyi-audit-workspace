@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+  <title>审易 · 团队采集预览</title>
+  <link rel="stylesheet" href="team-ui.css">
+  <script src="team-ui.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><img src="brand-shenyi.png" alt="审易标识" width="64" height="52"><span>审易<small>AUDIT WORKSPACE</small></span></div>
+    <div class="workspace-label">团队工作空间</div>
+    <div class="nav-active"><span class="nav-number">01</span> 我的采集任务</div>
+    <div class="scope-note">仅显示当前账号获指派的资料任务。项目及资料的其他内容不在此工作空间展示。</div>
+    <div class="sidebar-foot"><span class="status-dot"></span> 本机合成演示<br><small>团队模式 · M2 开发预览</small></div>
+  </aside>
+  <main>
+    <header class="topbar"><span>工作台 <b>/</b> 资料采集</span><div id="session-actions" hidden><span id="account-name"></span><button id="logout" class="text-button" type="button">退出账号</button></div></header>
+    <div class="mode-notice"><span>本机演示</span><p>使用合成账号和资料验证团队流程。请勿导入真实客户资料；电脑绑定及正式商用服务尚未接入。</p></div>
+    <section id="login-view" class="login-view" aria-labelledby="login-title">
+      <div class="login-intro"><div class="eyebrow">TEAM COLLECTION</div><h1 id="login-title">进入你的<br>资料采集工作空间</h1><p>独立账号登录后，仅查看获授权的任务，<br>按要求提交资料并确认提交记录。</p><div class="intro-rule"></div><p class="intro-caption">明确的任务，清楚的提交记录。</p></div>
+      <form id="login-form" class="login-panel">
+        <h2>登录团队账号</h2><p class="muted">当前连接本机团队服务</p>
+        <label for="username">账号</label><input id="username" name="username" autocomplete="username" placeholder="输入团队账号" required maxlength="128">
+        <label for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" placeholder="输入密码" required maxlength="1024">
+        <button id="login-submit" type="submit" class="button primary">登录工作空间 <span aria-hidden="true">→</span></button>
+        <p id="login-message" class="feedback" role="status" aria-live="polite"></p>
+        <details class="demo-help"><summary>本机演示账号说明</summary><p>账号：intern-a 或 assistant-a<br>密码：ShenyiDemo!2026</p><p>仅用于明确启用的本机合成演示服务，不是正式用户账号。</p></details>
+      </form>
+    </section>
+    <section id="workspace-view" hidden aria-labelledby="workspace-title">
+      <div class="page-heading"><div><div class="eyebrow">MY COLLECTION TASKS</div><h1 id="workspace-title">我的采集任务</h1><p>选择一项任务，核对要求，再提交资料。</p></div><button id="refresh" class="button" type="button">刷新任务</button></div>
+      <div class="workspace-tools"><label class="team-label">当前团队<select id="team-select" aria-label="当前团队"></select></label><span id="role-label" class="role-label"></span><form id="search-form" class="search-form"><input id="search" type="search" maxlength="100" placeholder="搜索任务标题或说明" aria-label="搜索任务"><button class="button" type="submit">搜索</button></form></div>
+      <p id="workspace-message" class="feedback" role="status" aria-live="polite"></p>
+      <div class="collection-layout"><section class="task-list-panel" aria-label="获指派任务"><div class="panel-title"><h2>任务列表</h2><span id="task-count"></span></div><div id="task-list" class="task-list"></div><button id="load-more" class="button load-more" type="button" hidden>继续加载</button></section>
+      <section id="task-detail" class="task-detail" aria-label="任务详情"><div class="detail-empty"><span class="empty-symbol" aria-hidden="true">▤</span><h2>从左侧选择任务</h2><p>任务要求和你的提交记录将在这里显示。</p></div></section></div>
+    </section>
+    <footer><span>审易 · 团队采集工作空间</span><span>授权范围由服务端判定</span></footer>
+  </main>
+</body>
+</html>

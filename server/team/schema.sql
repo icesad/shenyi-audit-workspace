@@ -55,7 +55,7 @@ CREATE TABLE team_project_grants (
   team_id TEXT NOT NULL,
   project_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
-  permission TEXT NOT NULL CHECK (permission = 'collection.read'),
+  permission TEXT NOT NULL CHECK (permission IN ('collection.read', 'collection.manage')),
   status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
   PRIMARY KEY (team_id, project_id, user_id, permission),
   FOREIGN KEY (team_id, project_id) REFERENCES team_projects(team_id, project_id),
@@ -83,3 +83,61 @@ CREATE TABLE team_attachment_grants (
 CREATE INDEX team_assignment_user ON team_task_assignments(team_id, user_id, status);
 CREATE INDEX team_project_grant_user ON team_project_grants(team_id, user_id, status);
 CREATE INDEX team_tasks_project ON team_collection_tasks(team_id, project_id, task_id);
+
+-- M2 tables remain in the isolated team-mode database, never old browser data.
+CREATE TABLE team_database_metadata (name TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE team_credentials (
+  user_id TEXT PRIMARY KEY REFERENCES team_users(user_id),
+  username TEXT NOT NULL UNIQUE COLLATE BINARY,
+  display_name TEXT NOT NULL DEFAULT '',
+  password_hash TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE team_auth_limits (bucket TEXT PRIMARY KEY, window_start INTEGER NOT NULL, attempts INTEGER NOT NULL);
+CREATE TABLE team_task_versions (
+  team_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  revision INTEGER NOT NULL CHECK (revision >= 0),
+  PRIMARY KEY(team_id, task_id),
+  FOREIGN KEY(team_id, task_id) REFERENCES team_collection_tasks(team_id, task_id)
+);
+CREATE TABLE team_task_submissions (
+  team_id TEXT NOT NULL,
+  submission_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  attachment_id TEXT NOT NULL,
+  submitted_by TEXT NOT NULL,
+  content_sha256 TEXT NOT NULL,
+  byte_length INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY(team_id, submission_id),
+  FOREIGN KEY(team_id, task_id) REFERENCES team_collection_tasks(team_id, task_id),
+  FOREIGN KEY(team_id, attachment_id) REFERENCES team_collection_attachments(team_id, attachment_id),
+  FOREIGN KEY(team_id, submitted_by) REFERENCES team_memberships(team_id, user_id)
+);
+CREATE TABLE team_admin_grants (
+  team_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  permission TEXT NOT NULL CHECK (permission = 'member.invite'),
+  status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
+  PRIMARY KEY(team_id, user_id, permission),
+  FOREIGN KEY(team_id, user_id) REFERENCES team_memberships(team_id, user_id)
+);
+CREATE TABLE team_invitations (
+  token_hash TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL REFERENCES teams(team_id),
+  username TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('intern', 'assistant')),
+  invited_by TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  accepted_at INTEGER,
+  FOREIGN KEY(team_id, invited_by) REFERENCES team_memberships(team_id, user_id)
+);
+CREATE TABLE team_activity (
+  event_id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL REFERENCES teams(team_id),
+  actor_id TEXT NOT NULL REFERENCES team_users(user_id),
+  action TEXT NOT NULL,
+  task_id TEXT,
+  created_at INTEGER NOT NULL
+);
