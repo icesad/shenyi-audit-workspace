@@ -1,3 +1,4 @@
+import {administratorBusinessEligibilitySql} from './administrator-business-role-policy.mjs';
 import {randomUUID,createHash} from 'node:crypto';
 import {consume,limitedPasswordWork} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
@@ -23,11 +24,12 @@ const CANDIDATE_FROM=`FROM team_memberships member JOIN team_users account ON ac
  LEFT JOIN team_recovery_identity_epochs epoch ON epoch.user_id=member.user_id`;
 const CANDIDATE_SCOPE=`member.team_id=? AND member.user_id<>? AND member.status='active' AND member.role IN ('manager','partner') AND account.status='active' AND team.status='active'
  AND (SELECT COUNT(*) FROM team_memberships WHERE user_id=member.user_id)=1
- AND NOT EXISTS (SELECT 1 FROM team_operators WHERE user_id=member.user_id)
+ AND ${administratorBusinessEligibilitySql('member')}
  AND NOT EXISTS (SELECT 1 FROM team_platform_reviewers WHERE user_id=member.user_id)
  AND NOT EXISTS (SELECT 1 FROM team_recovery_reviewers WHERE user_id=member.user_id)
  AND NOT EXISTS (SELECT 1 FROM team_access_reviewers WHERE user_id=member.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=member.user_id)`;
+ AND NOT EXISTS (SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=member.user_id)
+ AND NOT EXISTS (SELECT 1 FROM team_administrator_business_role_reviewers WHERE user_id=member.user_id)`;
 function members(db,actorId,teamId,projectId,{q,after,limit}){
  const ownerScope=projectScope({userId:actorId},{owner:true}),from=`${CANDIDATE_FROM} JOIN team_projects project ON project.team_id=member.team_id AND project.project_id=?
  JOIN team_project_access_projects metadata ON metadata.team_id=project.team_id AND metadata.project_id=project.project_id`,search=q?" AND credential.display_name LIKE ? ESCAPE '\\'":'',parameters=[projectId,teamId,actorId,...ownerScope.parameters,...(q?[like(q)]:[])],where=`${CANDIDATE_SCOPE} AND ${ownerScope.sql}`;

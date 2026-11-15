@@ -1,3 +1,4 @@
+import {administratorBusinessEligibilitySql} from './administrator-business-role-policy.mjs';
 import {randomUUID,createHash} from 'node:crypto';
 import {currentDeviceLease} from './device-policy.mjs';
 import {safeMemberText} from './member-access-policy.mjs';
@@ -15,11 +16,12 @@ export function projectActor(db,request,{identityProviders={},deviceContext}={},
 export function currentActor(db,request,before,options,at){const fresh=projectActor(db,request,options,at);if(fresh.userId!==before.userId||fresh.token!==before.token||fresh.stamp!==before.stamp||fresh.leaseId!==before.leaseId)projectConflict();return fresh;}
 const ORDINARY=`member.status='active' AND member.role IN ('manager','partner') AND account.status='active' AND team.status='active'
  AND (SELECT COUNT(*) FROM team_memberships WHERE user_id=member.user_id)=1
- AND NOT EXISTS (SELECT 1 FROM team_operators WHERE user_id=member.user_id)
+ AND ${administratorBusinessEligibilitySql('member')}
  AND NOT EXISTS (SELECT 1 FROM team_platform_reviewers WHERE user_id=member.user_id)
  AND NOT EXISTS (SELECT 1 FROM team_recovery_reviewers WHERE user_id=member.user_id)
  AND NOT EXISTS (SELECT 1 FROM team_access_reviewers WHERE user_id=member.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=member.user_id)`;
+ AND NOT EXISTS (SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=member.user_id)
+ AND NOT EXISTS (SELECT 1 FROM team_administrator_business_role_reviewers WHERE user_id=member.user_id)`;
 export function safeProjectTitle(value,fallback){return [...String(value??'').toWellFormed().replace(/[\p{Cc}\p{Cf}]/gu,'').trim()].slice(0,300).join('')||[...fallback].slice(0,300).join('');}
 export function ordinaryTeamContext(db,userId,teamId){
  const row=db.prepare(`SELECT member.role,credential.password_hash,CAST(credential.revision AS TEXT) AS credential_revision,

@@ -1,3 +1,4 @@
+import {administratorBusinessEligibilitySql} from './administrator-business-role-policy.mjs';
 import {createHash, randomBytes, randomUUID} from 'node:crypto';
 import {hashPassword, verifyPassword, validPassword} from './passwords.mjs';
 import {readSession} from './repository.mjs';
@@ -22,7 +23,7 @@ export function accountView(db, identity, expiresAt) {
   const memberships = db.prepare(`SELECT membership.team_id,membership.role FROM team_memberships AS membership
     JOIN teams AS team ON team.team_id=membership.team_id
     WHERE membership.user_id=? AND membership.status='active' AND team.status='active'
-    AND membership.role IN ('intern','assistant','manager','partner') ORDER BY membership.team_id`).all(identity.userId);
+    AND membership.role IN ('intern','assistant','manager','partner') AND ${administratorBusinessEligibilitySql('membership')} ORDER BY membership.team_id`).all(identity.userId);
   return {account: {id: identity.userId, displayName: row.display_name}, memberships: memberships.map(value => ({teamId: value.team_id, role: value.role})), expiresAt};
 }
 export function authenticated(db, request, at) {

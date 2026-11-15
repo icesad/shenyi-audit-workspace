@@ -112,6 +112,11 @@ test('owner ACL default and three triggers add ABA history without editing old e
 test('deactivation terminates all three invitation sources and known in-flight identity flows while retaining accepted history and mappings',async t=>{
  const f=await fixture(t),id='administrator-a',phone='+8613800000011';
  f.run("INSERT INTO team_memberships VALUES ('team-a',?,'manager','active')",id);f.run("INSERT INTO team_admin_grants VALUES ('team-a',?,'member.invite','active')",id);
+ // Trusted fixture establishes the newly required approval before issuing old
+ // tickets, so this still tests deactivation rather than role-change cleanup.
+ f.run("INSERT INTO team_administrator_business_role_reviewers VALUES ('access-owner','administrator.business-role','active',1)");
+ f.run("INSERT INTO team_administrator_business_roles(team_id,user_id,role,status,member_role,reviewed_by,reviewed_at) VALUES ('team-a',?,'manager','active','manager','access-owner',?)",id,NOW);
+ const {approvedAdministratorBusiness}=await source('administrator-business-role-policy.mjs');assert.equal(approvedAdministratorBusiness(f.db,id,'team-a'),true);assert.equal(approvedAdministratorBusiness(f.db,id,'team-a',{technical:true}),true);
  f.add('other-administrator',{operator:true});f.run('INSERT INTO team_phone_credentials(user_id,phone,verified_at) VALUES (?,?,?)',id,phone,NOW-1000);
  f.run("INSERT INTO team_wechat_identities VALUES ('synthetic-app','synthetic-open',?,?)",id,NOW-1000);
  f.run("INSERT INTO team_recovery_reviewers VALUES ('access-owner','account.recover','active',1)");
@@ -133,6 +138,7 @@ test('deactivation terminates all three invitation sources and known in-flight i
  for(const [key,user,status] of [['own-ready',id,'ready'],['other-ready','intern-a','ready'],['unknown-pending',null,'pending']])f.run('INSERT INTO team_wechat_transactions(transaction_id,state_hash,poll_hash,code_challenge,app_id,redirect_uri,status,expires_at,user_id,credential_revision) VALUES (?,?,?,?,?,?,?,?,?,1)',key,hash(key),hash('poll:'+key),'synthetic-challenge','synthetic-app','https://synthetic.example.invalid/callback',status,NOW+60_000,user);
  const mappings={credentials:f.db.prepare('SELECT * FROM team_credentials WHERE user_id=?').get(id),phone:f.db.prepare('SELECT * FROM team_phone_credentials WHERE user_id=?').get(id),wechat:f.db.prepare('SELECT * FROM team_wechat_identities WHERE user_id=?').all(id)};
  const stopped=await f.stop(id,{actor:'access-owner',kind:'administrators'});assert.equal(stopped.status,200,stopped.raw);
+ assert.equal(f.db.prepare('SELECT status FROM team_administrator_business_roles WHERE user_id=?').get(id).status,'revoked');assert.equal(approvedAdministratorBusiness(f.db,id,'team-a'),false);assert.equal(approvedAdministratorBusiness(f.db,id,'team-a',{technical:true}),false);
  assert.equal(f.db.prepare('SELECT expires_at FROM team_invitations WHERE token_hash=?').get(hash('own-unused')).expires_at,NOW);for(const key of ['own-accepted','other-unused'])assert.equal(f.db.prepare('SELECT expires_at FROM team_invitations WHERE token_hash=?').get(hash(key)).expires_at,NOW+60_000);
  for(const [table,challenges] of [['team_employee_invitations','team_employee_activation_challenges'],['team_operator_employee_invitations','team_operator_employee_activation_challenges']]){
   assert.equal(f.db.prepare(`SELECT revoked_at FROM ${table} WHERE invitation_id=?`).get(table+'-own-unused').revoked_at,NOW);assert.equal(f.db.prepare(`SELECT delivery_state FROM ${challenges} WHERE challenge_id=?`).get(table+'-own-unused-challenge').delivery_state,'failed');

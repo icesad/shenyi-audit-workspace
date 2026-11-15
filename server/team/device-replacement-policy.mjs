@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {administratorTechnicalEligibilitySql} from './administrator-business-role-policy.mjs';
 import {canOperateTeam,restrictedBusinessIdentity} from './administration-policy.mjs';
 import {safeMemberText} from './member-access-policy.mjs';
 import {deviceServerId,safeRevision} from './device-policy.mjs';
@@ -19,7 +20,7 @@ export function replacementOwner(db,userId){
  return row?{...row,revision:replacementRevision(row.revision,1)}:null;
 }
 function protectedIdentity(db,userId){return !!db.prepare(`SELECT 1 FROM team_platform_reviewers WHERE user_id=? UNION ALL SELECT 1 FROM team_recovery_reviewers WHERE user_id=?
- UNION ALL SELECT 1 FROM team_access_reviewers WHERE user_id=? UNION ALL SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=? LIMIT 1`).get(userId,userId,userId,userId);}
+ UNION ALL SELECT 1 FROM team_access_reviewers WHERE user_id=? UNION ALL SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=? UNION ALL SELECT 1 FROM team_administrator_business_role_reviewers WHERE user_id=? LIMIT 1`).get(userId,userId,userId,userId,userId);}
 export function latestReplacementBinding(db,userId){return db.prepare(`SELECT *,CAST(revision AS TEXT) AS revision FROM team_device_bindings WHERE user_id=?
  ORDER BY (status='active') DESC,bound_at DESC,device_id DESC LIMIT 1`).get(userId)||null;}
 function snapshotBinding(row){return {device_id:row.device_id,user_id:row.user_id,public_key:row.public_key,key_fingerprint:row.key_fingerprint,
@@ -29,7 +30,7 @@ export function replacementTarget(db,userId){
  const memberships=db.prepare('SELECT team_id,role,status FROM team_memberships WHERE user_id=? ORDER BY team_id').all(userId);
  const operators=db.prepare('SELECT team_id,role,status FROM team_operators WHERE user_id=? ORDER BY team_id').all(userId);let kind,teamId;
  if(operators.length){
-  if(operators.length!==1||operators[0].role!=='administrator'||operators[0].status!=='active'||!canOperateTeam(db,userId,operators[0].team_id)||memberships.length>1||memberships.some(row=>row.team_id!==operators[0].team_id||row.status!=='active'||['intern','assistant'].includes(row.role)))return null;
+  if(operators.length!==1||operators[0].role!=='administrator'||operators[0].status!=='active'||!canOperateTeam(db,userId,operators[0].team_id))return null;
   kind='administrator';teamId=operators[0].team_id;
  }else{
   if(memberships.length!==1||memberships[0].status!=='active'||!['intern','assistant','manager','partner'].includes(memberships[0].role))return null;
@@ -72,6 +73,7 @@ export function replacementReviewRows(db,actorId){
  AND NOT EXISTS (SELECT 1 FROM team_recovery_reviewers WHERE user_id=account.user_id)
  AND NOT EXISTS (SELECT 1 FROM team_access_reviewers WHERE user_id=account.user_id)
  AND NOT EXISTS (SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=account.user_id)
+ AND NOT EXISTS (SELECT 1 FROM team_administrator_business_role_reviewers WHERE user_id=account.user_id)
  AND ((request.target_kind='employee' AND ?=1
    AND request.team_id IN (SELECT team_id FROM team_operators WHERE user_id=? AND role='administrator' AND status='active')
    AND (SELECT COUNT(*) FROM team_memberships WHERE user_id=account.user_id)=1
@@ -79,9 +81,8 @@ export function replacementReviewRows(db,actorId){
    AND NOT EXISTS (SELECT 1 FROM team_operators WHERE user_id=account.user_id))
  OR (request.target_kind='administrator' AND ?=1
    AND (SELECT COUNT(*) FROM team_operators WHERE user_id=account.user_id)=1
-   AND EXISTS (SELECT 1 FROM team_operators WHERE user_id=account.user_id AND team_id=request.team_id AND status='active' AND role='administrator')
-   AND (SELECT COUNT(*) FROM team_memberships WHERE user_id=account.user_id)<=1
-   AND NOT EXISTS (SELECT 1 FROM team_memberships WHERE user_id=account.user_id AND (team_id<>request.team_id OR status<>'active' OR role IN ('intern','assistant')))))
+   AND EXISTS (SELECT 1 FROM team_operators operator WHERE operator.user_id=account.user_id AND operator.team_id=request.team_id AND operator.status='active' AND operator.role='administrator'
+     AND ${administratorTechnicalEligibilitySql('operator')})))
  ORDER BY request.created_at DESC,request.request_id DESC LIMIT 51`).all(actorId,technical?1:0,actorId,owner?1:0);
 }
 export function replacementState(db,row,at){

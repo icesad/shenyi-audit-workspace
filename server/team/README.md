@@ -1,14 +1,36 @@
-# 团队采集授权原型（M1/M2/M3/M4A/M4B）
+# 团队采集授权原型（M1/M2/M3/M4A/M4B/M4C）
 
 M2新增独立账号、本机HTTP、定向邀请、原件提交与版本控制，以及手机号/微信的合成身份适配边界；最新运行说明见[本机桌面预览](../../docs/M2_LOCAL_TEAM_PREVIEW.md)和[正式身份方案](../../docs/PHONE_WECHAT_AUTH_PLAN.md)。下文读取范围描述M1模块，不能误读为M2没有写入接口；正式身份供应商、生产部署和订阅支付仍未完成。
 
 M4A新增[普通员工业务职级管理](../../docs/BUSINESS_ROLE_MANAGEMENT.md)：`business-role-schema.sql`、`business-role-policy.mjs`、`business-role-api.mjs`提供独立strict设备/技术管理员鉴权、SQL最小成员范围、当前密码与CAS/ABA、同事务改role并撤旧session/lease/grants及未完成票、逐task版本更新和专用audit；原件/身份映射/binding保持，不赠项目或邀请权。该阶段新增一审计表/一索引，达到51表/89对象，原50表/87定义与所有旧行启动时保持；普通9/review14，无新增账号或自动职级变化。后文M3C的50/87等亦为该阶段历史，不代表当前schema。正式身份/远程配置、Mac/真实跨电脑/安装更新和生产仍未完成。
 
-## 当前M4B公共项目授权与资料核对
+## 当前M4C管理员兼任业务职级审核
 
-[执行合同](../../docs/PROJECT_ACCESS_COLLECTION_CONTRACT.md)对应`project-access-schema.sql`、`project-access-policy.mjs`、`project-access-api.mjs`和独立`project-review-api.mjs`。当前54表/105个非sqlite对象；新增3表、2索引及11触发器，原51表/89对象定义及全部旧行保全。普通9/review14共享演示库不自动增加项目sidecar、owner、review ACL、任务或账号；旧project/UUID/原件及既有专业规则保持。
+[执行合同](../../docs/ADMINISTRATOR_BUSINESS_ROLE_CONTRACT.md)对应`administrator-business-role-schema.sql`、`administrator-business-role-policy.mjs`、`administrator-business-role-api.mjs`。产品负责人凭独立`administrator.business-role`审核权，在管理员名单中核对目标、当前密码和CAS后直接核准四职级；不另设申请队列。原开通、恢复、停用或换机审核权不能替代本权，管理员不能自审。处理器自身校验strict设备context和当前lease，名单在实际SQL内核审核权及目标范围，先范围再搜索、游标和分页，返回前再次核同一actor。
 
-只有可信服务端流程可调用`registerManagedProject`登记既有真实project的不可变创建者和来源元数据；无公开登记或补owner接口。有效普通manager/partner按显式read或当前owner ACL取得项目列表；`ProjectView`仅含`id/title/status/revision/canRead/canManageAccess/canCreateTask/canReview`。owner不隐含read，manage不隐含review；仅owner可重验当前密码、CAS并明确授权其他普通senior，read＋manage可新建服务端UUID/open/版本0的采集任务，随后须通过原任务分工明确指派junior。read＋独立review才可读取项目提交和原件，旧本人history与独立附件grant路径不扩权。
+当前隔离SQLite结构为57表/127个非sqlite对象：在M4B的54表/105对象上新增3表、1索引和18触发器，分别保存独立审核者、当前批准事实及专用审计。共享库升级须保持原54表/105定义及全部旧行；**本轮两实际一键共享库升级及before/startup/after已独立核验：全部旧行保持，启动后所有57表行/127定义不变，无认证豁免；仅review明确增加第五合成审核员至15，ordinary仍9，批准/事件表为空**。`administrator-business-role-demo.mjs`仅在显式review演示中增加独立合成审核者`business-role-reviewer-demo`，review预期14→15，ordinary仍9；旧14身份测试fixture仍保持14，新M4C专用fixture才增加至15。不会自动给既有管理员增加membership、批准事实或业务scope。
+
+技术管理与业务职级是两个独立维度。无membership的纯技术管理员沿用原行为；有membership的operator须有当前精确匹配的批准事实，四职级均可兼任。获批intern/assistant须经明确任务指派才能采集；获批manager/partner仍须逐项目授read/manage/review，职级本身不赠项目、附件、邀请或专业签发权。统一SQL/JS资格覆盖账号投影、旧采集与指派、新项目actor/recipient及GET/HEAD，未审或失效的混合身份不能借旧入口绕过。五类审核者的任何历史记录均纳入受保护身份，不能被当成普通业务人员调职、停用或恢复；管理员恢复和换机始终走独立产品负责人审核，兼任junior也不变为employee自审。
+
+`role:null`明确收回业务兼任：保留同团队disabled membership历史及有效的null批准事实，保留technical operator，重新登录后仍能执行技术管理，业务访问关闭。operator、membership、account或team资格的实际变化及删除/重建使批准失效，同值恢复不复活；正常改密、手机号、微信或设备变更不永久锁住已完成批准。结构合格的未审/失效身份可由负责人明确重新核准；当前有效同role或纯技术管理员无membership时的null为409无变化。
+
+审核在body/KDF/BEGIN后复核同actor/token/lease、当前审核权和目标身份epoch/CAS。事务先调整membership，再复用`business-role-transition.mjs`撤旧业务scope和票据，最后发布新批准与审计并校验实际安全epoch。目标旧session/lease、未用device proof、任务assignment、项目/附件/admin grants、M4B owner/review及三路未完成邀请/激活、SMS、ready微信、恢复/换机票均按原范围失效；实际撤assignment逐task版本只增一次。技术operator、binding/key、身份映射、原件/提交历史和非目标成员合法scope保留，MAX/CAS/约束/审计任一步失败整笔回滚。重新核准不恢复旧grant，业务权限仍须明确重授。
+
+3个桌面窄RPC对应以下精确接口；renderer不接触原始URL、私有stamp或令牌。
+
+| 窄RPC | HTTP入口与合同 |
+|---|---|
+| `getAdministratorBusinessRoleAccess` | `GET /api/auth/administrator-business-role/access` → `{canReview:boolean}` |
+| `listAdministratorBusinessRoles` | `GET /api/administrator-business-roles?q=&after=&limit=` → `{members:[{id,displayName,teamId,teamName,role,status,revision,approvalStatus}],hasMore}`；默认20、最多50，80码点字面搜索 |
+| `changeAdministratorBusinessRole` | `POST /api/administrator-business-roles/:userId`，仅`{revision,role,currentPassword}` → `{changed:true,role,revision}`；team取自可信目标，`role`为四职级或null |
+
+`approvalStatus`区分`unreviewed/approved/withdrawn/invalidated`；名单中的实际role不等于已获业务授权。main要求`confirmed:true`，不将confirmed发送HTTP。当前桌面总79个RPC、14个表单/20个密码输入；本轮完整portable、原生与共享保全结果由根目录[进度](../../进度.md)汇总，不能以专题代码或隔离测试代替最终验收。正式项目创建政策仍待答，创建项目接口尚未开放。
+
+## M4B公共项目授权与资料核对（历史引入阶段）
+
+[执行合同](../../docs/PROJECT_ACCESS_COLLECTION_CONTRACT.md)对应`project-access-schema.sql`、`project-access-policy.mjs`、`project-access-api.mjs`和独立`project-review-api.mjs`。M4B阶段达到54表/105个非sqlite对象；新增3表、2索引及11触发器，原51表/89对象定义及全部旧行保全。该阶段普通9/review14共享演示库不自动增加项目sidecar、owner、review ACL、任务或账号；旧project/UUID/原件及既有专业规则保持。54/105为历史阶段数字，当前M4C结构见上节。
+
+只有可信服务端流程可调用`registerManagedProject`登记既有真实project的不可变创建者和来源元数据；无公开登记或补owner接口。有效普通manager/partner及M4C精确获批的兼任senior，按显式read或当前owner ACL取得项目列表；`ProjectView`仅含`id/title/status/revision/canRead/canManageAccess/canCreateTask/canReview`。owner不隐含read，manage不隐含review；仅owner可重验当前密码、CAS并明确授权其他合格senior，read＋manage可新建服务端UUID/open/版本0的采集任务，随后须通过原任务分工明确指派合格junior。read＋独立review才可读取项目提交和原件，旧本人history与独立附件grant路径不扩权。
 
 9个桌面窄RPC及服务端入口如下；路径中的`:teamId/:projectId/:taskId/:submissionId`均是固定作用域ID，不能由renderer传任意URL或本机路径。
 
@@ -26,7 +48,7 @@ M4A新增[普通员工业务职级管理](../../docs/BUSINESS_ROLE_MANAGEMENT.md
 
 新处理器自身要求真实strict设备context和当前lease，诊断模式不能使用；SQL作用域先于搜索/分页，未授权与不存在统一404。高风险授权以当前密码、project revision及target身份epoch复核；完整read=false移出同时撤该项目assignment/attachment grants，受影响task版本各增一次，实际变更撤目标旧session/lease。调职/停用同事务撤新owner/review ACL，保留creator历史而不因升职复活；正常改密/本人换机不永久丢owner。冻结项目按权限可读、不可写，归档拒绝；所有CAS/撤权/审计失败原子回滚。原件HEAD任何状态均空body且不读blob；main经GET→保存框→fresh HEAD及同会话guard后才写副本，未知写结果不自动重发。
 
-**正式项目或先行采集工作区的创建路径仍待用户决定。**当前`POST /api/teams/:teamId/projects`为404，无创建项目RPC/按钮，也不从旧seed或自由姓名推断owner。严格原生证据中的受信任合成登记不是正常创建功能，未迁移旧中标报价正式立项或专业签发。当前桌面总76个RPC、13个表单/19个密码输入，M4A等旧数字仅描述其引入阶段。
+**正式项目或先行采集工作区的创建路径仍待用户决定。**当前`POST /api/teams/:teamId/projects`为404，无创建项目RPC/按钮，也不从旧seed或自由姓名推断owner。严格原生证据中的受信任合成登记不是正常创建功能，未迁移旧中标报价正式立项或专业签发。M4B引入时桌面总76个RPC、13个表单/19个密码输入；M4C当前总数见上节，旧数字仅描述其引入阶段。
 
 后续新增[员工邀请与本人激活](../../docs/EMPLOYEE_INVITATION_ACTIVATION.md)：业务邀请要求当前manager/partner＋独立member.invite；技术管理员使用独立operator来源，低权限误授grant仍拒绝。新账号本人验证设密，既有孤立账号必须当前密码且复用ID，不自动发会话或业务grants。未配SMS如实关闭，真实供应商、多团队及恢复政策未完成。
 
@@ -63,6 +85,7 @@ M4A新增[普通员工业务职级管理](../../docs/BUSINESS_ROLE_MANAGEMENT.md
 - `auth-api.mjs`、`application-api.mjs`：密码/会话、统一分发、限流及来源边界；`collection-write-api.mjs`、`invitations-api.mjs`提供M2的受限写入。
 - `identity-schema.sql`、`phone-api.mjs`、`wechat-api.mjs`：手机号映射/SMS挑战及微信事务。`identityProviders`只从服务端注入；无配置时明确503，`GET /api/auth/methods`如实返回能力。只给标记正确的M2实验库增加表，旧客户库不自动迁移。
 - `project-access-schema.sql`、`project-access-policy.mjs`、`project-access-api.mjs`、`project-review-api.mjs`：M4B可信登记、最小项目目录、创建者授权、采集任务创建及独立资料核对；所有公开路径均另核strict设备会话。
+- `administrator-business-role-schema.sql`、`administrator-business-role-policy.mjs`、`administrator-business-role-api.mjs`：M4C独立负责人审核、精确兼任资格及原子职级变更；`business-role-transition.mjs`复用旧scope/票据撤权，`administrator-business-role-demo.mjs`仅显式review合成预览使用。
 
 测试用 `DatabaseSync(':memory:')` 执行schema，不读旧IndexedDB或平台资料库。生产仓储接口与数据库选型尚需验证；同步SQL实验不等于生产并发/容量测试。
 
@@ -103,10 +126,11 @@ M1旧采集DTO的项目标题/财务/结构列专门存入合成秘密标记以�
 node --test tests/team-collection-access.test.cjs
 node --test tests/team-collection-access.test.cjs tests/account-profile.test.cjs tests/account-client.test.cjs scripts/dev-tools.test.cjs
 node --test tests/team-project-access-core.test.cjs tests/team-project-access-security.test.cjs tests/team-desktop-project-access-client.test.cjs tests/team-desktop-project-access-ui.test.cjs tests/team-desktop-project-entry.test.cjs
+node --test tests/team-administrator-business-role.test.cjs tests/team-administrator-business-role-security.test.cjs
 node desktop/project-access-smoke.cjs
 ```
 
-M4B专项从仓库根目录运行；真实Windows原生脚本使用随机端口strict HTTP、fresh落盘SQLite、14个合成身份和4个OSvault客户端，不连接共享演示服务。证据目录为`D:/codex-temp/shenyi-project-access-20261115/real-electron-synthetic/run-*/`，含5张图/6阶段SQLite/report；验证新采集任务→显式指派→junior上传、独立review与合法副本、撤review挂起保存零写入及COMMIT丢回复只一次POST。Open/Save为限定合成路径的测试拦截；旧strict-false handler在途body撤后重授由独立安全场景另验，不混作正常strict原生层。最终全量2202通过、0失败/0跳过，15项旧原生兼容通过；详见根目录[进度](../../进度.md)。
+M4B专项从仓库根目录运行；该阶段真实Windows原生脚本使用随机端口strict HTTP、fresh落盘SQLite、14个合成身份和4个OSvault客户端，不连接共享演示服务。证据目录为`D:/codex-temp/shenyi-project-access-20261115/real-electron-synthetic/run-*/`，含5张图/6阶段SQLite/report；验证新采集任务→显式指派→junior上传、独立review与合法副本、撤review挂起保存零写入及COMMIT丢回复只一次POST。Open/Save为限定合成路径的测试拦截；旧strict-false handler在途body撤后重授由独立安全场景另验，不混作正常strict原生层。M4B阶段最终全量2202通过、0失败/0跳过，15项旧原生兼容通过；这些是历史验收数字，本轮M4C最终结果见根目录[进度](../../进度.md)。
 
 上述M1 SQL测试无需额外npm依赖；M4B DOM使用根目录锁定依赖，原生专项还需按[桌面说明](../../desktop/README.md)安装固定Electron依赖。新增文件会被现有`npm test`和可移植子集runner发现；没有为通过测试改旧断言。检查结果、独立审查和下一里程碑写在根目录`进度.md`。
 

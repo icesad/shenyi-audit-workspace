@@ -14,6 +14,7 @@ import {seedProvisioningDemo} from '../server/team/provisioning-demo.mjs';
 import {seedRecoveryReviewDemo} from '../server/team/recovery-review-demo.mjs';
 import {seedMemberDeactivationDemo} from '../server/team/member-access-demo.mjs';
 import {seedDeviceReplacementDemo} from '../server/team/device-replacement-demo.mjs';
+import {seedAdministratorBusinessRoleDemo} from '../server/team/administrator-business-role-demo.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 async function main() {
@@ -31,7 +32,7 @@ async function main() {
   const db=new DatabaseSync(path.join(directory,'team-demo.sqlite'));
   let service;
   try {
-    initializeTeamDatabase(db);await seedDemoTeamData(db);if(reviewDemo){await seedProvisioningDemo(db);await seedRecoveryReviewDemo(db);await seedMemberDeactivationDemo(db);await seedDeviceReplacementDemo(db);}
+    initializeTeamDatabase(db);await seedDemoTeamData(db);if(reviewDemo){await seedProvisioningDemo(db);await seedRecoveryReviewDemo(db);await seedMemberDeactivationDemo(db);await seedDeviceReplacementDemo(db);await seedAdministratorBusinessRoleDemo(db);}
     service=await startTeamServer({db,identityProviders:{deviceProofRequired:true,...(reviewDemo?{reviewedRecovery:true}:{})}});
   } catch (error) { db.close();if(error.code==='EADDRINUSE')throw new Error('本机8774端口已占用。未切换端口或结束已有进程；请核对已有团队服务。');throw error; }
   console.log('审易团队采集：纯合成演示，本机8774；不读原浏览器资料，不用于生产。');
@@ -39,6 +40,7 @@ async function main() {
   if(reviewDemo)console.log('恢复审核演示：recovery-reviewer-demo / ShenyiDemo!2026；无短信供应商，不能申请或完成恢复。');
   if(reviewDemo)console.log('成员停用演示：administrator-demo（团队管理）、access-reviewer-demo（管理员停用审核） / ShenyiDemo!2026；仅合成账号，无审计资料权限。');
   if(reviewDemo)console.log('换机审核演示：device-reviewer-demo / ShenyiDemo!2026；仅独立设备审核权限，无审计资料权限，不自动绑定设备。');
+  if(reviewDemo)console.log('管理员兼任审核演示：business-role-reviewer-demo / ShenyiDemo!2026；仅独立职级审核权，不自动审批或授予审计资料。');
   const child=spawn(electron,[path.join(root,'desktop')],{cwd:root,windowsHide:false,stdio:['ignore','inherit','inherit'],env:{...process.env,SHENYI_TEAM_API:service.address.url,SHENYI_DESKTOP_DATA_DIR:path.join(directory,'desktop-data')}});
   let stopping=false;
   const stop=async()=>{if(stopping)return;stopping=true;await service.close();db.close();};

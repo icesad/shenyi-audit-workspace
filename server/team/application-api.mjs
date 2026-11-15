@@ -12,6 +12,7 @@ import {handleMemberAccessRequest} from './member-access-api.mjs';
 import {handleBusinessRoleRequest} from './business-role-api.mjs';
 import {handleProjectAccessRequest} from './project-access-api.mjs';
 import {handleProjectReviewRequest} from './project-review-api.mjs';
+import {handleAdministratorBusinessRoleRequest} from './administrator-business-role-api.mjs';
 import {handleDeviceIdentityRequest} from './device-api.mjs';
 import {handleDeviceReplacementRequest} from './device-replacement-api.mjs';
 import {authorizeDeviceRequest} from './device-gate.mjs';
@@ -51,6 +52,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       || await handleDeviceIdentityRequest(request,options)
       || await handleAccountSessionsRequest(request,options)
       || await handleMemberAccessRequest(request,options)
+      || await handleAdministratorBusinessRoleRequest(request,options)
       || await handleBusinessRoleRequest(request,options)
       || await handleProjectAccessRequest(request,options)
       || await handleProjectReviewRequest(request,options)

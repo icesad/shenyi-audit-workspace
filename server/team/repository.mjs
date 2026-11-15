@@ -1,3 +1,4 @@
+import {administratorBusinessEligibilitySql} from './administrator-business-role-policy.mjs';
 import {createHash} from 'node:crypto';
 import {collectionTaskScope, collectionTaskView, isCollectionRole} from './access-policy.mjs';
 
@@ -13,10 +14,13 @@ export function readSession(db, bearerToken, now) {
 }
 
 export function readTeamContext(db, identity, teamId) {
+  // The standalone M1 schema has no technical identity tables; normal runtime
+  // always initializes the full additive schema before serving any request.
+  const eligibility=db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='team_operators'").get()?administratorBusinessEligibilitySql('membership'):'1';
   const row = db.prepare(`SELECT membership.role FROM team_memberships AS membership
     JOIN teams AS team ON team.team_id = membership.team_id
     WHERE membership.team_id = ? AND membership.user_id = ?
-    AND membership.status = 'active' AND team.status = 'active'`).get(teamId, identity.userId);
+    AND membership.status = 'active' AND team.status = 'active' AND ${eligibility}`).get(teamId, identity.userId);
   return row && isCollectionRole(row.role) ? {userId: identity.userId, teamId, role: row.role} : null;
 }
 

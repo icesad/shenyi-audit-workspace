@@ -1,3 +1,4 @@
+import {administratorBusinessEligibilitySql} from './administrator-business-role-policy.mjs';
 /** Invite-only activation experiment. SMS adapters are explicit, server-side
  * injections; no real sending, public signup or team creation is bundled. */
 import {createHash,createHmac,randomBytes,randomInt,randomUUID,timingSafeEqual} from 'node:crypto';
@@ -17,7 +18,7 @@ function canBusinessInvite(db,userId,teamId){
     JOIN team_memberships AS member ON member.team_id=grant.team_id AND member.user_id=grant.user_id
     JOIN teams AS team ON team.team_id=member.team_id JOIN team_users AS account ON account.user_id=member.user_id
     WHERE grant.team_id=? AND grant.user_id=? AND grant.permission='member.invite' AND grant.status='active'
-      AND member.status='active' AND member.role IN ('manager','partner')
+      AND member.status='active' AND member.role IN ('manager','partner') AND ${administratorBusinessEligibilitySql('member')}
       AND team.status='active' AND account.status='active'`).get(teamId,userId);
 }
 // SQL identifiers originate only in these fixed server-owned records.

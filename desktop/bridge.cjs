@@ -64,6 +64,9 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('business-role-management-access',arg=>{noArgs(arg);return client.getBusinessRoleManagementAccess();});
   handle('business-role-members',arg=>client.listBusinessRoleMembers(input(arg,['teamId','q','after','limit'])));
   handle('business-role-change',arg=>client.changeBusinessRole(input(arg,['teamId','userId','revision','role','currentPassword','confirmed'])));
+  handle('administrator-business-role-access',arg=>{noArgs(arg);return client.getAdministratorBusinessRoleAccess();});
+  handle('administrator-business-roles',arg=>client.listAdministratorBusinessRoles(input(arg===undefined?{}:arg,['q','after','limit'])));
+  handle('administrator-business-role-change',arg=>client.changeAdministratorBusinessRole(input(arg,['userId','revision','role','currentPassword','confirmed'])));
   handle('project-access',arg=>{noArgs(arg);return client.getProjectAccess();});
   handle('projects',arg=>client.listProjects(input(arg,['teamId','q','after','limit'])));
   handle('project',arg=>client.getProject(input(arg,['teamId','projectId'])));

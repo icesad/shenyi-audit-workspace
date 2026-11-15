@@ -38,7 +38,8 @@ const SCOPE=`account.user_id<>? AND member.team_id=? AND account.status='active'
  AND NOT EXISTS (SELECT 1 FROM team_platform_reviewers WHERE user_id=account.user_id)
  AND NOT EXISTS (SELECT 1 FROM team_recovery_reviewers WHERE user_id=account.user_id)
  AND NOT EXISTS (SELECT 1 FROM team_access_reviewers WHERE user_id=account.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=account.user_id)`;
+ AND NOT EXISTS (SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=account.user_id)
+ AND NOT EXISTS (SELECT 1 FROM team_administrator_business_role_reviewers WHERE user_id=account.user_id)`;
 const FIELDS=`account.user_id,credential.display_name,account.status,member.role,
  CAST(COALESCE(epoch.version,0) AS TEXT) AS identity_revision`;
 const view=row=>({id:row.user_id,displayName:safeMemberText(row.display_name,row.user_id),role:row.role,status:row.status,revision:businessRoleRevision(row.identity_revision)});

@@ -1,3 +1,4 @@
+import {administratorBusinessEligibilitySql} from './administrator-business-role-policy.mjs';
 import {randomUUID, createHash} from 'node:crypto';
 import {authenticated} from './auth-api.mjs';
 import {getCollectionTask, readTeamContext} from './repository.mjs';
@@ -47,7 +48,7 @@ function currentAssignees(db,teamId,taskId){
     JOIN team_credentials AS credential ON credential.user_id=account.user_id
     JOIN team_memberships AS member ON member.team_id=assignment.team_id AND member.user_id=account.user_id
       AND member.status='active' AND member.role IN ('intern','assistant','manager','partner')
-    WHERE assignment.team_id=? AND assignment.task_id=? AND assignment.status='active'
+    WHERE assignment.team_id=? AND assignment.task_id=? AND assignment.status='active' AND ${administratorBusinessEligibilitySql('member')}
     ORDER BY account.user_id COLLATE BINARY LIMIT 51`).all(teamId,taskId);
   return {assignees:rows.slice(0,50).map(memberView),hasMoreAssignees:rows.length>50};
 }
@@ -59,7 +60,7 @@ function candidateQuery(params){
 }
 function candidateMembers(db,teamId,{q,after,limit}){
   const where=`member.team_id=? AND member.status='active' AND member.role IN ('intern','assistant')
-    AND account.status='active'`;
+    AND account.status='active' AND ${administratorBusinessEligibilitySql('member')}`;
   const from=`FROM team_memberships AS member JOIN team_users AS account ON account.user_id=member.user_id
     JOIN team_credentials AS credential ON credential.user_id=member.user_id`;
   const escaped=q.replace(/[\\%_]/g,value=>'\\'+value),search=q?" AND credential.display_name LIKE ? ESCAPE '\\'":'',parameters=[teamId,...(q?['%'+escaped+'%']:[])];

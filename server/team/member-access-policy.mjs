@@ -46,7 +46,8 @@ function memberScope(kind,actorId,teamId){
   const protectedIdentity=`NOT EXISTS (SELECT 1 FROM team_platform_reviewers WHERE user_id=account.user_id)
     AND NOT EXISTS (SELECT 1 FROM team_recovery_reviewers WHERE user_id=account.user_id)
     AND NOT EXISTS (SELECT 1 FROM team_access_reviewers WHERE user_id=account.user_id)
-    AND NOT EXISTS (SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=account.user_id)`;
+    AND NOT EXISTS (SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=account.user_id)
+ AND NOT EXISTS (SELECT 1 FROM team_administrator_business_role_reviewers WHERE user_id=account.user_id)`;
   const common=`account.user_id<>? AND ${protectedIdentity}`;
   if(kind==='business')return {from:`FROM team_memberships AS member JOIN team_users AS account ON account.user_id=member.user_id
     JOIN team_credentials AS credential ON credential.user_id=account.user_id

@@ -10,7 +10,7 @@ export const deviceRequired=()=>{throw new ApiError(403,'DEVICE_PROOF_REQUIRED',
 export function ensureDeviceServerId(db){
   const row=db.prepare('SELECT value FROM team_database_metadata WHERE name=?').get(DEVICE_SERVER_METADATA);
   if(row){if(!UUID.test(row.value))throw Error('Invalid device server identity');return row.value;}
-  for(const table of ['team_device_bindings','team_device_challenges','team_device_leases','team_device_request_replays','team_device_events','team_device_replacement_reviewers','team_device_replacement_requests','team_device_replacement_challenges','team_device_replacement_events'])if(db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get())throw Error('Device history has no server identity');
+  for(const table of ['team_device_bindings','team_device_challenges','team_device_leases','team_device_request_replays','team_device_events','team_device_replacement_reviewers','team_device_replacement_requests','team_device_replacement_challenges','team_device_replacement_events','team_administrator_business_role_reviewers','team_administrator_business_roles','team_administrator_business_role_events'])if(db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get())throw Error('Device history has no server identity');
   const value=randomUUID();db.prepare('INSERT INTO team_database_metadata(name,value) VALUES (?,?) ON CONFLICT(name) DO NOTHING').run(DEVICE_SERVER_METADATA,value);
   return deviceServerId(db);
 }

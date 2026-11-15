@@ -1,10 +1,13 @@
+import {administratorTechnicalEligible} from './administrator-business-role-policy.mjs';
 /** Trusted technical permissions are independent from all audit data grants. */
 export function hasAffiliation(db,userId){
   return !!db.prepare('SELECT 1 FROM team_memberships WHERE user_id=? UNION ALL SELECT 1 FROM team_operators WHERE user_id=? LIMIT 1').get(userId,userId);
 }
 export function restrictedBusinessIdentity(db,userId){
-  // A mistaken technical grant cannot turn a junior/disabled employee into an
-  // administrator. Cross-team affiliation policy remains deliberately narrow.
+  // Explicit owner approval separates a technical identity from its audit role.
+  // Every mixed operator identity needs an exact current approval, including seniors.
+  const operator=db.prepare('SELECT team_id FROM team_operators WHERE user_id=?').get(userId);
+  if(operator&&db.prepare('SELECT 1 FROM team_memberships WHERE user_id=? LIMIT 1').get(userId))return !administratorTechnicalEligible(db,userId,operator.team_id);
   return !!db.prepare("SELECT 1 FROM team_memberships WHERE user_id=? AND (status<>'active' OR role IN ('intern','assistant')) LIMIT 1").get(userId);
 }
 export function platformReviewer(db,userId){
