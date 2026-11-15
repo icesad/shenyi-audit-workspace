@@ -19,7 +19,7 @@ async function fixture(t){
  const dispatch=async request=>{
   const response=await handleTeamApplicationRequest(request,{db,now:()=>NOW});assert.ok(response,'recognized route');
   const raw=await response.text();for(const secret of ['password_hash','token_hash','SELECT ','synthetic database failure'])assert.equal(raw.includes(secret),false,raw);
-  return {status:response.status,data:JSON.parse(raw),raw,headers:response.headers};
+  return {status:response.status,data:raw?JSON.parse(raw):null,raw,headers:response.headers};
  };
  const call=({actor='intern-a',team='team-a',task='task-a',action='submission-access',query='',method,body,headers={},token=tokens[actor]}={})=>dispatch(new Request(ORIGIN+route(action,team,task)+query,{method:method??(body===undefined?'GET':'POST'),headers:{...(token?{Authorization:'Bearer '+token}:{}),'Content-Type':'application/json',...headers},...(body===undefined?{}:{body:JSON.stringify(body)})}));
  const stream=({actor='intern-a'}={})=>{
@@ -96,7 +96,7 @@ test('query parameters cannot inject an actor, role, capability or version',asyn
 });
 test('only GET is accepted and write-shaped requests never mutate the database',async t=>{
  const f=await fixture(t),before=f.db.prepare('SELECT total_changes() n').get().n;
- for(const method of ['HEAD','POST','PUT','PATCH','DELETE','OPTIONS']){const r=await f.call({method,...(['POST','PUT','PATCH'].includes(method)?{body:{role:'partner',userId:'intern-a'}}:{})});assert.equal(r.status,405,method);assert.equal(r.headers.get('Allow'),'GET');}
+ for(const method of ['HEAD','POST','PUT','PATCH','DELETE','OPTIONS']){const r=await f.call({method,...(['POST','PUT','PATCH'].includes(method)?{body:{role:'partner',userId:'intern-a'}}:{})});assert.equal(r.status,405,method);assert.equal(r.headers.get('Allow'),'GET');if(method==='HEAD')assert.equal(r.raw,'');}
  assert.equal(f.db.prepare('SELECT total_changes() n').get().n,before);noSubmissions(f);
 });
 test('forged identity headers never replace the authenticated principal',async t=>{

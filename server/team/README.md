@@ -18,6 +18,8 @@ M2新增独立账号、本机HTTP、定向邀请、原件提交与版本控制�
 
 [提交能力查询](../../docs/UPLOAD_PREFLIGHT.md)在同一处理器新增GET `submission-access`，仅返回boolean与当前safe revision，读取范围内还须本人有效assignment＋active项目＋open/returned＋版本可递增才可提交。GET只读，不替代POST事务内的最终核权/CAS，不扩原件和他人历史范围。
 
+[原件副本保存复查](../../docs/DOWNLOAD_PREFLIGHT.md)让现附件路径支持HEAD，与GET共用session/team/task/独立附件grant SQL，仅读取附件名，不materialize bytes。HEAD全部结果空body，其他采集接口仍GET；main保存选框后fresh HEAD＋同generation才写副本，无新schema或preload操作，原件GET字节及冻结可读不变。
+
 状态：隔离的本机合成数据实验；没有挂载到既有网页/Sites服务，不对公网监听。不能用它声称生产登录、设备绑定、订阅或团队软件已经完成。
 
 架构见 [ADR 0001](../../docs/adr/0001-team-runtime.md)，产品权限见 [团队需求](../../docs/TEAM_PRODUCT_REQUIREMENTS.md)。当前工作项为 `TEAM-M2`，M1为已交付读取原型。

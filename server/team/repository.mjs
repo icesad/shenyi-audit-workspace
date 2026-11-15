@@ -55,9 +55,9 @@ export function getCollectionSummary(db, context) {
     WHERE ${scope.sql}`).get(...scope.parameters).count};
 }
 
-export function getCollectionAttachment(db, context, taskId, attachmentId) {
+function readCollectionAttachment(db, context, taskId, attachmentId, fields) {
   const scope = collectionTaskScope(context);
-  return db.prepare(`SELECT attachment.display_name, attachment.bytes ${FROM_TASKS}
+  return db.prepare(`SELECT ${fields} ${FROM_TASKS}
     JOIN team_collection_attachments AS attachment ON attachment.team_id = task.team_id
     AND attachment.task_id = task.task_id
     WHERE ${scope.sql} AND task.task_id = ? AND attachment.attachment_id = ?
@@ -66,4 +66,13 @@ export function getCollectionAttachment(db, context, taskId, attachmentId) {
       AND attachment_grant.attachment_id = attachment.attachment_id
       AND attachment_grant.user_id = ? AND attachment_grant.status = 'active')`)
     .get(...scope.parameters, taskId, attachmentId, context.userId) || null;
+}
+
+export function getCollectionAttachment(db, context, taskId, attachmentId) {
+  return readCollectionAttachment(db, context, taskId, attachmentId, 'attachment.display_name, attachment.bytes');
+}
+
+// HEAD authorizes the same attachment without materializing its blob in JS.
+export function getCollectionAttachmentMetadata(db, context, taskId, attachmentId) {
+  return readCollectionAttachment(db, context, taskId, attachmentId, 'attachment.display_name');
 }

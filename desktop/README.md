@@ -58,6 +58,7 @@ node recovery-smoke.cjs
 node recovery-review-smoke.cjs
 node task-management-smoke.cjs
 node upload-preflight-smoke.cjs
+node download-preflight-smoke.cjs
 ```
 
 第一项需要根项目锁文件的jsdom；覆盖HTTP客户端和IPC/文件边界、真实DOM的撤销后再登录及XSS文本呈现，并检查身份能力、首绑状态清理、49项白名单及未配置入口。微信专项另见`tests/team-desktop-wechat.test.cjs`和`team-desktop-wechat-ui.test.cjs`。第二项只对本机合成服务，用`assistant-b`执行一次真实上传/下载/哈希/退出，会改变该合成任务状态，应使用新演示数据目录。第三项需要根项目Playwright和已安装Electron，运行真实Electron renderer的登录/任务/退出和安全偏好检查；截图/报告写到`D:/codex-temp/shenyi-desktop-runtime`或`SHENYI_DESKTOP_EVIDENCE_DIR`。
@@ -81,5 +82,7 @@ node upload-preflight-smoke.cjs
 第十一项验证[任务指派/退回](../docs/TASK_MANAGEMENT.md)，当前49操作、9form/15密码输入。三个真实Electron窗口＋随机HTTP/SQLite；main拦截OS picker仅选三份合成fixture，不冒称人工选文件。改派旧人task/history/download拒、新人无旧原件，退回重交保留三份字节/hash/history，陈旧页409需刷新且不自动重试。`manager-a / ShenyiDemo!2026`仅有team-a显式项目权限，可在预览选择任务体验管理；自动默认smoke只读不改分工。
 
 第十二项验证[上传前置授权](../docs/UPLOAD_PREFLIGHT.md)：只读管理者按钮禁用且强制RPC也不打开picker；本人指派可提交。三次fresh能力/同版本/同账号检查分别在选择前、读取前和传输前执行，最后POST仍核权/CAS。真实Electron专项只拦截明确合成fixture的picker，记录取消、选择期间版本/撤权/冻结和原件hash证据，不接共享演示库。
+
+第十三项验证[原件副本保存前授权](../docs/DOWNLOAD_PREFLIGHT.md)：main GET后只在确认保存路径、fresh HEAD仍有附件权限且同一登录代次时写副本；取消/撤附件权限/撤会话均零写入。双窗口Electron＋隔离落盘SQLite及合成原件，normal服务/main/disk三方字节与hash一致，401回登录并清资料，保存框为明确测试拦截。网络核权和本地IO非原子，不能收回已合法副本；仍49窄IPC。
 
 官方来源：[Electron安全](https://www.electronjs.org/docs/latest/tutorial/security)、[protocol](https://www.electronjs.org/docs/latest/api/protocol)、[进程模型](https://www.electronjs.org/docs/latest/tutorial/process-model)、[发布记录](https://releases.electronjs.org/release?channel=stable)，2026-11-15核验。

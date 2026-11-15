@@ -138,3 +138,11 @@ GitHub仓库不替代原网站登录；GitHub合并不自动触发网站升级�
 完整portable单元1256通过/0失败/0跳过，214.05秒；新增98项属于该总数，独立复核无剩余P1/P2。双窗口原生Electron/HTTP/落盘SQLite证明严格仅read管理者无manage/assignment、强RPC不选文件/不读取/不上传；取消、picker内版本/撤权/冻结及正常62bytes原件/hash均验。picker为明确测试拦截；旧任务三窗口兼容及默认一键服务smoke也通过，不能代替真人OS/Mac/生产验收。
 
 两旧demo各39表/62schema对象启动时全部旧行保持；随后默认smoke登录仅使review三张认证表正常变化，其他业务及全部schema保持。未push/main/上线，一键新版窗口可达；M2/Goal仍在进行，成员停用管理与原权限问题答复、真实供应商和首版设备绑定等继续推进。细节和失败夹具边界见`进度.md`。
+
+## 2026-11-15 M2进行中：原件副本保存前复查
+
+`codex/collection-download-preflight`接续`a06293a`，[保存前授权](DOWNLOAD_PREFLIGHT.md)修复两项独立复现P2：选框期间撤权仍落盘、旧下载结果污染新账号提示/busy。附件HEAD复用GET授权且不读取blob，main选保存路径后HEAD＋generation再写；renderer隔离actor/team/task/view/busy代次。没有新增schema或preload，仍49窄接口/9form15秘密。
+
+完整portable单元1332通过/0失败/0跳过（215.09秒），新增76属于总数；独立安全30、UI17等不重复累计，无剩余P1/P2。双窗口Electron/HTTP/隔离落盘SQLite证明正常62bytes/hash三方一致，取消、附件撤权、会话撤销均零写盘，401回登录清空资料；保存框明确为合成测试拦截。旧upload及任务管理原生兼容、默认smoke通过。两demo启动旧schema/全部行保持，验收登录后仅review认证表正常变化；未push/main/上线，一键可达。
+
+用户本轮已确认成员停用分工：团队管理员可停用本团队业务成员（含经理、合伙人），管理员本人由产品负责人处理；不是按业务职级授予停用权。下一M2实现该管理入口及访问撤销，保留原件历史，不等于删除。完整Goal继续active，设备、Mac、真实供应商和生产关卡尚未完成。

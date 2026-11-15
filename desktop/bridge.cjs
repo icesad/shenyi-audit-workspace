@@ -108,11 +108,18 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('download',async arg=>{
     input(arg,['teamId','taskId','attachmentId']);
     const assertSession=client.guardSession();
+    assertSession();
     const file=await client.download(arg);
+    assertSession();
     const selected=await dialog.showSaveDialog(window,{title:'保存采集资料副本',defaultPath:safeDownloadName(file.contentDisposition),buttonLabel:'保存副本'});
     if(selected.canceled||!selected.filePath)return {canceled:true};
     assertSession();
+    const access=await client.checkAttachmentAccess(arg);
+    assertSession();
+    if(access?.canDownload!==true||Object.keys(access).length!==1)throw new ClientError('INVALID_RESPONSE','无法确认原件保存权限，请刷新任务后重试。');
     // The operating-system dialog owns path selection/overwrite confirmation.
+    // Fresh HEAD reduces unfinished saves after revocation; network authority
+    // and the subsequent local write are not one atomic transaction.
     await fs.writeFile(selected.filePath,file.bytes);
     return {saved:true,filename:path.basename(selected.filePath),byteLength:file.bytes.length};
   });

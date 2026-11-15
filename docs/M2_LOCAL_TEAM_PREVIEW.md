@@ -78,3 +78,5 @@ node server/team/dev-server.mjs --demo --data-dir D:/codex-temp/shenyi-m2-202611
 Windows安装/签名/升级、macOS原生、电脑绑定和离线规则、生产身份注册与恢复、生产库/对象存储、客户原件迁移、正式订阅/支付和国内上线仍在后续里程碑或外部关卡。测试账号、localhost服务或Electron窗口不能替代这些验收。
 
 16. [上传前置授权](UPLOAD_PREFLIGHT.md)：共49项preload，表单及密码输入不变。按钮与main均按本人服务端canSubmit和当前版本判断，不能从任务read/manage猜可提交。main三次新查减少不必要的文件读取/传输，最终POST仍独立核权/CAS。默认smoke只查能力，不提交或改变共享任务。
+
+17. [原件副本保存复查](DOWNLOAD_PREFLIGHT.md)：HEAD与GET共用附件范围，main在保存选框后fresh HEAD及generation核验才落盘。独立复现的撤权保存及迟到UI污染均修复，真实Electron正常原件62bytes/hash保持、取消/撤grant/撤session均零写盘。无新增schema/preload；仅合成保存选择器，不作真人OS/Mac/生产验收。

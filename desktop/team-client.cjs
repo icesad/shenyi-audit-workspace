@@ -310,6 +310,12 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
       const data=await request(path(input.teamId,input.taskId)+'/submissions',{method:'POST',body:{filename:file.filename,contentBase64:Buffer.from(file.bytes).toString('base64'),revision:input.revision}});
       if (!Number.isSafeInteger(data.revision)||data.revision<1) throw failure('INVALID_RESPONSE','提交记录返回格式无效。'); return {revision:data.revision,submission:submissionView(data.submission)}; },
     async download(input) { exactKeys(input,['teamId','taskId','attachmentId']); return request(path(input.teamId,input.taskId)+'/attachments/'+id(input.attachmentId),{binary:true}); },
+    async checkAttachmentAccess(input) {
+      exactKeys(input,['teamId','taskId','attachmentId']);
+      const result=await request(path(input.teamId,id(input.taskId))+'/attachments/'+id(input.attachmentId),{method:'HEAD',binary:true});
+      if(result.bytes.length!==0)throw failure('INVALID_RESPONSE','无法确认原件保存权限，请刷新任务后重试。');
+      return {canDownload:true};
+    },
     guardSession() { const at=generation; if(!token)throw failure('SIGN_IN_REQUIRED','请先登录。',401);return ()=>{if(at!==generation||!token)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');}; },
     clearSession: clear,
   });

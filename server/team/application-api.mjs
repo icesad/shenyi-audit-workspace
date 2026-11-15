@@ -12,7 +12,13 @@ import {recoveryConfigured} from './recovery-review-policy.mjs';
 import {ApiError, json} from './http-utils.mjs';
 
 /** Local M2 application boundary. No fake registration/phone verification. */
-export async function handleTeamApplicationRequest(request, {db, now = Date.now,identityProviders={}} = {}) {
+export async function handleTeamApplicationRequest(request, options = {}) {
+  const response=await applicationResponse(request,options);
+  // HEAD never carries a body, including origin/auth/method/clock errors
+  // produced before the collection handler is reached.
+  return request.method==='HEAD'?new Response(null,{status:response.status,statusText:response.statusText,headers:response.headers}):response;
+}
+async function applicationResponse(request, {db, now = Date.now,identityProviders={}} = {}) {
   try {
     const at = now();
     if (!Number.isSafeInteger(at) || at < 0) throw new Error('Invalid clock');

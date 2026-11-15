@@ -5,7 +5,7 @@
  */
 import {
   readSession, readTeamContext, listCollectionTasks, getCollectionTask,
-  getCollectionSummary, getCollectionAttachment,
+  getCollectionSummary, getCollectionAttachment, getCollectionAttachmentMetadata,
 } from './repository.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -58,7 +58,7 @@ function downloadName(name) {
   return encodeURIComponent(safe).replace(/['()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
-export async function handleTeamCollectionRequest(request, {db, now = Date.now} = {}) {
+async function handleCollectionRequest(request, {db, now = Date.now} = {}) {
   try {
     const token = sessionToken(request);
     if (!token) return problem(401, 'SIGN_IN_REQUIRED', '请登录后重试。');
@@ -67,10 +67,13 @@ export async function handleTeamCollectionRequest(request, {db, now = Date.now} 
     const identity = readSession(db, token, at);
     if (!identity) return problem(401, 'SIGN_IN_REQUIRED', '请登录后重试。');
     if (request.headers.get('Sec-Fetch-Site') === 'cross-site') return problem(403, 'CROSS_SITE_DENIED', '请在审易客户端中操作。');
-    if (request.method !== 'GET') return problem(405, 'METHOD_NOT_ALLOWED', '不支持此操作。', {Allow: 'GET'});
     const url = new URL(request.url);
     let route;
-    try { route = readRoute(url); } catch { return notFound(); }
+    try { route = readRoute(url); } catch {}
+    const allow = route?.kind === 'attachment' ? 'GET, HEAD' : 'GET';
+    if (request.method !== 'GET' && !(request.method === 'HEAD' && route?.kind === 'attachment')) {
+      return problem(405, 'METHOD_NOT_ALLOWED', '不支持此操作。', {Allow: allow});
+    }
     if (!route) return notFound();
     let options;
     try { options = listOptions(url.searchParams, route.kind); }
@@ -85,9 +88,9 @@ export async function handleTeamCollectionRequest(request, {db, now = Date.now} 
       const task = getCollectionTask(db, context, route.taskId);
       return task ? json({task}) : notFound();
     }
-    const attachment = getCollectionAttachment(db, context, route.taskId, route.attachmentId);
+    const attachment = (request.method === 'HEAD' ? getCollectionAttachmentMetadata : getCollectionAttachment)(db, context, route.taskId, route.attachmentId);
     if (!attachment) return notFound();
-    return new Response(new Uint8Array(attachment.bytes), {headers: {
+    return new Response(request.method === 'HEAD' ? null : new Uint8Array(attachment.bytes), {headers: {
       ...PRIVATE_HEADERS, 'Content-Type': 'application/octet-stream',
       'Content-Disposition': `attachment; filename="download.bin"; filename*=UTF-8''${downloadName(attachment.display_name)}`,
     }});
@@ -95,4 +98,13 @@ export async function handleTeamCollectionRequest(request, {db, now = Date.now} 
     // Never echo SQL, user/team identifiers, credentials or underlying errors.
     return problem(503, 'COLLECTION_UNAVAILABLE', '采集任务服务暂不可用。');
   }
+}
+
+export async function handleTeamCollectionRequest(request, options) {
+  const response = await handleCollectionRequest(request, options);
+  // Direct API callers, not just HTTP transports, must receive bodyless HEADs.
+  if(request.method!=='HEAD')return response;
+  const headers=new Headers(response.headers);
+  if(response.status!==200)headers.delete('Content-Type');
+  return new Response(null,{status:response.status,headers});
 }
