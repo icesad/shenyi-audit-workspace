@@ -90,8 +90,8 @@ test('quotation and bid navigation show independent pages and preserve intake dr
 });
 test('desktop and 390px real browser navigation, lazy settings, brand return and overflow checks',async t=>{
  let chromium;try{({chromium}=require('playwright'));}catch{return t.skip('existing Playwright unavailable');}
- if(!fs.existsSync(chromium.executablePath()))return t.skip('existing Chromium unavailable');
- const browser=await chromium.launch({headless:true,executablePath:chromium.executablePath(),chromiumSandbox:true}),context=await browser.newContext({viewport:{width:1440,height:1000}});
+ const executable=process.env.QUOTE_LEDGER_CHROMIUM_EXECUTABLE||chromium.executablePath();if(!fs.existsSync(executable))return t.skip('existing Chromium unavailable');
+ const browser=await chromium.launch({headless:true,executablePath:executable,chromiumSandbox:true}),context=await browser.newContext({viewport:{width:1440,height:1000}});
  const errors=[],remote=[];const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(/^https?:/.test(r.url()))remote.push(r.url());});
  const out=process.env.V50_NAV_QA_DIR?path.resolve(process.env.V50_NAV_QA_DIR,'navigation-'+Date.now()):null;if(out)fs.mkdirSync(out,{recursive:true});
  const shot=async n=>{if(out)await page.screenshot({path:path.join(out,n+'.png'),fullPage:true});};

@@ -6,7 +6,14 @@ test('accounting rename changes display strings only; no layout, field, event, p
  for(const [file,spec]of Object.entries(changes)){
   let source=fs.readFileSync(path.resolve(__dirname,'..',file),'utf8').replace(/\r\n/g,'\n'); // Canonical EOL across devices; exact content guard retained.
   // Explicit v61 request: only rename the shared page button, leaving save behavior unchanged.
-  if(file==='dist/index.html')source=source.replace('id="page-save">保存</button>', 'id="page-save">暂存</button>');
+  if(file==='dist/index.html'){
+   // M4D adds exactly this material loader after its dependency; all other bytes remain pinned below.
+   const loader='<script src="material-preservation.js"></script>',dependency='<script src="audit-checklist.js"></script>';
+   assert.equal(source.split(loader).length-1,1,'approved material loader must occur exactly once');
+   assert.equal(source.split(dependency+loader).length-1,1,'approved material loader must immediately follow its dependency');
+   assert.equal(source.split('material-preservation.js').length-1,1,'no extra or alternate material loader reference');
+   source=source.replace(loader,'').replace('id="page-save">保存</button>', 'id="page-save">暂存</button>');
+  }
   for(const [oldLabel,newLabel]of [...spec.replacements].reverse()){
    assert.equal(source.split(newLabel).length-1,1,file+' new label must be unique');
    source=source.replace(newLabel,oldLabel);

@@ -349,6 +349,16 @@
     validate(r);if(r.schema!==2)fail('旧版逐行记录没有标题附件。');
     const e=r.events.find(e=>e.type==='attachment-add'&&e.file.id===fileId&&e.nodeId===nodeId);if(!e)fail('本项目找不到该资料文件版本。');return e.file;
   }
+  function storedMaterialFile(x,key,meta){exact(x,['id','quoteId','generationId','nodeId','metadata','blob']);if(x.id!==meta.id||x.quoteId!==key||x.nodeId!==meta.nodeId||x.generationId!==meta.generationId||!same(x.metadata,meta)||!(x.blob instanceof Blob)||x.blob.size!==meta.size||x.blob.type!==meta.type)fail('资料文件归属或内容损坏。');return {blob:x.blob,metadata:copy(meta)};}
+  function preservationCodec(){const api=typeof module==='object'&&module.exports?require('./material-preservation.js'):root.MaterialPreservation;if(!api||typeof api.create!=='function'||typeof api.inspect!=='function')fail('资料保全组件未载入，原数据未改变。');return api;}
+  function preservationOptions(value,restore=false){
+    if(!value||Object.getPrototypeOf(value)!==Object.prototype)fail('资料保全参数无效。');
+    const fields=Object.getOwnPropertyDescriptors(value),allowed=restore?['expectedSha256','assertContext']:['assertContext'];
+    if(Reflect.ownKeys(fields).some(key=>typeof key!=='string'||!allowed.includes(key)||!fields[key].enumerable||!Object.hasOwn(fields[key],'value')))fail('资料保全参数无效。');
+    const guard=fields.assertContext?.value,sha=fields.expectedSha256?.value;
+    if(guard!==undefined&&typeof guard!=='function'||restore&&(typeof sha!=='string'||!/^[a-f0-9]{64}$/.test(sha)))fail('请先完成保全包预检并核对摘要。');
+    return {sha,check:()=>{if(guard)guard();}};
+  }
   function openDatabase(name,trialOnly=false){
     return new Promise((resolve,reject)=>{
       const req=root.indexedDB.open(name,2);
@@ -371,6 +381,17 @@
             }catch(e){abort(e);}};
           });
         }
+        function preservationSnapshot(key,codec,check){return new Promise((ok,no)=>{
+          const t=db.transaction([STORE,FILE_STORE],'readonly'),s=t.objectStore(STORE),f=t.objectStore(FILE_STORE),files=new Map();let record,metas=[],reason;
+          const abort=e=>{reason=e;try{t.abort();}catch{}};
+          t.onabort=()=>no(reason||Error('无法读取完整资料快照，未生成保全包。'));t.onerror=()=>abort(reason||Error('读取资料快照失败，原数据未变。'));
+          t.oncomplete=()=>{try{check();if(!record||files.size!==metas.length)fail('资料原件不完整，未生成保全包。');ok({record,files});}catch(e){no(e);}};
+          const request=s.get(key);request.onsuccess=()=>{try{
+            check();const row=request.result;if(!row||row.quoteId!==key||row.record?.project.quoteId!==key)fail('当前项目尚无有效资料清单，未生成保全包。');record=copy(validate(row.record));metas=codec.filesFor(record);const expected=new Set(metas.map(meta=>meta.id));
+            for(const meta of metas){const q=f.get(meta.id);q.onsuccess=()=>{try{check();files.set(meta.id,storedMaterialFile(q.result,key,meta));}catch(e){abort(e);}};}
+            const cursor=f.openCursor();cursor.onsuccess=()=>{try{check();const row=cursor.result;if(row){if(row.value?.quoteId===key&&!expected.has(row.value.id))fail('本项目存在未关联的资料原件，请先核对；未生成不完整保全包。');row.continue();}}catch(e){abort(e);}};
+          }catch(e){abort(e);}};
+        });}
         const api={get:key=>transact(key),create:(p,xs,who)=>transact(p.quoteId,0,()=>create(p,xs,who)),
           change:(key,expected,cmd)=>transact(key,expected,old=>{if(!old)fail('资料清单尚未创建。');if(['attachment-add','attachment-remove'].includes(cmd?.type))fail('文件变更须通过原子附件接口。');return apply(old,cmd);}),
           importTree:(p,nodes,who,reason='',expected=0)=>transact(p.quoteId,expected,old=>{
@@ -382,12 +403,42 @@
             return transact(key,expected,old=>{if(old?.schema!==2)fail('请先导入标题层级清单。');return applyTree(old,{type:'attachment-add',nodeId,reviewer:who,file:{id,nodeId,generationId:old.generationId,name:f.name,size:f.size,type:f.type,sha256:f.sha256}});},{id,nodeId,blob:f.blob});
           },
           removeAttachment:(key,expected,nodeId,fileId,who,reason)=>transact(key,expected,old=>{if(old?.schema!==2)fail('请先导入标题层级清单。');return applyTree(old,{type:'attachment-remove',nodeId,fileId,reviewer:who,reason});}),
+          exportPreservation:async(key,options={})=>{
+            const {check}=preservationOptions(options);check();if(!isUuid(key)||trialOnly!==(key===TRIAL_ID))fail('保全来源须为当前正式项目或独立试用，不能混用。');
+            const codec=preservationCodec(),snapshot=await preservationSnapshot(key,codec,check);check();
+            const result=await codec.create({record:snapshot.record,readFile:async meta=>{check();const file=snapshot.files.get(meta.id);if(!file)fail('资料原件不完整，未生成保全包。');return file;},readCurrent:async()=>{check();const current=await api.get(key);check();return current;}});check();return result;
+          },
+          restorePreservation:async(key,blob,options={})=>{
+            const {sha,check}=preservationOptions(options,true);check();if(!isUuid(key)||trialOnly!==(key===TRIAL_ID))fail('恢复目标须为当前正式项目或独立试用，不能混用。');
+            const existing=await api.get(key);check();if(existing)fail('目标已有资料清单，未覆盖。请先核对当前记录。');
+            const parsed=await preservationCodec().inspect(blob);check();
+            if(parsed.sha256!==sha||parsed.summary.packageSha256!==sha)fail('保全包与已确认的摘要不一致，未恢复。');
+            if(parsed.manifest.projectId!==key||parsed.manifest.sourceNamespace!==name||parsed.record.project.quoteId!==key)fail('保全包与所选项目或正式／试用范围不一致，未恢复。');
+            const record=copy(validate(parsed.record)),files=[];
+            for(const file of parsed.files){
+              check();const meta=copy(file.metadata),source=file.blob;
+              const prepared=await preparedFile({name:meta.name,type:meta.type,size:source.size,arrayBuffer:()=>source.arrayBuffer()});check();
+              if(prepared.name!==meta.name||prepared.type!==meta.type||prepared.size!==meta.size||prepared.sha256!==meta.sha256)fail('资料原件不符合原上传校验或保全元数据，未恢复。');
+              files.push({metadata:meta,blob:prepared.blob});
+            }
+            return new Promise((ok,no)=>{
+              const t=db.transaction([STORE,FILE_STORE],'readwrite'),s=t.objectStore(STORE),f=t.objectStore(FILE_STORE);let result,reason;
+              const abort=e=>{reason=e;try{t.abort();}catch{}};
+              t.onabort=()=>no(reason||Error('恢复事务未完成，原有资料未覆盖；请刷新核对。'));t.oncomplete=()=>ok(result);t.onerror=()=>abort(reason||Error('恢复写入失败，事务已取消，原有资料未覆盖。'));
+              const write=()=>{try{check();s.add({quoteId:key,record});for(const file of files){const meta=file.metadata;f.add({id:meta.id,quoteId:key,generationId:meta.generationId,nodeId:meta.nodeId,metadata:meta,blob:file.blob});}result={record:copy(record),summary:copy(parsed.summary),sha256:parsed.sha256};}catch(e){abort(e);}};
+              const collisions=()=>{if(!files.length){write();return;}let remaining=files.length;for(const file of files){const request=f.get(file.metadata.id);request.onsuccess=()=>{try{check();if(request.result!==undefined)fail('保全包文件ID已存在，未覆盖任何项目资料。');if(--remaining===0)write();}catch(e){abort(e);}};}};
+              const request=s.get(key);request.onsuccess=()=>{try{
+                check();if(request.result!==undefined)fail('目标已有资料记录，未覆盖；请重新载入核对。');
+                const cursor=f.openCursor();cursor.onsuccess=()=>{try{check();const row=cursor.result;if(row){if(row.value?.quoteId===key)fail('目标存在未关联的资料原件，未覆盖；请先核对资料库。');row.continue();}else collisions();}catch(e){abort(e);}};
+              }catch(e){abort(e);}};
+            });
+          },
           downloadAttachment:(key,nodeId,fileId)=>new Promise((ok,no)=>{
             const t=db.transaction([STORE,FILE_STORE],'readonly');let result,reason;const abort=e=>{reason=e;try{t.abort();}catch{}};
             t.onabort=()=>no(reason||Error('无法读取资料文件，未改动原记录。'));t.oncomplete=async()=>{try{if(!result)fail('资料文件不存在。');const d=await root.crypto.subtle.digest('SHA-256',await result.blob.arrayBuffer());if(Array.from(new Uint8Array(d),x=>x.toString(16).padStart(2,'0')).join('')!==result.metadata.sha256)fail('资料文件完整性校验失败。');ok(result);}catch(e){no(e);}};
             const q=t.objectStore(STORE).get(key);q.onsuccess=()=>{try{
               if(trialOnly&&key!==TRIAL_ID)fail('试用与正式项目不能混用。');const row=q.result;if(!row||row.quoteId!==key||row.record?.project.quoteId!==key)fail('资料项目不存在。');const meta=metadataIn(row.record,nodeId,fileId);
-              const f=t.objectStore(FILE_STORE).get(fileId);f.onsuccess=()=>{try{const x=f.result;exact(x,['id','quoteId','generationId','nodeId','metadata','blob']);if(x.id!==fileId||x.quoteId!==key||x.nodeId!==nodeId||x.generationId!==meta.generationId||!same(x.metadata,meta)||!(x.blob instanceof Blob)||x.blob.size!==meta.size||x.blob.type!==meta.type)fail('资料文件归属或内容损坏。');result={blob:x.blob,metadata:copy(meta)};}catch(e){abort(e);}};
+              const f=t.objectStore(FILE_STORE).get(fileId);f.onsuccess=()=>{try{result=storedMaterialFile(f.result,key,meta);}catch(e){abort(e);}};
             }catch(e){abort(e);}};
           }),close:()=>db.close()};resolve(Object.freeze(api));
       };

@@ -2,7 +2,7 @@
 
 记录日期：2026-11-16。GitHub 地址：<https://github.com/icesad/shenyi-audit-workspace>。
 
-最新检查点为[M4C管理员兼任业务职级审核](ADMINISTRATOR_BUSINESS_ROLE.md)，从M4B本地`fe5901c`在`codex/administrator-business-role-review`接续。完整2407通过、0失败、0跳过，749853.052ms；16旧原生兼容、Windows严格设备原生、独立安全113/UI384及共享库保全通过。新增审核不会自动授业务资料，收回兼职保留技术管理；当前57表127定义，旧54表105定义及旧行保持，普通9/review15仅增加独立合成审核员。一键可达，未push/main/上线。正常项目创建政策仍待选择，M4及完整Goal继续；旧六模块接入、正式M2/M3、Mac/真实跨电脑及生产等仍未完成。
+当前`codex/material-project-preservation`从M4C本地`eb8ac66`接续的[单项目资料保全与本机恢复](MATERIAL_PRESERVATION.md)旧端本机候选已通过：完整可移植回归2556通过/0失败/0跳过（745468.1888ms），11源运行期间SHA不变；独立真实IndexedDB26、结构安全53和界面25项及真实浏览器恢复均通过。保存完整资料清单及所有留痕引用原件（含已移除/旧代），只恢复到同UUID空本机资料区，复用原上传正文准入、不覆盖旧数据。旧页面守卫只严格允许唯一新增script，原固定SHA及断言保留、20突变仍拒。详见[执行合同](MATERIAL_PRESERVATION_CONTRACT.md)及根目录进度；不是完整软件备份或团队迁入。team57/127和70依赖保持，现有一键团队预览可达，新功能从旧端8773进入；团队归属首owner及正常创建选择待答。M4/完整Goal继续active，未push/main/上线。
 
 ## 版本不混淆
 
