@@ -1,4 +1,5 @@
 'use strict';
+// Legacy M2 diagnostic compatibility; this harness does not prove device binding.
 // Real Electron + loopback HTTP + SQLite. All identities are synthetic; these are
 // login sessions, not physical devices, production users or a Mac acceptance.
 const {_electron:electron}=require('../node_modules/playwright');
@@ -16,7 +17,7 @@ async function main(){
   // Explicit legacy fixture: the old token stays valid but its creation time was
   // never recorded. The list must add stable metadata without inventing a time.
   db.prepare('DELETE FROM team_session_metadata WHERE token_hash=?').run(hash(peer1.token));
-  const bootstrap=path.join(directory,'synthetic-bootstrap.cjs');await fs.writeFile(bootstrap,`'use strict';const modulePath=${JSON.stringify(path.join(__dirname,'team-client.cjs'))};const original=require(modulePath).createTeamClient;require(modulePath).createTeamClient=options=>original({...options,fetchImpl:(url,settings)=>fetch(${JSON.stringify(service.address.url)}+url.slice('http://127.0.0.1:8774'.length),settings)});require(${JSON.stringify(path.join(__dirname,'main.cjs'))});`);
+  const bootstrap=path.join(directory,'synthetic-bootstrap.cjs');await fs.writeFile(bootstrap,`'use strict';const diagnosticClient=require(${JSON.stringify(path.resolve(__dirname,'../tests/helpers/desktop-m2-diagnostic-client.cjs'))}).createM2DiagnosticClient;const modulePath=${JSON.stringify(path.join(__dirname,'team-client.cjs'))};const original=require(modulePath).createTeamClient;require(modulePath).createTeamClient=options=>diagnosticClient(original,{...options,fetchImpl:(url,settings)=>fetch(${JSON.stringify(service.address.url)}+url.slice('http://127.0.0.1:8774'.length),settings)});require(${JSON.stringify(path.join(__dirname,'main.cjs'))});`);
   let app,page,stage='launch';
   try{
     app=await electron.launch({executablePath:require('electron'),args:[bootstrap],env:{...process.env,SHENYI_DESKTOP_DATA_DIR:path.join(directory,'profile')}});page=await app.firstWindow();page.setDefaultTimeout(15000);const errors=[];page.on('pageerror',e=>errors.push(e.message));

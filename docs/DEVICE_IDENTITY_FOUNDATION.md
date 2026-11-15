@@ -1,5 +1,7 @@
 # M3A 设备身份基础
 
+以下为`77f6c1d`的M3A历史交付范围；正常Windows客户端与两一键入口后续已在 [M3B](DESKTOP_DEVICE_SESSION.md)接入并验证，本文“尚未接入/诊断模式”描述只适用于M3A当时。换机审批、Mac与正式服务仍未完成。
+
 2026-11-15，分支 `codex/device-identity-foundation`，从成员停用提交 `8ea2f73` 接续。设备服务端与主进程密钥库已完成本地验证；**普通客户端尚未接入设备登录，M3整体仍在进行**。详细字节、接口和授权合同见 [执行合同](DEVICE_IDENTITY_FOUNDATION_CONTRACT.md)，M2未完项见 [本地阶段门](M2_LOCAL_ACCEPTANCE.md)。
 
 ## 用户已确认的行为

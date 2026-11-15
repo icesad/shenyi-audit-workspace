@@ -18,17 +18,21 @@
   </aside>
   <main>
     <header class="topbar"><span>工作台 <b>/</b> 资料采集</span><div id="session-actions" hidden><span id="account-name"></span><button id="logout" class="text-button" type="button">退出账号</button></div></header>
-    <div class="mode-notice"><span>本机演示</span><p>使用合成账号和资料验证团队流程。请勿导入真实客户资料；电脑绑定及正式商用服务尚未接入。</p></div>
+    <div class="mode-notice"><span>本机演示</span><p>使用合成账号和资料验证团队流程。请勿导入真实客户资料；本机设备须在线核验，换机审批及正式商用服务尚未完成。</p></div>
     <section id="login-view" class="login-view" aria-labelledby="login-title">
       <div class="login-intro"><div class="eyebrow">TEAM COLLECTION</div><h1 id="login-title">进入你的<br>资料采集工作空间</h1><p>独立账号登录后，仅查看获授权的任务，<br>按要求提交资料并确认提交记录。</p><div class="intro-rule"></div><p class="intro-caption">明确的任务，清楚的提交记录。</p></div>
       <div class="login-column"><form id="login-form" class="login-panel">
-        <h2>登录团队账号</h2><p class="muted">当前连接本机团队服务</p>
-        <label for="login-mode">登录方式</label><select id="login-mode" aria-describedby="identity-methods-message"><option value="demo">合成演示账号</option><option value="phone" disabled>手机号＋密码</option></select>
+        <h2 id="login-form-title">登录团队账号</h2><p id="login-form-caption" class="muted">当前连接本机团队服务</p>
+        <label id="login-mode-label" for="login-mode">登录方式</label><select id="login-mode" aria-describedby="identity-methods-message"><option value="demo">合成演示账号</option><option value="phone" disabled>手机号＋密码</option></select>
         <p id="identity-methods-message" class="identity-note" role="status" aria-live="polite">正在读取身份服务状态；演示账号不代表真实手机号已验证。</p>
-        <div id="ordinary-login-fields"><label for="username">账号</label><input id="username" name="username" autocomplete="username" placeholder="输入团队账号" required maxlength="128">
-        <label for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" placeholder="输入密码" required maxlength="1024">
+        <section id="device-gate" class="device-gate" aria-labelledby="device-gate-title" hidden><h3 id="device-gate-title">核验当前电脑</h3><p id="device-account" class="identity-note"></p><p id="device-fingerprint" class="device-fingerprint"></p><p id="device-gate-message" class="feedback" role="status" aria-live="polite"></p></section>
+        <div id="ordinary-login-fields"><div id="ordinary-username-fields"><label for="username">账号</label><input id="username" name="username" autocomplete="username" placeholder="输入团队账号" required maxlength="128"></div>
+        <div id="device-enrollment-fields" hidden><label for="device-name">当前电脑名称</label><input id="device-name" autocomplete="off" maxlength="80" placeholder="例如：我的办公电脑"><label class="device-consent"><input id="device-enroll-consent" type="checkbox"><span>我已核对账号，确认首次绑定这台电脑。以后换机需审批。</span></label></div>
+        <div id="ordinary-password-fields"><label id="password-label" for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" placeholder="输入密码" required maxlength="1024"></div>
         <button id="login-submit" type="submit" class="button primary">登录工作空间 <span aria-hidden="true">→</span></button>
+        <button id="device-bind-confirm" type="submit" class="button primary" hidden>确认绑定此电脑并进入</button>
         <p id="login-message" class="feedback" role="status" aria-live="polite"></p></div>
+        <div id="device-actions" class="device-actions" hidden><button id="device-retry" type="button" class="button">重新连接并核验</button><button id="device-exit" type="button" class="button">退出并返回登录</button></div>
         <div class="wechat-option"><button id="wechat-login" class="button" type="button" disabled>微信扫码登录 · 未开通</button><p id="wechat-message" class="identity-note">尚未配置微信登录，当前不能扫码授权。</p><section id="wechat-progress" class="wechat-progress" aria-label="微信授权进度" hidden><p id="wechat-status" class="feedback" role="status" aria-live="polite"></p><fieldset id="wechat-link-fields" hidden disabled><legend>首次关联现有员工账号</legend><p class="identity-note">请确认将本次授权的微信关联至你本人现有的已验证手机号账号。关联后沿用该账号的团队和权限；不会新建员工或加入其他团队。</p><label for="wechat-link-phone">已验证手机号</label><input id="wechat-link-phone" type="tel" inputmode="tel" autocomplete="off" maxlength="32" placeholder="输入现有账号已验证的手机号"><label for="wechat-link-password">该员工账号密码</label><input id="wechat-link-password" type="password" autocomplete="current-password" maxlength="1024" placeholder="输入该账号密码确认关联"><button id="wechat-link-submit" class="button primary" type="button">确认关联并登录</button></fieldset><button id="wechat-cancel" class="button" type="button">取消本次授权</button></section></div>
         <details class="demo-help"><summary>本机演示账号说明</summary><p>账号：intern-a 或 assistant-a<br>密码：ShenyiDemo!2026</p><p>仅用于明确启用的本机合成演示服务，不是正式用户账号。</p></details>
       </form>

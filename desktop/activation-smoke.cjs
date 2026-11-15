@@ -1,4 +1,5 @@
 'use strict';
+// Legacy M2 diagnostic compatibility; this harness does not prove device binding.
 // Real Electron and loopback HTTP/SQLite. SMS is an explicit in-memory capture;
 // no real phone, user, message, browser profile or shared demo is used.
 const {_electron:electron}=require('../node_modules/playwright');
@@ -11,7 +12,7 @@ async function main(){
   const db=new DatabaseSync(':memory:');initializeTeamDatabase(db);await seedDemoTeamData(db);const sent=[];
   const service=await startTeamServer({db,port:0,identityProviders:{sms:{send:async value=>sent.push(value)},phonePepper:randomBytes(32)}});
   const bootstrap=path.join(directory,'synthetic-bootstrap.cjs');
-  await fs.writeFile(bootstrap,`'use strict';const modulePath=${JSON.stringify(path.join(__dirname,'team-client.cjs'))};const original=require(modulePath).createTeamClient;require(modulePath).createTeamClient=options=>original({...options,fetchImpl:(url,settings)=>fetch(${JSON.stringify(service.address.url)}+url.slice('http://127.0.0.1:8774'.length),settings)});require(${JSON.stringify(path.join(__dirname,'main.cjs'))});`);
+  await fs.writeFile(bootstrap,`'use strict';const diagnosticClient=require(${JSON.stringify(path.resolve(__dirname,'../tests/helpers/desktop-m2-diagnostic-client.cjs'))}).createM2DiagnosticClient;const modulePath=${JSON.stringify(path.join(__dirname,'team-client.cjs'))};const original=require(modulePath).createTeamClient;require(modulePath).createTeamClient=options=>diagnosticClient(original,{...options,fetchImpl:(url,settings)=>fetch(${JSON.stringify(service.address.url)}+url.slice('http://127.0.0.1:8774'.length),settings)});require(${JSON.stringify(path.join(__dirname,'main.cjs'))});`);
   let app,page,stage='launch';
   try{
     app=await electron.launch({executablePath:require('electron'),args:[bootstrap],env:{...process.env,SHENYI_DESKTOP_DATA_DIR:path.join(directory,'profile')}});

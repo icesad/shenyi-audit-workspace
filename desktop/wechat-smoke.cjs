@@ -1,4 +1,5 @@
 'use strict';
+// Legacy M2 diagnostic compatibility; this harness does not prove device binding.
 // Real Electron + real loopback HTTP/SQLite, with explicit SYNTHETIC provider.
 // The test bootstrap intercepts the OS browser opener; it never contacts WeChat,
 // opens a fake QR page, or changes the production/default app configuration.
@@ -25,11 +26,11 @@ async function main(){
   const bootstrap=path.join(directory,'synthetic-bootstrap.cjs');
   // Only this test entry changes constructor dependencies. The real main/preload,
   // IPC, renderer and service execute unchanged, with strict provider URL policy.
-  await fs.writeFile(bootstrap,`'use strict';
+  await fs.writeFile(bootstrap,`'use strict';const diagnosticClient=require(${JSON.stringify(path.resolve(__dirname,'../tests/helpers/desktop-m2-diagnostic-client.cjs'))}).createM2DiagnosticClient;
 const modulePath=${JSON.stringify(path.join(__dirname,'team-client.cjs'))};
 const original=require(modulePath).createTeamClient;
 globalThis.__syntheticWechatOpened=[];
-require(modulePath).createTeamClient=options=>original({...options,
+require(modulePath).createTeamClient=options=>diagnosticClient(original,{...options,
   fetchImpl:(url,settings)=>fetch(${JSON.stringify(service.address.url)}+url.slice('http://127.0.0.1:8774'.length),settings),
   openAuthorization:async url=>{globalThis.__syntheticWechatOpened.push(url);}
 });

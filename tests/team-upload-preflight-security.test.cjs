@@ -252,9 +252,9 @@ test('legitimate preexisting manager assignment is retained without role-based u
   assert.equal(f.calls.cap, 3); assert.equal(f.calls.post, 1); assert.equal(result.value.submission.sha256, createHash('sha256').update(BYTES).digest('hex'));
 });
 
-test('capability RPC is fixed, rejects identity/role/path injection and has exactly 54 channels', async t => {
+test('capability RPC is fixed, rejects identity/role/path injection and has exactly 57 channels', async t => {
   const f = await fixture(t);
-  assert.equal(f.handlers.size, 54);
+  assert.equal(f.handlers.size,57);
   const count = f.calls.routes.length;
   for (const extra of [{userId:'intern-a'}, {role:'partner'}, {url:'https://provider-secret.invalid'}, {path:f.selectedPath}, {revision:0}]) {
     await assert.rejects(() => f.client.getTaskSubmissionAccess({teamId:'team-a', taskId:'task-a', ...extra}), error => error.code === 'INVALID_INPUT');

@@ -31,7 +31,7 @@ async function main() {
   let service;
   try {
     initializeTeamDatabase(db);await seedDemoTeamData(db);if(reviewDemo){await seedProvisioningDemo(db);await seedRecoveryReviewDemo(db);await seedMemberDeactivationDemo(db);}
-    service=await startTeamServer({db,identityProviders:reviewDemo?{reviewedRecovery:true}:{}});
+    service=await startTeamServer({db,identityProviders:{deviceProofRequired:true,...(reviewDemo?{reviewedRecovery:true}:{})}});
   } catch (error) { db.close();if(error.code==='EADDRINUSE')throw new Error('本机8774端口已占用。未切换端口或结束已有进程；请核对已有团队服务。');throw error; }
   console.log('审易团队采集：纯合成演示，本机8774；不读原浏览器资料，不用于生产。');
   if(reviewDemo)console.log('独立人工开通演示：reviewer-demo / ShenyiDemo!2026；无短信供应商，不能完成手机号激活。');

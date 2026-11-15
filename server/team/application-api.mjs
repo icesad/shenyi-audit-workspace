@@ -11,6 +11,7 @@ import {handleRecoveryReviewRequest} from './recovery-review-api.mjs';
 import {handleMemberAccessRequest} from './member-access-api.mjs';
 import {handleDeviceIdentityRequest} from './device-api.mjs';
 import {authorizeDeviceRequest} from './device-gate.mjs';
+import {deviceServerId} from './device-policy.mjs';
 import {recoveryConfigured} from './recovery-review-policy.mjs';
 import {ApiError, json} from './http-utils.mjs';
 
@@ -37,7 +38,8 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       if(url.search)return json({error:{code:'INVALID_QUERY',message:'查询参数无效。'}},400);
       if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
       const sms=typeof identityProviders.sms?.send==='function'&&Buffer.isBuffer(identityProviders.phonePepper)&&identityProviders.phonePepper.length>=32;
-      return json({mode:'local-preview',methods:{demoUsername:true,phonePassword:true,phoneVerification:sms,wechat:isWechatConfigured(identityProviders),recovery:sms&&recoveryConfigured(identityProviders)}});
+      return json({mode:'local-preview',methods:{demoUsername:true,phonePassword:true,phoneVerification:sms,wechat:isWechatConfigured(identityProviders),recovery:sms&&recoveryConfigured(identityProviders)},
+        ...(identityProviders.deviceProofRequired===true?{deviceBinding:{required:true,serverId:deviceServerId(db),protocolVersion:1}}:{})});
     }
     const deviceAuthorization=await authorizeDeviceRequest(request,options);
     request=deviceAuthorization.request;options.deviceContext=deviceAuthorization.context;

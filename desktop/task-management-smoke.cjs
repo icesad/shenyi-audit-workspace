@@ -1,4 +1,5 @@
 'use strict';
+// Legacy M2 diagnostic compatibility; this harness does not prove device binding.
 // Three real Electron windows with loopback HTTP/SQLite and synthetic files.
 // The native open dialog is intercepted in main to choose those exact fixtures;
 // this is not evidence of a person operating the OS file picker in this run.
@@ -11,7 +12,7 @@ async function main(){
  const {initializeTeamDatabase,seedDemoTeamData}=await source('database.mjs'),{startTeamServer}=await source('dev-server.mjs');const db=new DatabaseSync(':memory:');initializeTeamDatabase(db);await seedDemoTeamData(db);const service=await startTeamServer({db,port:0}),requests={assignment:0,return:0,submissions:0};
  service.server.on('request',request=>{if(request.method==='POST')for(const action of Object.keys(requests))if(request.url.endsWith('/'+action))requests[action]++;});
  const fixtures=[];for(const [name,text] of [['original.txt','Original synthetic bank statement.\n'],['round-one.txt','Assistant synthetic supplement, first version.\n'],['round-two.txt','Assistant synthetic supplement, second version.\n']]){const filename=path.join(directory,name),bytes=Buffer.from(text);await fs.writeFile(filename,bytes);fixtures.push({filename,bytes,sha256:digest(bytes)});}
- const bootstrap=path.join(directory,'synthetic-bootstrap.cjs');await fs.writeFile(bootstrap,`'use strict';const modulePath=${JSON.stringify(path.join(__dirname,'team-client.cjs'))};const original=require(modulePath).createTeamClient;require(modulePath).createTeamClient=options=>original({...options,fetchImpl:(url,settings)=>fetch(${JSON.stringify(service.address.url)}+url.slice('http://127.0.0.1:8774'.length),settings)});require(${JSON.stringify(path.join(__dirname,'main.cjs'))});`);
+ const bootstrap=path.join(directory,'synthetic-bootstrap.cjs');await fs.writeFile(bootstrap,`'use strict';const diagnosticClient=require(${JSON.stringify(path.resolve(__dirname,'../tests/helpers/desktop-m2-diagnostic-client.cjs'))}).createM2DiagnosticClient;const modulePath=${JSON.stringify(path.join(__dirname,'team-client.cjs'))};const original=require(modulePath).createTeamClient;require(modulePath).createTeamClient=options=>diagnosticClient(original,{...options,fetchImpl:(url,settings)=>fetch(${JSON.stringify(service.address.url)}+url.slice('http://127.0.0.1:8774'.length),settings)});require(${JSON.stringify(path.join(__dirname,'main.cjs'))});`);
  const apps=[],pages=[],errors=[];let stage='launch';
  try{
   async function launch(name){const app=await electron.launch({executablePath:require('electron'),args:[bootstrap],env:{...process.env,SHENYI_DESKTOP_DATA_DIR:path.join(directory,name)}});apps.push(app);const page=await app.firstWindow();page.setDefaultTimeout(15000);page.on('pageerror',error=>errors.push(error.message));pages.push(page);await app.evaluate(({dialog})=>{dialog.showSaveDialog=async()=>{throw Error('Unexpected save dialog in rejected download test');};});return {app,page};}

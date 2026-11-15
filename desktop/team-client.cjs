@@ -1,5 +1,6 @@
 'use strict';
 const {createWechatLogin}=require('./wechat-login.cjs');
+const {createDeviceSession}=require('./device-session.cjs');
 
 // Main-process only. The renderer never receives bearer tokens or raw fetch.
 const API_BASE = 'http://127.0.0.1:8774';
@@ -93,37 +94,52 @@ async function boundedBytes(response, limit) {
   return bytes;
 }
 
-function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wechatPolicy,openAuthorization,now=Date.now} = {}) {
+function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wechatPolicy,openAuthorization,now=Date.now,deviceIdentity} = {}) {
   if (baseUrl !== API_BASE || typeof fetchImpl !== 'function') throw failure('INVALID_SERVER', '预览版只连接本机审易服务。');
-  let token = null, current = null, generation = 0,wechat;
-  const clear = () => { token = null; current = null; generation++;wechat?.reset(); };
-  const snapshot = () => current ? structuredClone(current) : null;
+  let token = null, current = null, generation = 0,wechat,device;
+  const clear = () => { token = null; current = null; generation++;device?.reset();wechat?.reset(); };
+  const snapshot = () => {
+    if(!current)return null;const value=structuredClone(current);
+    if(device?.required){value.device=device.status();if(!device.isReady())value.memberships=[];}
+    return value;
+  };
   async function revokeResponseToken(bytes){
     try{const data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));if(typeof data?.token==='string'&&/^[A-Za-z0-9_-]{43}$/.test(data.token))await detachedPost('/api/auth/logout',{},data.token);}catch{}
   }
   async function request(route, {method = 'GET', body, authenticated = true, binary = false, unavailableMessage,temporaryBearer,discardSessionOnChange=false,messagesOverride} = {}) {
     if (authenticated && !token && !temporaryBearer) throw failure('SIGN_IN_REQUIRED', '请先登录。', 401);
-    const at = generation, bearer = temporaryBearer||token;
+    const at = generation, bearer = temporaryBearer||token,serialized=body===undefined?undefined:JSON.stringify(body),bytes=serialized===undefined?Buffer.alloc(0):Buffer.from(serialized,'utf8');
+    const protectedRoute=device?.required&&!device.isBootstrap(method,route);
+    if(protectedRoute&&(!authenticated||temporaryBearer))throw failure('INVALID_INPUT','此操作需要当前已证明的设备会话。');
+    const signed=protectedRoute?await device.prepare(method,route,bytes):null;
+    if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();
     let response;
     try { response = await fetchImpl(API_BASE + route, {method, redirect: 'error', signal: AbortSignal.timeout(15000),
-      headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'})},
-      ...(body === undefined ? {} : {body: JSON.stringify(body)})}); }
-    catch { if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。'); throw failure('SERVICE_UNAVAILABLE', '无法连接本机团队服务，请先启动服务后重试。'); }
+      headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'}),...(signed?.headers??{})},
+      ...(serialized === undefined ? {} : {body: serialized})}); }
+    catch { if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');signed?.assertCurrent();if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('SERVICE_UNAVAILABLE', protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':'无法连接本机团队服务，业务已暂停；联网后请重新核验。'); }
     if (at !== generation) {
       if(discardSessionOnChange&&response.ok)try{await revokeResponseToken(await boundedBytes(response,1024*1024));}catch{}
       throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');
     }
-    if (response.status === 401 && authenticated && !temporaryBearer) { clear(); throw failure('SIGN_IN_REQUIRED', '登录已失效，请重新登录。', 401); }
+    signed?.assertCurrent();
+    if (response.status === 401 && authenticated && bearer===token) { clear(); throw failure('SIGN_IN_REQUIRED', '登录已失效，请重新登录。', 401); }
     if (!response.ok) {
       const messages = {400:'提交内容无效，请检查后重试。',401:'账号或密码无效，请检查后重试。',403:'当前操作未获授权。',404:'任务不存在或当前账号无权访问。',409:'任务状态或版本已更新，请刷新后重试。',413:'资料超过12 MiB，请选择较小的文件。',429:'尝试过于频繁，请稍后重试。'};
+      if(device?.required&&signed){
+        let code;try{const payload=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(await boundedBytes(response,65536)));code=payload?.error?.code;}catch{if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed.assertCurrent();device.pause();throw failure('SERVICE_UNAVAILABLE','服务响应无法确认，业务已暂停，请联网后核对结果。');}
+        if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed.assertCurrent();
+        if(['DEVICE_PROOF_REQUIRED','DEVICE_BODY_MISMATCH','DEVICE_REQUEST_REPLAY','DEVICE_PROOF_LIMIT','DEVICE_STATE_CHANGED'].includes(code)){device.pause();throw failure(code,'设备业务状态需要重新在线核验；已发操作请先核对结果。',response.status);}
+      }
       // Do not forward arbitrary provider messages, stack traces, or response bodies.
       throw failure(`HTTP_${response.status}`, response.status === 503 && unavailableMessage ? unavailableMessage : messagesOverride?.[response.status]||messages[response.status] || '团队服务暂时无法完成操作。', response.status);
     }
-    const bytes = await boundedBytes(response, binary ? MAX_FILE_BYTES : 1024 * 1024);
-    if (at !== generation) {if(discardSessionOnChange)await revokeResponseToken(bytes);throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');}
-    if (binary) return {bytes, contentDisposition: response.headers.get('content-disposition') || ''};
-    try { return JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes)); }
-    catch { throw failure('INVALID_RESPONSE', '团队服务返回格式无效。'); }
+    let responseBytes;
+    try{responseBytes=await boundedBytes(response, binary ? MAX_FILE_BYTES : 1024 * 1024);}catch(cause){if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();if(!temporaryBearer||temporaryBearer===token)device?.pause();if(protectedRoute&&!['GET','HEAD'].includes(method))throw failure('SERVICE_UNAVAILABLE','已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。');throw cause instanceof ClientError?cause:failure('SERVICE_UNAVAILABLE','服务响应未读完，业务已暂停，请联网后核对结果。');}
+    if (at !== generation) {if(discardSessionOnChange)await revokeResponseToken(responseBytes);throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');}signed?.assertCurrent();
+    if (binary) return {bytes:responseBytes, contentDisposition: response.headers.get('content-disposition') || ''};
+    try { return JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(responseBytes)); }
+    catch {if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('INVALID_RESPONSE',protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':'团队服务返回格式无效。'); }
   }
   async function detachedPost(route,body,bearer){
     // Only closure-created cancel/logout paths use this cleanup transport. It
@@ -131,9 +147,26 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     const response=await fetchImpl(API_BASE+route,{method:'POST',redirect:'error',signal:AbortSignal.timeout(5000),headers:{Origin:'shenyi://app','Content-Type':'application/json',...(bearer?{Authorization:'Bearer '+bearer}:{})},body:JSON.stringify(body)});
     await response.body?.cancel();
   }
+  device=createDeviceSession({identity:deviceIdentity,now,error:failure,getAccount:()=>({token,current,generation}),clearAccount:clear,
+    adopt:data=>{const value=cleanSession(data);if(typeof data.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.token))throw failure('INVALID_RESPONSE','账号服务返回格式无效。');current=value;token=data.token;generation++;return snapshot();},
+    bootstrap:(route,options={})=>{const {token:bearer,minted,...settings}=options;return request(route,{...settings,...(bearer?{temporaryBearer:bearer}:{}),discardSessionOnChange:minted===true});},
+    protectedRequest:route=>request(route),revoke:bearer=>detachedPost('/api/auth/logout',{},bearer)});
+  async function finalizeSession(data,external=()=>{},receiveReceipt){
+    external();if(typeof data?.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.token)||device.required&&Buffer.from(data.token,'base64url').toString('base64url')!==data.token)throw failure('INVALID_RESPONSE','账号服务返回格式无效。');
+    const value=cleanSession(data);current=value;token=data.token;generation++;const at=generation,bootstrap=data.token;
+    // The OAuth caller keeps this private receipt until its result is delivered.
+    // Cancellation can clear the installed result synchronously, while cleanup
+    // revokes only this login's token even if a later account has replaced it.
+    let receiptToken=bootstrap,receiptGeneration=at,cleanup;
+    const receipt={assertCurrent(){external();if(receiptGeneration!==generation||receiptToken!==token)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');},rollback(){if(!cleanup){if(receiptGeneration===generation&&receiptToken===token)clear();cleanup=detachedPost('/api/auth/logout',{},receiptToken).catch(()=>{});}return cleanup;}};
+    receiveReceipt?.(receipt);
+    if(!device.required)return snapshot();
+    try{await device.finalize(()=>{if(at!==generation||token!==bootstrap)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');external();},minted=>{receiptToken=minted;receiptGeneration=generation;});receipt.assertCurrent();return snapshot();}
+    catch(cause){if(cause.code==='SESSION_CHANGED')await receipt.rollback();throw cause;}
+  }
   wechat=createWechatLogin({policy:wechatPolicy,openAuthorization,request,now,error:failure,getGeneration:()=>generation,isSignedIn:()=>!!token,
     cancelRemote:(route,body)=>detachedPost(route,body),revokeTemporary:bearer=>detachedPost('/api/auth/logout',{},bearer),
-    adoptSession:data=>{if(typeof data?.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.token))throw failure('INVALID_RESPONSE','账号服务返回格式无效。');const value=cleanSession(data);current=value;token=data.token;generation++;return snapshot();}});
+    adoptSession:(data,external,receiveReceipt)=>finalizeSession(data,external,receiveReceipt)});
   const onboardingRequest=(route,options)=>request(route,{...options,unavailableMessage:'员工邀请或手机号验证服务尚未开通或暂不可用。',messagesOverride:{400:'验证内容无效，请核对后重试。',404:'邀请码或手机号无效，或邀请已失效；管理操作也可能未获授权。',409:'当前账号或邀请状态不适用于激活，请联系管理员核对。',410:'本次验证已过期，请重新获取。'}});
   const sessionsRequest=(route,options)=>request(route,{...options,messagesOverride:{403:'当前密码验证未通过，请核对后重试。',404:'无法访问该登录会话，请刷新列表。',409:'账号或登录状态已改变，请刷新后重试。'}});
   const provisioningRequest=(route,options)=>request(route,{...options,unavailableMessage:'团队开通或手机号验证服务尚未开通或暂不可用。',messagesOverride:{400:'团队开通资料无效，请核对后重试。',403:'当前密码验证未通过或操作未获授权。',404:'无法访问本次开通申请或邀请，请核对后重试。',409:'申请、账号或授权状态已改变，请刷新后核对。',410:'本次验证已过期，请重新获取。'}});
@@ -152,6 +185,11 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     const data=await membersRequest(route,{method:'POST',body:{revision:input.revision,currentPassword:securityPasswordInput(input.currentPassword)}});if(data?.disabled!==true)throw failure('INVALID_RESPONSE','无法确认停用结果，请刷新成员列表核对。');return {disabled:true};
   }
   return Object.freeze({
+    getDeviceStatus(input){if(input!==undefined)throw failure('INVALID_INPUT','设备状态不接受额外参数。');return device.status();},
+    async enrollDevice(input){await device.enroll(input);return snapshot();},
+    async reconnectDevice(input){if(input!==undefined)throw failure('INVALID_INPUT','设备续接不接受额外参数。');await device.reconnect();return snapshot();},
+    checkDeviceConnection:()=>device.check(),
+    pauseDeviceConnection:()=>device.pause(),
     async getMemberManagementAccess(input){
       if(input!==undefined)throw failure('INVALID_INPUT','成员管理权限不接受额外参数。');const data=await membersRequest('/api/auth/member-management/access');
       if(!Array.isArray(data?.teams)||data.teams.length>100||typeof data.canReviewAdministrators!=='boolean')throw failure('INVALID_RESPONSE','成员管理权限状态无效。');
@@ -292,20 +330,19 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
       exactKeys(input, ['username', 'password']);
       if (typeof input.username !== 'string' || input.username.length < 1 || input.username.length > 128 || typeof input.password !== 'string' || input.password.length < 1 || input.password.length > 1024) throw failure('INVALID_INPUT', '请填写账号和密码。');
       clear(); const at = generation;
-      const data = await request('/api/auth/login', {method:'POST', body:{username:input.username,password:input.password},authenticated:false});
+      const data = await request('/api/auth/login', {method:'POST', body:{username:input.username,password:input.password},authenticated:false,discardSessionOnChange:device.required});
       if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新登录。');
       if (typeof data.token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(data.token)) throw failure('INVALID_RESPONSE', '账号服务返回格式无效。');
-      current = cleanSession(data); token = data.token;
-      return snapshot();
+      return finalizeSession(data);
     },
     async loginPhone(input) {
       exactKeys(input,['phone','password']);
       const body={phone:phoneInput(input.phone),password:passwordInput(input.password)};
       clear();const at=generation;
-      const data=await request('/api/auth/phone/login',{method:'POST',body,authenticated:false});
+      const data=await request('/api/auth/phone/login',{method:'POST',body,authenticated:false,discardSessionOnChange:device.required});
       if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新登录。');
       if(typeof data.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.token))throw failure('INVALID_RESPONSE','账号服务返回格式无效。');
-      current=cleanSession(data);token=data.token;return snapshot();
+      return finalizeSession(data);
     },
     async requestPhoneBind(input) {
       exactKeys(input,['phone']);
@@ -347,7 +384,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
       if(result.bytes.length!==0)throw failure('INVALID_RESPONSE','无法确认原件保存权限，请刷新任务后重试。');
       return {canDownload:true};
     },
-    guardSession() { const at=generation; if(!token)throw failure('SIGN_IN_REQUIRED','请先登录。',401);return ()=>{if(at!==generation||!token)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');}; },
+    guardSession() { const at=generation; if(!token)throw failure('SIGN_IN_REQUIRED','请先登录。',401);const deviceGuard=device.guard();return ()=>{if(at!==generation||!token)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');deviceGuard();}; },
     clearSession: clear,
   });
 }

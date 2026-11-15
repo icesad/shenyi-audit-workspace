@@ -52,7 +52,15 @@ function leasedSession(db,identity,binding,at){
     .run(leaseId,identity.userId,binding.device_id,safeRevision(binding.revision,1),digest(session.token),digest(leaseToken),at,expiresAt);
   return {...session,device:bindingView(binding),lease:{id:leaseId,token:leaseToken,serverId:deviceServerId(db),deviceId:binding.device_id,bindingRevision:safeRevision(binding.revision,1),expiresAt}};
 }
-export async function handleDeviceIdentityRequest(request,{db,now=Date.now}={}){
+export async function handleDeviceIdentityRequest(request,{db,now=Date.now,deviceContext,identityProviders={}}={}){
+  if(new URL(request.url).pathname==='/api/auth/devices/connection'){
+    if(new URL(request.url).search)invalid();
+    if(request.method!=='GET')return method('GET');
+    if(identityProviders.deviceProofRequired!==true||!deviceContext)throw new ApiError(403,'DEVICE_PROOF_REQUIRED','请在已绑定设备上完成持钥登录后重试。');
+    const identity=deviceIdentity(db,request,now());
+    if(identity.userId!==deviceContext.userId)throw new ApiError(403,'DEVICE_PROOF_REQUIRED','请重新核验当前设备。');
+    return json({connected:true});
+  }
   const url=new URL(request.url),match=/^\/api\/auth\/devices(?:\/(enrollment-challenges|proof-challenges|revocation-challenges|enroll|prove|revoke))?$/.exec(url.pathname);
   if(!match)return null;if(url.search)invalid();const action=match[1];
   if(request.method!==(action?'POST':'GET'))return method(action?'POST':'GET');

@@ -77,12 +77,12 @@ test('cancellation performs no authorization HEAD, export or business mutation',
  assert.deepEqual(await f.download(),{ok:true,value:{canceled:true}});assert.equal(f.calls.get,1);assert.equal(f.calls.dialog,1);assert.equal(f.calls.head,0);noWrite(f);assert.deepEqual(business(f),before);
 });
 
-test('authorized download preserves exact original bytes, digest, safe filename and 49 narrow IPC methods',async t=>{
+test('authorized download preserves exact original bytes, digest, safe filename and 57 narrow IPC methods',async t=>{
  const f=await fixture(t),before=business(f),result=await f.download();
  assert.deepEqual(result,{ok:true,value:{saved:true,filename:'副本.bin',byteLength:BYTES.length}});
  assert.equal(f.calls.get,1);assert.equal(f.calls.dialog,1);assert.equal(f.calls.head,1);assert.equal(f.calls.write,1);
  assert.deepEqual(f.calls.written[0].bytes,BYTES);assert.equal(createHash('sha256').update(f.calls.written[0].bytes).digest('hex'),createHash('sha256').update(BYTES).digest('hex'));
- assert.equal(JSON.stringify(result).includes('D:/synthetic-not-created'),false);assert.equal(f.handlers.size,54);assert.ok(!f.handlers.has('shenyi:check-attachment-access'));assert.deepEqual(business(f),before);
+ assert.equal(JSON.stringify(result).includes('D:/synthetic-not-created'),false);assert.equal(f.handlers.size,57);assert.ok(!f.handlers.has('shenyi:check-attachment-access'));assert.deepEqual(business(f),before);
  const requests=f.calls.routes.filter(item=>item.route===f.route);assert.deepEqual(requests.map(item=>item.method),['GET','HEAD']);assert.ok(requests.every(item=>item.hasBearer&&item.origin==='shenyi://app'));
 });
 

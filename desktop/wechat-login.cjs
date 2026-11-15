@@ -21,18 +21,28 @@ function validWechatAuthorization(value,policy){
 function createWechatLogin({policy,openAuthorization,request,cancelRemote,revokeTemporary,adoptSession,getGeneration,isSignedIn,error,now=Date.now}){
   policy=validWechatPolicy(policy)?Object.freeze({appId:policy.appId,redirectUri:policy.redirectUri}):null;
   const configured=!!policy&&typeof openAuthorization==='function';
-  let active=null,epoch=0,busy=false;
+  // Main cannot observe when the renderer receives its successful IPC reply.
+  // Keep that login's CAS receipt so a still-visible Cancel can revoke it.
+  let active=null,lastAdoption=null,epoch=0,busy=false;
   const route=row=>'/api/auth/wechat/transactions/'+row.id;
   const cancel=row=>row?cancelRemote(route(row)+'/cancel',{pollToken:row.pollToken}).catch(()=>{}):Promise.resolve();
-  function reset(){const row=active;active=null;epoch++;void cancel(row);}
+  function abandon(row){void row?.receipt?.rollback();return cancel(row);}
+  function reset(){const row=active,receipt=lastAdoption;active=null;lastAdoption=null;epoch++;void abandon(row);if(receipt!==row?.receipt)void receipt?.rollback();}
   function changed(at,generation){if(at!==epoch||generation!==getGeneration())throw error('SESSION_CHANGED','账号或扫码状态已改变，请重新操作。');}
   async function locked(action){if(busy)throw error('WECHAT_BUSY','扫码操作正在进行，请稍候。');busy=true;try{return await action();}finally{busy=false;}}
   const pending=row=>({status:row.status,expiresAt:row.expiresAt});
   function requireActive(){if(!active)return null;if(active.expiresAt<=now()){reset();return {status:'expired'};}return active;}
-  function finish(data,at,generation){changed(at,generation);active=null;epoch++;return {status:'signed_in',session:adoptSession(data)};}
+  async function finish(data,at,generation){
+    changed(at,generation);const row=active;let receipt;
+    const assertTransaction=()=>{if(at!==epoch)throw error('SESSION_CHANGED','扫码状态已改变，请重新操作。');};
+    try{
+      const session=await adoptSession(data,assertTransaction,value=>{receipt=value;if(row)row.receipt=value;});
+      assertTransaction();receipt?.assertCurrent();lastAdoption=receipt;active=null;epoch++;return {status:'signed_in',session};
+    }catch(cause){await receipt?.rollback();throw cause;}
+  }
   async function receiveExchange(row){return request(route(row)+'/exchange',{method:'POST',authenticated:false,discardSessionOnChange:true,body:{pollToken:row.pollToken,codeVerifier:row.verifier}});}
   async function adoptExchange(data,at,generation){
-    try{return finish(data,at,generation);}catch(e){if(opaque(data?.token))await revokeTemporary(data.token).catch(()=>{});throw e;}
+    try{return await finish(data,at,generation);}catch(e){if(opaque(data?.token))await revokeTemporary(data.token).catch(()=>{});throw e;}
   }
   return Object.freeze({
     configured,reset,
@@ -61,7 +71,7 @@ function createWechatLogin({policy,openAuthorization,request,cancelRemote,revoke
       if(['expired','canceled','failed','consumed'].includes(value.status)){active=null;epoch++;return {status:value.status==='consumed'?'failed':value.status};}
       row.status=value.status;return pending(row);
     });},
-    async cancel(){const row=active;active=null;epoch++;await cancel(row);return {canceled:true};},
+    async cancel(){const row=active,receipt=lastAdoption;active=null;lastAdoption=null;epoch++;await Promise.all([row?.receipt?.rollback(),receipt!==row?.receipt?receipt?.rollback():undefined,cancel(row)]);return {canceled:true};},
     async link(input){return locked(async()=>{
       const row=requireActive();if(!row?.id||row.status!=='binding_required')throw error('WECHAT_NOT_LINKABLE','请先扫码并确认当前账号需要关联。');
       const at=epoch,generation=getGeneration();let temporary,finalSession;

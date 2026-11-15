@@ -1,4 +1,5 @@
 'use strict';
+const {withDeviceDiagnostic}=require('./helpers/desktop-device-diagnostic.cjs');
 // Actual renderer DOM, explicit synthetic bridge. No SMS or external messages.
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),{JSDOM}=require('jsdom');
@@ -16,7 +17,7 @@ function fixture(t,overrides={}){
   Object.defineProperty(window,'localStorage',{value:{setItem:(...x)=>writes.push(x),getItem:()=>null,removeItem:()=>{}}});
   const defaults={getAuthMethods:async()=>safe({mode:'local-preview',desktopWechatReady:true,methods:{demoUsername:true,phonePassword:true,phoneVerification:false,wechat:true,recovery:false}}),getOnboardingStatus:async()=>safe({available:true,invitationOnly:true}),login:async()=>safe(SESSION),loginPhone:async()=>safe(SESSION),listTasks:async()=>safe({tasks:[],hasMore:false}),logout:async()=>safe({signedOut:true}),getInvitationAccess:async()=>safe({canInvite:false}),listEmployeeInvitations:async()=>safe({invitations:[INVITE]}),createEmployeeInvitation:async()=>safe({...INVITE,invitationCode:CODE}),revokeEmployeeInvitation:async()=>safe({revoked:true}),previewEmployeeInvitation:async()=>safe(INVITE),requestEmployeeActivation:async()=>safe({challengeId:'challenge-a',expiresAt:Date.now()+300000}),activateEmployee:async()=>safe({activated:true}),startWechatLogin:async()=>safe({status:'pending',expiresAt:Date.now()+300000}),pollWechatLogin:async()=>safe({status:'pending',expiresAt:Date.now()+300000}),cancelWechatLogin:async()=>safe({canceled:true}),linkWechatAccount:async()=>safe({status:'signed_in',session:SESSION})};
   window.shenyiTeam=Object.fromEntries(Object.entries({...defaults,...overrides}).map(([name,fn])=>[name,typeof fn==='function'?async arg=>{calls.push({name,arg});return fn(arg);}:fn]));
-  window.eval(script);t.after(()=>window.close());
+  window.shenyiTeam=withDeviceDiagnostic(window.shenyiTeam);window.eval(script);t.after(()=>window.close());
   return {window,d,calls,writes,id:x=>d.getElementById(x),click:x=>d.getElementById(x).click(),submit:x=>d.getElementById(x).dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})),change:x=>d.getElementById(x).dispatchEvent(new window.Event('change',{bubbles:true})),input:x=>d.getElementById(x).dispatchEvent(new window.Event('input',{bubbles:true}))};
 }
 const count=(f,name)=>f.calls.filter(x=>x.name===name).length;

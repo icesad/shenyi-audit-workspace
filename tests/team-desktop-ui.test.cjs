@@ -1,4 +1,5 @@
 'use strict';
+const {withDeviceDiagnostic}=require('./helpers/desktop-device-diagnostic.cjs');
 const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');
 const {JSDOM}=require('jsdom');
 const html=fs.readFileSync(path.join(__dirname,'../desktop/team-ui/index.html'),'utf8');
@@ -6,7 +7,7 @@ const code=fs.readFileSync(path.join(__dirname,'../desktop/team-ui/team-ui.js'),
 const session={account:{id:'user-a',displayName:'旧账号机密姓名'},memberships:[{teamId:'team-a',role:'intern'}],expiresAt:1794717600000};
 const task={id:'task-a',title:'仅此账号可见的合成任务',instructions:'仅此账号可见的资料要求',status:'open'};
 async function waitFor(check){for(let i=0;i<50;i++){if(check())return;await new Promise(resolve=>setTimeout(resolve,0));}assert.ok(check(),'renderer did not reach expected state');}
-function create(t,bridge){const dom=new JSDOM(html,{url:'shenyi://app/index.html',runScripts:'outside-only'});dom.window.shenyiTeam=bridge;dom.window.eval(code);t.after(()=>dom.window.close());return dom.window;}
+function create(t,bridge){const dom=new JSDOM(html,{url:'shenyi://app/index.html',runScripts:'outside-only'});dom.window.shenyiTeam=bridge;dom.window.shenyiTeam=withDeviceDiagnostic(dom.window.shenyiTeam);dom.window.eval(code);t.after(()=>dom.window.close());return dom.window;}
 function signIn(window){window.document.getElementById('username').value='intern-a';window.document.getElementById('password').value='ShenyiDemo!2026';window.document.getElementById('login-form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));}
 const ok=value=>({ok:true,value});
 test('revoked session refresh clears old DOM, unlocks login controls and allows a fresh login',async t=>{

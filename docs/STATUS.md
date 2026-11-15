@@ -2,7 +2,7 @@
 
 记录日期：2026-11-15。GitHub 地址：<https://github.com/icesad/shenyi-audit-workspace>。
 
-最新检查点为下文M3A：[设备底座](DEVICE_IDENTITY_FOUNDATION.md)已验证，普通客户端强制绑定和换机审批尚未接入。M2本地候选通过、正式身份/配置/生产仍待完成；完整Goal active，尚未进入main或上线。以下各阶段保留各自当时的证据与边界。
+最新检查点为下文M3B：[正常Windows设备会话](DESKTOP_DEVICE_SESSION.md)已接入并验证，换机审批、Mac与正式服务尚未完成。M2本地候选通过、正式身份/配置/生产仍待完成；完整Goal active，尚未进入main或上线。以下各阶段保留各自当时的证据与边界。
 
 ## 版本不混淆
 
@@ -166,3 +166,13 @@ GitHub仓库不替代原网站登录；GitHub合并不自动触发网站升级�
 Node24完整portable 1552通过/0失败/0跳过，271.29秒；新4专项110项包含在内。无窗口真实Electron45.3.2＋OScrypto＋严格HTTP/隔离SQL证明持钥登记、同钥登录替换旧业务会话、重放/错误key拒绝、62bytes原件/hash及HEAD空体、撤销后不能重新首次登记；不等于普通UI已绑定。旧9项原生兼容和默认Electron smoke通过。两入口实跑升级46表/76对象，旧67定义和全部旧行保持，只加设备schema与单行serverId；普通9/review13用户不变、新设备表空。登录后仅review三认证表正常变化，独立保全审查通过，详见根进度和仓库外证据。
 
 正常main/preload/renderer仍54接口/10form16密码，一键预览可达但为M2诊断模式。M3B必须接正常登录/逐请求证明/续接/旧端清退/断网与强制入口，并选每机非漫游key目录；M3C再接换机审批。DPAPI不等于硬件防复制，同OS上下文复制密文实测可读；Mac/跨机/安装升级另验。未push/main/上线，Goal保持active。
+
+## 2026-11-15 M3B：正常Windows客户端设备会话已验证
+
+`codex/desktop-device-session`接续`77f6c1d`，[正常设备会话](DESKTOP_DEVICE_SESSION.md)把用户名/手机号/微信统一接入异步设备关卡，首次须重新输入密码和明确同意，同key持钥证明后才进入。不同key/撤销历史阻断；main逐请求签名、5秒心跳、15分钟单飞续接、断网暂停和fresh重连。两正常一键入口固定开启严格门，缺vault/旧服务不降级；57窄接口、10form16密码，无私钥/token/lease secret进入renderer。每机key目录独立于业务profile和漫游userData。
+
+最终完整portable 1662通过/0失败/0跳过（297.46秒），新110项包含在内，41份运行/单元源文件在最终运行前后hash一致。独立55安全与296UI通过；曾实际发现并修复微信采纳后及IPC回复未交付时取消遗留业务会话，私有receipt+CAS只撤本次、保留后来账号。未知写结果明确提示核对且不自动重放，修前失败均保留。
+
+真实Windows严格Electron/OSvault/随机HTTP/落盘SQL三实例验证通过：首次取消不绑定、明确确认、实际合成phone路由、断网Open不读文件、提交已COMMIT后丢响应恰1POST、fresh恢复、同keyB替A约5223ms清退并阻挂起Save零写、异key及真实撤销历史阻断。5图5DB、原件62bytes/hash与合法旧副本独立核对；默认strict smoke8图亦通过。11旧原生仅以显式test-only诊断夹具证明兼容，不混为设备证据。OS选框是合成拦截，不称真人操作。
+
+两入口本轮实际重启required=true、UUID稳定、窗口可达；两库46表/76对象及全部行与只读online before备份完全相同，普通9/review13用户与空设备表保持，没有自动给演示账号绑定。未push/main/上线，完整Goal active。下一M3C审批/撤旧/新设备激活；M2真实供应商adapter和生产配置、Mac/HTTPS/安装更新、后续业务/年费/官网及上线仍未完成。

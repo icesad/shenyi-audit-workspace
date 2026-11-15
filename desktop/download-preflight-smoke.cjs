@@ -1,4 +1,5 @@
 'use strict';
+// Legacy M2 diagnostic compatibility; this harness does not prove device binding.
 // Real Electron main/preload/UI + isolated SQLite + ephemeral loopback HTTP.
 // The main-process save dialog is a synthetic held/released test interception;
 // this run does not claim a person operated an operating-system file picker.
@@ -26,7 +27,7 @@ async function main(){
  const original={filename:'synthetic-original.bin',bytes:Buffer.from('Synthetic download original.\0\r\n原件副本; no client data.\r\n')};original.sha256=digest(original.bytes);
  const destinations=Object.fromEntries(['normal','cancel','grant-revoked','session-revoked'].map(name=>[name,path.join(runDirectory,name+'-saved-copy.bin')]));
  const bootstrap=path.join(runDirectory,'synthetic-bootstrap.cjs');
- await fs.writeFile(bootstrap,`'use strict';
+ await fs.writeFile(bootstrap,`'use strict';const diagnosticClient=require(${JSON.stringify(path.resolve(__dirname,'../tests/helpers/desktop-m2-diagnostic-client.cjs'))}).createM2DiagnosticClient;
 const {ipcMain}=require('electron');
 globalThis.__downloadEvidenceFs=require('node:fs/promises');globalThis.__downloadEvidencePath=require('node:path');globalThis.__downloadEvidenceCrypto=require('node:crypto');
 globalThis.__downloadEvidenceChannels=[];globalThis.__downloadEvidenceResults=[];
@@ -34,7 +35,7 @@ const originalHandle=ipcMain.handle.bind(ipcMain);
 ipcMain.handle=(channel,listener)=>{if(channel.startsWith('shenyi:'))globalThis.__downloadEvidenceChannels.push(channel);return originalHandle(channel,async(...args)=>{const result=await listener(...args);if(channel==='shenyi:download')globalThis.__downloadEvidenceResults.push({ok:result.ok,errorCode:result.error?.code??null,value:result.ok?result.value:null});return result;});};
 const modulePath=${JSON.stringify(path.join(__dirname,'team-client.cjs'))};
 const {createTeamClient:originalClient,API_BASE}=require(modulePath);
-require(modulePath).createTeamClient=options=>originalClient({...options,baseUrl:API_BASE,fetchImpl:(url,settings)=>{if(!url.startsWith(API_BASE+'/'))throw Error('Unexpected test API origin');return fetch(${JSON.stringify(service.address.url)}+url.slice(API_BASE.length),settings);}});
+require(modulePath).createTeamClient=options=>diagnosticClient(originalClient,{...options,baseUrl:API_BASE,fetchImpl:(url,settings)=>{if(!url.startsWith(API_BASE+'/'))throw Error('Unexpected test API origin');return fetch(${JSON.stringify(service.address.url)}+url.slice(API_BASE.length),settings);}});
 require(${JSON.stringify(path.join(__dirname,'main.cjs'))});
 `);
  const actors=[],pageErrors=[],cases=[],screenshots=[];let stage='synthetic-upload';
@@ -107,11 +108,11 @@ require(${JSON.stringify(path.join(__dirname,'main.cjs'))});
   const sessionSnapshot=path.join(runDirectory,'server-session-revoked-stage.sqlite');await backup(db,sessionSnapshot);cases.push({name:'server-session-revoked-in-save-dialog',result:session,requests:sessionDelta,destinationAbsent:true,loginReturnedAndTaskIdentityCleared:true,otherWindowStillSignedIn:true,sqliteAtCase:sessionSnapshot});await photograph(intern,'save-session-revocation-returns-login.png');
   stage='runtime-invariants';const invariants=[];
   for(const actor of actors){
-   const keys=await actor.page.evaluate(()=>Object.keys(window.shenyiTeam)),channels=await actor.app.evaluate(()=>globalThis.__downloadEvidenceChannels.slice());assert.equal(keys.length,54);assert.equal(new Set(keys).size,54);assert.equal(channels.length,54);assert.equal(new Set(channels).size,54);assert.equal(keys.includes('checkAttachmentAccess'),false);
+   const keys=await actor.page.evaluate(()=>Object.keys(window.shenyiTeam)),channels=await actor.app.evaluate(()=>globalThis.__downloadEvidenceChannels.slice());assert.equal(keys.length,57);assert.equal(new Set(keys).size,57);assert.equal(channels.length,57);assert.equal(new Set(channels).size,57);assert.equal(keys.includes('checkAttachmentAccess'),false);
    assert.equal(await actor.page.locator('form').count(),10);const passwords=await actor.page.locator('input[type=password]').evaluateAll(fields=>fields.map(field=>field.value));assert.equal(passwords.length,16);assert.ok(passwords.every(value=>value===''));
    const publicSession=(await actor.page.evaluate(()=>window.shenyiTeam.getSession())).value;assert.ok(publicSession===null||!('token' in publicSession));assert.equal(await actor.page.evaluate(()=>typeof require),'undefined');assert.equal(await actor.page.evaluate(()=>typeof process),'undefined');assert.equal(await actor.page.evaluate(()=>JSON.stringify({local:{...localStorage},session:{...sessionStorage}})),'{"local":{},"session":{}}');
    const preferences=await actor.app.evaluate(({BrowserWindow})=>{const p=BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences();return {nodeIntegration:p.nodeIntegration,contextIsolation:p.contextIsolation,sandbox:p.sandbox,webSecurity:p.webSecurity};});assert.deepEqual(preferences,{nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true});
-   invariants.push({actor:actor.name,apiMethods:54,ipcChannels:54,forms:10,passwordInputs:16,passwordInputsEmpty:true,rendererBearer:false,rendererNode:false,storageEmpty:true,internalHeadMethodNotExposed:true,preferences});
+   invariants.push({actor:actor.name,apiMethods:57,ipcChannels:57,forms:10,passwordInputs:16,passwordInputsEmpty:true,rendererBearer:false,rendererNode:false,storageEmpty:true,internalHeadMethodNotExposed:true,preferences});
   }
   assert.deepEqual(pageErrors,[]);assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);assert.deepEqual(requests,{attachmentGet:5,attachmentHead:3,submissionPost:1});
   const stored=db.prepare('SELECT content_sha256,byte_length FROM team_task_submissions WHERE attachment_id=?').get(target.attachmentId);assert.equal(stored.content_sha256,original.sha256);assert.equal(stored.byte_length,original.bytes.length);assert.deepEqual(Buffer.from(db.prepare('SELECT bytes FROM team_collection_attachments WHERE attachment_id=?').get(target.attachmentId).bytes),original.bytes);

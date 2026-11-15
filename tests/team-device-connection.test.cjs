@@ -1,0 +1,35 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {DatabaseSync}=require('node:sqlite');
+const {generateKeyPairSync,sign,randomBytes,createHash}=require('node:crypto');
+const {pathToFileURL}=require('node:url'),path=require('node:path');
+const proof=require('../shared/device-proof.cjs');
+const source=name=>import(pathToFileURL(path.resolve(__dirname,'../server/team/'+name)).href);
+test('mandatory device capability and signed connection validate the actual current business holder',async t=>{
+  const {initializeTeamDatabase,seedDemoTeamData}=await source('database.mjs'),{handleTeamApplicationRequest}=await source('application-api.mjs'),{handleDeviceIdentityRequest}=await source('device-api.mjs');
+  const {issueSession}=await source('auth-api.mjs');
+  const db=new DatabaseSync(':memory:');t.after(()=>db.close());initializeTeamDatabase(db);await seedDemoTeamData(db);
+  let at=Date.parse('2026-11-15T12:00:00Z');const now=()=>at,base='http://127.0.0.1:8774';
+  const call=(route,{token,body,method=body===undefined?'GET':'POST',headers={},strict=true}={})=>handleTeamApplicationRequest(new Request(base+route,{method,headers:{Origin:'shenyi://app',...(token?{Authorization:'Bearer '+token}:{}),...headers,...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})}),{db,now,identityProviders:{deviceProofRequired:strict}});
+  const legacy=await (await call('/api/auth/methods',{strict:false})).json();assert.equal(Object.hasOwn(legacy,'deviceBinding'),false);
+  const capabilities=await (await call('/api/auth/methods')).json();assert.equal(capabilities.deviceBinding.required,true);assert.equal(capabilities.deviceBinding.protocolVersion,1);assert.match(capabilities.deviceBinding.serverId,/^[a-f0-9-]{36}$/);
+  assert.equal((await call('/api/auth/devices/connection')).status,401);
+  const bootstrap=issueSession(db,'intern-a',at).token;
+  assert.equal((await call('/api/auth/devices/connection',{token:bootstrap})).status,403);
+  const direct=new Request(base+'/api/auth/devices/connection',{headers:{Authorization:'Bearer '+bootstrap}});
+  await assert.rejects(()=>handleDeviceIdentityRequest(direct,{db,now,identityProviders:{deviceProofRequired:true}}),error=>error.status===403);
+  assert.equal((await call('/api/auth/devices/connection',{token:bootstrap,strict:false})).status,403);
+  const pair=generateKeyPairSync('ed25519'),publicKey=pair.publicKey.export({type:'spki',format:'der'}).toString('base64url');
+  const challenge=await (await call('/api/auth/devices/enrollment-challenges',{token:bootstrap,body:{publicKey,displayName:'合成Windows设备',platform:'win32',currentPassword:'ShenyiDemo!2026'}})).json();
+  const enrolled=await call('/api/auth/devices/enroll',{token:bootstrap,body:{challengeId:challenge.challenge.challengeId,signature:sign(null,proof.challengeBytes(challenge.challenge),pair.privateKey).toString('base64url')}});assert.equal(enrolled.status,201);const session=await enrolled.json();
+  const request=(route='/api/auth/devices/connection',method='GET')=>{
+    const fields={serverId:capabilities.deviceBinding.serverId,userId:'intern-a',sessionBinding:proof.sessionBinding(session.token),deviceId:session.device.id,bindingRevision:session.device.revision,leaseId:session.lease.id,method,pathAndQuery:route,bodySha256:createHash('sha256').update('').digest('hex'),nonce:randomBytes(32).toString('base64url')};
+    return {token:session.token,method,headers:{'X-Shenyi-Device-Lease':session.lease.token,'X-Shenyi-Device-Nonce':fields.nonce,'X-Shenyi-Device-Body-SHA256':fields.bodySha256,'X-Shenyi-Device-Signature':sign(null,proof.requestProofBytes(fields),pair.privateKey).toString('base64url')}};
+  };
+  const signed=request();assert.deepEqual(await (await call('/api/auth/devices/connection',signed)).json(),{connected:true});assert.equal((await call('/api/auth/devices/connection',signed)).status,409);
+  assert.equal((await call('/api/auth/devices/connection?bypass=1',request('/api/auth/devices/connection?bypass=1'))).status,400);
+  const head=await call('/api/auth/devices/connection',request('/api/auth/devices/connection','HEAD'));assert.equal(head.status,405);assert.equal((await head.arrayBuffer()).byteLength,0);
+  db.prepare('UPDATE team_sessions SET revoked_at=? WHERE token_hash=?').run(++at,proof.sessionBinding(session.token));
+  assert.equal((await call('/api/auth/devices/connection',request())).status,401);
+  assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+});

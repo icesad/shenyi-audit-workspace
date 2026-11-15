@@ -1,4 +1,5 @@
 'use strict';
+const {withDeviceDiagnostic}=require('./helpers/desktop-device-diagnostic.cjs');
 // Actual renderer DOM with a synthetic narrow bridge. No supplier or native user.
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),{JSDOM}=require('jsdom');
@@ -16,7 +17,7 @@ function fixture(t,overrides={}){
   Object.defineProperty(window,'localStorage',{value:new Proxy({setItem:(...args)=>writes.push(args),getItem:()=>null,removeItem:()=>{},clear:()=>{}},{set:(_target,key,value)=>{writes.push([key,value]);return true;}})});
   const defaults={getAuthMethods:async()=>safe({mode:'local-preview',desktopWechatReady:false,methods:{demoUsername:true,phonePassword:true,phoneVerification:false,wechat:false,recovery:false}}),getOnboardingStatus:async()=>safe({available:false,invitationOnly:true}),login:async()=>safe(SESSION),loginPhone:async()=>safe(SESSION),listTasks:async()=>safe({tasks:[{id:'task-a',title:'合成采集任务',instructions:'合成任务说明',status:'open'}],hasMore:false}),logout:async()=>safe({signedOut:true}),getInvitationAccess:async()=>safe({canInvite:false}),changeOwnPassword:async()=>safe({signedOut:true})};
   window.shenyiTeam=Object.fromEntries(Object.entries({...defaults,...overrides}).map(([name,fn])=>[name,typeof fn==='function'?async arg=>{calls.push({name,arg});return fn(arg);}:fn]));
-  window.eval(script);t.after(()=>window.close());
+  window.shenyiTeam=withDeviceDiagnostic(window.shenyiTeam);window.eval(script);t.after(()=>window.close());
   return {window,d,calls,writes,id:id=>d.getElementById(id),click:id=>d.getElementById(id).click(),submit:id=>d.getElementById(id).dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})),input:id=>d.getElementById(id).dispatchEvent(new window.Event('input',{bubbles:true}))};
 }
 async function login(f){await until(()=>!f.id('login-submit').disabled);f.id('username').value='synthetic-user';f.id('password').value=CURRENT;f.submit('login-form');await until(()=>!f.id('workspace-view').hidden&&!f.id('logout').disabled);}

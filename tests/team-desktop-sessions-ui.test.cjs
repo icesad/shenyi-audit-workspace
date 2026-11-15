@@ -1,4 +1,5 @@
 'use strict';
+const {withDeviceDiagnostic}=require('./helpers/desktop-device-diagnostic.cjs');
 // Real renderer DOM, synthetic narrow bridge. No native session or supplier is touched.
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),{JSDOM}=require('jsdom');
@@ -18,7 +19,7 @@ function fixture(t,overrides={}){
   Object.defineProperty(window,'localStorage',{value:{setItem:(...args)=>writes.push(args),getItem:()=>null,removeItem:()=>{}}});
   const defaults={getAuthMethods:async()=>safe({mode:'local-preview',desktopWechatReady:false,methods:{demoUsername:true,phonePassword:true,phoneVerification:false,wechat:false,recovery:false}}),getOnboardingStatus:async()=>safe({available:false,invitationOnly:true}),login:async()=>safe(SESSION),loginPhone:async()=>safe(SESSION),listTasks:async()=>safe({tasks:[],hasMore:false}),logout:async()=>safe({signedOut:true}),getInvitationAccess:async()=>safe({canInvite:false}),listAccountSessions:async()=>safe({sessions:[CURRENT,OTHER],hasMore:false}),revokeAccountSession:async()=>safe({revoked:true,signedOut:false}),revokeOtherSessions:async()=>safe({revokedCount:1,signedOut:false}),revokeAllSessions:async()=>safe({revokedCount:2,signedOut:true})};
   window.shenyiTeam=Object.fromEntries(Object.entries({...defaults,...overrides}).map(([name,fn])=>[name,typeof fn==='function'?async arg=>{calls.push({name,arg});return fn(arg);}:fn]));
-  window.eval(script);t.after(()=>window.close());
+  window.shenyiTeam=withDeviceDiagnostic(window.shenyiTeam);window.eval(script);t.after(()=>window.close());
   return {window,d,calls,writes,id:id=>d.getElementById(id),click:id=>d.getElementById(id).click(),submit:id=>d.getElementById(id).dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})),rows:()=>[...d.querySelectorAll('.account-session-item')],input:id=>d.getElementById(id).dispatchEvent(new window.Event('input',{bubbles:true}))};
 }
 const count=(f,name)=>f.calls.filter(call=>call.name===name).length;

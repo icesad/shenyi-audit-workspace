@@ -1,4 +1,5 @@
 'use strict';
+const {withDeviceDiagnostic}=require('./helpers/desktop-device-diagnostic.cjs');
 // Actual renderer with a synthetic narrow bridge. No native dialogs or audit data.
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{JSDOM}=require('jsdom');
 const html=fs.readFileSync(path.join(__dirname,'../desktop/team-ui/index.html'),'utf8'),script=fs.readFileSync(path.join(__dirname,'../desktop/team-ui/team-ui.js'),'utf8');
@@ -11,7 +12,7 @@ function fixture(t,overrides={}){
   'task-a':{id:'task-a',title:'合成采集A',instructions:'合成要求A',status:'open',revision:3,canSubmit:true},
   'task-b':{id:'task-b',title:'合成采集B',instructions:'合成要求B',status:'returned',revision:7,canSubmit:false}};
  const defaults={getAuthMethods:async()=>safe({mode:'local-preview',desktopWechatReady:false,methods:{demoUsername:true,phonePassword:true,phoneVerification:false,wechat:false,recovery:false}}),getOnboardingStatus:async()=>safe({available:false,invitationOnly:true}),login:async()=>safe(SESSION),logout:async()=>safe({signedOut:true}),listTasks:async()=>safe({tasks:Object.values(tasks).map(({id,title,instructions,status})=>({id,title,instructions,status})),hasMore:false}),getTask:async input=>{const {id,title,instructions,status}=tasks[input.taskId];return safe({task:{id,title,instructions,status}});},getSubmissions:async input=>safe({revision:tasks[input.taskId].revision,submissions:[]}),getTaskSubmissionAccess:async input=>safe({canSubmit:tasks[input.taskId].canSubmit,revision:tasks[input.taskId].revision}),chooseAndUpload:async()=>safe({canceled:true}),...overrides};
- window.shenyiTeam=Object.fromEntries(Object.entries(defaults).map(([name,action])=>[name,typeof action==='function'?async input=>{calls.push({name,input});return action(input,{tasks});}:action]));window.eval(script);t.after(()=>window.close());
+ window.shenyiTeam=Object.fromEntries(Object.entries(defaults).map(([name,action])=>[name,typeof action==='function'?async input=>{calls.push({name,input});return action(input,{tasks});}:action]));window.shenyiTeam=withDeviceDiagnostic(window.shenyiTeam);window.eval(script);t.after(()=>window.close());
  return {window,d,calls,tasks,id:id=>d.getElementById(id),click:id=>d.getElementById(id).click(),fire:(id,type='click')=>d.getElementById(id).dispatchEvent(new window.Event(type,{bubbles:true,cancelable:true}))};
 }
 const count=(f,name)=>f.calls.filter(call=>call.name===name).length;

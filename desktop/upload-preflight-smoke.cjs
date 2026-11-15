@@ -1,4 +1,5 @@
 'use strict';
+// Legacy M2 diagnostic compatibility; this harness does not prove device binding.
 // Real Electron main/preload/renderer + ephemeral loopback HTTP + isolated SQLite.
 // showOpenDialog is intercepted in main and held/released by this test. No person
 // or operating-system picker interaction is claimed; only synthetic files exist.
@@ -27,7 +28,7 @@ async function main(){
  const fixture={filename:path.join(runDirectory,'synthetic-original.txt'),bytes:Buffer.from('Synthetic upload preflight original.\r\n原件\0No client data.\r\n')};
  fixture.sha256=digest(fixture.bytes);await fs.writeFile(fixture.filename,fixture.bytes);
  const bootstrap=path.join(runDirectory,'synthetic-bootstrap.cjs');
- await fs.writeFile(bootstrap,`'use strict';
+ await fs.writeFile(bootstrap,`'use strict';const diagnosticClient=require(${JSON.stringify(path.resolve(__dirname,'../tests/helpers/desktop-m2-diagnostic-client.cjs'))}).createM2DiagnosticClient;
 const {ipcMain}=require('electron');
 globalThis.__uploadEvidenceFilesystem=require('node:fs/promises');globalThis.__uploadEvidencePaths=require('node:path');
 const originalHandle=ipcMain.handle.bind(ipcMain);
@@ -35,7 +36,7 @@ globalThis.__uploadEvidenceChannels=[];globalThis.__uploadEvidenceResults=[];
 ipcMain.handle=(channel,listener)=>{if(channel.startsWith('shenyi:'))globalThis.__uploadEvidenceChannels.push(channel);return originalHandle(channel,async(...args)=>{const result=await listener(...args);if(channel==='shenyi:upload')globalThis.__uploadEvidenceResults.push({ok:result.ok,errorCode:result.error?.code??null,canceled:result.value?.canceled===true});return result;});};
 const modulePath=${JSON.stringify(path.join(__dirname,'team-client.cjs'))};
 const {createTeamClient:originalClient,API_BASE}=require(modulePath);
-require(modulePath).createTeamClient=options=>originalClient({...options,baseUrl:API_BASE,fetchImpl:(url,settings)=>{if(!url.startsWith(API_BASE+'/'))throw Error('Unexpected test API origin');return fetch(${JSON.stringify(service.address.url)}+url.slice(API_BASE.length),settings);}});
+require(modulePath).createTeamClient=options=>diagnosticClient(originalClient,{...options,baseUrl:API_BASE,fetchImpl:(url,settings)=>{if(!url.startsWith(API_BASE+'/'))throw Error('Unexpected test API origin');return fetch(${JSON.stringify(service.address.url)}+url.slice(API_BASE.length),settings);}});
 require(${JSON.stringify(path.join(__dirname,'main.cjs'))});
 `);
  const actors=[],pageErrors=[],cases=[],screenshots=[];let stage='launch';
@@ -144,8 +145,8 @@ require(${JSON.stringify(path.join(__dirname,'main.cjs'))});
   await photograph(intern,'intern-original-preserved.png');
   stage='runtime-invariants';const invariants=[];
   for(const actor of actors){
-   const apiKeys=await actor.page.evaluate(()=>Object.keys(window.shenyiTeam));assert.equal(apiKeys.length,54);assert.equal(new Set(apiKeys).size,54);assert.ok(apiKeys.includes('getTaskSubmissionAccess'));
-   const ipcChannels=await actor.app.evaluate(()=>globalThis.__uploadEvidenceChannels.slice());assert.equal(ipcChannels.length,54);assert.equal(new Set(ipcChannels).size,54);
+   const apiKeys=await actor.page.evaluate(()=>Object.keys(window.shenyiTeam));assert.equal(apiKeys.length,57);assert.equal(new Set(apiKeys).size,57);assert.ok(apiKeys.includes('getTaskSubmissionAccess'));
+   const ipcChannels=await actor.app.evaluate(()=>globalThis.__uploadEvidenceChannels.slice());assert.equal(ipcChannels.length,57);assert.equal(new Set(ipcChannels).size,57);
    assert.equal(await actor.page.locator('form').count(),10);const passwords=await actor.page.locator('input[type=password]').evaluateAll(fields=>fields.map(field=>field.value));assert.equal(passwords.length,16);assert.ok(passwords.every(value=>value===''));
    const session=(await actor.page.evaluate(()=>window.shenyiTeam.getSession())).value;assert.equal('token' in session,false);assert.equal(await actor.page.evaluate(()=>typeof require),'undefined');assert.equal(await actor.page.evaluate(()=>typeof process),'undefined');
    assert.equal(await actor.page.evaluate(()=>JSON.stringify({local:{...localStorage},session:{...sessionStorage}})),'{"local":{},"session":{}}');

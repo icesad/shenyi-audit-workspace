@@ -1,4 +1,5 @@
 'use strict';
+const {withDeviceDiagnostic}=require('./helpers/desktop-device-diagnostic.cjs');
 // Synthetic bridge + actual renderer DOM. No browser, QR, SMS, or WeChat traffic.
 const test=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');const {JSDOM}=require('jsdom');
@@ -17,7 +18,7 @@ function fixture(t,overrides={}){
   Object.defineProperty(window,'localStorage',{value:{setItem:(...args)=>writes.push(args),getItem:()=>null,removeItem:()=>{},clear:()=>{}}});
   const defaults={getAuthMethods:async()=>safe(METHODS),startWechatLogin:async()=>safe({status:'pending',expiresAt:Date.now()+300000}),pollWechatLogin:async()=>safe({status:'pending',expiresAt:Date.now()+300000}),cancelWechatLogin:async()=>safe({canceled:true}),linkWechatAccount:async()=>safe({status:'signed_in',session:SESSION}),login:async()=>safe(SESSION),loginPhone:async()=>safe(SESSION),listTasks:async()=>safe({tasks:[],hasMore:false}),logout:async()=>safe({signedOut:true})};
   window.shenyiTeam=Object.fromEntries(Object.entries({...defaults,...overrides}).map(([name,action])=>[name,typeof action==='function'?async arg=>{calls.push({name,arg});return action(arg);}:action]));
-  window.eval(renderer);t.after(()=>{timers.clear();window.close();});
+  window.shenyiTeam=withDeviceDiagnostic(window.shenyiTeam);window.eval(renderer);t.after(()=>{timers.clear();window.close();});
   return {window,d,calls,timers,writes,id:name=>d.getElementById(name),click:name=>d.getElementById(name).click(),poll(){const entry=timers.entries().next().value;assert.ok(entry,'no scheduled poll');timers.delete(entry[0]);entry[1]();}};
 }
 async function ready(f){await until(()=>!f.id('wechat-login').disabled);}

@@ -1,4 +1,5 @@
 'use strict';
+// Legacy M2 diagnostic compatibility; this harness does not prove device binding.
 // Real Windows Electron, loopback HTTP and SQLite; explicit synthetic SMS capture.
 // No shared preview, real employee or external SMS/WeChat provider is used.
 const {_electron:electron}=require('../node_modules/playwright');
@@ -11,7 +12,7 @@ async function main(){
   const db=new DatabaseSync(':memory:');initializeTeamDatabase(db);await seedDemoTeamData(db);await seedProvisioningDemo(db);const sent=[];
   const service=await startTeamServer({db,port:0,identityProviders:{sms:{send:async value=>sent.push(value)},phonePepper:randomBytes(32)}});let reviewRequests=0,activationRequests=0;
   service.server.on('request',request=>{if(/\/team-requests\/[^/]+\/review$/.test(request.url))reviewRequests++;if(request.url==='/api/auth/first-administrator/activate')activationRequests++;});
-  const bootstrap=path.join(directory,'synthetic-bootstrap.cjs');await fs.writeFile(bootstrap,`'use strict';const modulePath=${JSON.stringify(path.join(__dirname,'team-client.cjs'))};const original=require(modulePath).createTeamClient;require(modulePath).createTeamClient=options=>original({...options,fetchImpl:(url,settings)=>fetch(${JSON.stringify(service.address.url)}+url.slice('http://127.0.0.1:8774'.length),settings)});require(${JSON.stringify(path.join(__dirname,'main.cjs'))});`);
+  const bootstrap=path.join(directory,'synthetic-bootstrap.cjs');await fs.writeFile(bootstrap,`'use strict';const diagnosticClient=require(${JSON.stringify(path.resolve(__dirname,'../tests/helpers/desktop-m2-diagnostic-client.cjs'))}).createM2DiagnosticClient;const modulePath=${JSON.stringify(path.join(__dirname,'team-client.cjs'))};const original=require(modulePath).createTeamClient;require(modulePath).createTeamClient=options=>diagnosticClient(original,{...options,fetchImpl:(url,settings)=>fetch(${JSON.stringify(service.address.url)}+url.slice('http://127.0.0.1:8774'.length),settings)});require(${JSON.stringify(path.join(__dirname,'main.cjs'))});`);
   const ownerPhone='13800138000',employeePhone='13900139000',ownerPassword='AdministratorDemo!2026',employeePassword='EmployeeDemo!2026';let app,page,stage='launch';
   try{
     app=await electron.launch({executablePath:require('electron'),args:[bootstrap],env:{...process.env,SHENYI_DESKTOP_DATA_DIR:path.join(directory,'profile')}});page=await app.firstWindow();page.setDefaultTimeout(15000);const errors=[];page.on('pageerror',e=>errors.push(e.message));

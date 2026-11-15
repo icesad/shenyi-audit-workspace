@@ -40,6 +40,9 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('recovery-challenge',arg=>client.requestPasswordRecovery(input(arg,['phone'])));
   handle('recovery-complete',arg=>client.recoverPassword(input(arg,['challengeId','code','newPassword','recoveryProof'])));
   const noArgs=arg=>{if(arg!==undefined)throw Error('操作参数无效。');};
+  handle('device-status',arg=>{noArgs(arg);return client.getDeviceStatus();});
+  handle('device-enroll',arg=>client.enrollDevice(input(arg,['displayName','currentPassword','confirmed'])));
+  handle('device-reconnect',arg=>{noArgs(arg);return client.reconnectDevice();});
   handle('member-management-access',arg=>{noArgs(arg);return client.getMemberManagementAccess();});
   handle('business-members',arg=>client.listTeamBusinessMembers(input(arg,['teamId','q','after','limit'])));
   handle('team-administrators',arg=>client.listTeamAdministrators(input(arg===undefined?{}:arg,['q','after','limit'])));

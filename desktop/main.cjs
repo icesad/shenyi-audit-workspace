@@ -1,9 +1,11 @@
 'use strict';
-const {app,BrowserWindow,session,protocol,ipcMain,dialog,Menu,shell} = require('electron');
+const {app,BrowserWindow,session,protocol,ipcMain,dialog,Menu,shell,safeStorage,powerMonitor} = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const {createTeamClient,API_BASE} = require('./team-client.cjs');
 const {registerDesktopBridge,APP_URL} = require('./bridge.cjs');
+const {createDeviceKeyVault}=require('./device-key-vault.cjs');
+const {resolveDeviceVaultDirectory}=require('./device-key-directory.cjs');
 
 protocol.registerSchemesAsPrivileged([{scheme:'shenyi',privileges:{standard:true,secure:true}}]);
 app.enableSandbox();
@@ -32,7 +34,9 @@ async function main() {
     try{return new Response(await fs.readFile(asset.file),{headers:{'Content-Type':asset.mime,'Content-Security-Policy':CONTENT_SECURITY_POLICY,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'}});}catch{return new Response('Asset unavailable',{status:503});}
   });
   const wechatPolicy={appId:process.env.SHENYI_WECHAT_APP_ID,redirectUri:process.env.SHENYI_WECHAT_REDIRECT_URI};
-  const client=createTeamClient({baseUrl:process.env.SHENYI_TEAM_API || API_BASE,wechatPolicy,openAuthorization:url=>shell.openExternal(url)});
+  const vault=createDeviceKeyVault({directory:resolveDeviceVaultDirectory(),safeStorage});
+  const client=createTeamClient({baseUrl:process.env.SHENYI_TEAM_API || API_BASE,wechatPolicy,openAuthorization:url=>shell.openExternal(url),
+    deviceIdentity:{vault,platform:process.platform,displayName:process.platform==='darwin'?'我的Mac电脑':'我的Windows电脑'}});
   const win=new BrowserWindow({width:1210,height:800,minWidth:840,minHeight:600,show:false,title:'审易 · 团队采集预览',backgroundColor:'#f5f6f2',
     webPreferences:{preload:path.join(__dirname,'preload.cjs'),session:isolated,nodeIntegration:false,nodeIntegrationInWorker:false,contextIsolation:true,sandbox:true,webSecurity:true,allowRunningInsecureContent:false,webviewTag:false,devTools:!app.isPackaged}});
   Menu.setApplicationMenu(null);
@@ -41,7 +45,12 @@ async function main() {
   win.webContents.on('will-redirect',event=>event.preventDefault());
   win.webContents.on('will-attach-webview',event=>event.preventDefault());
   const dispose=registerDesktopBridge({ipcMain,window:win,client,dialog});
-  win.on('closed',()=>{dispose();app.quit();});
+  const checkConnection=()=>{void client.checkDeviceConnection().catch(()=>{});};
+  const heartbeat=setInterval(checkConnection,5000);heartbeat.unref();
+  const pauseConnection=()=>client.pauseDeviceConnection();
+  const resumeConnection=()=>{pauseConnection();checkConnection();};
+  powerMonitor.on('suspend',pauseConnection);powerMonitor.on('resume',resumeConnection);
+  win.on('closed',()=>{clearInterval(heartbeat);powerMonitor.removeListener('suspend',pauseConnection);powerMonitor.removeListener('resume',resumeConnection);dispose();vault.dispose();app.quit();});
   app.on('second-instance',()=>{if(win.isMinimized())win.restore();win.show();win.focus();});
   await win.loadURL(APP_URL);win.show();
 }
