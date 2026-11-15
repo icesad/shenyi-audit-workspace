@@ -61,6 +61,9 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('device-replacement-reviews',arg=>{noArgs(arg);return client.listDeviceReplacementReviews();});
   handle('device-replacement-review',arg=>client.reviewDeviceReplacement(input(arg,['requestId','revision','decision','currentPassword'])));
   handle('member-management-access',arg=>{noArgs(arg);return client.getMemberManagementAccess();});
+  handle('business-role-management-access',arg=>{noArgs(arg);return client.getBusinessRoleManagementAccess();});
+  handle('business-role-members',arg=>client.listBusinessRoleMembers(input(arg,['teamId','q','after','limit'])));
+  handle('business-role-change',arg=>client.changeBusinessRole(input(arg,['teamId','userId','revision','role','currentPassword','confirmed'])));
   handle('business-members',arg=>client.listTeamBusinessMembers(input(arg,['teamId','q','after','limit'])));
   handle('team-administrators',arg=>client.listTeamAdministrators(input(arg===undefined?{}:arg,['q','after','limit'])));
   handle('business-member-disable',arg=>client.disableTeamBusinessMember(input(arg,['teamId','userId','revision','currentPassword'])));

@@ -33,7 +33,7 @@ test('SMS request sends only the entered phone and presents no account-existence
   const f=fixture(t);await challenge(f);assert.deepEqual({...f.calls.find(c=>c.name==='requestPasswordRecovery').arg},{phone:PHONE});assert.match(f.id('recovery-message').textContent,/发送请求已完成/);assert.equal(f.id('recovery-message').textContent.includes('账号存在'),false);assert.equal(f.id('recovery-fields').hidden,false);
 });
 test('independent recovery proof is password-masked and not stored',async t=>{
-  const f=fixture(t);await challenge(f);fill(f);assert.equal(f.id('recovery-proof').type,'password');assert.equal(f.id('recovery-proof').autocomplete,'off');assert.equal(f.d.querySelectorAll('form').length,10);assert.equal(f.d.querySelectorAll('input[type=password]').length,17);assert.deepEqual(f.writes,[]);
+  const f=fixture(t);await challenge(f);fill(f);assert.equal(f.id('recovery-proof').type,'password');assert.equal(f.id('recovery-proof').autocomplete,'off');assert.equal(f.d.querySelectorAll('form').length,11);assert.equal(f.d.querySelectorAll('input[type=password]').length,18);assert.deepEqual(f.writes,[]);
 });
 test('confirmation mismatch never sends reset and erases all recovery secrets',async t=>{
   const f=fixture(t);await challenge(f);fill(f,{confirmation:PASSWORD+' '});f.submit('recovery-form');assert.equal(count(f,'recoverPassword'),0);assert.match(f.id('recovery-message').textContent,/不一致/);clean(f);

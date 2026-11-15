@@ -2,7 +2,7 @@
 
 记录日期：2026-11-15。GitHub 地址：<https://github.com/icesad/shenyi-audit-workspace>。
 
-最新检查点为下文M3C：[员工/管理员换机审批](DEVICE_REPLACEMENT.md)已接入并通过Windows本地独立验收；Mac/真实跨电脑、最高审核账号恢复与正式服务尚未完成。M2本地候选通过、正式身份/配置/生产仍待完成；完整Goal active，尚未进入main或上线。以下各阶段保留各自当时的证据与边界。
+最新检查点为[M4A普通员工职级调整](BUSINESS_ROLE_MANAGEMENT.md)Windows本地候选已验，精确合同[见此](BUSINESS_ROLE_MANAGEMENT_CONTRACT.md)。M4整体仍进行中。[M3 Windows本地阶段门](M3_LOCAL_ACCEPTANCE.md)已独立通过，可以进入隔离M4研发；正式M2/M3身份/远程配置/最高owner恢复、Mac/真实跨电脑和生产仍未完成。完整Goal active，未push/main/上线；下文各旧阶段保留当时证据。
 
 ## 版本不混淆
 
@@ -186,3 +186,11 @@ Node24完整portable 1552通过/0失败/0跳过，271.29秒；新4专项110项�
 严格Windows4个OSvault/main窗口/fresh14用户/随机HTTP/落盘SQL通过，6图5DB独立重开核对：批准仍保旧，显式claim后旧端实测318ms清退、保存中失效0新增写盘；管理员仅独立owner批准，激活已COMMIT丢回复实际仅1POST并人工登录恢复。62bytes/SHA与合法副本/taskrev1保持，合成选框不称真人OS操作。13旧原生兼容分别标明11诊断及M3B严格/default，不代替新换机验收。
 
 真实两个一键入口升级至50表/87对象，旧76定义/46表原行保持，普通9不增权、review仅加一个独立合成device-reviewer-demo及credential/epoch2/ACL/marker共五行至14；没有audit/operator/membership。startup及之后全部50表行/DDL与快照相同，无auth豁免，设备/换机流程表空，未自动绑定。当前strict预览可达，未push/main/上线。完整Goal/M3仍进行；下一核本地阶段门与M4权限/模块接入，Mac/真实跨PC、最高owner恢复、真实供应商/HTTPS/安装签名及商业化仍未完成。
+
+## M4A 普通员工职级调整（Windows本地候选已验）
+
+- 用户确认teamadmin管普通员工四职级，管理员本人兼职业务role由productowner审核；manager/partner均可建项目且创建者管理该项目授权。本轮实现第一项，其他待后续独立切片，不赠项目/原件/邀请或签发权。
+- strict device+当前密码、SQL最小人员scope、CAS/ABA/事务改role，撤旧session/lease/grants/未完成票、逐task版本一次；保留账号/membership有效、credential/phone/wechat/binding/原件history。专用1table1index，不改旧schema。
+- 完整portable2000/0fail/0skip、524.43秒、45源hash不变；新170项包含于总数。独立安全87/UI333、新client14/DOM19/entry3及strict原生4vault/5图5SQL/62Bhash均通过，unknown只1POST、heldSave0write，独立无剩本地P1/P2。14旧native兼容通过，11诊断与3strict分层记录。
+- 两真实一键升级51表/89对象，原50表/87定义及全部旧行保持；普通9/review14，无新seed/自动角色/自动设备。startup后全表row/DDL不变、auth豁免[]。最终review cmd37584→Node2128→Electron5124窗口/strict methods可达，8773原网页HTTP200；未来操作进程须重新核路径/父链。
+- 根证据D:/codex-temp/shenyi-m4-foundation-20261115/。未push/main/上线。管理员兼职、项目创建/任务及专业模块/迁移仍待M4；正式身份/远程配置/最高owner恢复、Mac/真实跨电脑/安装发布等外部版缺口不隐去，完整Goal active。

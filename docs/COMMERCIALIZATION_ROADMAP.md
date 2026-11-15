@@ -30,6 +30,8 @@ M1先验证最小权限模型，不重写旧业务。M2/M3在首版对外交付�
 
 M2后续阶段门核对：账号/恢复闭环已有候选，桌面[任务指派与退回](TASK_MANAGEMENT.md)现已补齐版本化操作，目标仅本团队实习生/助理（用户确认）；[可提交能力前置检查](UPLOAD_PREFLIGHT.md)也已接入；成员停用分工已确认（团队管理员处理本团队业务成员含经理/合伙人、技术管理员本人由产品负责人处理），[其管理入口及原子撤权](MEMBER_DEACTIVATION.md)已接本地候选，真实供应商/双平台和正式生产等关卡仍需完成；[M2本地阶段门](M2_LOCAL_ACCEPTANCE.md)已独立核对，当前转M3实现；[M3A设备底座](DEVICE_IDENTITY_FOUNDATION.md)与[M3B正常Windows客户端](DESKTOP_DEVICE_SESSION.md)已验证，[M3C换机申请/审批/激活](DEVICE_REPLACEMENT.md)也已通过Windows本地候选验收；下一步核M3本地阶段门与M4模块接入，Mac/真实跨电脑/最高owner恢复/正式服务仍未验，不把合成身份验收当正式商业化完成。服务端测试或直接SQL夹具不能当对应管理UI已存在。
 
+M3后续[Windows本地阶段门](M3_LOCAL_ACCEPTANCE.md)独立核对通过，当前唯一实现里程碑切换M4；正式M2/M3缺口继续保留。用户新确认teamadmin配置普通员工四职级、admin兼任由产品负责人审核，经理和合伙人均可建项目、创建者管理本项目授权。本轮[M4A普通员工职级调整](BUSINESS_ROLE_MANAGEMENT.md)本地候选通过2000项portable及严格Windows原生/独立复核；后续继续管理员兼任与项目创建，不借此改专业项目编号或自动迁移旧库。M4整体仍进行中。
+
 ## 3. 架构候选与最小实验
 
 ### 3.1 桌面候选

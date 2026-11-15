@@ -9,6 +9,7 @@ import {handleAccountSessionsRequest} from './sessions-api.mjs';
 import {handleTeamProvisioningRequest} from './provisioning-api.mjs';
 import {handleRecoveryReviewRequest} from './recovery-review-api.mjs';
 import {handleMemberAccessRequest} from './member-access-api.mjs';
+import {handleBusinessRoleRequest} from './business-role-api.mjs';
 import {handleDeviceIdentityRequest} from './device-api.mjs';
 import {handleDeviceReplacementRequest} from './device-replacement-api.mjs';
 import {authorizeDeviceRequest} from './device-gate.mjs';
@@ -48,6 +49,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       || await handleDeviceIdentityRequest(request,options)
       || await handleAccountSessionsRequest(request,options)
       || await handleMemberAccessRequest(request,options)
+      || await handleBusinessRoleRequest(request,options)
       || await handleRecoveryReviewRequest(request,options)
       || await handleTeamProvisioningRequest(request,options)
       || await handleEmployeeInvitationRequest(request,options)

@@ -189,7 +189,22 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     const route='/api/teams/'+id(input.teamId)+'/'+(administrator?'administrators':'business-members')+'/'+id(input.userId)+'/disable';
     const data=await membersRequest(route,{method:'POST',body:{revision:input.revision,currentPassword:securityPasswordInput(input.currentPassword)}});if(data?.disabled!==true)throw failure('INVALID_RESPONSE','无法确认停用结果，请刷新成员列表核对。');return {disabled:true};
   }
+  const businessRoleRequest=(route,options={})=>{if(!device.required)throw failure('DEVICE_NOT_READY','职级管理需要当前已持钥核验的业务登录。');device.guard();return request(route,{...options,messagesOverride:{403:'当前密码验证未通过或职级调整未获授权。',404:'无法访问该员工或当前操作未获授权。',409:'员工职级、版本或授权已改变，请刷新列表核对。'}});};
+  function businessRoleMember(value){if(!value||Object.keys(value).length!==5||!['id','displayName','role','status','revision'].every(key=>Object.hasOwn(value,key))||value.status!=='active')throw failure('INVALID_RESPONSE','员工职级资料格式无效，请刷新核对。');return memberView(value,false);}
   return Object.freeze({
+    async getBusinessRoleManagementAccess(input){
+      if(input!==undefined)throw failure('INVALID_INPUT','职级管理权限不接受额外参数。');const data=await businessRoleRequest('/api/auth/business-role-management/access');
+      if(!data||Object.keys(data).length!==1||!Array.isArray(data.teams)||data.teams.length>50)throw failure('INVALID_RESPONSE','职级管理权限状态无效。');const teams=data.teams.map(value=>{if(!value||Object.keys(value).length!==2||!ID.test(value.teamId)||!memberText(value.teamName))throw failure('INVALID_RESPONSE','职级管理团队资料无效。');return {teamId:value.teamId,teamName:value.teamName};});if(new Set(teams.map(value=>value.teamId)).size!==teams.length)throw failure('INVALID_RESPONSE','职级管理团队资料无效。');return {teams};
+    },
+    async listBusinessRoleMembers(input){
+      const {limit,suffix}=memberQuery(input,['teamId','q','after','limit']),data=await businessRoleRequest('/api/teams/'+id(input.teamId)+'/business-role-members'+suffix);
+      if(!data||Object.keys(data).length!==2||!Array.isArray(data.members)||data.members.length>limit||typeof data.hasMore!=='boolean'||data.hasMore&&data.members.length!==limit)throw failure('INVALID_RESPONSE','员工职级列表格式无效，请刷新核对。');const members=data.members.map(businessRoleMember);if(new Set(members.map(value=>value.id)).size!==members.length)throw failure('INVALID_RESPONSE','员工职级列表格式无效，请刷新核对。');return {members,hasMore:data.hasMore};
+    },
+    async changeBusinessRole(input){
+      exactKeys(input,['teamId','userId','revision','role','currentPassword','confirmed']);if(input.confirmed!==true||!ROLES.has(input.role)||!Number.isSafeInteger(input.revision)||input.revision<0||input.revision>=Number.MAX_SAFE_INTEGER)throw failure('INVALID_INPUT','请核对员工、新职级、当前版本并明确确认收回旧权限。');
+      const data=await businessRoleRequest('/api/teams/'+id(input.teamId)+'/business-role-members/'+id(input.userId)+'/role',{method:'POST',body:{revision:input.revision,role:input.role,currentPassword:securityPasswordInput(input.currentPassword)}});
+      if(!data||Object.keys(data).length!==3||data.changed!==true||data.role!==input.role||!Number.isSafeInteger(data.revision)||data.revision<=input.revision)throw failure('INVALID_RESPONSE','无法确认职级调整结果，请刷新员工列表核对。');return {changed:true,role:data.role,revision:data.revision};
+    },
     getDeviceStatus(input){if(input!==undefined)throw failure('INVALID_INPUT','设备状态不接受额外参数。');return device.status();},
     async enrollDevice(input){await device.enroll(input);return snapshot();},
     async reconnectDevice(input){if(input!==undefined)throw failure('INVALID_INPUT','设备续接不接受额外参数。');await device.reconnect();return snapshot();},

@@ -8,6 +8,8 @@ function withDeviceDiagnostic(bridge){
   for(const [name,value] of Object.entries({getDeviceReplacementStatus:{canRequest:false,request:null},getDeviceReplacementReviewAccess:{canReview:false},listDeviceReplacementReviews:{requests:[],hasMore:false}}))if(typeof result[name]!=='function')result[name]=asyncFunction(()=>({ok:true,value:structuredClone(value)}));
   for(const name of ['requestDeviceReplacement','withdrawDeviceReplacement','activateDeviceReplacement','reviewDeviceReplacement'])if(typeof result[name]!=='function')result[name]=asyncFunction(()=>({ok:false,error:{code:'DIAGNOSTIC_ONLY',message:'此M2夹具不提供换机授权。'}}));
   const session=value=>value&&value.account&&Array.isArray(value.memberships)?{...value,device:value.device??{...DIAGNOSTIC}}:value;
+  for(const [name,value] of Object.entries({getBusinessRoleManagementAccess:{teams:[]},listBusinessRoleMembers:{members:[],hasMore:false}}))if(typeof result[name]!=='function')result[name]=asyncFunction(()=>({ok:true,value:structuredClone(value)}));
+  if(typeof result.changeBusinessRole!=='function')result.changeBusinessRole=asyncFunction(()=>({ok:false,error:{code:'DIAGNOSTIC_ONLY',message:'此M2夹具不提供职级调整。'}}));
   for(const name of ['login','loginPhone','getSession','pollWechatLogin','linkWechatAccount'])if(typeof bridge[name]==='function')result[name]=async(...args)=>{const response=await bridge[name](...args);if(!response?.ok)return response;return {...response,value:response.value?.status==='signed_in'?{...response.value,session:session(response.value.session)}:session(response.value)};};
   return result;
 }
