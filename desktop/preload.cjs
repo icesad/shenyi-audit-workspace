@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   logout:()=>invoke('logout'),
   listTasks:query=>invoke('tasks',query),
   getTask:task=>invoke('task',task),
+  getTaskSubmissionAccess:task=>invoke('task-submission-access',task),
   getTaskManagement:task=>invoke('task-management',task),
   listTaskAssignees:query=>invoke('task-assignees',query),
   assignTask:assignment=>invoke('task-assign',assignment),

@@ -70,13 +70,21 @@ function candidateMembers(db,teamId,{q,after,limit}){
 }
 export async function handleCollectionWriteRequest(request, {db, now = Date.now}) {
   const url = new URL(request.url);
-  const match = /^\/api\/teams\/([^/]+)\/collection\/tasks\/([^/]+)\/(submissions|assignment|return|management|assignees)$/.exec(url.pathname);
+  const match = /^\/api\/teams\/([^/]+)\/collection\/tasks\/([^/]+)\/(submissions|submission-access|assignment|return|management|assignees)$/.exec(url.pathname);
   if (!match) return null;
   const [,teamId, taskId, action] = match;
   if (!ID.test(teamId) || !ID.test(taskId)) deny();
   if (action!=='assignees'&&url.search) invalid();
   const identity = authenticated(db, request, now());
   const state = taskState(db, identity, teamId, taskId);
+  if(action==='submission-access'){
+    if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
+    if(!Number.isSafeInteger(state.revision)||state.revision<0)conflict();
+    const canSubmit=state.project_status==='active'&&['open','returned'].includes(state.status)
+      &&state.revision<Number.MAX_SAFE_INTEGER&&!!db.prepare(`SELECT 1 FROM team_task_assignments
+        WHERE team_id=? AND task_id=? AND user_id=? AND status='active'`).get(teamId,taskId,identity.userId);
+    return json({canSubmit,revision:state.revision});
+  }
   if(action==='management'){
     if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
     if(!canManage(db,identity,teamId,state)||state.project_status!=='active'||state.status==='closed')return json({canManage:false});

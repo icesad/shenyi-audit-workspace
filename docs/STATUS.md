@@ -130,3 +130,11 @@ GitHub仓库不替代原网站登录；GitHub合并不自动触发网站升级�
 完整1158通过0失败0跳过，独立28对抗及35桌面、三窗口真实Electron/HTTP/SQL和4图复核通过，无剩余P1/P2。改派撤旧范围、新人无旧附件、退回重交、陈旧409需刷新，3份ID/bytes/hash保持；picker仅测试拦截合成文件，非本轮人工OS选择。两demo各39表/62schema对象及全部已有行保持，默认smoke只读通过。
 
 未推送/main/上线，一键窗口已更新可达。M2和Goal继续进行：上传“可提交”前置检查、成员停用管理入口/权限答复仍需完成；真实SMS/微信/HTTPS/Mac/设备/商业化继续分层验收，不能凭本轮通过整体收口。
+
+## 2026-11-15 M2进行中：上传前置能力
+
+`codex/collection-upload-preflight`接续`e284a73`，[上传前置授权](UPLOAD_PREFLIGHT.md)已补服务端只读能力、renderer按钮及main三次fresh核权/版本检查。任务可读或可管理不代表本人可提交；最终POST继续重新授权/sameactor/CAS。49窄IPC、9form/15秘密，无schema迁移。
+
+完整portable单元1256通过/0失败/0跳过，214.05秒；新增98项属于该总数，独立复核无剩余P1/P2。双窗口原生Electron/HTTP/落盘SQLite证明严格仅read管理者无manage/assignment、强RPC不选文件/不读取/不上传；取消、picker内版本/撤权/冻结及正常62bytes原件/hash均验。picker为明确测试拦截；旧任务三窗口兼容及默认一键服务smoke也通过，不能代替真人OS/Mac/生产验收。
+
+两旧demo各39表/62schema对象启动时全部旧行保持；随后默认smoke登录仅使review三张认证表正常变化，其他业务及全部schema保持。未push/main/上线，一键新版窗口可达；M2/Goal仍在进行，成员停用管理与原权限问题答复、真实供应商和首版设备绑定等继续推进。细节和失败夹具边界见`进度.md`。

@@ -16,6 +16,8 @@ M2新增独立账号、本机HTTP、定向邀请、原件提交与版本控制�
 
 [任务指派与退回](../../docs/TASK_MANAGEMENT.md)扩展现`collection-write-api.mjs`：新增management/assignees GET，仅任务read＋manager/partner＋项目manage交集有人员资料。候选/新assignment只本团队有效intern/assistant（用户确认），查询先SQLscope/role/active再搜索分页；旧assignment/return本轮要求revision，不留无版本通道。body后/事务中sameactor+CAS、closed/frozen拒绝，原件/历史不删，也不扩他人submissions或附件授权。无新schema。
 
+[提交能力查询](../../docs/UPLOAD_PREFLIGHT.md)在同一处理器新增GET `submission-access`，仅返回boolean与当前safe revision，读取范围内还须本人有效assignment＋active项目＋open/returned＋版本可递增才可提交。GET只读，不替代POST事务内的最终核权/CAS，不扩原件和他人历史范围。
+
 状态：隔离的本机合成数据实验；没有挂载到既有网页/Sites服务，不对公网监听。不能用它声称生产登录、设备绑定、订阅或团队软件已经完成。
 
 架构见 [ADR 0001](../../docs/adr/0001-team-runtime.md)，产品权限见 [团队需求](../../docs/TEAM_PRODUCT_REQUIREMENTS.md)。当前工作项为 `TEAM-M2`，M1为已交付读取原型。

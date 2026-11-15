@@ -77,6 +77,7 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('logout',()=>client.logout());
   handle('tasks',arg=>client.listTasks(input(arg,['teamId','q','after','limit'])));
   handle('task',arg=>client.getTask(input(arg,['teamId','taskId'])));
+  handle('task-submission-access',arg=>client.getTaskSubmissionAccess(input(arg,['teamId','taskId'])));
   handle('task-management',arg=>client.getTaskManagement(input(arg,['teamId','taskId'])));
   handle('task-assignees',arg=>client.listTaskAssignees(input(arg,['teamId','taskId','q','after','limit'])));
   handle('task-assign',arg=>client.assignTask(input(arg,['teamId','taskId','userId','revision'])));
@@ -84,14 +85,24 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('submissions',arg=>client.getSubmissions(input(arg,['teamId','taskId'])));
   handle('upload',async arg=>{
     input(arg,['teamId','taskId','revision']);
-    if(!Number.isSafeInteger(arg.revision)||arg.revision<0)throw Error('资料版本无效。');
+    if(!Number.isSafeInteger(arg.revision)||arg.revision<0||arg.revision>=Number.MAX_SAFE_INTEGER)throw Error('资料版本无效。');
     const assertSession=client.guardSession();
-    // Authorize before opening a native dialog; re-check server scope on upload.
-    await client.getTask({teamId:arg.teamId,taskId:arg.taskId});
+    async function assertSubmissionAccess(){
+      assertSession();
+      const access=await client.getTaskSubmissionAccess({teamId:arg.teamId,taskId:arg.taskId});
+      assertSession();
+      if(typeof access?.canSubmit!=='boolean'||!Number.isSafeInteger(access.revision)||access.revision<0||(access.canSubmit&&access.revision===Number.MAX_SAFE_INTEGER))throw new ClientError('INVALID_RESPONSE','资料提交权限状态无效，请刷新任务后重试。');
+      if(access.revision!==arg.revision)throw new ClientError('HTTP_409','任务状态或版本已更新，请刷新后重试。',409);
+      if(!access.canSubmit)throw new ClientError('UPLOAD_NOT_ALLOWED','当前任务不可提交资料，请刷新任务或联系项目负责人。',403);
+    }
+    // These fresh checks reduce local-file exposure; POST still authorizes and
+    // performs the final version CAS because network and file IO are not atomic.
+    await assertSubmissionAccess();
     const selected=await dialog.showOpenDialog(window,{title:'选择采集资料（合成演示）',properties:['openFile'],buttonLabel:'选择资料'});
     if(selected.canceled||selected.filePaths.length!==1)return {canceled:true};
+    await assertSubmissionAccess();
     const file=await readChosenFile(selected.filePaths[0]);
-    assertSession();
+    await assertSubmissionAccess();
     return client.upload(arg,file);
   });
   handle('download',async arg=>{
