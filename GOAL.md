@@ -17,6 +17,7 @@
 - [M4B项目授权、采集任务与资料核对公共基础](docs/PROJECT_ACCESS_COLLECTION.md)已通过2202项全量回归及Windows原生独立验收，精确规则见[执行合同](docs/PROJECT_ACCESS_COLLECTION_CONTRACT.md)。旧正式立项仍须最新中标报价；是否允许先建采集工作区的产品选择待答，正常项目创建入口尚未开放，不自动登记旧project owner。
 - [M4C管理员兼任业务职级审核](docs/ADMINISTRATOR_BUSINESS_ROLE.md)已通过Windows本地候选验收及2407项完整回归，独立负责人可核准/收回兼任，技术与业务资格及旧采集/项目/恢复/换机出口统一；规则见[执行合同](docs/ADMINISTRATOR_BUSINESS_ROLE_CONTRACT.md)。不从兼职职级附送项目，不等待项目创建选择而停止独立工作。
 - 当前M4D按[单项目资料保全与本机恢复合同](docs/MATERIAL_PRESERVATION_CONTRACT.md)补齐旧端清单及所有留痕引用原件的可靠来源包，并恢复到同UUID空本机资料区；[使用与证据说明](docs/MATERIAL_PRESERVATION.md)区分保全范围、旧上传内容准入和团队接入边界。既有项目迁入的团队与首owner审核分工已向用户询问，未答前不启用团队登记/迁入；不把本机恢复当整个软件或团队迁移完成。
+- [M4E单任务所选原件导出](docs/TASK_ORIGINALS_EXPORT.md)已通过Windows本地候选验收及2766项完整可移植回归，精确规则见[合同](docs/TASK_ORIGINALS_EXPORT_CONTRACT.md)。正常团队桌面两个入口分别守本人/项目核对下载权、最后fresh批量复核并原子发布，不自动导出全部历史、形成专业签审或新增项目归属。
 - [M3 Windows本地阶段门](docs/M3_LOCAL_ACCEPTANCE.md)独立通过，可以进入隔离M4；M2/M3正式身份、远程HTTPS/配置、最高owner恢复、Mac/真实跨电脑和生产仍未完成。
 - 先做身份与团队数据隔离、四角色权限，再做设备/商业化；业务稳定后整体升级UI。
 - 当前无域名和阿里云服务器，主体/省份及商业细则仍需确认；研发可先用合成数据推进，真实购买/申请/签约/客户资料迁移/生产发布另具相应授权。

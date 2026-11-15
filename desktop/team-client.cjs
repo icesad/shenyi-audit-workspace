@@ -1,4 +1,5 @@
 'use strict';
+const taskOriginalsExport=require('../shared/task-originals-export.cjs');
 const {createWechatLogin}=require('./wechat-login.cjs');
 const {createDeviceSession}=require('./device-session.cjs');
 const {createDeviceReplacement}=require('./device-replacement.cjs');
@@ -207,7 +208,23 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   function projectSubmissionView(value){if(!responseKeys(value,['id','attachmentId','filename','sha256','byteLength','createdAt','submittedBy'])||!ID.test(value.id)||!ID.test(value.attachmentId)||!projectText(value.filename,240)||!/^[a-f0-9]{64}$/.test(value.sha256)||!Number.isSafeInteger(value.byteLength)||value.byteLength<0||value.byteLength>MAX_FILE_BYTES||!Number.isSafeInteger(value.createdAt)||value.createdAt<0||!responseKeys(value.submittedBy,['id','displayName'])||!ID.test(value.submittedBy.id)||!memberText(value.submittedBy.displayName))throw failure('INVALID_RESPONSE','项目资料核对记录格式无效，请刷新核对。');return {...value,submittedBy:{...value.submittedBy}};}
   function projectPage(data,key,limit,view){if(!responseKeys(data,[key,'hasMore'])||!Array.isArray(data[key])||data[key].length>limit||typeof data.hasMore!=='boolean'||data.hasMore&&data[key].length!==limit)throw failure('INVALID_RESPONSE','项目列表格式无效，请刷新核对。');const rows=data[key].map(view);if(new Set(rows.map(value=>value.id)).size!==rows.length)throw failure('INVALID_RESPONSE','项目列表包含重复记录，请刷新核对。');return {[key]:rows,hasMore:data.hasMore};}
   function projectFilePath(input){exactKeys(input,['teamId','projectId','taskId','submissionId']);return projectPath(input)+'/tasks/'+id(input.taskId)+'/submissions/'+id(input.submissionId)+'/file';}
+  async function taskExportPlan(input,project){
+    exactKeys(input,project?['teamId','projectId','taskId','revision','projectRevision','submissionIds']:['teamId','taskId','revision','submissionIds']);
+    if(!device.required)throw failure('DEVICE_NOT_READY','原件导出需要当前已持钥核验的业务登录。');
+    device.guard();
+    if(!Number.isSafeInteger(input.revision)||input.revision<0||project&&(!Number.isSafeInteger(input.projectRevision)||input.projectRevision<1))throw failure('INVALID_INPUT','请刷新当前任务和项目版本后再导出。');
+    let ids;try{ids=taskOriginalsExport.selectionIds(input.submissionIds);}catch{throw failure('INVALID_INPUT','请明确选择1至20份不重复的当前提交记录。');}
+    const team=id(input.teamId),task=id(input.taskId),projectId=project?id(input.projectId):null,expectedUser=current?.account.id;
+    const route=project?'/api/teams/'+team+'/projects/'+projectId+'/tasks/'+task+'/export-plan':path(team,task)+'/export-plan';
+    const params=new URLSearchParams({revision:String(input.revision),...(project?{projectRevision:String(input.projectRevision)}:{}),ids:ids.join(',')});
+    let plan;try{plan=taskOriginalsExport.validatePlan(await request(route+'?'+params,{messagesOverride:{413:'导出原件每份最多12 MiB，所选原件合计不超过64 MiB，请减少本次选择。'}}));}catch(error){if(error instanceof ClientError)throw error;throw failure('INVALID_RESPONSE','原件导出清单格式无效，请刷新后核对。');}
+    const scope=plan.manifest.scope,files=plan.manifest.files;
+    if(scope.kind!==(project?'project-review':'own')||scope.teamId!==team||scope.taskId!==task||plan.manifest.task.id!==task||plan.manifest.task.revision!==input.revision||project&&(scope.projectId!==projectId||scope.projectRevision!==input.projectRevision)||!project&&scope.userId!==expectedUser||files.length!==ids.length||files.some((file,index)=>file.id!==ids[index]))throw failure('INVALID_RESPONSE','原件导出清单与所选任务或记录不一致，请刷新核对。');
+    return plan;
+  }
   return Object.freeze({
+    async getTaskExportPlan(input){return taskExportPlan(input,false);},
+    async getProjectTaskExportPlan(input){return taskExportPlan(input,true);},
     async getProjectAccess(input){if(input!==undefined)throw failure('INVALID_INPUT','项目能力不接受额外参数。');const data=await projectRequest('/api/auth/project-access');if(!responseKeys(data,['teams'])||!Array.isArray(data.teams)||data.teams.length>50)throw failure('INVALID_RESPONSE','项目团队能力格式无效。');const teams=data.teams.map(value=>{if(!responseKeys(value,['teamId','teamName'])||!ID.test(value.teamId)||!memberText(value.teamName))throw failure('INVALID_RESPONSE','项目团队格式无效。');return {...value};});if(new Set(teams.map(value=>value.teamId)).size!==teams.length)throw failure('INVALID_RESPONSE','项目团队格式无效。');return {teams};},
     async listProjects(input){const {limit,suffix}=projectQuery(input,['teamId','q','after','limit']);return projectPage(await projectRequest(projectCollectionPath(input)+suffix),'projects',limit,projectView);},
     async getProject(input){exactKeys(input,['teamId','projectId']);const data=await projectRequest(projectPath(input));if(!responseKeys(data,['project']))throw failure('INVALID_RESPONSE','项目详情格式无效。');const project=projectView(data.project);if(project.id!==input.projectId)throw failure('INVALID_RESPONSE','项目详情归属不一致。');return {project};},

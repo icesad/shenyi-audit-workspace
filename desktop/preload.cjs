@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   createProjectTask:confirmation=>invoke('project-task-create',confirmation),
   listProjectSubmissions:query=>invoke('project-submissions',query),
   downloadProjectSubmission:submission=>invoke('project-submission-download',submission),
+  exportProjectTaskOriginals:selection=>invoke('project-task-originals-export',selection),
   listTeamBusinessMembers:query=>invoke('business-members',query),
   listTeamAdministrators:query=>invoke('team-administrators',query),
   disableTeamBusinessMember:member=>invoke('business-member-disable',member),
@@ -82,4 +83,5 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   getSubmissions:task=>invoke('submissions',task),
   chooseAndUpload:task=>invoke('upload',task),
   downloadAttachment:attachment=>invoke('download',attachment),
+  exportTaskOriginals:selection=>invoke('task-originals-export',selection),
 }));

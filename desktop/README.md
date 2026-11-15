@@ -1,4 +1,4 @@
-# 审易团队采集桌面预览（M2/M3/M4A/M4B/M4C）
+# 审易团队采集桌面预览（M2/M3/M4A–M4E）
 
 独立的Electron候选壳，沿用现有审易品牌。只连接本机`http://127.0.0.1:8774`合成服务；不接原浏览器业务库，不用于正式客户资料。[正常设备会话](../docs/DESKTOP_DEVICE_SESSION.md)与[员工/管理员换机审批](../docs/DEVICE_REPLACEMENT.md)已通过Windows本地验收；生产HTTPS、签名/安装/更新、Mac实机、最高审核账号自身恢复及商业化能力仍未完成。
 
@@ -43,7 +43,7 @@ M3A [OS密钥库与底座](../docs/DEVICE_IDENTITY_FOUNDATION.md)已由M3B接入
 
 - renderer只加载`shenyi://app/index.html`，资源映射限固定HTML/CSS/JS/原标识；严格CSP，不开放网络、iframe、动态外链和通用文件协议。
 - `nodeIntegration:false`、`contextIsolation:true`、`sandbox:true`，不关闭webSecurity；权限请求、新窗口、外部导航、webview和renderer下载拒绝。
-- preload共暴露79个窄操作：M4B阶段76项加M4C的3项管理员兼任审核操作。每个IPC均检查当前窗口、主frame与固定页面来源；没有通用fetch/IPC、路径读写、URL打开、自由签名或命令执行。renderer无法指定外链，token/lease secret/私钥不进入renderer。当前14个表单/20个密码输入，阶段专项的旧数量仅为引入时历史。
+- preload共暴露81个窄操作：M4B阶段76项、M4C的3项管理员兼任审核及M4E的2项所选原件导出。每个IPC均检查当前窗口、主frame与固定页面来源；没有通用fetch/IPC、路径读写、URL打开、自由签名或命令执行。renderer无法指定外链，token/lease secret/私钥不进入renderer。当前14个表单/20个密码输入，阶段专项的旧数量仅为引入时历史。
 - main固定API地址、禁止重定向、超时/响应体限额。token不回renderer、不写localStorage；响应只保留账号/任务/提交的明确字段。迟到的旧账号响应拒绝。
 - 上传文件只能来自用户原生对话框选择，读取前检查常规文件及12MiB上限，按原始字节提交；renderer不能传本机文件路径。下载只在授权后通过原生保存对话框指定路径，不向renderer下发原件字节或路径。
 - 对话框期间账号变化会取消旧账号操作。退出/401清空账号、团队、任务与输入状态，登录表单解除busy。已合法保存的文件不能承诺远程追回。
@@ -67,6 +67,8 @@ M3A [OS密钥库与底座](../docs/DEVICE_IDENTITY_FOUNDATION.md)已由M3B接入
 当前隔离schema为57表/127个非sqlite对象，本片新增3表、1索引、18触发器，旧54表/105定义及旧行以迁移保全规则保护。隔离review fixture显式新增第五类独立审核员`business-role-reviewer-demo`至15个合成用户，普通9个不变，不自动给管理员加membership、批准或业务授权。共享普通/review已由真实一键入口升级并独立保全：旧54表/105定义和所有旧行保持，review仅精确新增独立合成审核员至15，ordinary仍9；启动后57表全部行/127定义复核不变，无认证豁免或自动审批。
 
 ## 可执行验证
+
+M4E已在本人提交和项目资料核对中加入明确勾选的单任务资料包，使用见[所选原件导出](../docs/TASK_ORIGINALS_EXPORT.md)。两入口各自复用原下载权，最多20份／64MiB，任一无权或损坏则整包拒绝；保存前fresh批量核权，完整临时文件再原子发布，不截断旧目标。不是完整项目备份、全部历史或专业签发，不接旧本机库。新增窄RPC仅 `exportTaskOriginals` / `exportProjectTaskOriginals`，schema57／127保持。
 
 ```sh
 node --test ../tests/team-desktop-client.test.cjs ../tests/team-desktop-bridge.test.cjs ../tests/team-desktop-ui.test.cjs ../tests/team-desktop-identity.test.cjs

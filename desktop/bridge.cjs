@@ -2,6 +2,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const {MAX_FILE_BYTES,ClientError} = require('./team-client.cjs');
+const {createTaskOriginalsExporter}=require('./task-originals-export.cjs');
 const APP_URL = 'shenyi://app/index.html';
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 function input(value, keys) {
@@ -27,6 +28,7 @@ function safeDownloadName(disposition) {
 }
 function registerDesktopBridge({ipcMain,window,client,dialog}) {
   const channels=[];
+  const originalsExporter=createTaskOriginalsExporter({client,dialog,window});
   const safeError=error=>({ok:false,error:{code:error instanceof ClientError?error.code:'OPERATION_FAILED',message:error instanceof ClientError?error.message:'操作未完成，请刷新后重试。'}});
   function handle(name, action) {
     const channel='shenyi:'+name;channels.push(channel);
@@ -144,6 +146,8 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
     await assertSubmissionAccess();
     return client.upload(arg,file);
   });
+  handle('task-originals-export',arg=>originalsExporter.exportTaskOriginals(input(arg,['teamId','taskId','revision','submissionIds'])));
+  handle('project-task-originals-export',arg=>originalsExporter.exportProjectTaskOriginals(input(arg,['teamId','projectId','taskId','revision','projectRevision','submissionIds'])));
   handle('download',async arg=>{
     input(arg,['teamId','taskId','attachmentId']);
     const assertSession=client.guardSession();

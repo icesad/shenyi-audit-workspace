@@ -91,7 +91,7 @@ M4A新增[普通员工业务职级管理](../../docs/BUSINESS_ROLE_MANAGEMENT.md
 
 ## 已实现的读取范围
 
-下表保留M1读取模块的范围，路径前缀为 `/api/teams/:teamId/collection`，仅描述GET；M4B项目路径见上表，不改变此模块的本人history与附件规则。
+下表保留M1读取模块的范围，路径前缀为 `/api/teams/:teamId/collection`，仅描述GET；M4B项目路径见上表，不改变此模块的本人history与附件规则。M4E另加[所选原件导出计划](../../docs/TASK_ORIGINALS_EXPORT_CONTRACT.md)两个严格设备GET入口，复用本人self提交＋独立附件grant、或项目read＋review；只读有界元数据且不选BLOB，不新增schema／业务事件。main沿既有逐件GET验证正文并在发布前fresh批量复核，不把历史可见当下载权，也不伪记服务器已见本机落盘。
 
 | 路径 | 响应/条件 |
 |---|---|
