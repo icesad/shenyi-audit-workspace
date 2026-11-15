@@ -2,6 +2,8 @@
 
 记录日期：2026-11-15。GitHub 地址：<https://github.com/icesad/shenyi-audit-workspace>。
 
+最新检查点为下文M3A：[设备底座](DEVICE_IDENTITY_FOUNDATION.md)已验证，普通客户端强制绑定和换机审批尚未接入。M2本地候选通过、正式身份/配置/生产仍待完成；完整Goal active，尚未进入main或上线。以下各阶段保留各自当时的证据与边界。
+
 ## 版本不混淆
 
 | 对象 | 内容 | 状态 |
@@ -154,3 +156,13 @@ GitHub仓库不替代原网站登录；GitHub合并不自动触发网站升级�
 最终完整portable单元1442通过/0失败/0跳过（238.72秒），新增110属于总数；独立安全33/核心26/client8/demo7及UI36等不重复累计，无P1/P2。四窗口Electron/HTTP/落盘SQL验证错密、停intern阻止挂起保存、停partner、owner停管理员、401清空和3审计事件；62bytes原件/hash、历史和合法旧副本保持。4张清晰图及5份SQLite独立复核；partner依据HTTP/DOM/阶段SQL验收，无其专用截图结论。保存框为明确测试拦截。
 
 旧8项原生兼容及默认smoke通过。两入口实际顺序启动升级至41表/67对象；普通9用户不增权，review仅追加两独立合成身份至13用户。旧39表/62定义及全部旧行保持，默认登录后仅review三认证表正常变化；新audit均0，自动化没有在共享演示停用账号。未push/main/上线；一键review预览可达。M2/Goal仍进行，下一步核本地阶段门与M3绑定前置，真实供应商/HTTPS/Mac/生产继续单列。
+
+## 2026-11-15 M3A：设备身份底座本地已验证
+
+`codex/device-identity-foundation`从`8ea2f73`接续；[M2本地阶段门](M2_LOCAL_ACCEPTANCE.md)独立复核通过，但真实SMS/微信adapter及部署配置代码、真人身份/国内HTTPS/Mac/生产均未完成。只把当前实现里程碑切换M3，没有把正式M2或完整Goal标完成。用户已确认断网暂停、同机唯一业务会话新完成持钥登录接替旧会话、管理员本人换机由产品负责人审核。
+
+[设备基础](DEVICE_IDENTITY_FOUNDATION.md)实现canonical Ed25519挑战、单历史绑定/单业务租约、不可换绑authsession、15分钟同步到期、本人撤销及严格逐请求签名门；保留旧业务角色scope。main-only OS加密vault在Windows真实验证。独立发现的错误签名耗尽合法user额度P2已修为验签成功才消耗，回归保留限制。最终无剩余P1/P2。
+
+Node24完整portable 1552通过/0失败/0跳过，271.29秒；新4专项110项包含在内。无窗口真实Electron45.3.2＋OScrypto＋严格HTTP/隔离SQL证明持钥登记、同钥登录替换旧业务会话、重放/错误key拒绝、62bytes原件/hash及HEAD空体、撤销后不能重新首次登记；不等于普通UI已绑定。旧9项原生兼容和默认Electron smoke通过。两入口实跑升级46表/76对象，旧67定义和全部旧行保持，只加设备schema与单行serverId；普通9/review13用户不变、新设备表空。登录后仅review三认证表正常变化，独立保全审查通过，详见根进度和仓库外证据。
+
+正常main/preload/renderer仍54接口/10form16密码，一键预览可达但为M2诊断模式。M3B必须接正常登录/逐请求证明/续接/旧端清退/断网与强制入口，并选每机非漫游key目录；M3C再接换机审批。DPAPI不等于硬件防复制，同OS上下文复制密文实测可读；Mac/跨机/安装升级另验。未push/main/上线，Goal保持active。

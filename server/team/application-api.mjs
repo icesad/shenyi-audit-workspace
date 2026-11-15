@@ -9,6 +9,8 @@ import {handleAccountSessionsRequest} from './sessions-api.mjs';
 import {handleTeamProvisioningRequest} from './provisioning-api.mjs';
 import {handleRecoveryReviewRequest} from './recovery-review-api.mjs';
 import {handleMemberAccessRequest} from './member-access-api.mjs';
+import {handleDeviceIdentityRequest} from './device-api.mjs';
+import {authorizeDeviceRequest} from './device-gate.mjs';
 import {recoveryConfigured} from './recovery-review-policy.mjs';
 import {ApiError, json} from './http-utils.mjs';
 
@@ -37,7 +39,10 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       const sms=typeof identityProviders.sms?.send==='function'&&Buffer.isBuffer(identityProviders.phonePepper)&&identityProviders.phonePepper.length>=32;
       return json({mode:'local-preview',methods:{demoUsername:true,phonePassword:true,phoneVerification:sms,wechat:isWechatConfigured(identityProviders),recovery:sms&&recoveryConfigured(identityProviders)}});
     }
-    return await handleAccountSessionsRequest(request,options)
+    const deviceAuthorization=await authorizeDeviceRequest(request,options);
+    request=deviceAuthorization.request;options.deviceContext=deviceAuthorization.context;
+    return await handleDeviceIdentityRequest(request,options)
+      || await handleAccountSessionsRequest(request,options)
       || await handleMemberAccessRequest(request,options)
       || await handleRecoveryReviewRequest(request,options)
       || await handleTeamProvisioningRequest(request,options)

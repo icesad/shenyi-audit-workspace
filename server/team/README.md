@@ -1,4 +1,4 @@
-# 团队采集授权原型（M1/M2）
+# 团队采集授权原型（M1/M2/M3A）
 
 M2新增独立账号、本机HTTP、定向邀请、原件提交与版本控制，以及手机号/微信的合成身份适配边界；最新运行说明见[本机桌面预览](../../docs/M2_LOCAL_TEAM_PREVIEW.md)和[正式身份方案](../../docs/PHONE_WECHAT_AUTH_PLAN.md)。下文读取范围描述M1模块，不能误读为M2没有写入接口；生产及设备/支付能力仍未完成。
 
@@ -24,7 +24,9 @@ M2新增独立账号、本机HTTP、定向邀请、原件提交与版本控制�
 
 状态：隔离的本机合成数据实验；没有挂载到既有网页/Sites服务，不对公网监听。不能用它声称生产登录、设备绑定、订阅或团队软件已经完成。
 
-架构见 [ADR 0001](../../docs/adr/0001-team-runtime.md)，产品权限见 [团队需求](../../docs/TEAM_PRODUCT_REQUIREMENTS.md)。当前工作项为 `TEAM-M2`，M1为已交付读取原型。
+架构见 [ADR 0001](../../docs/adr/0001-team-runtime.md)，产品权限见 [团队需求](../../docs/TEAM_PRODUCT_REQUIREMENTS.md)。当前工作项为 `TEAM-M3`；[M2本地候选阶段门](../../docs/M2_LOCAL_ACCEPTANCE.md)通过，正式身份供应商和生产集成尚未完成。
+
+[M3A设备底座](../../docs/DEVICE_IDENTITY_FOUNDATION.md)新增 `device-schema.sql`、`device-policy.mjs`、`device-api.mjs` 和 `device-gate.mjs`，共享codec在 `shared/device-proof.cjs`。`application-api.mjs`在原业务dispatch前接严格设备门；仅服务端内部 `identityProviders.deviceProofRequired===true` 启用。正常一键客户端尚未接入，默认仍是M2诊断模式，不得作为外部交付模式；新设备端点自身始终执行完整持钥校验。旧表只追加5表/2索引/2触发器和metadata serverId，不自动给任何演示账号绑定。
 
 ## 文件与可信入口
 

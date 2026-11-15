@@ -36,6 +36,8 @@ Windows预览用户数据默认放`D:/codex-temp/shenyi-desktop-preview`，可�
 
 ## 权限与桌面安全边界
 
+M3A新增仅main可调用的 [OS密钥库与设备服务底座](../docs/DEVICE_IDENTITY_FOUNDATION.md)，正常登录/main/preload/renderer尚未接设备流程，一键入口仍为M2诊断模式。`node device-identity-smoke.cjs`以真实Windows Electron safeStorage、隔离SQLite及严格HTTP验证底层，无BrowserWindow，不是普通桌面强制绑定验收。M3B必须接入所有受保护请求与每机非漫游key目录，M3C另补换机审批；首个外部版本不能使用诊断模式。
+
 - renderer只加载`shenyi://app/index.html`，资源映射限固定HTML/CSS/JS/原标识；严格CSP，不开放网络、iframe、动态外链和通用文件协议。
 - `nodeIntegration:false`、`contextIsolation:true`、`sandbox:true`，不关闭webSecurity；权限请求、新窗口、外部导航、webview和renderer下载拒绝。
 - preload共暴露54个窄操作：8个账号/采集、4个手机号/能力、4个微信事务、8个邀请/激活、4个个人会话、1个本人改密、8个人工开通/首管理员、2个找回密码、5个恢复审批、4个任务管理、1个提交能力及5个成员停用操作。每个IPC均检查当前窗口、主frame与固定页面来源；没有通用fetch/IPC、路径读写、URL打开或命令执行。renderer无法指定外链。
