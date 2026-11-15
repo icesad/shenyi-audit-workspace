@@ -29,7 +29,7 @@ async function signIn(f){f.d.getElementById('username').value='intern-a';f.d.get
 
 test('capability response is unauthenticated and returns only explicit boolean methods',async()=>{
   const f=clientFixture(()=>json({...METHODS,secret:'do not show',methods:{...METHODS.methods,appSecret:'do not show'}}));
-  assert.deepEqual(await f.client.getAuthMethods(),METHODS);assert.equal(f.calls[0].options.headers.Authorization,undefined);
+  assert.deepEqual(await f.client.getAuthMethods(),{...METHODS,desktopWechatReady:false});assert.equal(f.calls[0].options.headers.Authorization,undefined);
   const broken=clientFixture(()=>json({...METHODS,methods:{...METHODS.methods,wechat:'true'}}));await assert.rejects(()=>broken.client.getAuthMethods(),e=>e.code==='INVALID_RESPONSE');
 });
 test('phone password login keeps bearer in main and uses the same account identity',async()=>{
@@ -60,28 +60,28 @@ test('late challenge after account logout cannot restore previous account proof 
   let finish;const f=clientFixture(url=>url.endsWith('/login')?json({token:TOKEN,...SESSION}):url.endsWith('/logout')?json({signedOut:true}):new Promise(resolve=>{finish=resolve;}));await demoLogin(f.client);
   const pending=f.client.requestPhoneBind({phone:'13800138000'});await f.client.logout();finish(json({challengeId:'old-challenge',expiresAt:Date.now()+300000,code:'123456'}));await assert.rejects(()=>pending,e=>e.code==='SESSION_CHANGED');assert.equal(await f.client.getSession(),null);
 });
-test('IPC identity extension contains exactly twelve narrow channels and rejects untrusted senders',async()=>{
+test('IPC identity extension contains exactly sixteen narrow channels and rejects untrusted senders',async()=>{
   const handlers=new Map(),mainFrame={url:APP_URL},webContents={mainFrame},win={webContents};
-  const names=['login','auth-methods','phone-login','phone-challenge','phone-bind','session','logout','tasks','task','submissions','upload','download'];
+  const names=['login','auth-methods','phone-login','phone-challenge','phone-bind','wechat-start','wechat-poll','wechat-cancel','wechat-link','session','logout','tasks','task','submissions','upload','download'];
   const calls=[];const client={getAuthMethods:async()=>METHODS,loginPhone:async value=>{calls.push(value);return SESSION;},requestPhoneBind:async value=>value,bindPhone:async value=>value,clearSession:()=>{}};
   const dispose=registerDesktopBridge({ipcMain:{handle:(name,fn)=>handlers.set(name,fn),removeHandler:name=>handlers.delete(name)},window:win,client,dialog:{}});
   assert.deepEqual([...handlers.keys()].sort(),names.map(name=>'shenyi:'+name).sort());
-  for(const name of ['auth-methods','phone-login','phone-challenge','phone-bind']){
+  for(const name of ['auth-methods','phone-login','phone-challenge','phone-bind','wechat-start','wechat-poll','wechat-cancel','wechat-link']){
     for(const event of [{sender:{},senderFrame:mainFrame},{sender:webContents,senderFrame:{url:APP_URL}},{sender:webContents,senderFrame:{url:'https://evil.invalid'}}])assert.equal((await handlers.get('shenyi:'+name)(event,{})).error.code,'UNTRUSTED_SENDER');
   }
   const event={sender:webContents,senderFrame:mainFrame};assert.equal((await handlers.get('shenyi:phone-login')(event,{phone:'13800138000',password:'x',role:'partner'})).ok,false);assert.equal(calls.length,0);dispose();assert.equal(handlers.size,0);
 });
 test('preload exposes only named identity methods, not raw IPC, network or bearer storage',()=>{
   let exposed;const channelCalls=[];vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../desktop/preload.cjs'),'utf8'),{require:name=>{assert.equal(name,'electron');return {contextBridge:{exposeInMainWorld:(name,value)=>{assert.equal(name,'shenyiTeam');exposed=value;}},ipcRenderer:{invoke:(...args)=>channelCalls.push(args)}};}});
-  assert.deepEqual(Object.keys(exposed).sort(),['login','getAuthMethods','loginPhone','requestPhoneBind','bindPhone','getSession','logout','listTasks','getTask','getSubmissions','chooseAndUpload','downloadAttachment'].sort());exposed.getAuthMethods();exposed.requestPhoneBind({phone:'13800138000'});assert.deepEqual(channelCalls.map(value=>value[0]),['shenyi:auth-methods','shenyi:phone-challenge']);assert.equal(exposed.fetch,undefined);assert.equal(exposed.token,undefined);
+  assert.deepEqual(Object.keys(exposed).sort(),['login','getAuthMethods','loginPhone','requestPhoneBind','bindPhone','startWechatLogin','pollWechatLogin','cancelWechatLogin','linkWechatAccount','getSession','logout','listTasks','getTask','getSubmissions','chooseAndUpload','downloadAttachment'].sort());exposed.getAuthMethods();exposed.requestPhoneBind({phone:'13800138000'});assert.deepEqual(channelCalls.map(value=>value[0]),['shenyi:auth-methods','shenyi:phone-challenge']);assert.equal(exposed.fetch,undefined);assert.equal(exposed.token,undefined);
 });
 test('unconfigured providers are honest disabled states, including after login and busy transitions',async t=>{
   const f=domFixture(t);await waitFor(()=>f.d.getElementById('identity-methods-message').textContent.includes('正式方向'));
   assert.equal(f.d.getElementById('wechat-login').disabled,true);assert.match(f.d.getElementById('wechat-message').textContent,/尚未配置/);assert.equal(f.d.querySelector('img[alt*="二维码"]'),null);
   await signIn(f);assert.equal(f.d.getElementById('phone-bind-fields').disabled,true);assert.equal(f.d.getElementById('send-bind-code').disabled,true);assert.equal(f.d.getElementById('wechat-login').disabled,true);assert.match(f.d.getElementById('phone-service-status').textContent,/尚未开通/);
 });
-test('configured WeChat capability does not pretend an unfinished desktop flow is usable',async t=>{
-  const f=domFixture(t,{getAuthMethods:async()=>safe({...METHODS,methods:{...METHODS.methods,wechat:true}})});await waitFor(()=>f.d.getElementById('wechat-message').textContent.includes('桌面扫码流程仍待接入'));assert.equal(f.d.getElementById('wechat-login').disabled,true);assert.match(f.d.getElementById('wechat-login').textContent,/桌面待接入/);
+test('configured server without trusted desktop configuration remains disabled',async t=>{
+  const f=domFixture(t,{getAuthMethods:async()=>safe({...METHODS,methods:{...METHODS.methods,wechat:true}})});await waitFor(()=>f.d.getElementById('wechat-message').textContent.includes('桌面授权配置未就绪'));assert.equal(f.d.getElementById('wechat-login').disabled,true);assert.match(f.d.getElementById('wechat-login').textContent,/桌面配置未就绪/);
 });
 test('phone mode submits phone credentials and changing mode clears previous identity inputs',async t=>{
   const f=domFixture(t);await waitFor(()=>!f.d.querySelector('#login-mode option[value=phone]').disabled);const mode=f.d.getElementById('login-mode');f.d.getElementById('username').value='intern-a';f.d.getElementById('password').value='old password';mode.value='phone';mode.dispatchEvent(new f.window.Event('change'));

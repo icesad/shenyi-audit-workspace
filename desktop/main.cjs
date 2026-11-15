@@ -1,5 +1,5 @@
 'use strict';
-const {app,BrowserWindow,session,protocol,ipcMain,dialog,Menu} = require('electron');
+const {app,BrowserWindow,session,protocol,ipcMain,dialog,Menu,shell} = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const {createTeamClient,API_BASE} = require('./team-client.cjs');
@@ -31,7 +31,8 @@ async function main() {
     if(request.method!=='GET'||url.hostname!=='app'||url.port||url.username||url.password||url.search||!asset)return new Response('Not found',{status:404});
     try{return new Response(await fs.readFile(asset.file),{headers:{'Content-Type':asset.mime,'Content-Security-Policy':CONTENT_SECURITY_POLICY,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'}});}catch{return new Response('Asset unavailable',{status:503});}
   });
-  const client=createTeamClient({baseUrl:process.env.SHENYI_TEAM_API || API_BASE});
+  const wechatPolicy={appId:process.env.SHENYI_WECHAT_APP_ID,redirectUri:process.env.SHENYI_WECHAT_REDIRECT_URI};
+  const client=createTeamClient({baseUrl:process.env.SHENYI_TEAM_API || API_BASE,wechatPolicy,openAuthorization:url=>shell.openExternal(url)});
   const win=new BrowserWindow({width:1210,height:800,minWidth:840,minHeight:600,show:false,title:'审易 · 团队采集预览',backgroundColor:'#f5f6f2',
     webPreferences:{preload:path.join(__dirname,'preload.cjs'),session:isolated,nodeIntegration:false,nodeIntegrationInWorker:false,contextIsolation:true,sandbox:true,webSecurity:true,allowRunningInsecureContent:false,webviewTag:false,devTools:!app.isPackaged}});
   Menu.setApplicationMenu(null);

@@ -1,4 +1,5 @@
 'use strict';
+const {createWechatLogin}=require('./wechat-login.cjs');
 
 // Main-process only. The renderer never receives bearer tokens or raw fetch.
 const API_BASE = 'http://127.0.0.1:8774';
@@ -46,40 +47,59 @@ async function boundedBytes(response, limit) {
   return bytes;
 }
 
-function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch} = {}) {
+function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wechatPolicy,openAuthorization,now=Date.now} = {}) {
   if (baseUrl !== API_BASE || typeof fetchImpl !== 'function') throw failure('INVALID_SERVER', '预览版只连接本机审易服务。');
-  let token = null, current = null, generation = 0;
-  const clear = () => { token = null; current = null; generation++; };
+  let token = null, current = null, generation = 0,wechat;
+  const clear = () => { token = null; current = null; generation++;wechat?.reset(); };
   const snapshot = () => current ? structuredClone(current) : null;
-  async function request(route, {method = 'GET', body, authenticated = true, binary = false, unavailableMessage} = {}) {
-    if (authenticated && !token) throw failure('SIGN_IN_REQUIRED', '请先登录。', 401);
-    const at = generation, bearer = token;
+  async function revokeResponseToken(bytes){
+    try{const data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));if(typeof data?.token==='string'&&/^[A-Za-z0-9_-]{43}$/.test(data.token))await detachedPost('/api/auth/logout',{},data.token);}catch{}
+  }
+  async function request(route, {method = 'GET', body, authenticated = true, binary = false, unavailableMessage,temporaryBearer,discardSessionOnChange=false} = {}) {
+    if (authenticated && !token && !temporaryBearer) throw failure('SIGN_IN_REQUIRED', '请先登录。', 401);
+    const at = generation, bearer = temporaryBearer||token;
     let response;
     try { response = await fetchImpl(API_BASE + route, {method, redirect: 'error', signal: AbortSignal.timeout(15000),
       headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'})},
       ...(body === undefined ? {} : {body: JSON.stringify(body)})}); }
     catch { if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。'); throw failure('SERVICE_UNAVAILABLE', '无法连接本机团队服务，请先启动服务后重试。'); }
-    if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');
-    if (response.status === 401 && authenticated) { clear(); throw failure('SIGN_IN_REQUIRED', '登录已失效，请重新登录。', 401); }
+    if (at !== generation) {
+      if(discardSessionOnChange&&response.ok)try{await revokeResponseToken(await boundedBytes(response,1024*1024));}catch{}
+      throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');
+    }
+    if (response.status === 401 && authenticated && !temporaryBearer) { clear(); throw failure('SIGN_IN_REQUIRED', '登录已失效，请重新登录。', 401); }
     if (!response.ok) {
       const messages = {400:'提交内容无效，请检查后重试。',401:'账号或密码无效，请检查后重试。',403:'当前操作未获授权。',404:'任务不存在或当前账号无权访问。',409:'任务状态或版本已更新，请刷新后重试。',413:'资料超过12 MiB，请选择较小的文件。',429:'尝试过于频繁，请稍后重试。'};
       // Do not forward arbitrary provider messages, stack traces, or response bodies.
       throw failure(`HTTP_${response.status}`, response.status === 503 && unavailableMessage ? unavailableMessage : messages[response.status] || '团队服务暂时无法完成操作。', response.status);
     }
     const bytes = await boundedBytes(response, binary ? MAX_FILE_BYTES : 1024 * 1024);
-    if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');
+    if (at !== generation) {if(discardSessionOnChange)await revokeResponseToken(bytes);throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');}
     if (binary) return {bytes, contentDisposition: response.headers.get('content-disposition') || ''};
     try { return JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes)); }
     catch { throw failure('INVALID_RESPONSE', '团队服务返回格式无效。'); }
   }
+  async function detachedPost(route,body,bearer){
+    // Only closure-created cancel/logout paths use this cleanup transport. It
+    // may outlive generation changes; it never adopts or exposes a response.
+    const response=await fetchImpl(API_BASE+route,{method:'POST',redirect:'error',signal:AbortSignal.timeout(5000),headers:{Origin:'shenyi://app','Content-Type':'application/json',...(bearer?{Authorization:'Bearer '+bearer}:{})},body:JSON.stringify(body)});
+    await response.body?.cancel();
+  }
+  wechat=createWechatLogin({policy:wechatPolicy,openAuthorization,request,now,error:failure,getGeneration:()=>generation,isSignedIn:()=>!!token,
+    cancelRemote:(route,body)=>detachedPost(route,body),revokeTemporary:bearer=>detachedPost('/api/auth/logout',{},bearer),
+    adoptSession:data=>{if(typeof data?.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.token))throw failure('INVALID_RESPONSE','账号服务返回格式无效。');const value=cleanSession(data);current=value;token=data.token;generation++;return snapshot();}});
   function path(teamId, taskId) { return `/api/teams/${id(teamId)}/collection/tasks${taskId ? '/' + id(taskId) : ''}`; }
   return Object.freeze({
     async getAuthMethods() {
       const data = await request('/api/auth/methods', {authenticated:false});
       const keys=['demoUsername','phonePassword','phoneVerification','wechat','recovery'];
       if(data?.mode!=='local-preview'||!data.methods||!keys.every(key=>typeof data.methods[key]==='boolean')) throw failure('INVALID_RESPONSE','身份服务状态格式无效。');
-      return {mode:data.mode,methods:Object.fromEntries(keys.map(key=>[key,data.methods[key]]))};
+      return {mode:data.mode,methods:Object.fromEntries(keys.map(key=>[key,data.methods[key]])),desktopWechatReady:wechat.configured};
     },
+    startWechatLogin:()=>wechat.start(),
+    pollWechatLogin:()=>wechat.poll(),
+    cancelWechatLogin:()=>wechat.cancel(),
+    async linkWechatAccount(input){exactKeys(input,['phone','password']);return wechat.link({phone:phoneInput(input.phone),password:passwordInput(input.password)});},
     async login(input) {
       exactKeys(input, ['username', 'password']);
       if (typeof input.username !== 'string' || input.username.length < 1 || input.username.length > 128 || typeof input.password !== 'string' || input.password.length < 1 || input.password.length > 1024) throw failure('INVALID_INPUT', '请填写账号和密码。');

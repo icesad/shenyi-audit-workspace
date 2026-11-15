@@ -24,13 +24,15 @@ Windows预览用户数据默认放`D:/codex-temp/shenyi-desktop-preview`，可�
 
 登录后可展开“账号手机号”，为当前账号首次绑定本人手机号。仅在服务端短信验证已配置时允许请求验证码；绑定还须填写本次验证码和当前账号密码。修改手机号会作废界面中原有验证上下文，绑定完成、切换登录方式、退出或登录失效均清除验证码与当前密码。界面只显示服务端返回的脱敏结果，不持久化手机号、验证码或密码；当前不提供换绑、找回或自助注册。
 
-短信和微信默认未配置，界面显示未开通，不能模拟发送、生成假二维码或报告假成功。微信即使在服务端配置完成，当前桌面入口也会保持禁用并显示“桌面待接入”；外部浏览器授权、扫码事务取回及正式平台验收仍需后续实现。当前版本不会打开外部授权网站。
+短信和微信默认未配置，界面显示未开通，不模拟发送、不生成假二维码。微信需服务端能力与桌面可信配置同时就绪才启用：主进程读取`SHENYI_WECHAT_APP_ID`、`SHENYI_WECHAT_REDIRECT_URI`（HTTPS且准确`/api/auth/wechat/callback`）；这些不是AppSecret，也不能由renderer参数传入。只有符合该配置、固定微信域名和路径、准确单值参数且不超过2081字符的授权URL才交给系统浏览器。当前启动器未注入真实供应商，因此默认不会发起微信授权。
+
+微信事务ID、轮询秘密、S256证明及token只保留主进程内存。界面可以等待、取消、处理过期和失败；已关联身份自动取回同一员工账号。首次关联必须明确确认本人既有已验证手机号和密码，不自动建员工或入团队。临时手机号会话不采纳为当前账号，清理后再次校验事务才确认最终登录；取消/账号变化的迟到会话会尽力撤销。网络断开时撤销只能尽力完成，不能声称服务端必然收到；本地秘密立即丢弃，服务端到期和每请求状态校验仍生效。
 
 ## 权限与桌面安全边界
 
 - renderer只加载`shenyi://app/index.html`，资源映射限固定HTML/CSS/JS/原标识；严格CSP，不开放网络、iframe、动态外链和通用文件协议。
 - `nodeIntegration:false`、`contextIsolation:true`、`sandbox:true`，不关闭webSecurity；权限请求、新窗口、外部导航、webview和renderer下载拒绝。
-- preload共暴露12个窄操作：原有8个账号/采集操作，以及身份能力读取、手机号密码登录、请求首绑验证码、确认首绑4个操作。每个IPC均检查当前窗口、主frame与固定页面来源；没有通用fetch/IPC、路径读写、外部浏览器或命令执行。
+- preload共暴露16个窄操作：原有8个账号/采集、4个手机号/能力操作，以及微信开始/轮询/取消/明确关联4项。每个IPC均检查当前窗口、主frame与固定页面来源；没有通用fetch/IPC、路径读写、URL打开或命令执行。renderer无法指定外链。
 - main固定API地址、禁止重定向、超时/响应体限额。token不回renderer、不写localStorage；响应只保留账号/任务/提交的明确字段。迟到的旧账号响应拒绝。
 - 上传文件只能来自用户原生对话框选择，读取前检查常规文件及12MiB上限，按原始字节提交；renderer不能传本机文件路径。下载只在授权后通过原生保存对话框指定路径，不向renderer下发原件字节或路径。
 - 对话框期间账号变化会取消旧账号操作。退出/401清空账号、团队、任务与输入状态，登录表单解除busy。已合法保存的文件不能承诺远程追回。
@@ -41,9 +43,12 @@ Windows预览用户数据默认放`D:/codex-temp/shenyi-desktop-preview`，可�
 node --test ../tests/team-desktop-client.test.cjs ../tests/team-desktop-bridge.test.cjs ../tests/team-desktop-ui.test.cjs ../tests/team-desktop-identity.test.cjs
 node integration-smoke.cjs --local-demo
 node smoke.cjs
+node wechat-smoke.cjs
 ```
 
-第一项需要根项目锁文件的jsdom；覆盖HTTP客户端和IPC/文件边界、真实DOM的撤销后再登录及XSS文本呈现，并检查身份能力、首绑状态清理、12项白名单及未配置入口。第二项只对本机合成服务，用`assistant-b`执行一次真实上传/下载/哈希/退出，会改变该合成任务状态，应使用新演示数据目录。第三项需要根项目Playwright和已安装Electron，运行真实Electron renderer的登录/任务/退出和安全偏好检查；截图/报告写到`D:/codex-temp/shenyi-desktop-runtime`或`SHENYI_DESKTOP_EVIDENCE_DIR`。
+第一项需要根项目锁文件的jsdom；覆盖HTTP客户端和IPC/文件边界、真实DOM的撤销后再登录及XSS文本呈现，并检查身份能力、首绑状态清理、16项白名单及未配置入口。微信专项另见`tests/team-desktop-wechat.test.cjs`和`team-desktop-wechat-ui.test.cjs`。第二项只对本机合成服务，用`assistant-b`执行一次真实上传/下载/哈希/退出，会改变该合成任务状态，应使用新演示数据目录。第三项需要根项目Playwright和已安装Electron，运行真实Electron renderer的登录/任务/退出和安全偏好检查；截图/报告写到`D:/codex-temp/shenyi-desktop-runtime`或`SHENYI_DESKTOP_EVIDENCE_DIR`。
+
+第四项以Node24运行真实Electron＋隔离内存SQLite/随机端口HTTP，供应商明确合成；仅测试bootstrap重写client transport映射和浏览器opener，生产main/preload/renderer及服务处理器沿用。记录opener调用收据、直接派发合成HTTPS回调，再走真实HTTP轮询/关联/兑换；不访问微信、不展示假二维码、不修改共享demo。默认结果在`D:/codex-temp/shenyi-wechat-desktop-20261115/real-electron-synthetic/`。首次关联、再次登录、取消回调拒绝和过期通过也不等于OS浏览器、手机或微信平台验收。
 
 原生对话框、真实短信/微信、完整安装升级、Mac、设备绑定和生产服务仍需各自验收；单元/DOM通过不能替代这些检查。
 

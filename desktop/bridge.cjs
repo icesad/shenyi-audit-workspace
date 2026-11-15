@@ -40,6 +40,10 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('phone-login',arg=>client.loginPhone(input(arg,['phone','password'])));
   handle('phone-challenge',arg=>client.requestPhoneBind(input(arg,['phone'])));
   handle('phone-bind',arg=>client.bindPhone(input(arg,['challengeId','code','currentPassword'])));
+  handle('wechat-start',()=>client.startWechatLogin());
+  handle('wechat-poll',()=>client.pollWechatLogin());
+  handle('wechat-cancel',()=>client.cancelWechatLogin());
+  handle('wechat-link',arg=>client.linkWechatAccount(input(arg,['phone','password'])));
   handle('session',()=>client.getSession());
   handle('logout',()=>client.logout());
   handle('tasks',arg=>client.listTasks(input(arg,['teamId','q','after','limit'])));

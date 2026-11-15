@@ -10,12 +10,13 @@ async function main(){
     const page=await app.firstWindow();const errors=[];page.on('pageerror',error=>errors.push(error.message));
     await page.getByRole('heading',{name:'登录团队账号',exact:true}).waitFor();
     assert.equal(await page.evaluate(()=>typeof require),'undefined');assert.equal(await page.evaluate(()=>typeof process),'undefined');
-    assert.deepEqual((await page.evaluate(()=>Object.keys(window.shenyiTeam))).sort(),['login','getSession','logout','listTasks','getTask','getSubmissions','chooseAndUpload','downloadAttachment','getAuthMethods','loginPhone','requestPhoneBind','bindPhone'].sort());
+    assert.deepEqual((await page.evaluate(()=>Object.keys(window.shenyiTeam))).sort(),['login','getSession','logout','listTasks','getTask','getSubmissions','chooseAndUpload','downloadAttachment','getAuthMethods','loginPhone','requestPhoneBind','bindPhone','startWechatLogin','pollWechatLogin','cancelWechatLogin','linkWechatAccount'].sort());
     const preferences=await app.evaluate(({BrowserWindow})=>{const p=BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences();return {nodeIntegration:p.nodeIntegration,contextIsolation:p.contextIsolation,sandbox:p.sandbox,webSecurity:p.webSecurity};});
     assert.deepEqual(preferences,{nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true});
     await page.locator('#identity-methods-message').filter({hasText:'正式方向：手机号＋密码'}).waitFor();
     const capabilities=await page.evaluate(async()=>window.shenyiTeam.getAuthMethods());assert.equal(capabilities.ok,true);
     assert.deepEqual(capabilities.value.methods,{demoUsername:true,phonePassword:true,phoneVerification:false,wechat:false,recovery:false});
+    assert.equal(capabilities.value.desktopWechatReady,false);
     assert.equal(await page.locator('#wechat-login').isDisabled(),true);assert.match(await page.locator('#wechat-login').textContent(),/未开通/);
     await page.locator('#login-mode').selectOption('phone');assert.equal(await page.locator('#username').getAttribute('placeholder'),'输入已验证绑定的手机号');
     await page.screenshot({path:path.join(directory,'phone-login.png'),fullPage:true});
@@ -25,7 +26,7 @@ async function main(){
     await page.getByRole('button',{name:'登录工作空间',exact:false}).click();
     await page.locator('.task-button').first().waitFor();await page.locator('.task-button').first().click();
     await page.getByRole('heading',{name:'我的提交记录',exact:true}).waitFor();
-    assert.deepEqual(await page.locator('input[type=password]').evaluateAll(fields=>fields.map(field=>field.value)),['','']);
+    const passwords=await page.locator('input[type=password]').evaluateAll(fields=>fields.map(field=>field.value));assert.equal(passwords.length,3);assert.ok(passwords.every(value=>value===''));
     const publicSession=await page.evaluate(async()=>window.shenyiTeam.getSession());assert.equal(publicSession.ok,true);assert.ok(!('token'in publicSession.value));
     assert.equal(await page.evaluate(()=>Object.values(localStorage).some(value=>value.includes('Bearer '))),false);
     await page.locator('#phone-bind-panel > summary').click();
