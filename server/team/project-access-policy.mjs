@@ -7,6 +7,7 @@ import {noReviewerHistorySql} from './reviewer-policy.mjs';
 import {materialVisibilitySql} from './materials-scope.mjs';
 import {COLLECTION_WORKSPACE_KIND,collectionWorkspaceKind} from './workspace-creation-policy.mjs';
 import {workspaceBusinessConfirmed} from './workspace-formalization-policy.mjs';
+import {materialIdentity} from './materials-identity.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex'),UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 export const projectConflict=()=>{throw new ApiError(409,'PROJECT_ACCESS_CONFLICT','项目或授权状态已改变，请刷新核对。');};
 export function projectRevision(value,min=1){const n=Number(value);if(!Number.isSafeInteger(n)||n<min)projectConflict();return n;}
@@ -57,7 +58,7 @@ export function projectContext(db,actor,teamId,projectId,{read=false,manage=fals
  const legacy=db.prepare("SELECT permission FROM team_project_grants WHERE team_id=? AND project_id=? AND user_id=? AND status='active'").all(teamId,projectId,actor.userId);
  const own=db.prepare("SELECT permission,CAST(revision AS TEXT) AS revision FROM team_project_access_grants WHERE team_id=? AND project_id=? AND user_id=? AND status='active'").all(teamId,projectId,actor.userId);for(const row of own)projectRevision(row.revision);
  const context={member,project,read:legacy.some(row=>row.permission==='collection.read'),manage:legacy.some(row=>row.permission==='collection.manage'),review:own.some(row=>row.permission==='collection.review'),owner:project.createdBy===actor.userId&&own.some(row=>row.permission==='project.owner')};
- const materialVisible=project.kind!==COLLECTION_WORKSPACE_KIND&&!!db.prepare('SELECT 1 FROM team_material_grants WHERE team_id=? AND project_id=? AND user_id=? AND eligible=1 AND can_read=1').get(teamId,projectId,actor.userId);
+ let materialVisible=false;if(db.prepare('SELECT 1 FROM team_material_grants WHERE team_id=? AND project_id=? AND user_id=? AND eligible=1 AND can_read=1').get(teamId,projectId,actor.userId)){try{materialVisible=!!materialIdentity(db,teamId,projectId);}catch(error){if(!(error instanceof ApiError)||error.status!==404)throw error;}}
  if(!context.read&&!context.owner&&!materialVisible||owner&&!context.owner||(read||manage||review)&&!context.read||manage&&!context.manage||review&&!context.review)deny();if(active&&project.status!=='active')projectConflict();return context;
 }
 export const canReadProject=context=>!!context?.read;

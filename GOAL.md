@@ -1,10 +1,12 @@
 # 审易 GOAL · 团队商业化接续版
 
-更新：2026-11-16。当前用户已授权整理并建立持续推进的团队商业化Goal；以下新增范围优先于旧轮次的范围描述，既有审计业务规则继续保留。
+更新：2026-11-17。当前用户已授权整理并建立持续推进的团队商业化Goal；以下新增范围优先于旧轮次的范围描述，既有审计业务规则继续保留。
 
 ## 当前执行目标
 
-当前M4L在 `codex/workspace-formalization` 从M4K本地 `50eb465` 按[正式业务确认合同](docs/WORKSPACE_FORMALIZATION_CONTRACT.md)与[使用说明](docs/WORKSPACE_FORMALIZATION.md)完成Windows本地候选技术验收。用户已确认由项目负责人核验已保存来源并验证密码，系统记录为其业务确认；不冒称现实中标自动查证、实时状态或审计签发。完整3586/3586、0fail/skip/cancel/todo（1428133.9451ms），183selected／58整文件browser粗排除，956源before-after-current raw同；新93包含在总数。最终strict原生4场景／5PNG／8库／4vault、旧5按1+4兼容、四真RO及两原cmd一键均通过独审。旧69表typed行／209定义和9/16账号／UUID保持，新增空1表7trigger后70/217；114RPC／21form／26秘密。W/Q分列，原权限、任务、原件和创建回执保持，材料W/Q接入仍为下一单项M4M。未push／main／上线，Mac／真人选择器／客户业务／生产及两负责人业务签收未完成，M4和完整Goal active。
+当前M4M在 `codex/workspace-material-identity` 从M4L本地 `f623571` 按[资料身份适配合同](docs/WORKSPACE_MATERIAL_IDENTITY_CONTRACT.md)与[使用说明](docs/WORKSPACE_MATERIAL_IDENTITY.md)完成Windows本地候选技术验收。W资源授权与Q原业务内容分离，独立五权、原包／record身份／原件历史保持，无新增schema／HTTP／RPC。完整3672/3672、0fail/skip/cancel/todo（1457827.3341ms），188selected／58整文件browser粗排除，966源before-after-current raw同；首轮完整gate为3656/3672、16fail：905项fetch failed的实际端口及cause未确证；2613—2627共15项为旧预览mock缺getProject。原日志与16项失败均保留，本次通过结果取自final-full-rerun，未把失败前件改判成功。两轮各自966源before-after保持；轮间仅经审查的旧测试夹具1处插入，965源相同，不称两轮966互相全同。新86（18＋28＋40）包含在总数。最终strict原生6场景／6PNG／8阶段库＋runtime／4vault／124profile／128源同、2份合法原子保存及撤权heldSave零发布均独审通过；首绿截图的时态文案缺陷及修前DOM FAIL已保留。旧7兼容一批全过（567.563秒），四真RO保70表217定义及全部typed行／auth、9与16账号／UUID；两原cmd重试实际可达，首普通启动pwsh空环境值FAIL及外部v2修正单列。114RPC／21form／26秘密保持。尚未push／进入main／上线；本地commit以实际Git及交付工件为证，不预写未来SHA。M4及完整Goal active，下一单项仍旧六模块权限／显式迁入；Mac、真人选择器、客户业务、生产及两负责人签收未完成。
+
+上一M4L在 `codex/workspace-formalization` 从M4K本地 `50eb465` 按[正式业务确认合同](docs/WORKSPACE_FORMALIZATION_CONTRACT.md)与[使用说明](docs/WORKSPACE_FORMALIZATION.md)完成Windows本地候选技术验收。用户已确认由项目负责人核验已保存来源并验证密码，系统记录为其业务确认；不冒称现实中标自动查证、实时状态或审计签发。完整3586/3586、0fail/skip/cancel/todo（1428133.9451ms），183selected／58整文件browser粗排除，956源before-after-current raw同；新93包含在总数。最终strict原生4场景／5PNG／8库／4vault、旧5按1+4兼容、四真RO及两原cmd一键均通过独审。旧69表typed行／209定义和9/16账号／UUID保持，新增空1表7trigger后70/217；114RPC／21form／26秘密。W/Q分列，原权限、任务、原件和创建回执保持，材料W/Q接入仍为下一单项M4M。未push／main／上线，Mac／真人选择器／客户业务／生产及两负责人业务签收未完成，M4和完整Goal active。
 
 以 [完整Goal提示词](docs/COMMERCIALIZATION_GOAL.txt) 为持续执行合同，配套 [团队产品需求](docs/TEAM_PRODUCT_REQUIREMENTS.md)、[商业化路线图](docs/COMMERCIALIZATION_ROADMAP.md) 和 [进度](进度.md)。
 

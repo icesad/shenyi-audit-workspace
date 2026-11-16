@@ -178,3 +178,9 @@ node desktop/administrator-business-role-smoke.cjs
 [使用说明](../docs/WORKSPACE_FORMALIZATION.md)与[执行合同](../docs/WORKSPACE_FORMALIZATION_CONTRACT.md)说明当前负责人核验已保存来源、密码确认、不可变回执及原编号只读恢复。系统记录其业务确认，不自动证明现实中标或审计签发；W采集身份与Q原业务身份分列，资料清单W/Q接入留待下一单项，原权限和原件保持。
 
 当前114窄RPC／21表单／26秘密输入。选择来源使用当时的私有快照，磁盘后续修改需重新选择。实际分层验收、一键与main／线上状态见根目录进度和本轮外部报告；完整Goal仍active。
+
+## M4M工作区资料身份适配
+
+[使用说明](../docs/WORKSPACE_MATERIAL_IDENTITY.md)与[执行合同](../docs/WORKSPACE_MATERIAL_IDENTITY_CONTRACT.md)说明已确认工作区按独立五权接入原业务资料。团队授权／路径／存储键保持W，原包及record保Q；不改写原件历史、不从确认或owner自动授予资料权。资料-only读者仍没有采集任务权。
+
+70表／217定义和114窄RPC／21表单／26秘密输入保持。导入、维护、预览和保存统一核W/Q；unknown只查原编号。实际Windows／旧兼容／完整回归／共享保全及main／一键／线上状态以根目录进度和本片外部报告为证，Mac／真实业务／生产继续单列。

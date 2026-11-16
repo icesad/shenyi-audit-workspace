@@ -1,8 +1,8 @@
 import {REVIEWER_TABLES} from './reviewer-policy.mjs';
-import {collectionWorkspaceAbsentSql} from './workspace-creation-policy.mjs';
+import {materialIdentitySql} from './materials-identity.mjs';
 export function materialVisibilitySql(userExpression,projectAlias='project'){
  if(!['?','member.user_id'].includes(userExpression)||projectAlias!=='project')throw Error('Untrusted material visibility aliases');
- return `(${collectionWorkspaceAbsentSql()} AND EXISTS (SELECT 1 FROM team_material_grants material_visibility WHERE material_visibility.team_id=project.team_id AND material_visibility.project_id=project.project_id AND material_visibility.user_id=${userExpression} AND material_visibility.eligible=1 AND material_visibility.can_read=1))`;
+ return `(${materialIdentitySql()} AND EXISTS (SELECT 1 FROM team_material_grants material_visibility WHERE material_visibility.team_id=project.team_id AND material_visibility.project_id=project.project_id AND material_visibility.user_id=${userExpression} AND material_visibility.eligible=1 AND material_visibility.can_read=1))`;
 }
 export function installMaterialQualificationTriggers(db){
  const invalidate=where=>`SELECT CASE WHEN EXISTS(SELECT 1 FROM team_material_grants material JOIN team_project_access_projects project ON project.team_id=material.team_id AND project.project_id=material.project_id WHERE material.eligible=1 AND material.can_read=1 AND (${where}) AND (material.revision>=9007199254740991 OR project.revision>=9007199254740991)) THEN RAISE(ABORT,'MATERIAL_REVISION_MAX') END;

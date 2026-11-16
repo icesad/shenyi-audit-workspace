@@ -15,7 +15,7 @@ export async function handleMaterialMaintenanceMutation({request,db,now,actor,be
  const permission={read:true,maintain:true,active:true},check=()=>{
   fresh(permission);if(body.projectRevision!==before.project.revision||materialRequestUsed(db,body.requestId))materialConflict();
   const row=scopedMaterialRecord(db,actor,teamId,projectId);if(!row||materialInteger(row.material_revision,1)!==body.materialRevision||row.record_sha256!==body.recordSha256)materialConflict();
-  const record=materialRecordVersion(row);if(record.schema!==2||record.closed)throw new ApiError(409,'MATERIAL_NOT_EDITABLE','仅已开门的层级资料清单可以维护原件，请按原规则处理。');
+   const record=materialRecordVersion(row,before.identity);if(record.schema!==2||record.closed)throw new ApiError(409,'MATERIAL_NOT_EDITABLE','仅已开门的层级资料清单可以维护原件，请按原规则处理。');
   if(record.generationId!==body.generationId)materialConflict();if(!Object.hasOwn(record.attachments,body.nodeId))invalid();
   if(!adding&&!record.attachments[body.nodeId].some(file=>file.id===fileId))materialConflict();return {row,record};
  };

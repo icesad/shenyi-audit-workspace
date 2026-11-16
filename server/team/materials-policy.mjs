@@ -5,7 +5,7 @@ import {safeMemberText} from './member-access-policy.mjs';
 import {ApiError,ID,deny,invalid} from './http-utils.mjs';
 import A from '../../dist/audit-checklist.js';
 import {maintenanceGrant} from './materials-maintenance-grant.mjs';
-import {COLLECTION_WORKSPACE_KIND,collectionWorkspaceAbsentSql} from './workspace-creation-policy.mjs';
+import {materialIdentity,materialIdentitySql,materialRecordIdentity} from './materials-identity.mjs';
 export const CHUNK_BYTES=1048576,PACKAGE_BYTES=180*1048576,STAGING_BYTES=360*1048576,STAGE_TTL=30*60000;
 export const materialConflict=()=>{throw new ApiError(409,'MATERIALS_CONFLICT','资料、授权或版本已改变，请刷新并核对回执。');};
 export const materialDigest=value=>createHash('sha256').update(value).digest('hex');
@@ -15,19 +15,19 @@ export function materialGrant(db,teamId,projectId,userId){
  return {revision:row?materialInteger(row.revision,1):0,read:row?.eligible===1&&row.can_read===1,import:row?.eligible===1&&row.can_import===1,review:row?.eligible===1&&row.can_review===1,close:row?.eligible===1&&row.can_close===1};
 }
 export function materialContext(db,actor,teamId,projectId,{read=false,import:importing=false,review=false,close=false,maintain=false,owner=false,active=false,visible=false}={}){
- const member=ordinaryTeamContext(db,actor.userId,teamId);if(!member)deny();const project=managedProject(db,teamId,projectId);if(!project||!['active','frozen'].includes(project.status)||project.kind===COLLECTION_WORKSPACE_KIND)deny();
+ const member=ordinaryTeamContext(db,actor.userId,teamId);if(!member)deny();const project=managedProject(db,teamId,projectId);if(!project||!['active','frozen'].includes(project.status))deny();const identity=materialIdentity(db,teamId,projectId);
  const grant=materialGrant(db,teamId,projectId,actor.userId),isOwner=!!db.prepare("SELECT 1 FROM team_project_access_grants WHERE team_id=? AND project_id=? AND user_id=? AND permission='project.owner' AND status='active'").get(teamId,projectId,actor.userId)&&project.createdBy===actor.userId;
  const maintenance=maintenanceGrant(db,teamId,projectId,actor.userId,grant);
  if(owner&&!isOwner||read&&!grant.read||importing&&!grant.import||review&&!grant.review||close&&!grant.close||maintain&&!maintenance.maintain)deny();
  if(visible&&!isOwner&&!grant.read){projectContext(db,actor,teamId,projectId,{read:true});}
  if(active&&project.status!=='active')materialConflict();
- return {member,project,grant,maintenance,owner:isOwner};
+ return {member,project,grant,maintenance,owner:isOwner,identity};
 }
 export function materialSqlScope(actor,{owner=false,read=true}={}){
  const scope=projectScope(actor,{owner,...(owner?{}:{})}),parameters=[...scope.parameters];
  // projectScope's generic visibility is deliberately broader than collection
  // read, but material data always requires its independent explicit read grant.
- let sql=scope.sql+' AND '+collectionWorkspaceAbsentSql();if(read){sql+=` AND EXISTS(SELECT 1 FROM team_material_grants material_scope WHERE material_scope.team_id=project.team_id AND material_scope.project_id=project.project_id AND material_scope.user_id=? AND material_scope.eligible=1 AND material_scope.can_read=1)`;parameters.push(actor.userId);}
+ let sql=scope.sql+' AND '+materialIdentitySql();if(read){sql+=` AND EXISTS(SELECT 1 FROM team_material_grants material_scope WHERE material_scope.team_id=project.team_id AND material_scope.project_id=project.project_id AND material_scope.user_id=? AND material_scope.eligible=1 AND material_scope.can_read=1)`;parameters.push(actor.userId);}
  return {sql,parameters};
 }
 export function materialListQuery(params){
@@ -50,7 +50,7 @@ export function materialAudit(db,{requestId=randomUUID(),teamId,projectId,actorI
 export function materialReceipt(row){return {requestId:row.request_id,kind:row.kind,projectId:row.project_id,projectRevision:materialInteger(row.project_revision,1),materialRevision:materialInteger(row.material_revision,1),recordSha256:row.record_sha256,packageSha256:row.package_sha256,sourceRecordRevision:materialInteger(row.source_record_revision,1),recordRevision:materialInteger(row.record_revision,1),committedAt:materialInteger(row.committed_at),...(['attachment-add','attachment-remove'].includes(row.kind)?{fileId:row.file_id,nodeId:row.node_id,generationId:row.generation_id}:{})};}
 export function materialReceiptRow(db,requestId,actorId,teamId,projectId){return db.prepare("SELECT * FROM team_material_events WHERE request_id=? AND actor_id=? AND team_id=? AND project_id=? AND kind IN ('import','item','close','reopen')").get(requestId,actorId,teamId,projectId)||db.prepare('SELECT * FROM team_material_maintenance_events WHERE request_id=? AND actor_id=? AND team_id=? AND project_id=?').get(requestId,actorId,teamId,projectId);}
 export function scopedMaterialRecord(db,actor,teamId,projectId){const scope=materialSqlScope(actor);return db.prepare(`SELECT material.*,CAST(material.material_revision AS TEXT) material_revision,CAST(material.source_record_revision AS TEXT) source_record_revision,credential.display_name importer_name FROM team_material_records material JOIN team_projects project ON project.team_id=material.team_id AND project.project_id=material.project_id JOIN team_project_access_projects metadata ON metadata.team_id=project.team_id AND metadata.project_id=project.project_id JOIN team_credentials credential ON credential.user_id=material.imported_by WHERE material.team_id=? AND material.project_id=? AND ${scope.sql}`).get(teamId,projectId,...scope.parameters)||null;}
-export function materialRecordVersion(row){if(!row)materialConflict();materialInteger(row.material_revision,1);materialInteger(row.source_record_revision,1);if(materialDigest(row.record_json)!==row.record_sha256)throw Error('Invalid trusted material record');return A.validate(JSON.parse(row.record_json));}
+export function materialRecordVersion(row,identity){if(!row)materialConflict();materialInteger(row.material_revision,1);materialInteger(row.source_record_revision,1);if(materialDigest(row.record_json)!==row.record_sha256)throw Error('Invalid trusted material record');return materialRecordIdentity(A.validate(JSON.parse(row.record_json)),identity);}
 export function trustedMaterialReviewer(value,fallback){let label='';for(const point of safeMemberText(value,fallback)){if(label.length+point.length>100)break;label+=point;}return label;}
 export function revokeMaterialAccess(db,{actorId,teamId,userId,reason,at}){
  const rows=db.prepare('SELECT *,CAST(revision AS TEXT) revision FROM team_material_grants WHERE team_id=? AND user_id=? AND can_read=1').all(teamId,userId);
