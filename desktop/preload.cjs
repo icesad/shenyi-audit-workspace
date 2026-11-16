@@ -119,4 +119,5 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   confirmWorkspaceFormalization:confirmation=>invoke('workspace-formalization-confirm',confirmation),
   getWorkspaceFormalizationReceipt:query=>invoke('workspace-formalization-receipt',query),
   discardWorkspaceFormalizationSource:source=>invoke('workspace-formalization-source-discard',source),
+  getMyDeviceOverview:query=>invoke('my-device-overview',query),
 }));

@@ -4,6 +4,7 @@ import {verifyPassword} from './passwords.mjs';
 import {ApiError,deny,invalid,json,readJson,transaction} from './http-utils.mjs';
 import {UUID,digest,deviceServerId,deviceIdentity,sameDeviceIdentity,activeBinding,bindingView,challengeFields,safeRevision,deviceConflict} from './device-policy.mjs';
 import proof from '../../shared/device-proof.cjs';
+import {recordDeviceUsage} from './device-usage.mjs';
 const CHALLENGE_TTL=120000,LEASE_TTL=15*60000;
 const method=allow=>json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:allow});
 const wrongSignature=()=>json({error:{code:'DEVICE_SIGNATURE_INVALID',message:'设备签名验证未通过，请重新验证。'}},403);
@@ -50,6 +51,7 @@ export function leasedSession(db,identity,binding,at){
   db.prepare('UPDATE team_sessions SET expires_at=? WHERE token_hash=?').run(expiresAt,digest(session.token));session.expiresAt=expiresAt;
   db.prepare('INSERT INTO team_device_leases(lease_id,user_id,device_id,binding_revision,auth_session_hash,token_hash,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?)')
     .run(leaseId,identity.userId,binding.device_id,safeRevision(binding.revision,1),digest(session.token),digest(leaseToken),at,expiresAt);
+  recordDeviceUsage(db,identity.userId,binding.device_id,at);
   return {...session,device:bindingView(binding),lease:{id:leaseId,token:leaseToken,serverId:deviceServerId(db),deviceId:binding.device_id,bindingRevision:safeRevision(binding.revision,1),expiresAt}};
 }
 export async function handleDeviceIdentityRequest(request,{db,now=Date.now,deviceContext,identityProviders={}}={}){
@@ -110,6 +112,7 @@ export async function handleDeviceIdentityRequest(request,{db,now=Date.now,devic
     }
     if(action==='revoke'){
       const revision=safeRevision(binding.revision,1);if(revision>=Number.MAX_SAFE_INTEGER)deviceConflict();
+      recordDeviceUsage(db,identity.userId,binding.device_id,at);
       const changed=db.prepare("UPDATE team_device_bindings SET status='revoked',revision=revision+1,revoked_at=? WHERE device_id=? AND status='active' AND revision=?").run(at,binding.device_id,revision);if(changed.changes!==1)deviceConflict();
       safeRevision(db.prepare('SELECT CAST(version AS TEXT) AS version FROM team_recovery_identity_epochs WHERE user_id=?').get(identity.userId)?.version??0);
       db.prepare('UPDATE team_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=?').run(at,identity.userId);

@@ -23,6 +23,7 @@ import {handleDeviceIdentityRequest} from './device-api.mjs';
 import {handleDeviceReplacementRequest} from './device-replacement-api.mjs';
 import {authorizeDeviceRequest} from './device-gate.mjs';
 import {deviceServerId} from './device-policy.mjs';
+import {handleMyDeviceRequest} from './my-device-api.mjs';
 import {recoveryConfigured} from './recovery-review-policy.mjs';
 import {ApiError, json} from './http-utils.mjs';
 
@@ -62,7 +63,8 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
     }
     const deviceAuthorization=await authorizeDeviceRequest(request,options);
     request=deviceAuthorization.request;options.deviceContext=deviceAuthorization.context;
-    return await handleDeviceReplacementRequest(request,options)
+    return await handleMyDeviceRequest(request,options)
+      || await handleDeviceReplacementRequest(request,options)
       || await handleDeviceIdentityRequest(request,options)
       || await handleAccountSessionsRequest(request,options)
       || await handleMemberAccessRequest(request,options)

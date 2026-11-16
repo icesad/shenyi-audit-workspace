@@ -3,6 +3,7 @@ import {consume} from './auth-api.mjs';
 import {ApiError,invalid,transaction} from './http-utils.mjs';
 import {UUID,digest,deviceServerId,currentDeviceLease,deviceConflict,deviceRequired} from './device-policy.mjs';
 import proof from '../../shared/device-proof.cjs';
+import {recordDeviceUsage} from './device-usage.mjs';
 const BODY_LIMIT=17*1024*1024,NONCE_LIMIT=2048;
 const BOOTSTRAP_GET=new Set(['/api/auth/methods','/api/auth/session','/api/auth/onboarding/capabilities','/api/auth/recovery-requests/capabilities','/api/auth/devices','/api/auth/device-replacements']);
 const BOOTSTRAP_POST=new Set(['/api/auth/login','/api/auth/logout','/api/auth/phone/login','/api/auth/phone/challenges','/api/auth/phone/reset','/api/auth/recovery-requests',
@@ -61,7 +62,8 @@ export async function authorizeDeviceRequest(request,{db,now=Date.now,identityPr
     if(db.prepare('SELECT 1 FROM team_device_request_replays WHERE lease_id=? AND nonce_hash=?').get(current.leaseId,nonceHash))throw new ApiError(409,'DEVICE_REQUEST_REPLAY','请求已处理，请重新核对当前状态。');
     if(db.prepare('SELECT COUNT(*) n FROM team_device_request_replays WHERE lease_id=?').get(current.leaseId).n>=NONCE_LIMIT)throw new ApiError(429,'DEVICE_PROOF_LIMIT','设备请求过于频繁，请稍后重新持钥登录。');
     db.prepare('INSERT INTO team_device_request_replays(lease_id,nonce_hash,created_at) VALUES (?,?,?)').run(current.leaseId,nonceHash,time);
-    return {userId:current.userId,deviceId:current.deviceId,bindingRevision:current.bindingRevision,leaseId:current.leaseId};
+    recordDeviceUsage(db,current.userId,current.deviceId,time);
+    return {userId:current.userId,deviceId:current.deviceId,bindingRevision:current.bindingRevision,leaseId:current.leaseId,stamp:current.stamp,serverId};
   });
   const rebuilt=new Request(request.url,{method:request.method,headers:new Headers(request.headers),signal:request.signal,
     ...(!['GET','HEAD'].includes(request.method)&&request.body!==null?{body:bytes}:{} )});

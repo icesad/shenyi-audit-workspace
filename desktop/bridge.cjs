@@ -12,6 +12,7 @@ const {createTaskSubmissionPreviewManager}=require('./task-submission-preview.cj
 const {createCollectionWorkspaceManager}=require('./collection-workspace.cjs');
 const {createWorkspaceFormalizationManager}=require('./workspace-formalization.cjs');
 const {createMaterialPreservationExporter}=require('./material-preservation-export.cjs');
+const {myDeviceQuery}=require('./my-device-client.cjs');
 const APP_URL = 'shenyi://app/index.html';
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 function input(value, keys) {
@@ -243,6 +244,7 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('workspace-formalization-confirm',arg=>formalizations().confirmWorkspaceFormalization(input(arg,['handle','sourceSha256','teamId','projectId','projectRevision','currentPassword','businessConfirmed','confirmed'])));
   handle('workspace-formalization-receipt',arg=>client.getWorkspaceFormalizationReceipt(input(arg,['teamId','projectId','requestId'])));
   handle('workspace-formalization-source-discard',arg=>formalizations().discardWorkspaceFormalizationSource(input(arg,['handle'])));
+  handle('my-device-overview',arg=>client.getMyDeviceOverview(myDeviceQuery(arg,(code,message)=>new ClientError(code,message))));
   return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',clearRendererResources);materialPreview?.dispose();submissionPreview?.dispose();materialMaintenance?.dispose();workspaceCreation?.dispose();workspaceFormalization?.dispose();materialPreservationExport?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
 }
 module.exports={APP_URL,registerDesktopBridge,readChosenFile,safeDownloadName};

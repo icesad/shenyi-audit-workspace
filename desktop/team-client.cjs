@@ -9,6 +9,7 @@ const {createMaterialPreservationExportClient,PACKAGE_MAX}=require('./material-p
 const {createCollectionWorkspaceClient}=require('./collection-workspace-client.cjs');
 const {createWorkspaceFormalizationClient}=require('./workspace-formalization-client.cjs');
 const {createTrustedTeamServiceTransport}=require('./trusted-team-service-client.cjs');
+const {createMyDeviceClient}=require('./my-device-client.cjs');
 
 // Main-process only. The renderer never receives bearer tokens or raw fetch.
 const API_BASE = 'http://127.0.0.1:8774';
@@ -516,6 +517,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     clearSession: clear,
     ...createCollectionWorkspaceClient({request,failure,capture(){if(!token||!current)throw failure('SIGN_IN_REQUIRED','请先登录。',401);if(!device.required)throw failure('DEVICE_NOT_READY','创建工作区需要当前已持钥核验的业务登录。');const at=generation,actorId=current.account.id,deviceGuard=device.guard();const assertCurrent=()=>{if(at!==generation||!token||current?.account.id!==actorId)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');deviceGuard();};assertCurrent();return{actorId,assertCurrent};}}),
     ...createWorkspaceFormalizationClient({request,failure,capture(){if(!token||!current)throw failure('SIGN_IN_REQUIRED','请先登录。',401);if(!device.required)throw failure('DEVICE_NOT_READY','业务确认需要当前已持钥核验的业务登录。');const at=generation,actorId=current.account.id,deviceGuard=device.guard();const assertCurrent=()=>{if(at!==generation||!token||current?.account.id!==actorId)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');deviceGuard();};assertCurrent();return{actorId,assertCurrent};}}),
+    ...createMyDeviceClient({request,failure,capture(){if(!token||!current)throw failure('SIGN_IN_REQUIRED','请先登录。',401);if(!device.required)throw failure('DEVICE_NOT_READY','本人电脑资料需要当前已持钥核验的业务登录。');const at=generation,bearer=token,actorId=current.account.id,deviceGuard=device.guard(),deviceId=device.status().device?.id;const assertCurrent=()=>{if(at!==generation||token!==bearer||current?.account.id!==actorId)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');deviceGuard();};assertCurrent();return{deviceId,assertCurrent};}}),
   });
 }
 module.exports = {createTeamClient,ClientError,API_BASE,MAX_FILE_BYTES,boundedBytes};

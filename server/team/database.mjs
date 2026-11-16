@@ -22,6 +22,7 @@ export function initializeTeamDatabase(db) {
       db.exec(readFileSync(fileURLToPath(new URL('./member-access-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./device-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./device-replacement-schema.sql', import.meta.url)), 'utf8'));
+      db.exec(readFileSync(fileURLToPath(new URL('./device-usage-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./business-role-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./project-access-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./administrator-business-role-schema.sql', import.meta.url)), 'utf8'));
@@ -51,6 +52,7 @@ export function initializeTeamDatabase(db) {
     db.exec(readFileSync(fileURLToPath(new URL('./member-access-schema.sql', import.meta.url)), 'utf8'));
     db.exec(readFileSync(fileURLToPath(new URL('./device-schema.sql', import.meta.url)), 'utf8'));
     db.exec(readFileSync(fileURLToPath(new URL('./device-replacement-schema.sql', import.meta.url)), 'utf8'));
+    db.exec(readFileSync(fileURLToPath(new URL('./device-usage-schema.sql', import.meta.url)), 'utf8'));
     db.exec(readFileSync(fileURLToPath(new URL('./business-role-schema.sql', import.meta.url)), 'utf8'));
     db.exec(readFileSync(fileURLToPath(new URL('./project-access-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./administrator-business-role-schema.sql', import.meta.url)), 'utf8'));
