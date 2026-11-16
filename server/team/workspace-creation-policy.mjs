@@ -17,7 +17,8 @@ export function workspaceCreationDigest({teamId,createdBy,title,read,manage,revi
  return createHash('sha256').update(JSON.stringify(semantic)).digest('hex');
 }
 export function workspaceCreationRequestUsed(db,requestId){
- return !!(db.prepare('SELECT 1 FROM team_collection_workspace_creations WHERE request_id=?').get(requestId)
+ return !!(db.prepare('SELECT 1 FROM team_workspace_formalizations WHERE request_id=?').get(requestId)
+  ||db.prepare('SELECT 1 FROM team_collection_workspace_creations WHERE request_id=?').get(requestId)
   ||db.prepare('SELECT 1 FROM team_project_migration_provenance WHERE request_id=?').get(requestId)
   ||db.prepare('SELECT 1 FROM team_project_access_projects WHERE request_id=?').get(requestId));
 }

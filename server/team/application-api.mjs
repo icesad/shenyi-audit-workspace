@@ -15,6 +15,7 @@ import {handleProjectReviewRequest} from './project-review-api.mjs';
 import {handleTaskOriginalsExportRequest} from './task-originals-export-api.mjs';
 import {handleProjectMigrationRequest} from './migration-api.mjs';
 import {handleCollectionWorkspaceCreationRequest} from './workspace-creation-api.mjs';
+import {handleWorkspaceFormalizationRequest} from './workspace-formalization-api.mjs';
 import {handleTeamMaterialsRequest} from './materials-api.mjs';
 import {handleAdministratorBusinessRoleRequest} from './administrator-business-role-api.mjs';
 import {handleDeviceIdentityRequest} from './device-api.mjs';
@@ -60,6 +61,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       || await handleBusinessRoleRequest(request,options)
       || await handleProjectMigrationRequest(request,options)
       || await handleCollectionWorkspaceCreationRequest(request,options)
+      || await handleWorkspaceFormalizationRequest(request,options)
       || await handleTeamMaterialsRequest(request,options)
       || await handleTaskOriginalsExportRequest(request,options)
       || await handleProjectAccessRequest(request,options)
@@ -74,6 +76,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       || await handleCollectionWriteRequest(request,options)
       || await handleTeamCollectionRequest(request,options);
   } catch (error) {
+    if(error?.message?.includes('WORKSPACE_FORMALIZATION_CONFLICT'))return json({error:{code:'WORKSPACE_FORMALIZATION_CONFLICT',message:'来源、工作区或业务确认状态冲突，请只读核对原回执。'}},409);
     if(error?.message?.includes('WORKSPACE_CREATION_CONFLICT')||error?.message?.includes('UNIQUE constraint failed: team_project_access_projects.team_id, team_project_access_projects.created_by, team_project_access_projects.request_id'))return json({error:{code:'WORKSPACE_CREATION_CONFLICT',message:'创建标识或工作区来源冲突，请只读查询原回执。'}},409);
     if(error?.message?.includes('MATERIAL_REQUEST_USED'))return json({error:{code:'MATERIALS_CONFLICT',message:'此操作标识已使用，请只读查询原回执。'}},409);
     if(error?.message?.includes('MATERIAL_REVISION_MAX'))return json({error:{code:'MATERIALS_CONFLICT',message:'资料授权版本已达上限，未更改业务资料。'}},409);

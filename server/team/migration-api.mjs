@@ -14,6 +14,7 @@ function state(db,request,before,options,authorityStamp){
  if(authorityStamp!==undefined&&authority.stamp!==authorityStamp)migrationConflict();return {actor,authority};
 }
 function registrationConflict(db,body,source){
+ if(db.prepare('SELECT 1 FROM team_workspace_formalizations WHERE request_id=? OR source_project_id=? OR (team_id=? AND number_year=? AND number_sequence=?)').get(body.requestId,source.initiation.quoteId,body.teamId,source.numbering.identity.year,source.numbering.identity.sequence))migrationConflict();
  if(db.prepare('SELECT 1 FROM team_project_migration_provenance WHERE request_id=? OR project_id=? OR (team_id=? AND number_year=? AND number_sequence=?)').get(body.requestId,source.initiation.quoteId,body.teamId,source.numbering.identity.year,source.numbering.identity.sequence)
  ||db.prepare('SELECT 1 FROM team_projects WHERE project_id=?').get(source.initiation.quoteId))migrationConflict();
 }

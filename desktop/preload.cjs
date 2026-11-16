@@ -112,4 +112,9 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   closeTaskSubmissionPreview:preview=>invoke('task-submission-preview-close',preview),
   createCollectionWorkspace:confirmation=>invoke('collection-workspace-create',confirmation),
   getCollectionWorkspaceReceipt:query=>invoke('collection-workspace-receipt',query),
+  getWorkspaceFormalization:query=>invoke('workspace-formalization',query),
+  chooseWorkspaceFormalizationSource:target=>invoke('workspace-formalization-source-open',target),
+  confirmWorkspaceFormalization:confirmation=>invoke('workspace-formalization-confirm',confirmation),
+  getWorkspaceFormalizationReceipt:query=>invoke('workspace-formalization-receipt',query),
+  discardWorkspaceFormalizationSource:source=>invoke('workspace-formalization-source-discard',source),
 }));
