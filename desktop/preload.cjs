@@ -107,4 +107,7 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   chooseAndUpload:task=>invoke('upload',task),
   downloadAttachment:attachment=>invoke('download',attachment),
   exportTaskOriginals:selection=>invoke('task-originals-export',selection),
+  previewTaskSubmission:submission=>invoke('task-submission-preview',submission),
+  previewProjectSubmission:submission=>invoke('project-submission-preview',submission),
+  closeTaskSubmissionPreview:preview=>invoke('task-submission-preview-close',preview),
 }));

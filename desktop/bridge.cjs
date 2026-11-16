@@ -8,6 +8,7 @@ const {createProjectMaterialsManager}=require('./project-materials.cjs');
 const {createMaterialPreviewManager}=require('./material-preview.cjs');
 const {createMaterialPreviewWindow}=require('./material-preview-window.cjs');
 const {createMaterialMaintenanceManager}=require('./material-maintenance.cjs');
+const {createTaskSubmissionPreviewManager}=require('./task-submission-preview.cjs');
 const APP_URL = 'shenyi://app/index.html';
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 function input(value, keys) {
@@ -38,9 +39,11 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   const projectMaterials=createProjectMaterialsManager({client,dialog,window});
   let materialPreview;
   let materialMaintenance;
-  const previews=()=>materialPreview??=(createMaterialPreviewManager({client,openWindow:hooks=>createMaterialPreviewWindow({parent:window,...hooks})}));
+  let submissionPreview;
+  const previews=()=>materialPreview??=(createMaterialPreviewManager({client,openWindow:hooks=>{submissionPreview?.closeAll();return createMaterialPreviewWindow({parent:window,...hooks});}}));
+  const submissionPreviews=()=>submissionPreview??=(createTaskSubmissionPreviewManager({client,openWindow:hooks=>{materialPreview?.closeAll();return createMaterialPreviewWindow({parent:window,...hooks});}}));
   const maintenance=()=>materialMaintenance??=(createMaterialMaintenanceManager({client,dialog,window}));
-  const closeMaterialPreview=()=>{materialPreview?.closeAll();materialMaintenance?.closeAll();};
+  const closeMaterialPreview=()=>{materialPreview?.closeAll();submissionPreview?.closeAll();materialMaintenance?.closeAll();};
   const parentContents=window.webContents;
   const parentNavigation=(_event,_url,_inPlace,isMainFrame)=>{if(isMainFrame!==false)closeMaterialPreview();};
   parentContents.on?.('did-start-navigation',parentNavigation);
@@ -218,6 +221,9 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
     await fs.writeFile(selected.filePath,file.bytes);
     return {saved:true,filename:path.basename(selected.filePath),byteLength:file.bytes.length};
   });
-  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',closeMaterialPreview);materialPreview?.dispose();materialMaintenance?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
+  handle('task-submission-preview',arg=>submissionPreviews().previewTaskSubmission(input(arg,['requestId','teamId','taskId','revision','submissionId'])));
+  handle('project-submission-preview',arg=>submissionPreviews().previewProjectSubmission(input(arg,['requestId','teamId','projectId','projectRevision','taskId','revision','submissionId'])));
+  handle('task-submission-preview-close',arg=>{const value=input(arg,['previewId']);if(Object.keys(value).length!==1||typeof value.previewId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value.previewId))throw Error('原件预览标识无效。');return submissionPreview?submissionPreview.closeTaskSubmissionPreview(value):{closed:false};});
+  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',closeMaterialPreview);materialPreview?.dispose();submissionPreview?.dispose();materialMaintenance?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
 }
 module.exports={APP_URL,registerDesktopBridge,readChosenFile,safeDownloadName};
