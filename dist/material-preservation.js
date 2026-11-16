@@ -9,6 +9,8 @@
   const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu,HASH=/^[a-f0-9]{64}$/u;
   const enc=new TextEncoder(),dec=new TextDecoder('utf-8',{fatal:true});
   const POLICY=Object.freeze({scope:'single-project-material-record-and-all-referenced-originals',completeAttachmentHistory:true,includesRemovedAttachments:true,includesPriorGenerations:true,includesOriginalChecklistDocument:false,includesWorkpaperArchives:false,includesOtherDatabases:false,teamImported:false,identityAuthenticated:false,professionalApprovalClaimed:false});
+  const TEAM_POLICY=Object.freeze({...POLICY,teamImported:true});
+  const ORIGIN_KEYS=Object.freeze(['teamId','projectId','sourceProjectId','resourceKind','projectStatus','projectRevision','materialRevision','recordSha256','recordByteLength','filesSha256','serverId','planSha256']);
   const fail=message=>{throw Error('资料保全包：'+message);};
   function exact(value,keys){
     if(!value||typeof value!=='object'||Array.isArray(value))fail('对象结构无效。');
@@ -67,6 +69,15 @@
     return {projectId:record.project.quoteId,projectName:record.project.projectName,firmName:record.project.firmName,sourceNamespace:namespace(record),recordSchema:record.schema,revision:record.revision,generationId:record.schema===2?record.generationId:null,closed:record.closed!==null,nodeCount:record.schema===2?record.nodes.length:record.items.length,fileCount:files.length,currentFileCount:current,historicalFileCount:files.length-current,totalBytes:files.reduce((sum,file)=>sum+file.size,0),packageSha256};
   }
   function iso(value){if(typeof value!=='string'||!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u.test(value)||!Number.isFinite(Date.parse(value))||new Date(value).toISOString()!==value)fail('导出时间无效。');return value;}
+  function originCopy(value){exact(value,ORIGIN_KEYS);return plainCopy(value,{max:MANIFEST_MAX});}
+  async function checkOrigin(origin,record,recordBytes,metadata,recordHash,check){
+    if(namespace(record)!==FORMAL||origin.sourceProjectId!==record.project.quoteId||typeof origin.projectId!=='string'||!UUID.test(origin.projectId)||typeof origin.serverId!=='string'||!UUID.test(origin.serverId)||typeof origin.teamId!=='string'||!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(origin.teamId)||!['legacy','collection-workspace'].includes(origin.resourceKind)||origin.resourceKind==='legacy'&&origin.projectId!==origin.sourceProjectId||!['active','frozen'].includes(origin.projectStatus)||!['projectRevision','materialRevision'].every(key=>Number.isSafeInteger(origin[key])&&origin[key]>=1)||origin.recordByteLength!==recordBytes.length||origin.recordSha256!==recordHash||!HASH.test(origin.filesSha256)||!HASH.test(origin.planSha256))fail('团队来源、W/Q绑定或记录摘要无效。');
+    check();const filesHash=await sha(jsonBytes(metadata,RECORD_MAX,true));check();
+    if(filesHash!==origin.filesSha256)fail('团队历史原件元数据摘要不一致。');
+    const {planSha256,...fields}=origin,plan={...fields,recordSchema:record.schema,recordRevision:record.revision,generationId:record.schema===2?record.generationId:null,fileCount:metadata.length,originalByteLength:metadata.reduce((sum,file)=>sum+file.size,0),packageByteLimit:PACKAGE_MAX};
+    check();const planHash=await sha(jsonBytes(plan,MANIFEST_MAX,true));check();
+    if(planHash!==planSha256)fail('团队导出计划摘要不一致。');
+  }
   async function ownBytes(input,maximum){
     if(input instanceof Uint8Array){if(input.byteLength>maximum)fail('输入文件超过大小限制。');return Uint8Array.from(input);}
     if(typeof root.Blob!=='function'||!(input instanceof root.Blob)||!Number.isSafeInteger(input.size)||input.size>maximum)fail('请选择大小符合限制的Blob或Uint8Array文件。');
@@ -130,20 +141,48 @@
     if(checkedRecord(await readCurrent()).signature!==signature)fail('导出期间完整源记录已改变，请刷新后重新保全。');
     return {blob:new root.Blob([bytes],{type:'application/zip'}),manifest,sha256:packageSha256,summary:summary(record,metadata,packageSha256)};
   }
-  async function inspect(input){
-    const bytes=await ownBytes(input,PACKAGE_MAX),members=unzip(bytes),manifest=parseJson(members.get('manifest.json'),MANIFEST_MAX,true),parsed=parseJson(members.get('record.json'),RECORD_MAX),{record,bytes:recordBytes}=checkedRecord(parsed),metadata=history(record);
-    exact(manifest,['format','schemaVersion','packageId','createdAt','sourceNamespace','projectId','record','files','policy']);exact(manifest.record,['entry','schema','revision','generationId','bytes','sha256']);exact(manifest.policy,Object.keys(POLICY));
-    if(manifest.format!==FORMAT||manifest.schemaVersion!==VERSION||!UUID.test(manifest.packageId)||manifest.sourceNamespace!==namespace(record)||manifest.projectId!==record.project.quoteId||Object.keys(POLICY).some(key=>manifest.policy[key]!==POLICY[key]))fail('格式、项目、namespace或范围政策不匹配。');iso(manifest.createdAt);
-    const reference=manifest.record;
-    if(reference.entry!=='record.json'||reference.schema!==record.schema||reference.revision!==record.revision||reference.generationId!==(record.schema===2?record.generationId:null)||reference.bytes!==recordBytes.length||!HASH.test(reference.sha256)||await sha(recordBytes)!==reference.sha256||!Array.isArray(manifest.files)||manifest.files.length!==metadata.length||members.size!==metadata.length+2)fail('记录身份、哈希或原件数量不一致。');
+  async function createTeam(options){
+    const fields=exact(options,['record','origin','readFile','readCurrent','assertCurrent',...(Object.hasOwn(options,'createdAt')?['createdAt']:[])]),readFile=fields.readFile.value,readCurrent=fields.readCurrent.value,check=fields.assertCurrent.value;
+    if(typeof readFile!=='function'||typeof readCurrent!=='function'||typeof check!=='function')fail('缺少团队原件读取、最终复查或当前资格校验。');
+    check();const {record,bytes:recordBytes,signature}=checkedRecord(fields.record.value),metadata=history(record),origin=originCopy(fields.origin.value),originSignature=JSON.stringify(plainCopy(origin,{sort:true})),createdAt=iso(fields.createdAt?.value??new Date().toISOString());
+    if(typeof root.crypto?.randomUUID!=='function')fail('当前环境缺少安全包ID生成。');
+    check();const recordHash=await sha(recordBytes);check();
+    check();await checkOrigin(origin,record,recordBytes,metadata,recordHash,check);check();
+    const manifest={format:FORMAT,schemaVersion:2,packageId:root.crypto.randomUUID(),createdAt,sourceNamespace:FORMAL,projectId:record.project.quoteId,record:{entry:'record.json',schema:record.schema,revision:record.revision,generationId:record.schema===2?record.generationId:null,bytes:recordBytes.length,sha256:recordHash},files:[],policy:{...TEAM_POLICY},origin},originals=[];
+    for(const meta of metadata){
+      check();const result=await readFile(plainCopy(meta));check();const data=exact(result,['blob','metadata']),returned=plainCopy(data.metadata.value);
+      if(JSON.stringify(returned)!==JSON.stringify(meta)||typeof root.Blob!=='function'||!(data.blob.value instanceof root.Blob)||data.blob.value.size!==meta.size||data.blob.value.type!==meta.type)fail('历史原件元数据、归属、类型或大小不一致。');
+      check();const bytes=await ownBytes(data.blob.value,FILE_MAX);check();
+      check();const hash=await sha(bytes);check();if(bytes.length!==meta.size||hash!==meta.sha256)fail('历史原件字节或SHA256不一致。');
+      const entry='originals/'+meta.id+'.bin';manifest.files.push({id:meta.id,entry,bytes:bytes.length,sha256:meta.sha256});originals.push({name:entry,bytes});
+    }
+    check();const bytes=zip([{name:'manifest.json',bytes:jsonBytes(manifest,MANIFEST_MAX,true)},{name:'record.json',bytes:recordBytes},...originals]);
+    check();const packageSha256=await sha(bytes);check();
+    // Recheck the whole joint snapshot once, after all I/O and hashes, not for every original.
+    check();const current=await readCurrent();check();const joint=exact(current,['record','origin']);
+    if(checkedRecord(joint.record.value).signature!==signature||JSON.stringify(plainCopy(originCopy(joint.origin.value),{sort:true}))!==originSignature)fail('导出期间完整源记录或团队来源已改变，请刷新后重新保全。');
+    check();return {blob:new root.Blob([bytes],{type:'application/zip'}),manifest,sha256:packageSha256,summary:summary(record,metadata,packageSha256)};
+  }
+  async function inspect(input,options){
+    const fields=options===undefined?null:exact(options,Object.hasOwn(options,'assertCurrent')?['assertCurrent']:[]),check=fields&&Object.hasOwn(fields,'assertCurrent')?fields.assertCurrent.value:()=>{};
+    if(typeof check!=='function')fail('当前资格校验无效。');
+    check();const bytes=await ownBytes(input,PACKAGE_MAX);check();const members=unzip(bytes),manifest=parseJson(members.get('manifest.json'),MANIFEST_MAX,true),parsed=parseJson(members.get('record.json'),RECORD_MAX),{record,bytes:recordBytes}=checkedRecord(parsed),metadata=history(record);
+    if(![VERSION,2].includes(manifest.schemaVersion))fail('保全包版本不受支持。');
+    const team=manifest.schemaVersion===2,policy=team?TEAM_POLICY:POLICY;
+    exact(manifest,['format','schemaVersion','packageId','createdAt','sourceNamespace','projectId','record','files','policy',...(team?['origin']:[])]);exact(manifest.record,['entry','schema','revision','generationId','bytes','sha256']);exact(manifest.policy,Object.keys(POLICY));
+    if(manifest.format!==FORMAT||!UUID.test(manifest.packageId)||manifest.sourceNamespace!==namespace(record)||manifest.projectId!==record.project.quoteId||Object.keys(policy).some(key=>manifest.policy[key]!==policy[key]))fail('格式、项目、namespace或范围政策不匹配。');iso(manifest.createdAt);
+    const reference=manifest.record;check();const recordHash=await sha(recordBytes);check();
+    if(reference.entry!=='record.json'||reference.schema!==record.schema||reference.revision!==record.revision||reference.generationId!==(record.schema===2?record.generationId:null)||reference.bytes!==recordBytes.length||!HASH.test(reference.sha256)||recordHash!==reference.sha256||!Array.isArray(manifest.files)||manifest.files.length!==metadata.length||members.size!==metadata.length+2)fail('记录身份、哈希或原件数量不一致。');
+    if(team){const origin=originCopy(manifest.origin);check();await checkOrigin(origin,record,recordBytes,metadata,recordHash,check);check();}
     const files=[];
     for(let i=0;i<metadata.length;i++){
       const meta=metadata[i],item=manifest.files[i];exact(item,['id','entry','bytes','sha256']);
       const entry='originals/'+meta.id+'.bin',original=members.get(entry);
-      if(item.id!==meta.id||item.entry!==entry||item.bytes!==meta.size||item.sha256!==meta.sha256||!original||original.length!==meta.size||await sha(original)!==meta.sha256)fail('历史原件缺失、额外或元数据/SHA256不一致。');
+      if(item.id!==meta.id||item.entry!==entry||item.bytes!==meta.size||item.sha256!==meta.sha256||!original||original.length!==meta.size)fail('历史原件缺失、额外或元数据/SHA256不一致。');
+      check();const hash=await sha(original);check();if(hash!==meta.sha256)fail('历史原件缺失、额外或元数据/SHA256不一致。');
       files.push({metadata:plainCopy(meta),blob:new root.Blob([original],{type:meta.type})});
     }
-    const packageSha256=await sha(bytes);return {manifest,record,files,sha256:packageSha256,summary:summary(record,metadata,packageSha256)};
+    check();const packageSha256=await sha(bytes);check();return {manifest,record,files,sha256:packageSha256,summary:summary(record,metadata,packageSha256)};
   }
-  return Object.freeze({create,inspect,filesFor});
+  return Object.freeze({create,createTeam,inspect,filesFor});
 });

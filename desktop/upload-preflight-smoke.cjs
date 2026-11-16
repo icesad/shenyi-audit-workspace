@@ -145,8 +145,8 @@ require(${JSON.stringify(path.join(__dirname,'main.cjs'))});
   await photograph(intern,'intern-original-preserved.png');
   stage='runtime-invariants';const invariants=[];
   for(const actor of actors){
-   const apiKeys=await actor.page.evaluate(()=>Object.keys(window.shenyiTeam));assert.equal(apiKeys.length,114);assert.equal(new Set(apiKeys).size,114);assert.ok(apiKeys.includes('getTaskSubmissionAccess'));
-   const ipcChannels=await actor.app.evaluate(()=>globalThis.__uploadEvidenceChannels.slice());assert.equal(ipcChannels.length,114);assert.equal(new Set(ipcChannels).size,114);
+   const apiKeys=await actor.page.evaluate(()=>Object.keys(window.shenyiTeam));assert.equal(apiKeys.length,116);assert.equal(new Set(apiKeys).size,116);assert.ok(apiKeys.includes('getTaskSubmissionAccess'));
+   const ipcChannels=await actor.app.evaluate(()=>globalThis.__uploadEvidenceChannels.slice());assert.equal(ipcChannels.length,116);assert.equal(new Set(ipcChannels).size,116);
    assert.equal(await actor.page.locator('form').count(),21);const passwords=await actor.page.locator('input[type=password]').evaluateAll(fields=>fields.map(field=>field.value));assert.equal(passwords.length,26);assert.ok(passwords.every(value=>value===''));
    const session=(await actor.page.evaluate(()=>window.shenyiTeam.getSession())).value;assert.equal('token' in session,false);assert.equal(await actor.page.evaluate(()=>typeof require),'undefined');assert.equal(await actor.page.evaluate(()=>typeof process),'undefined');
    assert.equal(await actor.page.evaluate(()=>JSON.stringify({local:{...localStorage},session:{...sessionStorage}})),'{"local":{},"session":{}}');

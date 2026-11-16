@@ -9,7 +9,8 @@ const parserWindow=new JSDOM('').window;
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 async function inspectMaterialPackage(input,{assertCurrent=()=>{}}={}){
  if(typeof assertCurrent!=='function')throw Error('Material context guard is required');
- assertCurrent();const result=await Preservation.inspect(input);assertCurrent();
+ assertCurrent();const result=await Preservation.inspect(input,{assertCurrent});assertCurrent();
+ if(result.manifest.format!=='shenyi-material-preservation'||result.manifest.schemaVersion!==1||result.manifest.policy.teamImported!==false)throw Error('团队迁入目前仅支持本机v1资料保全包；团队v2保全包仅供显式本机恢复。');
  if(result.summary.sourceNamespace!=='hengdu.audit.materials.v1'||result.record.project.quoteId===Checklist.TRIAL_ID)throw Error('独立试用包不能迁入正式团队项目。');
  for(const file of result.files){
   assertCurrent();const meta=file.metadata,body=file.blob;

@@ -11,6 +11,7 @@ const {createMaterialMaintenanceManager}=require('./material-maintenance.cjs');
 const {createTaskSubmissionPreviewManager}=require('./task-submission-preview.cjs');
 const {createCollectionWorkspaceManager}=require('./collection-workspace.cjs');
 const {createWorkspaceFormalizationManager}=require('./workspace-formalization.cjs');
+const {createMaterialPreservationExporter}=require('./material-preservation-export.cjs');
 const APP_URL = 'shenyi://app/index.html';
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 function input(value, keys) {
@@ -44,13 +45,15 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   let submissionPreview;
   let workspaceCreation;
   let workspaceFormalization;
+  let materialPreservationExport;
+  const preservations=()=>materialPreservationExport??=createMaterialPreservationExporter({client,dialog,window});
   const formalizations=()=>workspaceFormalization??=createWorkspaceFormalizationManager({client,dialog,window});
   const workspaces=()=>workspaceCreation??=createCollectionWorkspaceManager({client});
   const previews=()=>materialPreview??=(createMaterialPreviewManager({client,openWindow:hooks=>{submissionPreview?.closeAll();return createMaterialPreviewWindow({parent:window,...hooks});}}));
   const submissionPreviews=()=>submissionPreview??=(createTaskSubmissionPreviewManager({client,openWindow:hooks=>{materialPreview?.closeAll();return createMaterialPreviewWindow({parent:window,...hooks});}}));
   const maintenance=()=>materialMaintenance??=(createMaterialMaintenanceManager({client,dialog,window}));
   const closeMaterialPreview=()=>{materialPreview?.closeAll();submissionPreview?.closeAll();materialMaintenance?.closeAll();};
-  const clearRendererResources=()=>{closeMaterialPreview();workspaceFormalization?.clearSource();};
+  const clearRendererResources=()=>{materialPreservationExport?.closeAll();closeMaterialPreview();workspaceFormalization?.clearSource();};
   const parentContents=window.webContents;
   const parentNavigation=(_event,_url,_inPlace,isMainFrame)=>{if(isMainFrame!==false)clearRendererResources();};
   parentContents.on?.('did-start-navigation',parentNavigation);
@@ -118,6 +121,8 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('project-material-attachment-discard',arg=>{const value=input(arg,['requestId']);if(typeof value.requestId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value.requestId))throw Error('原件选择标识无效。');return materialMaintenance?materialMaintenance.discardProjectMaterialAttachment(value):{discarded:false};});
   handle('project-material-attachment-commit',arg=>maintenance().commitProjectMaterialAttachment(input(arg,['requestId','teamId','projectId','projectRevision','materialRevision','recordSha256','nodeId','generationId','sha256','confirmed'])));
   handle('project-material-attachment-remove',arg=>maintenance().removeProjectMaterialAttachment(input(arg,['requestId','teamId','projectId','projectRevision','materialRevision','recordSha256','nodeId','generationId','fileId','reason','confirmed'])));
+  handle('project-material-preservation-export',arg=>preservations().exportProjectMaterialPreservation(input(arg,['requestId','teamId','projectId','projectRevision','materialRevision','recordSha256','confirmed'])));
+  handle('project-material-preservation-export-cancel',arg=>{const value=input(arg,['requestId']);if(Object.keys(value).length!==1||typeof value.requestId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value.requestId))throw Error('资料保全导出编号无效。');return materialPreservationExport?materialPreservationExport.cancelProjectMaterialPreservationExport(value):{canceled:false};});
   handle('project-material-change',arg=>projectMaterials.changeProjectMaterials(input(arg,['teamId','projectId','requestId','projectRevision','materialRevision','recordSha256','action','currentPassword','confirmed'])));
   handle('projects',arg=>client.listProjects(input(arg,['teamId','q','after','limit'])));
   handle('project',arg=>client.getProject(input(arg,['teamId','projectId'])));
@@ -238,6 +243,6 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('workspace-formalization-confirm',arg=>formalizations().confirmWorkspaceFormalization(input(arg,['handle','sourceSha256','teamId','projectId','projectRevision','currentPassword','businessConfirmed','confirmed'])));
   handle('workspace-formalization-receipt',arg=>client.getWorkspaceFormalizationReceipt(input(arg,['teamId','projectId','requestId'])));
   handle('workspace-formalization-source-discard',arg=>formalizations().discardWorkspaceFormalizationSource(input(arg,['handle'])));
-  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',clearRendererResources);materialPreview?.dispose();submissionPreview?.dispose();materialMaintenance?.dispose();workspaceCreation?.dispose();workspaceFormalization?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
+  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',clearRendererResources);materialPreview?.dispose();submissionPreview?.dispose();materialMaintenance?.dispose();workspaceCreation?.dispose();workspaceFormalization?.dispose();materialPreservationExport?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
 }
 module.exports={APP_URL,registerDesktopBridge,readChosenFile,safeDownloadName};

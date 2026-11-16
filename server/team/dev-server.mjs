@@ -13,19 +13,28 @@ export async function startTeamServer({db,port=8774,now=Date.now,identityProvide
   if (!db?.prepare || !Number.isInteger(port) || port<0 || port>65535) throw new Error('Invalid local server options');
   let origin;
   const server = http.createServer(async (incoming,outgoing) => {
-    let response;
+    const controller=new AbortController(),abort=()=>controller.abort(),closed=()=>{if(!outgoing.writableEnded)abort();};
+    incoming.once('aborted',abort);outgoing.once('close',closed);
+    if(incoming.aborted||outgoing.destroyed)abort();
     try {
-      if (incoming.headers.host !== new URL(origin).host || !incoming.url.startsWith('/') || incoming.url.startsWith('//')) response=json({error:{code:'HOST_DENIED',message:'请求地址无效。'}},403);
-      else if (incoming.url==='/health' && incoming.method==='GET') response=json({status:'ok',mode:'synthetic-team-demo'});
-      else {
-        const options={method:incoming.method,headers:incoming.headers};
-        if (!['GET','HEAD'].includes(incoming.method)) { options.body=Readable.toWeb(incoming);options.duplex='half'; }
-        response=await handleTeamApplicationRequest(new Request(new URL(incoming.url,origin),options),{db,now,identityProviders});
-      }
-    } catch { response=json({error:{code:'SERVICE_UNAVAILABLE',message:'团队服务暂不可用。'}},503); }
-    outgoing.writeHead(response.status,Object.fromEntries(response.headers));
-    if (incoming.method==='HEAD') outgoing.end();
-    else outgoing.end(Buffer.from(await response.arrayBuffer()));
+      let response;
+      try {
+        if (incoming.headers.host !== new URL(origin).host || !incoming.url.startsWith('/') || incoming.url.startsWith('//')) response=json({error:{code:'HOST_DENIED',message:'请求地址无效。'}},403);
+        else if (incoming.url==='/health' && incoming.method==='GET') response=json({status:'ok',mode:'synthetic-team-demo'});
+        else {
+          const options={method:incoming.method,headers:incoming.headers,signal:controller.signal};
+          if (!['GET','HEAD'].includes(incoming.method)) { options.body=Readable.toWeb(incoming);options.duplex='half'; }
+          response=await handleTeamApplicationRequest(new Request(new URL(incoming.url,origin),options),{db,now,identityProviders});
+        }
+      } catch { response=json({error:{code:'SERVICE_UNAVAILABLE',message:'团队服务暂不可用。'}},503); }
+      if(controller.signal.aborted||outgoing.destroyed)return;
+      const bytes=incoming.method==='HEAD'?null:Buffer.from(await response.arrayBuffer());
+      if(controller.signal.aborted||outgoing.destroyed)return;
+      outgoing.writeHead(response.status,Object.fromEntries(response.headers));
+      outgoing.end(bytes);
+    } finally {
+      incoming.off('aborted',abort);outgoing.off('close',closed);
+    }
   });
   server.requestTimeout=15000;server.headersTimeout=5000;server.keepAliveTimeout=5000;server.maxRequestsPerSocket=100;
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',()=>{server.off('error',reject);resolve();});});

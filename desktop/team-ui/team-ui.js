@@ -719,6 +719,8 @@
     for(const button of panel.querySelectorAll('button'))button.disabled=true;
     for(const id of ['project-materials-tree','project-materials-history','project-materials-source-summary','project-materials-record-summary','project-materials-receipt-summary','project-materials-members','project-materials-message','project-materials-attachment-summary','project-materials-maintenance-note'])byId(id)?.replaceChildren();
     for(const id of ['project-materials-record-section','project-materials-access-form','project-materials-import-form','project-materials-action-form','project-materials-maintenance-form'])if(byId(id))byId(id).hidden=true;
+    if(byId('project-materials-export-confirmed'))byId('project-materials-export-confirmed').checked=false;
+    for(const id of ['project-materials-export-summary','project-materials-export-message'])if(byId(id))byId(id).textContent='';
     if(byId('project-materials-record-title'))byId('project-materials-record-title').textContent='项目资料清单';
     if(byId('project-materials-item-target'))byId('project-materials-item-target').textContent='尚未选择资料项。';
     if(byId('project-materials-target'))byId('project-materials-target').textContent='尚未选择授权对象。';

@@ -89,6 +89,8 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   discardProjectMaterialAttachment:source=>invoke('project-material-attachment-discard',source),
   commitProjectMaterialAttachment:proof=>invoke('project-material-attachment-commit',proof),
   removeProjectMaterialAttachment:proof=>invoke('project-material-attachment-remove',proof),
+  exportProjectMaterialPreservation:proof=>invoke('project-material-preservation-export',proof),
+  cancelProjectMaterialPreservationExport:target=>invoke('project-material-preservation-export-cancel',target),
   changeProjectMaterials:proof=>invoke('project-material-change',proof),
   listProjects:query=>invoke('projects',query),
   getProject:project=>invoke('project',project),

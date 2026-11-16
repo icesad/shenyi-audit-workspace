@@ -17,6 +17,7 @@ import {handleProjectMigrationRequest} from './migration-api.mjs';
 import {handleCollectionWorkspaceCreationRequest} from './workspace-creation-api.mjs';
 import {handleWorkspaceFormalizationRequest} from './workspace-formalization-api.mjs';
 import {handleTeamMaterialsRequest} from './materials-api.mjs';
+import {handleMaterialPreservationRequest} from './materials-preservation-api.mjs';
 import {handleAdministratorBusinessRoleRequest} from './administrator-business-role-api.mjs';
 import {handleDeviceIdentityRequest} from './device-api.mjs';
 import {handleDeviceReplacementRequest} from './device-replacement-api.mjs';
@@ -62,6 +63,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       || await handleProjectMigrationRequest(request,options)
       || await handleCollectionWorkspaceCreationRequest(request,options)
       || await handleWorkspaceFormalizationRequest(request,options)
+      || await handleMaterialPreservationRequest(request,options)
       || await handleTeamMaterialsRequest(request,options)
       || await handleTaskOriginalsExportRequest(request,options)
       || await handleProjectAccessRequest(request,options)
