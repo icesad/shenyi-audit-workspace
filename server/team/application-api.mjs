@@ -72,6 +72,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       || await handleCollectionWriteRequest(request,options)
       || await handleTeamCollectionRequest(request,options);
   } catch (error) {
+    if(error?.message?.includes('MATERIAL_REQUEST_USED'))return json({error:{code:'MATERIALS_CONFLICT',message:'此操作标识已使用，请只读查询原回执。'}},409);
     if(error?.message?.includes('MATERIAL_REVISION_MAX'))return json({error:{code:'MATERIALS_CONFLICT',message:'资料授权版本已达上限，未更改业务资料。'}},409);
     if (error instanceof ApiError) return json({error:{code:error.code,message:error.message}},error.status,error.status===429?{'Retry-After':'60'}:{});
     return json({error:{code:'SERVICE_UNAVAILABLE',message:'团队服务暂不可用。'}},503);

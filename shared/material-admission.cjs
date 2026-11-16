@@ -20,4 +20,8 @@ async function inspectMaterialPackage(input,{assertCurrent=()=>{}}={}){
  if(recordSha256!==result.manifest.record.sha256||Buffer.byteLength(recordJson,'utf8')!==result.manifest.record.bytes)throw Error('原始清单字节不一致，未迁入。');
  assertCurrent();return {...result,recordJson,recordSha256};
 }
-module.exports={inspectMaterialPackage};
+async function prepareMaterialFile(input,{assertCurrent=()=>{}}={}){
+ if(typeof assertCurrent!=='function')throw Error('Material context guard is required');
+ assertCurrent();const result=await Checklist.prepareFile(input,{DOMParser:parserWindow.DOMParser});assertCurrent();return result;
+}
+module.exports={inspectMaterialPackage,prepareMaterialFile};

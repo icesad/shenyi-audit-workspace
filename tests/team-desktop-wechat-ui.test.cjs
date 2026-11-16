@@ -38,7 +38,7 @@ test('browser authorization completes through polling without exposing or persis
   assert.equal(count(f,'pollWechatLogin'),0);f.poll();await until(()=>!f.id('workspace-view').hidden&&!f.id('logout').disabled);
   assert.equal(f.id('account-name').textContent,SESSION.account.displayName);assert.equal(f.id('role-label').textContent,'实习生');assert.equal(f.id('wechat-progress').hidden,true);assert.equal(f.timers.size,0);
   assert.deepEqual(f.calls.filter(call=>['startWechatLogin','pollWechatLogin'].includes(call.name)).map(call=>call.arg),[undefined,undefined]);
-  assert.deepEqual(f.writes,[]);assert.equal(f.d.querySelector('img[alt*="二维码"]'),null);assert.equal(f.d.querySelectorAll('form').length,18);
+  assert.deepEqual(f.writes,[]);assert.equal(f.d.querySelector('img[alt*="二维码"]'),null);assert.equal(f.d.querySelectorAll('form').length,19);
   for(const input of f.d.querySelectorAll('input[type=password]'))assert.equal(input.value,'');
 });
 

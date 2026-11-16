@@ -7,6 +7,7 @@ const {createProjectMigrationManager}=require('./project-migration.cjs');
 const {createProjectMaterialsManager}=require('./project-materials.cjs');
 const {createMaterialPreviewManager}=require('./material-preview.cjs');
 const {createMaterialPreviewWindow}=require('./material-preview-window.cjs');
+const {createMaterialMaintenanceManager}=require('./material-maintenance.cjs');
 const APP_URL = 'shenyi://app/index.html';
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 function input(value, keys) {
@@ -36,8 +37,10 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   const projectMigration=createProjectMigrationManager({client,dialog,window});
   const projectMaterials=createProjectMaterialsManager({client,dialog,window});
   let materialPreview;
+  let materialMaintenance;
   const previews=()=>materialPreview??=(createMaterialPreviewManager({client,openWindow:hooks=>createMaterialPreviewWindow({parent:window,...hooks})}));
-  const closeMaterialPreview=()=>materialPreview?.closeAll();
+  const maintenance=()=>materialMaintenance??=(createMaterialMaintenanceManager({client,dialog,window}));
+  const closeMaterialPreview=()=>{materialPreview?.closeAll();materialMaintenance?.closeAll();};
   const parentContents=window.webContents;
   const parentNavigation=(_event,_url,_inPlace,isMainFrame)=>{if(isMainFrame!==false)closeMaterialPreview();};
   parentContents.on?.('did-start-navigation',parentNavigation);
@@ -92,7 +95,7 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('project-access',arg=>{noArgs(arg);return client.getProjectAccess();});
   handle('project-material-access',arg=>client.getProjectMaterialAccess(input(arg,['teamId','projectId'])));
   handle('project-material-members',arg=>client.listProjectMaterialMembers(input(arg,['teamId','projectId','q','after','limit'])));
-  handle('project-material-access-change',arg=>client.changeProjectMaterialAccess(input(arg,['teamId','projectId','projectRevision','userId','memberRevision','grantRevision','read','import','review','close','currentPassword','confirmed'])));
+  handle('project-material-access-change',arg=>client.changeProjectMaterialAccess(input(arg,['teamId','projectId','projectRevision','userId','memberRevision','grantRevision','maintenanceRevision','read','import','review','close','maintain','currentPassword','confirmed'])));
   handle('project-material-import-open',arg=>projectMaterials.chooseProjectMaterialImport(input(arg,['teamId','projectId','projectRevision'])));
   handle('project-material-import-discard',arg=>projectMaterials.discardProjectMaterialImport(input(arg,['handle'])));
   handle('project-material-import',arg=>projectMaterials.importProjectMaterials(input(arg,['handle','teamId','projectId','projectRevision','sourceSha256','currentPassword','confirmed'])));
@@ -101,6 +104,10 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('project-material-download',arg=>projectMaterials.downloadProjectMaterial(input(arg,['teamId','projectId','fileId'])));
   handle('project-material-preview',arg=>previews().previewProjectMaterial(input(arg,['requestId','teamId','projectId','fileId'])));
   handle('project-material-preview-close',arg=>{const value=input(arg,['previewId']);if(typeof value.previewId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value.previewId))throw Error('预览标识无效。');return materialPreview?materialPreview.closeProjectMaterialPreview(value):{closed:false};});
+  handle('project-material-attachment-open',arg=>maintenance().chooseProjectMaterialAttachment(input(arg,['requestId','teamId','projectId','projectRevision','materialRevision','recordSha256','nodeId','generationId'])));
+  handle('project-material-attachment-discard',arg=>{const value=input(arg,['requestId']);if(typeof value.requestId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value.requestId))throw Error('原件选择标识无效。');return materialMaintenance?materialMaintenance.discardProjectMaterialAttachment(value):{discarded:false};});
+  handle('project-material-attachment-commit',arg=>maintenance().commitProjectMaterialAttachment(input(arg,['requestId','teamId','projectId','projectRevision','materialRevision','recordSha256','nodeId','generationId','sha256','confirmed'])));
+  handle('project-material-attachment-remove',arg=>maintenance().removeProjectMaterialAttachment(input(arg,['requestId','teamId','projectId','projectRevision','materialRevision','recordSha256','nodeId','generationId','fileId','reason','confirmed'])));
   handle('project-material-change',arg=>projectMaterials.changeProjectMaterials(input(arg,['teamId','projectId','requestId','projectRevision','materialRevision','recordSha256','action','currentPassword','confirmed'])));
   handle('projects',arg=>client.listProjects(input(arg,['teamId','q','after','limit'])));
   handle('project',arg=>client.getProject(input(arg,['teamId','projectId'])));
@@ -211,6 +218,6 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
     await fs.writeFile(selected.filePath,file.bytes);
     return {saved:true,filename:path.basename(selected.filePath),byteLength:file.bytes.length};
   });
-  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',closeMaterialPreview);materialPreview?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
+  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',closeMaterialPreview);materialPreview?.dispose();materialMaintenance?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
 }
 module.exports={APP_URL,registerDesktopBridge,readChosenFile,safeDownloadName};

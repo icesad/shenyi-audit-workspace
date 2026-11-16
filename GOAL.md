@@ -20,6 +20,7 @@
 - [M4E单任务所选原件导出](docs/TASK_ORIGINALS_EXPORT.md)已通过Windows本地候选验收及2766项完整可移植回归，精确规则见[合同](docs/TASK_ORIGINALS_EXPORT_CONTRACT.md)。正常团队桌面两个入口分别守本人/项目核对下载权、最后fresh批量复核并原子发布，不自动导出全部历史、形成专业签审或新增项目归属。
 - [M4F旧正式项目归属审核](docs/LEGACY_PROJECT_REGISTRATION.md)已本地完成：产品负责人审核团队与首位负责人，旧姓名不当账号授权；同UUID治理登记与客户资料迁入分开。2958项完整回归及Windows原生独立验收通过。
 - 上一M4G按[资料清单模块合同](docs/TEAM_MATERIALS_MODULE_CONTRACT.md)实现正常桌面独立四权限、同UUID首次导入、完整树／历史／原件及原规则核对／关门／重开；[使用说明](docs/TEAM_MATERIALS_MODULE.md)记录操作路径和验收边界。用户已批准负责人密码逐项self或授本项目经理／合伙人，关门权与核对权分开。专题、最终Windows原生、共享预览保全、完整3092项回归及旧19组原生兼容均已独审通过；本片Windows本地候选已验，M4与整个Goal仍active。M4H按[原件安全预览合同](docs/TEAM_MATERIAL_PREVIEW_CONTRACT.md)接独立受限阅读窗口及[使用路径](docs/TEAM_MATERIAL_PREVIEW.md)，复用原reader和材料read，不扩大专业或数据授权；严格Windows原生、独立安全、旧20组兼容、共享保全及完整3184项回归已通过；本片Windows本地候选已验，M4与整个Goal保持active。
+- 用户已确认资料维护权由项目负责人验证密码后，单独授予自己或本项目合格经理／合伙人；[M4I执行合同](docs/TEAM_MATERIAL_MAINTENANCE_CONTRACT.md)冻结新增／移除关联、原件历史保留和沿原规则重置核对。M4H已本地提交12b9213，本片M4I已通过3307项完整回归、Windows原生与旧21兼容及共享保全独审，Windows本地候选已验，M4与整个Goal继续进行，不把其他四权或owner身份当维护权。
 - [M3 Windows本地阶段门](docs/M3_LOCAL_ACCEPTANCE.md)独立通过，可以进入隔离M4；M2/M3正式身份、远程HTTPS/配置、最高owner恢复、Mac/真实跨电脑和生产仍未完成。
 - 先做身份与团队数据隔离、四角色权限，再做设备/商业化；业务稳定后整体升级UI。
 - 当前无域名和阿里云服务器，主体/省份及商业细则仍需确认；研发可先用合成数据推进，真实购买/申请/签约/客户资料迁移/生产发布另具相应授权。

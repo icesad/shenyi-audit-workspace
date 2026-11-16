@@ -150,6 +150,12 @@ node desktop/administrator-business-role-smoke.cjs
 
 ## M4H原件只读预览
 
-正常资料清单和全部历史入口的“软件内预览”沿用材料read，在独立受限窗口复用本地读取器；窗口无业务preload／IPC、编辑或下载入口，保存仍在工作台重新核权。当前100窄RPC、18表单、24处密码输入；前述各阶段数字属于其历史证据。操作与格式精度见 [使用说明](../docs/TEAM_MATERIAL_PREVIEW.md)，安全边界见 [执行合同](../docs/TEAM_MATERIAL_PREVIEW_CONTRACT.md)。
+正常资料清单和全部历史入口的“软件内预览”沿用材料read，在独立受限窗口复用本地读取器；窗口无业务preload／IPC、编辑或下载入口，保存仍在工作台重新核权。该阶段100窄RPC、18表单、24处密码输入；前述各阶段数字属于其历史证据。操作与格式精度见 [使用说明](../docs/TEAM_MATERIAL_PREVIEW.md)，安全边界见 [执行合同](../docs/TEAM_MATERIAL_PREVIEW_CONTRACT.md)。
 
 开发验收使用Node24.15以上24.x及已安装Chrome/Electron；新专题、真实关闭回归与strict Windows原生均只用本轮合成数据和隔离目录，最终结果以根目录进度为准。当前仍在最终验收，不把模拟权限、窗口出现或parser ready当作已完整渲染，更不能代写Mac或生产通过。
+
+## M4I原件维护
+
+[使用说明](../docs/TEAM_MATERIAL_MAINTENANCE.md)与[执行合同](../docs/TEAM_MATERIAL_MAINTENANCE_CONTRACT.md)说明独立维护权、正常新增原件／移除关联、核对状态重置及历史保留。负责人输入当前密码明确授予自己或本项目合格经理／合伙人，维护依赖read且不推导review／close；只有当前开放schema2叶可操作，不覆盖旧原件或自动重开。
+
+本片当前104个窄RPC、19个表单、24处密码输入；既有阶段数字保留为历史证据。专题与首轮严格Windows原生已通过，完整3307项回归及旧21组兼容也已通过并独立复核；实际状态以根目录进度为准。原生选择／保存窗口为合成来源测试拦截，Mac、真人系统选择器、客户资料及生产验收仍未完成。
