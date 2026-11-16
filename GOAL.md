@@ -4,6 +4,14 @@
 
 ## 当前执行目标
 
+当前接续为立项来源查阅／导出分权的文档确认：`codex/workspace-source-access`，base `6d5eb15c3abc6f84afa833b74c3e3e4d28ae764e`（root显式参数已与执行时HEAD核对）。M3E是最近已验交付，以下保留其全部历史证据；本次只记录政策，不宣称新权限已实现。
+
+用户已确认立项来源（含客户、金额等）的查阅与导出分开明确授权。项目负责人验证密码后，分别明确授予自己或本项目有效经理／合伙人；资料清单权限不涵盖本项，不从职级、负责人身份、技术管理员身份或另一项权利推导。此决定不等于审计报告签发。决策见[立项来源授权决定](docs/WORKSPACE_SOURCE_ACCESS_DECISION.md)。
+
+下一单项先盘点真实代码和受保护出口，写有界实现合同后再实施；不重复询问本次已确认的授权决定。不预设导出依赖关系、文件范围、API或收费。当前专业模块保持原关闭状态，不因本决定开放能力；既有资料权限、W/Q身份、历史原件与M3E源码不作改动。M4及完整Goal仍active；最高审核账号恢复、Mac／真人picker／真实异机／真实供应商／生产仍是独立后续关卡。
+
+### 最近已验交付：M3E本人电脑信息与记录
+
 M3E本人设备自查入口已实现并通过Windows本地候选验收：`codex/my-bound-device`，base `93fb7d1`。正常工作台可查看本人当前绑定电脑、服务端最近在线核验及分页绑定／换机记录；零业务成员也只查本人。117方法／21表单／26秘密输入，旧同步status和换机审批保持。usage仅记录成功设备认证，与nonce／新lease同事务，实际71表223定义；旧70表typed资料／217定义保持，仅新增6对象。合同见[执行合同](docs/MY_BOUND_DEVICE_CONTRACT.md)。
 
 原生actual-main／TLS／OS vault验收8场景、6PNG、7阶段库＋runtime、3vault通过；78B输入、库原件和保存SHA eccb8cd2810adaffe36e3871c47a8a427dacb1feff9f93e7fe9a8f827adf362a一致，1107源在原生当时before／after raw同。真实申请、密码审核、明确激活与旧会话退出已验；32分页事件是人工夹具，旧401为网关负例，不冒充真实旧服务响应。四真RO保全部旧typed行／DDL，auth零豁免，新usage空，9／16账号及UUID不变；两原cmd当次实际窗口与公开设备协议可达，正常关闭无force并记录review窗口保留，不把当时观察写成持续存活。原生／共享独审见 `independent-final/native-review.json`、`independent-final/shared-after-review.json`。
