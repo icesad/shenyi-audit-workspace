@@ -147,3 +147,9 @@ node desktop/administrator-business-role-smoke.cjs
 `D:/codex-temp/shenyi-administrator-business-20261115/final-native-source-binding.json`及所在目录before/after清单绑定70份客户端/桥接、设备、全部服务端MJS/SQL及shared proof依赖的SHA-256，运行前后0变化；脚本SHA-256为`917D3764B709B4A4DD5500876708425388D620642CB0B3E2038676CABD5C4F40`。保存/打开框仅拦截本次明确合成路径，不证明人工OS对话框、Mac、真实身份或跨物理电脑/生产部署。项目仅可信合成登记，正常创建仍待决定且`POST /api/teams/:teamId/projects`保持404。
 
 官方来源：[Electron安全](https://www.electronjs.org/docs/latest/tutorial/security)、[protocol](https://www.electronjs.org/docs/latest/api/protocol)、[进程模型](https://www.electronjs.org/docs/latest/tutorial/process-model)、[发布记录](https://releases.electronjs.org/release?channel=stable)，2026-11-15核验。
+
+## M4H原件只读预览
+
+正常资料清单和全部历史入口的“软件内预览”沿用材料read，在独立受限窗口复用本地读取器；窗口无业务preload／IPC、编辑或下载入口，保存仍在工作台重新核权。当前100窄RPC、18表单、24处密码输入；前述各阶段数字属于其历史证据。操作与格式精度见 [使用说明](../docs/TEAM_MATERIAL_PREVIEW.md)，安全边界见 [执行合同](../docs/TEAM_MATERIAL_PREVIEW_CONTRACT.md)。
+
+开发验收使用Node24.15以上24.x及已安装Chrome/Electron；新专题、真实关闭回归与strict Windows原生均只用本轮合成数据和隔离目录，最终结果以根目录进度为准。当前仍在最终验收，不把模拟权限、窗口出现或parser ready当作已完整渲染，更不能代写Mac或生产通过。

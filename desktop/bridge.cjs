@@ -5,6 +5,8 @@ const {MAX_FILE_BYTES,ClientError} = require('./team-client.cjs');
 const {createTaskOriginalsExporter}=require('./task-originals-export.cjs');
 const {createProjectMigrationManager}=require('./project-migration.cjs');
 const {createProjectMaterialsManager}=require('./project-materials.cjs');
+const {createMaterialPreviewManager}=require('./material-preview.cjs');
+const {createMaterialPreviewWindow}=require('./material-preview-window.cjs');
 const APP_URL = 'shenyi://app/index.html';
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 function input(value, keys) {
@@ -33,6 +35,13 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   const originalsExporter=createTaskOriginalsExporter({client,dialog,window});
   const projectMigration=createProjectMigrationManager({client,dialog,window});
   const projectMaterials=createProjectMaterialsManager({client,dialog,window});
+  let materialPreview;
+  const previews=()=>materialPreview??=(createMaterialPreviewManager({client,openWindow:hooks=>createMaterialPreviewWindow({parent:window,...hooks})}));
+  const closeMaterialPreview=()=>materialPreview?.closeAll();
+  const parentContents=window.webContents;
+  const parentNavigation=(_event,_url,_inPlace,isMainFrame)=>{if(isMainFrame!==false)closeMaterialPreview();};
+  parentContents.on?.('did-start-navigation',parentNavigation);
+  parentContents.on?.('render-process-gone',closeMaterialPreview);
   const safeError=error=>({ok:false,error:{code:error instanceof ClientError?error.code:'OPERATION_FAILED',message:error instanceof ClientError?error.message:'操作未完成，请刷新后重试。'}});
   function handle(name, action) {
     const channel='shenyi:'+name;channels.push(channel);
@@ -90,6 +99,8 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('project-material-receipt',arg=>client.getProjectMaterialReceipt(input(arg,['teamId','projectId','requestId'])));
   handle('project-material-record',async arg=>{const target=input(arg,['teamId','projectId']),guard=client.guardSession();guard();const record=await client.getProjectMaterials(target);guard();return record;});
   handle('project-material-download',arg=>projectMaterials.downloadProjectMaterial(input(arg,['teamId','projectId','fileId'])));
+  handle('project-material-preview',arg=>previews().previewProjectMaterial(input(arg,['requestId','teamId','projectId','fileId'])));
+  handle('project-material-preview-close',arg=>{const value=input(arg,['previewId']);if(typeof value.previewId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value.previewId))throw Error('预览标识无效。');return materialPreview?materialPreview.closeProjectMaterialPreview(value):{closed:false};});
   handle('project-material-change',arg=>projectMaterials.changeProjectMaterials(input(arg,['teamId','projectId','requestId','projectRevision','materialRevision','recordSha256','action','currentPassword','confirmed'])));
   handle('projects',arg=>client.listProjects(input(arg,['teamId','q','after','limit'])));
   handle('project',arg=>client.getProject(input(arg,['teamId','projectId'])));
@@ -200,6 +211,6 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
     await fs.writeFile(selected.filePath,file.bytes);
     return {saved:true,filename:path.basename(selected.filePath),byteLength:file.bytes.length};
   });
-  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
+  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',closeMaterialPreview);materialPreview?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
 }
 module.exports={APP_URL,registerDesktopBridge,readChosenFile,safeDownloadName};

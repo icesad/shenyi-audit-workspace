@@ -6,8 +6,9 @@ const {createTeamClient,API_BASE} = require('./team-client.cjs');
 const {registerDesktopBridge,APP_URL} = require('./bridge.cjs');
 const {createDeviceKeyVault}=require('./device-key-vault.cjs');
 const {resolveDeviceVaultDirectory}=require('./device-key-directory.cjs');
+const {PREVIEW_SCHEME}=require('./material-preview-window.cjs');
 
-protocol.registerSchemesAsPrivileged([{scheme:'shenyi',privileges:{standard:true,secure:true}}]);
+protocol.registerSchemesAsPrivileged([{scheme:'shenyi',privileges:{standard:true,secure:true}},{scheme:PREVIEW_SCHEME,privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 app.enableSandbox();
 const CONTENT_SECURITY_POLICY="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'";
 const ASSETS=Object.freeze({

@@ -83,6 +83,8 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   getProjectMaterialReceipt:query=>invoke('project-material-receipt',query),
   getProjectMaterials:target=>invoke('project-material-record',target),
   downloadProjectMaterial:file=>invoke('project-material-download',file),
+  previewProjectMaterial:file=>invoke('project-material-preview',file),
+  closeProjectMaterialPreview:preview=>invoke('project-material-preview-close',preview),
   changeProjectMaterials:proof=>invoke('project-material-change',proof),
   listProjects:query=>invoke('projects',query),
   getProject:project=>invoke('project',project),

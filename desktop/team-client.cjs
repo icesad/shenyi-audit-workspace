@@ -112,7 +112,8 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   async function revokeResponseToken(bytes){
     try{const data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));if(typeof data?.token==='string'&&/^[A-Za-z0-9_-]{43}$/.test(data.token))await detachedPost('/api/auth/logout',{},data.token);}catch{}
   }
-  async function request(route, {method = 'GET', body, authenticated = true, binary = false, unavailableMessage,temporaryBearer,discardSessionOnChange=false,messagesOverride,beforeSend,onDispatch,responseLimit} = {}) {
+  async function request(route, {method = 'GET', body, authenticated = true, binary = false, unavailableMessage,temporaryBearer,discardSessionOnChange=false,messagesOverride,beforeSend,onDispatch,responseLimit,materialPreviewHead=false} = {}) {
+    if(materialPreviewHead&&(method!=='HEAD'||!binary||!/^\/api\/teams\/[A-Za-z0-9_-]+\/projects\/[A-Za-z0-9_-]+\/materials\/files\/[A-Fa-f0-9-]+$/.test(route)))throw failure('INVALID_INPUT','预览响应范围无效。');
     if(responseLimit!==undefined&&(responseLimit!==26*1024*1024||method!=='GET'||binary||!/^\/api\/teams\/[A-Za-z0-9_-]+\/projects\/[A-Za-z0-9_-]+\/materials$/.test(route)))throw failure('INVALID_INPUT','响应范围无效。');
     if (authenticated && !token && !temporaryBearer) throw failure('SIGN_IN_REQUIRED', '请先登录。', 401);
     const at = generation, bearer = temporaryBearer||token,serialized=body===undefined?undefined:JSON.stringify(body),bytes=serialized===undefined?Buffer.alloc(0):Buffer.from(serialized,'utf8');
@@ -144,6 +145,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     let responseBytes;
     try{responseBytes=await boundedBytes(response, responseLimit??(binary ? MAX_FILE_BYTES : 1024 * 1024));}catch(cause){if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();if(!temporaryBearer||temporaryBearer===token)device?.pause();if(protectedRoute&&!['GET','HEAD'].includes(method))throw failure('SERVICE_UNAVAILABLE','已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。');throw cause instanceof ClientError?cause:failure('SERVICE_UNAVAILABLE','服务响应未读完，业务已暂停，请联网后核对结果。');}
     if (at !== generation) {if(discardSessionOnChange)await revokeResponseToken(responseBytes);throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');}signed?.assertCurrent();
+    if(materialPreviewHead)return {bytes:responseBytes,projectRevision:response.headers.get('x-project-revision'),materialRevision:response.headers.get('x-material-revision'),sha256:response.headers.get('x-content-sha256'),byteLength:response.headers.get('content-length')};
     if (binary) return {bytes:responseBytes, contentDisposition: response.headers.get('content-disposition') || ''};
     try { return JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(responseBytes)); }
     catch {if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('INVALID_RESPONSE',protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':'团队服务返回格式无效。'); }
