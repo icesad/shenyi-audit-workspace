@@ -4,6 +4,7 @@ import {canOperateTeam,restrictedBusinessIdentity} from './administration-policy
 import {safeMemberText} from './member-access-policy.mjs';
 import {deviceServerId,safeRevision} from './device-policy.mjs';
 import {ApiError} from './http-utils.mjs';
+import {hasProtectedReviewerHistory,noReviewerHistorySql} from './reviewer-policy.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 export const replacementConflict=()=>{throw new ApiError(409,'DEVICE_REPLACEMENT_CONFLICT','换机申请或授权状态已改变，请刷新核对。');};
 export function replacementTime(at,ttl=0){if(!Number.isSafeInteger(at)||at<0||!Number.isSafeInteger(at+ttl))replacementConflict();return at;}
@@ -19,8 +20,7 @@ export function replacementOwner(db,userId){
  AND owner.permission='device.replace' AND owner.status='active'`).get(userId);
  return row?{...row,revision:replacementRevision(row.revision,1)}:null;
 }
-function protectedIdentity(db,userId){return !!db.prepare(`SELECT 1 FROM team_platform_reviewers WHERE user_id=? UNION ALL SELECT 1 FROM team_recovery_reviewers WHERE user_id=?
- UNION ALL SELECT 1 FROM team_access_reviewers WHERE user_id=? UNION ALL SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=? UNION ALL SELECT 1 FROM team_administrator_business_role_reviewers WHERE user_id=? LIMIT 1`).get(userId,userId,userId,userId,userId);}
+const protectedIdentity=hasProtectedReviewerHistory;
 export function latestReplacementBinding(db,userId){return db.prepare(`SELECT *,CAST(revision AS TEXT) AS revision FROM team_device_bindings WHERE user_id=?
  ORDER BY (status='active') DESC,bound_at DESC,device_id DESC LIMIT 1`).get(userId)||null;}
 function snapshotBinding(row){return {device_id:row.device_id,user_id:row.user_id,public_key:row.public_key,key_fingerprint:row.key_fingerprint,
@@ -69,11 +69,7 @@ export function replacementReviewRows(db,actorId){
  JOIN team_credentials credential ON credential.user_id=account.user_id
  JOIN teams team ON team.team_id=request.team_id AND team.status='active'
  WHERE request.user_id<>? AND EXISTS (SELECT 1 FROM team_device_bindings WHERE user_id=account.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_platform_reviewers WHERE user_id=account.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_recovery_reviewers WHERE user_id=account.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_access_reviewers WHERE user_id=account.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=account.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_administrator_business_role_reviewers WHERE user_id=account.user_id)
+ AND ${noReviewerHistorySql('account.user_id')}
  AND ((request.target_kind='employee' AND ?=1
    AND request.team_id IN (SELECT team_id FROM team_operators WHERE user_id=? AND role='administrator' AND status='active')
    AND (SELECT COUNT(*) FROM team_memberships WHERE user_id=account.user_id)=1

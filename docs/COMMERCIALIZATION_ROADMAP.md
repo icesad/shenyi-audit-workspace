@@ -117,3 +117,5 @@ M4C[管理员兼任审核](ADMINISTRATOR_BUSINESS_ROLE.md)在项目创建政策�
 11. [Tauri资源配置](https://v2.tauri.app/reference/config/#frontenddist)、[更新插件](https://v2.tauri.app/plugin/updater/)：静态资源包装及更新验签要求。
 
 官方网页是流程依据，不是本项目的审批结果；部署地域、经营范围或终端形态变化时重新查证。
+
+2026-11-16：旧正式项目迁入的目标团队与首负责人已明确由产品负责人审核。[M4F](LEGACY_PROJECT_REGISTRATION_CONTRACT.md)先实现只读来源导出与可信归属治理登记，原UUID/固定号及来源记录保留，真实客户原件迁入仍另需授权。新项目提前采集与中标立项路径仍待答，本片不改其规则。

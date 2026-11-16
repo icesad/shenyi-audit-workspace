@@ -17,13 +17,13 @@ function deviceBootstrapRequest(method,route){
  if(method==='GET')return GET_BOOTSTRAP.has(route);if(method!=='POST')return false;if(POST_BOOTSTRAP.has(route))return true;
  const match=/^\/api\/auth\/wechat\/transactions\/([^/]+)\/(status|cancel|link|exchange)$/.exec(route);return !!match&&UUID.test(match[1]);
 }
-function createDeviceSession({identity,getAccount,adopt,clearAccount,bootstrap,protectedRequest,revoke,error,now=Date.now}){
+function createDeviceSession({identity,getAccount,adopt,clearAccount,bootstrap,protectedRequest,revoke,error,now=Date.now,onContextChange=()=>{}}){
  const required=identity!==undefined;
  let state=required?'signed_out':'diagnostic',epoch=0,work=0,device=null,local=null,lease=null,serverId=null,pending=null;
  const fail=(code,message,status=0)=>error(code,message,status);
  const changed=()=>fail('SESSION_CHANGED','账号或设备状态已改变，请重新操作。');
  function bump(){if(epoch>=Number.MAX_SAFE_INTEGER)throw changed();epoch++;}
- function transition(next,{force=false}={}){if(state!==next||force){state=next;bump();}}
+ function transition(next,{force=false}={}){if(state!==next||force){state=next;bump();onContextChange();}}
  function status(){return {required,state,epoch,device:device?structuredClone(device):null,localFingerprint:local?.fingerprint??null,expiresAt:lease?.expiresAt??null};}
  function reset(){work++;lease=null;device=null;local=null;serverId=null;transition(required?'signed_out':'diagnostic',{force:true});}
  function pause(){if(required&&['ready','paused'].includes(state)){work++;transition('paused',{force:true});}}

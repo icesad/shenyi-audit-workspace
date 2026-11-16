@@ -16,7 +16,7 @@
 - 本轮已确认：团队管理员管理普通员工四业务职级，管理员本人兼任业务职级由产品负责人审核；经理和合伙人均可新建项目，创建者管理该项目授权。[M4A普通员工职级调整](docs/BUSINESS_ROLE_MANAGEMENT.md)已通过Windows本地候选验收，不从职级自动附送项目权限；后续继续管理员兼职审核及项目创建/授权等切片。
 - [M4B项目授权、采集任务与资料核对公共基础](docs/PROJECT_ACCESS_COLLECTION.md)已通过2202项全量回归及Windows原生独立验收，精确规则见[执行合同](docs/PROJECT_ACCESS_COLLECTION_CONTRACT.md)。旧正式立项仍须最新中标报价；是否允许先建采集工作区的产品选择待答，正常项目创建入口尚未开放，不自动登记旧project owner。
 - [M4C管理员兼任业务职级审核](docs/ADMINISTRATOR_BUSINESS_ROLE.md)已通过Windows本地候选验收及2407项完整回归，独立负责人可核准/收回兼任，技术与业务资格及旧采集/项目/恢复/换机出口统一；规则见[执行合同](docs/ADMINISTRATOR_BUSINESS_ROLE_CONTRACT.md)。不从兼职职级附送项目，不等待项目创建选择而停止独立工作。
-- 当前M4D按[单项目资料保全与本机恢复合同](docs/MATERIAL_PRESERVATION_CONTRACT.md)补齐旧端清单及所有留痕引用原件的可靠来源包，并恢复到同UUID空本机资料区；[使用与证据说明](docs/MATERIAL_PRESERVATION.md)区分保全范围、旧上传内容准入和团队接入边界。既有项目迁入的团队与首owner审核分工已向用户询问，未答前不启用团队登记/迁入；不把本机恢复当整个软件或团队迁移完成。
+- M4D已按[单项目资料保全与本机恢复合同](docs/MATERIAL_PRESERVATION_CONTRACT.md)补齐旧端清单及所有留痕引用原件的可靠来源包，并恢复到同UUID空本机资料区；[使用与证据说明](docs/MATERIAL_PRESERVATION.md)区分保全范围、旧上传内容准入和团队接入边界。2026-11-16用户已确认由产品负责人审核目标团队与首位负责人，按M4F显式来源/审批合同接治理登记；仍不把本机恢复或治理登记当整个软件／客户原件迁移完成。
 - [M4E单任务所选原件导出](docs/TASK_ORIGINALS_EXPORT.md)已通过Windows本地候选验收及2766项完整可移植回归，精确规则见[合同](docs/TASK_ORIGINALS_EXPORT_CONTRACT.md)。正常团队桌面两个入口分别守本人/项目核对下载权、最后fresh批量复核并原子发布，不自动导出全部历史、形成专业签审或新增项目归属。
 - [M3 Windows本地阶段门](docs/M3_LOCAL_ACCEPTANCE.md)独立通过，可以进入隔离M4；M2/M3正式身份、远程HTTPS/配置、最高owner恢复、Mac/真实跨电脑和生产仍未完成。
 - 先做身份与团队数据隔离、四角色权限，再做设备/商业化；业务稳定后整体升级UI。
@@ -58,3 +58,5 @@
 - 仓库无业务原件、章签图片、环境凭证和部署身份；工具检查与人工审查都有记录。
 - 技术测试报告不隐瞒失败/跳过，业务验收和线上发布状态分开。
 - 邀请和分支保护只按实际已生效状态报告；米老师用户名未提供时列待办。
+
+- M4F已按[旧正式项目归属登记合同](docs/LEGACY_PROJECT_REGISTRATION_CONTRACT.md)接旧登记表只读来源导出和正常桌面独立审核，保原UUID/编号及历史文本，显式选择初始权限；Windows严格合成闭环及独立安全/原件保全复核通过，完整可移植回归2958通过、0失败、0跳过，758运行/测试源保持；该本地候选已验，M4和完整商业化仍未完成。见[使用和证据](docs/LEGACY_PROJECT_REGISTRATION.md)。新项目提前采集／中标立项路径仍待选择，真实客户资料上云另需授权。

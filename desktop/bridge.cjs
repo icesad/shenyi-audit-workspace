@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const {MAX_FILE_BYTES,ClientError} = require('./team-client.cjs');
 const {createTaskOriginalsExporter}=require('./task-originals-export.cjs');
+const {createProjectMigrationManager}=require('./project-migration.cjs');
 const APP_URL = 'shenyi://app/index.html';
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 function input(value, keys) {
@@ -29,6 +30,7 @@ function safeDownloadName(disposition) {
 function registerDesktopBridge({ipcMain,window,client,dialog}) {
   const channels=[];
   const originalsExporter=createTaskOriginalsExporter({client,dialog,window});
+  const projectMigration=createProjectMigrationManager({client,dialog,window});
   const safeError=error=>({ok:false,error:{code:error instanceof ClientError?error.code:'OPERATION_FAILED',message:error instanceof ClientError?error.message:'操作未完成，请刷新后重试。'}});
   function handle(name, action) {
     const channel='shenyi:'+name;channels.push(channel);
@@ -42,6 +44,13 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('recovery-challenge',arg=>client.requestPasswordRecovery(input(arg,['phone'])));
   handle('recovery-complete',arg=>client.recoverPassword(input(arg,['challengeId','code','newPassword','recoveryProof'])));
   const noArgs=arg=>{if(arg!==undefined)throw Error('操作参数无效。');};
+  handle('project-migration-access',arg=>{noArgs(arg);return client.getProjectMigrationAccess();});
+  handle('project-migration-teams',arg=>client.listProjectMigrationTeams(input(arg??{},['q','after','limit'])));
+  handle('project-migration-owners',arg=>client.listProjectMigrationOwners(input(arg,['teamId','q','after','limit'])));
+  handle('project-migration-source-open',arg=>{noArgs(arg);return projectMigration.chooseProjectMigrationSource();});
+  handle('project-migration-approve',arg=>projectMigration.approveProjectMigration(input(arg,['handle','sourceSha256','teamId','ownerUserId','ownerRevision','read','manage','review','currentPassword','confirmed'])));
+  handle('project-migration-receipt',arg=>client.getProjectMigrationReceipt(input(arg,['requestId'])));
+  handle('project-migration-source-discard',arg=>projectMigration.discardProjectMigrationSource(input(arg,['handle'])));
   handle('device-status',arg=>{noArgs(arg);return client.getDeviceStatus();});
   handle('device-enroll',arg=>client.enrollDevice(input(arg,['displayName','currentPassword','confirmed'])));
   handle('device-reconnect',arg=>{noArgs(arg);return client.reconnectDevice();});
@@ -179,6 +188,6 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
     await fs.writeFile(selected.filePath,file.bytes);
     return {saved:true,filename:path.basename(selected.filePath),byteLength:file.bytes.length};
   });
-  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);client.clearSession();};
+  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);projectMigration.dispose();client.clearSession();};
 }
 module.exports={APP_URL,registerDesktopBridge,readChosenFile,safeDownloadName};

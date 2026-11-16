@@ -28,7 +28,7 @@ async function afterSnapshot(f,path,session,change){
 
 test('public own upload yields exact deterministic metadata with no business data or schema changes',async t=>{
  const f=await setup(t),before=snapshot(f),schema=f.db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all();
- assert.equal(schema.filter(row=>row.type==='table').length,57);assert.equal(schema.length,127);
+ assert.equal(schema.filter(row=>row.type==='table').length,60);assert.equal(schema.length,138);
  const path=route(f,[f.upload.submission.id]),result=await f.api(path,{session:f.intern});assert.equal(result.status,200);exact(result.data,['manifest','sha256']);
  const m=result.data.manifest;exact(m,['format','schemaVersion','scope','task','files','policy']);
  assert.deepEqual(m.scope,{kind:'own',teamId:'team-a',taskId:'task-a',userId:'intern-a'});exact(m.task,['id','title','instructions','status','revision']);

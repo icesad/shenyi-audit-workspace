@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {canOperateTeam,restrictedBusinessIdentity} from './administration-policy.mjs';
 import {safeMemberText} from './member-access-policy.mjs';
 import {ApiError,deny} from './http-utils.mjs';
+import {noReviewerHistorySql} from './reviewer-policy.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 export const businessRoles=Object.freeze(['intern','assistant','manager','partner']);
 export const businessRoleConflict=()=>{throw new ApiError(409,'BUSINESS_ROLE_CONFLICT','成员职级或授权状态已改变，请刷新核对。');};
@@ -35,11 +36,7 @@ const SCOPE=`account.user_id<>? AND member.team_id=? AND account.status='active'
  AND member.role IN ('intern','assistant','manager','partner')
  AND (SELECT COUNT(*) FROM team_memberships WHERE user_id=account.user_id)=1
  AND NOT EXISTS (SELECT 1 FROM team_operators WHERE user_id=account.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_platform_reviewers WHERE user_id=account.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_recovery_reviewers WHERE user_id=account.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_access_reviewers WHERE user_id=account.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=account.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_administrator_business_role_reviewers WHERE user_id=account.user_id)`;
+ AND ${noReviewerHistorySql('account.user_id')}`;
 const FIELDS=`account.user_id,credential.display_name,account.status,member.role,
  CAST(COALESCE(epoch.version,0) AS TEXT) AS identity_revision`;
 const view=row=>({id:row.user_id,displayName:safeMemberText(row.display_name,row.user_id),role:row.role,status:row.status,revision:businessRoleRevision(row.identity_revision)});

@@ -1,7 +1,8 @@
 import {administratorTechnicalEligible} from './administrator-business-role-policy.mjs';
+import {hasProtectedReviewerHistory} from './reviewer-policy.mjs';
 /** Trusted technical permissions are independent from all audit data grants. */
 export function hasAffiliation(db,userId){
-  return !!db.prepare('SELECT 1 FROM team_memberships WHERE user_id=? UNION ALL SELECT 1 FROM team_operators WHERE user_id=? LIMIT 1').get(userId,userId);
+  return !!db.prepare('SELECT 1 FROM team_memberships WHERE user_id=? UNION ALL SELECT 1 FROM team_operators WHERE user_id=? LIMIT 1').get(userId,userId)||hasProtectedReviewerHistory(db,userId);
 }
 export function restrictedBusinessIdentity(db,userId){
   // Explicit owner approval separates a technical identity from its audit role.

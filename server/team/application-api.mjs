@@ -13,6 +13,7 @@ import {handleBusinessRoleRequest} from './business-role-api.mjs';
 import {handleProjectAccessRequest} from './project-access-api.mjs';
 import {handleProjectReviewRequest} from './project-review-api.mjs';
 import {handleTaskOriginalsExportRequest} from './task-originals-export-api.mjs';
+import {handleProjectMigrationRequest} from './migration-api.mjs';
 import {handleAdministratorBusinessRoleRequest} from './administrator-business-role-api.mjs';
 import {handleDeviceIdentityRequest} from './device-api.mjs';
 import {handleDeviceReplacementRequest} from './device-replacement-api.mjs';
@@ -55,6 +56,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       || await handleMemberAccessRequest(request,options)
       || await handleAdministratorBusinessRoleRequest(request,options)
       || await handleBusinessRoleRequest(request,options)
+      || await handleProjectMigrationRequest(request,options)
       || await handleTaskOriginalsExportRequest(request,options)
       || await handleProjectAccessRequest(request,options)
       || await handleProjectReviewRequest(request,options)

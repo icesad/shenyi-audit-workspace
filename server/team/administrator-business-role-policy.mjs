@@ -2,6 +2,7 @@
 // Do not import auth, device, administration, member or project policy here.
 import {createHash} from 'node:crypto';
 import {ApiError,ID,deny} from './http-utils.mjs';
+import {noReviewerHistorySql} from './reviewer-policy.mjs';
 
 const digest=value=>createHash('sha256').update(value).digest('hex');
 export const administratorBusinessRoles=Object.freeze(['intern','assistant','manager','partner']);
@@ -11,8 +12,7 @@ export function administratorBusinessIncrement(value,min=1){const n=administrato
 export function administratorBusinessTime(at){return administratorBusinessRevision(at);}
 export function administratorBusinessEpoch(db,userId){return administratorBusinessRevision(db.prepare('SELECT CAST(version AS TEXT) AS version FROM team_recovery_identity_epochs WHERE user_id=?').get(userId)?.version??0);}
 const safeText=(value,fallback)=>[...String(value??'').toWellFormed().replace(/[\p{Cc}\p{Cf}]/gu,'').trim()].slice(0,80).join('')||[...fallback].slice(0,80).join('');
-const owners=['team_platform_reviewers','team_recovery_reviewers','team_access_reviewers','team_device_replacement_reviewers','team_administrator_business_role_reviewers'];
-const noOwners=user=>owners.map(table=>`NOT EXISTS (SELECT 1 FROM ${table} WHERE user_id=${user})`).join(' AND ');
+const noOwners=noReviewerHistorySql;
 function approvalSql(user,team,technical){
  const matches=technical?`((ab_approval.role IS NULL AND ab_member.status='disabled') OR (ab_approval.role=ab_member.role AND ab_member.status='active'))`:`ab_approval.role=ab_member.role AND ab_member.status='active'`;
  return `EXISTS (SELECT 1 FROM team_administrator_business_roles ab_approval

@@ -5,6 +5,7 @@ import {verifyPassword} from './passwords.mjs';
 import {projectActor,currentActor,ordinaryTeamContext,projectContext,projectScope,projectView,managedProject,projectQuery,projectRevision,projectIncrement,projectTime,projectConflict,projectAudit} from './project-access-policy.mjs';
 import {safeMemberText} from './member-access-policy.mjs';
 import {ApiError,ID,deny,invalid,json,readJson,transaction} from './http-utils.mjs';
+import {noReviewerHistorySql} from './reviewer-policy.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const method=allow=>json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:allow});
 const like=value=>'%'+value.replace(/[\\%_]/g,char=>'\\'+char)+'%';
@@ -25,11 +26,7 @@ const CANDIDATE_FROM=`FROM team_memberships member JOIN team_users account ON ac
 const CANDIDATE_SCOPE=`member.team_id=? AND member.user_id<>? AND member.status='active' AND member.role IN ('manager','partner') AND account.status='active' AND team.status='active'
  AND (SELECT COUNT(*) FROM team_memberships WHERE user_id=member.user_id)=1
  AND ${administratorBusinessEligibilitySql('member')}
- AND NOT EXISTS (SELECT 1 FROM team_platform_reviewers WHERE user_id=member.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_recovery_reviewers WHERE user_id=member.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_access_reviewers WHERE user_id=member.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=member.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_administrator_business_role_reviewers WHERE user_id=member.user_id)`;
+ AND ${noReviewerHistorySql('member.user_id')}`;
 function members(db,actorId,teamId,projectId,{q,after,limit}){
  const ownerScope=projectScope({userId:actorId},{owner:true}),from=`${CANDIDATE_FROM} JOIN team_projects project ON project.team_id=member.team_id AND project.project_id=?
  JOIN team_project_access_projects metadata ON metadata.team_id=project.team_id AND metadata.project_id=project.project_id`,search=q?" AND credential.display_name LIKE ? ESCAPE '\\'":'',parameters=[projectId,teamId,actorId,...ownerScope.parameters,...(q?[like(q)]:[])],where=`${CANDIDATE_SCOPE} AND ${ownerScope.sql}`;

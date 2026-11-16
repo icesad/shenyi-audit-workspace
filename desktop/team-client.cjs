@@ -1,5 +1,6 @@
 'use strict';
 const taskOriginalsExport=require('../shared/task-originals-export.cjs');
+const {createHash}=require('node:crypto');
 const {createWechatLogin}=require('./wechat-login.cjs');
 const {createDeviceSession}=require('./device-session.cjs');
 const {createDeviceReplacement}=require('./device-replacement.cjs');
@@ -99,7 +100,9 @@ async function boundedBytes(response, limit) {
 function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wechatPolicy,openAuthorization,now=Date.now,deviceIdentity} = {}) {
   if (baseUrl !== API_BASE || typeof fetchImpl !== 'function') throw failure('INVALID_SERVER', '预览版只连接本机审易服务。');
   let token = null, current = null, generation = 0,wechat,device,replacement;
-  const clear = () => { replacement?.reset();token = null; current = null; generation++;device?.reset();wechat?.reset(); };
+  const projectMigrationInvalidators=new Set();
+  const invalidateProjectMigrationSources=()=>{for(const invalidate of projectMigrationInvalidators)try{invalidate();}catch{}};
+  const clear = () => { invalidateProjectMigrationSources();replacement?.reset();token = null; current = null; generation++;device?.reset();wechat?.reset(); };
   const snapshot = () => {
     if(!current)return null;const value=structuredClone(current);
     if(device?.required){value.device=device.status();if(!device.isReady())value.memberships=[];}
@@ -108,15 +111,15 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   async function revokeResponseToken(bytes){
     try{const data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));if(typeof data?.token==='string'&&/^[A-Za-z0-9_-]{43}$/.test(data.token))await detachedPost('/api/auth/logout',{},data.token);}catch{}
   }
-  async function request(route, {method = 'GET', body, authenticated = true, binary = false, unavailableMessage,temporaryBearer,discardSessionOnChange=false,messagesOverride} = {}) {
+  async function request(route, {method = 'GET', body, authenticated = true, binary = false, unavailableMessage,temporaryBearer,discardSessionOnChange=false,messagesOverride,beforeSend,onDispatch} = {}) {
     if (authenticated && !token && !temporaryBearer) throw failure('SIGN_IN_REQUIRED', '请先登录。', 401);
     const at = generation, bearer = temporaryBearer||token,serialized=body===undefined?undefined:JSON.stringify(body),bytes=serialized===undefined?Buffer.alloc(0):Buffer.from(serialized,'utf8');
     const protectedRoute=device?.required&&!device.isBootstrap(method,route);
     if(protectedRoute&&(!authenticated||temporaryBearer))throw failure('INVALID_INPUT','此操作需要当前已证明的设备会话。');
     const signed=protectedRoute?await device.prepare(method,route,bytes):null;
     if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();
-    let response;
-    try { response = await fetchImpl(API_BASE + route, {method, redirect: 'error', signal: AbortSignal.timeout(15000),
+    beforeSend?.();let response;
+    try { onDispatch?.();response = await fetchImpl(API_BASE + route, {method, redirect: 'error', signal: AbortSignal.timeout(15000),
       headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'}),...(signed?.headers??{})},
       ...(serialized === undefined ? {} : {body: serialized})}); }
     catch { if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');signed?.assertCurrent();if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('SERVICE_UNAVAILABLE', protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':'无法连接本机团队服务，业务已暂停；联网后请重新核验。'); }
@@ -149,7 +152,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     const response=await fetchImpl(API_BASE+route,{method:'POST',redirect:'error',signal:AbortSignal.timeout(5000),headers:{Origin:'shenyi://app','Content-Type':'application/json',...(bearer?{Authorization:'Bearer '+bearer}:{})},body:JSON.stringify(body)});
     await response.body?.cancel();
   }
-  device=createDeviceSession({identity:deviceIdentity,now,error:failure,getAccount:()=>({token,current,generation}),clearAccount:clear,
+  device=createDeviceSession({identity:deviceIdentity,now,error:failure,getAccount:()=>({token,current,generation}),clearAccount:clear,onContextChange:invalidateProjectMigrationSources,
     adopt:data=>{const value=cleanSession(data);if(typeof data.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.token))throw failure('INVALID_RESPONSE','账号服务返回格式无效。');current=value;token=data.token;generation++;return snapshot();},
     bootstrap:(route,options={})=>{const {token:bearer,minted,...settings}=options;return request(route,{...settings,...(bearer?{temporaryBearer:bearer}:{}),discardSessionOnChange:minted===true});},
     protectedRequest:route=>request(route),revoke:bearer=>detachedPost('/api/auth/logout',{},bearer)});
@@ -222,7 +225,17 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     if(scope.kind!==(project?'project-review':'own')||scope.teamId!==team||scope.taskId!==task||plan.manifest.task.id!==task||plan.manifest.task.revision!==input.revision||project&&(scope.projectId!==projectId||scope.projectRevision!==input.projectRevision)||!project&&scope.userId!==expectedUser||files.length!==ids.length||files.some((file,index)=>file.id!==ids[index]))throw failure('INVALID_RESPONSE','原件导出清单与所选任务或记录不一致，请刷新核对。');
     return plan;
   }
+  const projectMigrationRequest=(route,options={})=>{if(!device.required)throw failure('DEVICE_NOT_READY','旧项目归属审核需要当前已持钥核验的业务登录。');device.guard();return request(route,{...options,messagesOverride:{400:'来源或审核内容无效，请重新预检后核对。',403:'当前密码验证未通过或旧项目审核未获授权。',404:'无法访问该团队、负责人或审核查询记录。',409:'来源项目、编号、负责人或审核状态已改变，请刷新核对；不要重复提交。',413:'来源文件或审批内容超过大小限制，未裁剪来源。'}});};
+  function migrationQuery(input,owner){exactKeys(input,owner?['teamId','q','after','limit']:['q','after','limit']);const params=new URLSearchParams(),limit=input.limit??20;if(!Number.isSafeInteger(limit)||limit<1||limit>50||input.q!==undefined&&(typeof input.q!=='string'||!input.q.isWellFormed()||[...input.q].length>80||/[\p{Cc}\p{Cf}]/u.test(input.q)))throw failure('INVALID_INPUT','请使用80个字符以内的查询，每次最多读取50项。');if(input.q!==undefined)params.set('q',input.q);if(input.after!==undefined)params.set('after',id(input.after));if(input.limit!==undefined)params.set('limit',String(limit));return {limit,suffix:params.size?'?'+params:''};}
+  function migrationPage(data,limit,owner){if(!responseKeys(data,['items','total','hasMore'])||!Array.isArray(data.items)||data.items.length>limit||!Number.isSafeInteger(data.total)||data.total<0||data.total<data.items.length+(data.hasMore?1:0)||typeof data.hasMore!=='boolean'||data.hasMore&&data.items.length!==limit)throw failure('INVALID_RESPONSE','旧项目审核候选列表格式无效，请刷新核对。');const items=data.items.map(item=>{if(owner){if(!responseKeys(item,['id','displayName','role','revision'])||!ID.test(item.id)||!memberText(item.displayName)||!['manager','partner'].includes(item.role)||!Number.isSafeInteger(item.revision)||item.revision<0)throw failure('INVALID_RESPONSE','首位项目负责人资料格式无效。');}else if(!responseKeys(item,['id','name'])||!ID.test(item.id)||!memberText(item.name))throw failure('INVALID_RESPONSE','目标团队资料格式无效。');return {...item};});if(new Set(items.map(item=>item.id)).size!==items.length)throw failure('INVALID_RESPONSE','审核候选包含重复记录。');return {items,total:data.total,hasMore:data.hasMore};}
+  function migrationReceipt(value,requestId){if(!responseKeys(value,['requestId','projectId','teamId','ownerUserId','businessNumber','sourceSha256','read','manage','review','registeredAt'])||value.requestId!==requestId||!SESSION_ID.test(value.requestId)||!SESSION_ID.test(value.projectId)||!ID.test(value.teamId)||!ID.test(value.ownerUserId)||!projectText(value.businessNumber,160)||!/^[a-f0-9]{64}$/.test(value.sourceSha256)||!['read','manage','review'].every(key=>typeof value[key]==='boolean')||!value.read&&(value.manage||value.review)||!Number.isSafeInteger(value.registeredAt)||value.registeredAt<0)throw failure('INVALID_RESPONSE','旧项目登记回执格式无效，请按查询编号核对结果。');return {...value};}
   return Object.freeze({
+    async getProjectMigrationAccess(input){if(input!==undefined)throw failure('INVALID_INPUT','审核能力不接受额外参数。');const data=await projectMigrationRequest('/api/auth/project-migration/access');if(!responseKeys(data,['canReview'])||typeof data.canReview!=='boolean')throw failure('INVALID_RESPONSE','旧项目审核能力格式无效。');return {canReview:data.canReview};},
+    async listProjectMigrationTeams(input={}){const query=migrationQuery(input,false);return migrationPage(await projectMigrationRequest('/api/project-migrations/teams'+query.suffix),query.limit,false);},
+    async listProjectMigrationOwners(input){const query=migrationQuery(input,true);return migrationPage(await projectMigrationRequest('/api/project-migrations/teams/'+id(input.teamId)+'/owners'+query.suffix),query.limit,true);},
+    async registerProjectMigration(input,{assertCurrent=()=>{},onDispatch=()=>{}}={}){exactKeys(input,['requestId','source','sourceSha256','teamId','ownerUserId','ownerRevision','read','manage','review','currentPassword']);if(!SESSION_ID.test(input.requestId)||!Number.isSafeInteger(input.ownerRevision)||input.ownerRevision<0||input.ownerRevision>=Number.MAX_SAFE_INTEGER||!['read','manage','review'].every(key=>typeof input[key]==='boolean')||!input.read&&(input.manage||input.review))throw failure('INVALID_INPUT','请核对首位负责人、版本及明确的初始权限。');const codec=require('../dist/legacy-project-source.js');let source;try{source=codec.validate(input.source);if(createHash('sha256').update(codec.encode(source)).digest('hex')!==input.sourceSha256)throw Error();}catch{throw failure('INVALID_INPUT','旧项目来源或SHA无法确认，请重新选择文件预检。');}const teamId=id(input.teamId),ownerUserId=id(input.ownerUserId),body={requestId:input.requestId,source,sourceSha256:input.sourceSha256,teamId,ownerUserId,ownerRevision:input.ownerRevision,read:input.read,manage:input.manage,review:input.review,currentPassword:securityPasswordInput(input.currentPassword)};assertCurrent();const value=migrationReceipt(await projectMigrationRequest('/api/project-migrations',{method:'POST',body,beforeSend:assertCurrent,onDispatch}),input.requestId);assertCurrent();if(value.projectId!==source.initiation.quoteId||value.teamId!==teamId||value.ownerUserId!==ownerUserId||value.businessNumber!==source.numbering.businessNumber||value.sourceSha256!==input.sourceSha256||['read','manage','review'].some(key=>value[key]!==input[key]))throw failure('INVALID_RESPONSE','登记回执与本次来源或审核选择不一致，请按查询编号核对。');return value;},
+    async getProjectMigrationReceipt(input){exactKeys(input,['requestId']);if(!SESSION_ID.test(input.requestId))throw failure('INVALID_INPUT','审核查询编号无效。');return migrationReceipt(await projectMigrationRequest('/api/project-migrations/receipts/'+input.requestId),input.requestId);},
+    onProjectMigrationContextChange(listener){if(typeof listener!=='function')throw failure('INVALID_INPUT','来源清理机制无效。');projectMigrationInvalidators.add(listener);return()=>projectMigrationInvalidators.delete(listener);},
     async getTaskExportPlan(input){return taskExportPlan(input,false);},
     async getProjectTaskExportPlan(input){return taskExportPlan(input,true);},
     async getProjectAccess(input){if(input!==undefined)throw failure('INVALID_INPUT','项目能力不接受额外参数。');const data=await projectRequest('/api/auth/project-access');if(!responseKeys(data,['teams'])||!Array.isArray(data.teams)||data.teams.length>50)throw failure('INVALID_RESPONSE','项目团队能力格式无效。');const teams=data.teams.map(value=>{if(!responseKeys(value,['teamId','teamName'])||!ID.test(value.teamId)||!memberText(value.teamName))throw failure('INVALID_RESPONSE','项目团队格式无效。');return {...value};});if(new Set(teams.map(value=>value.teamId)).size!==teams.length)throw failure('INVALID_RESPONSE','项目团队格式无效。');return {teams};},

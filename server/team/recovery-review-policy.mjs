@@ -1,6 +1,7 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {canOperateTeam,restrictedBusinessIdentity} from './administration-policy.mjs';
 import {ApiError} from './http-utils.mjs';
+import {hasProtectedReviewerHistory} from './reviewer-policy.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const invalidProof=()=>{throw new ApiError(400,'INVALID_CHALLENGE','验证请求无效或已失效，请重新验证。');};
 export const reviewedRecovery=providers=>providers.reviewedRecovery===true;
@@ -16,7 +17,7 @@ export function recoveryOwner(db,userId){
 export function recoveryTarget(db,userId,at){
   const credential=recoveryCredential(db,userId);if(!credential||credential.status!=='active')return null;
   // A privileged reviewer's own recovery requires a separate human bootstrap.
-  if(db.prepare('SELECT 1 FROM team_platform_reviewers WHERE user_id=? UNION ALL SELECT 1 FROM team_recovery_reviewers WHERE user_id=? UNION ALL SELECT 1 FROM team_access_reviewers WHERE user_id=? UNION ALL SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=? UNION ALL SELECT 1 FROM team_administrator_business_role_reviewers WHERE user_id=? LIMIT 1').get(userId,userId,userId,userId,userId))return null;
+  if(hasProtectedReviewerHistory(db,userId))return null;
   const phone=db.prepare('SELECT phone,revision,verified_at FROM team_phone_credentials WHERE user_id=?').get(userId);
   if(!phone||!Number.isSafeInteger(phone.revision)||phone.revision<1||!Number.isSafeInteger(phone.verified_at)||phone.verified_at<=0||phone.verified_at>at)return null;
   const memberships=db.prepare('SELECT team_id,role,status FROM team_memberships WHERE user_id=? ORDER BY team_id').all(userId);

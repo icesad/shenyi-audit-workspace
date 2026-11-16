@@ -3,6 +3,7 @@ import {randomUUID,createHash} from 'node:crypto';
 import {currentDeviceLease} from './device-policy.mjs';
 import {safeMemberText} from './member-access-policy.mjs';
 import {ApiError,ID,deny,invalid} from './http-utils.mjs';
+import {noReviewerHistorySql} from './reviewer-policy.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex'),UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 export const projectConflict=()=>{throw new ApiError(409,'PROJECT_ACCESS_CONFLICT','项目或授权状态已改变，请刷新核对。');};
 export function projectRevision(value,min=1){const n=Number(value);if(!Number.isSafeInteger(n)||n<min)projectConflict();return n;}
@@ -17,11 +18,7 @@ export function currentActor(db,request,before,options,at){const fresh=projectAc
 const ORDINARY=`member.status='active' AND member.role IN ('manager','partner') AND account.status='active' AND team.status='active'
  AND (SELECT COUNT(*) FROM team_memberships WHERE user_id=member.user_id)=1
  AND ${administratorBusinessEligibilitySql('member')}
- AND NOT EXISTS (SELECT 1 FROM team_platform_reviewers WHERE user_id=member.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_recovery_reviewers WHERE user_id=member.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_access_reviewers WHERE user_id=member.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=member.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_administrator_business_role_reviewers WHERE user_id=member.user_id)`;
+ AND ${noReviewerHistorySql('member.user_id')}`;
 export function safeProjectTitle(value,fallback){return [...String(value??'').toWellFormed().replace(/[\p{Cc}\p{Cf}]/gu,'').trim()].slice(0,300).join('')||[...fallback].slice(0,300).join('');}
 export function ordinaryTeamContext(db,userId,teamId){
  const row=db.prepare(`SELECT member.role,credential.password_hash,CAST(credential.revision AS TEXT) AS credential_revision,

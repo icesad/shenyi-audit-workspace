@@ -276,5 +276,6 @@
     try{return (await read(db,s=>s.getAll())).map(stored);}
     finally{db.close();}
   }
-  root.ProjectInitiation=Object.freeze({mount,listSaved,ensureWon});
+  root.ProjectInitiation=Object.freeze({mount,listSaved,ensureWon,validateRecord:stored});
+  if(typeof module==='object'&&module.exports)module.exports=root.ProjectInitiation;
 })(globalThis);

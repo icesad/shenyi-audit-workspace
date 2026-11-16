@@ -12,7 +12,11 @@ test('accounting rename changes display strings only; no layout, field, event, p
    assert.equal(source.split(loader).length-1,1,'approved material loader must occur exactly once');
    assert.equal(source.split(dependency+loader).length-1,1,'approved material loader must immediately follow its dependency');
    assert.equal(source.split('material-preservation.js').length-1,1,'no extra or alternate material loader reference');
-   source=source.replace(loader,'').replace('id="page-save">保存</button>', 'id="page-save">暂存</button>');
+   const migrationLoaders='<script src="legacy-project-source.js"></script><script src="legacy-project-source-export.js"></script>',initiationLoader='<script src="project-initiation.js"></script>';
+   assert.equal(source.split(migrationLoaders).length-1,1,'approved migration loaders must occur once in order');
+   assert.equal(source.split(initiationLoader+migrationLoaders).length-1,1,'migration loaders must immediately follow initiation dependency');
+   for(const name of ['legacy-project-source.js','legacy-project-source-export.js'])assert.equal(source.split(name).length-1,1,'no alternate migration loader reference');
+   source=source.replace(migrationLoaders,'').replace(loader,'').replace('id="page-save">保存</button>', 'id="page-save">暂存</button>');
   }
   for(const [oldLabel,newLabel]of [...spec.replacements].reverse()){
    assert.equal(source.split(newLabel).length-1,1,file+' new label must be unique');

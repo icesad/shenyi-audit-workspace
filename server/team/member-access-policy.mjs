@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {canOperateTeam,restrictedBusinessIdentity} from './administration-policy.mjs';
 import {ID,deny,invalid} from './http-utils.mjs';
+import {noReviewerHistorySql} from './reviewer-policy.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 export function memberIdentityRevision(db,userId){
   const value=Number(db.prepare('SELECT CAST(version AS TEXT) AS version FROM team_recovery_identity_epochs WHERE user_id=?').get(userId)?.version??0);
@@ -43,11 +44,7 @@ export function memberListQuery(params){
 // Every historic affiliation and privileged identity counts, including revoked
 // rows. This predicate is applied before projection, search, cursor and paging.
 function memberScope(kind,actorId,teamId){
-  const protectedIdentity=`NOT EXISTS (SELECT 1 FROM team_platform_reviewers WHERE user_id=account.user_id)
-    AND NOT EXISTS (SELECT 1 FROM team_recovery_reviewers WHERE user_id=account.user_id)
-    AND NOT EXISTS (SELECT 1 FROM team_access_reviewers WHERE user_id=account.user_id)
-    AND NOT EXISTS (SELECT 1 FROM team_device_replacement_reviewers WHERE user_id=account.user_id)
- AND NOT EXISTS (SELECT 1 FROM team_administrator_business_role_reviewers WHERE user_id=account.user_id)`;
+  const protectedIdentity=noReviewerHistorySql('account.user_id');
   const common=`account.user_id<>? AND ${protectedIdentity}`;
   if(kind==='business')return {from:`FROM team_memberships AS member JOIN team_users AS account ON account.user_id=member.user_id
     JOIN team_credentials AS credential ON credential.user_id=account.user_id
