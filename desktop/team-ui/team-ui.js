@@ -1,6 +1,21 @@
 'use strict';
 (() => {
   const api=window.shenyiTeam, byId=id=>document.getElementById(id);
+  // Main-owned metadata is presentation only; requests stay behind the private bridge.
+  const serviceMode=document.querySelector('meta[name="shenyi-team-service-mode"]')?.content;
+  const serviceOrigin=document.querySelector('meta[name="shenyi-team-service-origin"]')?.content;
+  let remoteService=false;
+  if(serviceMode==='remote-https'&&typeof serviceOrigin==='string'){
+    try{const url=new URL(serviceOrigin);remoteService=url.protocol==='https:'&&serviceOrigin===url.origin;}catch{}
+  }
+  const serviceCaption=remoteService?'当前配置的HTTPS团队服务：'+serviceOrigin:'当前连接本机团队服务';
+  if(remoteService){
+    byId('service-preview-label').textContent='HTTPS连接 · 合成预览';
+    byId('service-mode-label').textContent='HTTPS预览';
+    byId('service-demo-help-title').textContent='合成演示账号说明';
+    byId('service-demo-help-description').textContent='仅用于当前明确启用的合成演示服务，不是正式用户账号。';
+    byId('service-preview-notice').textContent='使用配置的HTTPS服务验证合成账号和资料流程。请勿导入真实客户资料；本机设备须在线核验，设备登记与换机审批仅限合成验证，正式商用服务尚未完成。';
+  }
   const labels={intern:'实习生',assistant:'助理',manager:'项目经理',partner:'合伙人'};
   const statuses={open:'待提交',submitted:'已提交',returned:'已退回',closed:'已关闭'};
   let session=null,teamId='',tasks=[],selected=null,revision=0,submissions=[],hasMore=false,busy=false,viewEpoch=0,busyEpoch=0;
@@ -167,7 +182,7 @@
     const active=deviceGateActive(),enrolling=active&&!deviceLocalIssue&&deviceSnapshot?.state==='enrollment_required',working=!!deviceAction;
     byId('login-view').classList.toggle('device-active',active);byId('device-gate').hidden=!active;byId('device-actions').hidden=!active;byId('device-enrollment-fields').hidden=!enrolling;byId('ordinary-username-fields').hidden=active;byId('username').required=!active;
     byId('login-mode-label').hidden=active;byId('login-mode').hidden=active;byId('ordinary-password-fields').hidden=active&&!enrolling;byId('password').required=!active||enrolling;byId('password').maxLength=enrolling?512:1024;byId('password-label').textContent=enrolling?'重新输入当前账号密码':'密码';byId('password').placeholder=enrolling?'输入当前密码确认绑定这台电脑':'输入密码';byId('login-submit').hidden=active;byId('device-bind-confirm').hidden=!enrolling;
-    byId('login-form-title').textContent=active?(enrolling?'确认绑定当前电脑':'设备与连接核验'):'登录团队账号';byId('login-form-caption').textContent=active?'通过在线设备核验后才能进入团队工作空间':'当前连接本机团队服务';
+    byId('login-form-title').textContent=active?(enrolling?'确认绑定当前电脑':'设备与连接核验'):'登录团队账号';byId('login-form-caption').textContent=active?(remoteService?serviceCaption+'；通过在线设备核验后才能进入团队工作空间':'通过在线设备核验后才能进入团队工作空间'):serviceCaption;
     byId('device-account').textContent=deviceAccount?'当前账号：'+deviceAccount.displayName:'当前账号身份待核对。';byId('device-fingerprint').textContent=deviceSnapshot?.localFingerprint?'本机指纹：'+deviceSnapshot.localFingerprint:'';byId('device-gate-message').textContent=deviceGateWords();
     for(const id of ['device-name','device-enroll-consent'])byId(id).disabled=!enrolling||busy||working;byId('device-name').required=enrolling;byId('device-enroll-consent').required=enrolling;
     if(active){byId('ordinary-login-fields').hidden=false;byId('username').disabled=true;byId('login-mode').disabled=true;byId('login-submit').disabled=true;byId('wechat-login').disabled=true;byId('password').disabled=!enrolling||busy||working;}
@@ -1190,7 +1205,7 @@
   }
   async function uploadSelected(){
     if(!selected||busy||taskManagementPending()||taskUploadPending()||!canSubmitSelected())return;
-    const context=taskManagementContext(),expected=revision,operation={context};taskUploadOperation=operation;resetTaskSubmissionAccess();setBusy(true);const uploadBusyEpoch=busyEpoch;message('workspace-message','请选择资料；确认后将提交至本机团队服务。');
+    const context=taskManagementContext(),expected=revision,operation={context};taskUploadOperation=operation;resetTaskSubmissionAccess();setBusy(true);const uploadBusyEpoch=busyEpoch;message('workspace-message',remoteService?'请选择资料；确认后将提交至配置的HTTPS团队服务。':'请选择资料；确认后将提交至本机团队服务。');
     try{
       const result=await taskViewCall('chooseAndUpload',{teamId:context.teamId,taskId:context.taskId,revision:expected},context);if(!sameTaskManagement(context))return;
       if(result.canceled){await loadTaskSubmissionAccess();if(sameTaskManagement(context))message('workspace-message','已取消，未提交资料。');return;}

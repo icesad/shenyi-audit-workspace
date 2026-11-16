@@ -8,6 +8,7 @@ const {createProjectMaterialsClient}=require('./project-materials-client.cjs');
 const {createMaterialPreservationExportClient,PACKAGE_MAX}=require('./material-preservation-export-client.cjs');
 const {createCollectionWorkspaceClient}=require('./collection-workspace-client.cjs');
 const {createWorkspaceFormalizationClient}=require('./workspace-formalization-client.cjs');
+const {createTrustedTeamServiceTransport}=require('./trusted-team-service-client.cjs');
 
 // Main-process only. The renderer never receives bearer tokens or raw fetch.
 const API_BASE = 'http://127.0.0.1:8774';
@@ -111,8 +112,11 @@ async function preservationBytes(response,limit,check,signal){
   }finally{for(const chunk of chunks)chunk.fill(0);if(!complete)void reader.cancel().catch(()=>{});}
 }
 
-function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wechatPolicy,openAuthorization,now=Date.now,deviceIdentity} = {}) {
+function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wechatPolicy,openAuthorization,now=Date.now,deviceIdentity,trustedService} = {}) {
   if (baseUrl !== API_BASE || typeof fetchImpl !== 'function') throw failure('INVALID_SERVER', '预览版只连接本机审易服务。');
+  const trusted=trustedService===undefined?null:createTrustedTeamServiceTransport({profile:trustedService,fetchImpl,boundedBytes,error:failure});
+  if(trusted&&(!deviceIdentity||!['win32','darwin'].includes(deviceIdentity.platform)||!deviceIdentity.vault||!['getPublicIdentity','signChallenge','signRequest'].every(name=>typeof deviceIdentity.vault[name]==='function')))throw failure('DEVICE_VAULT_UNAVAILABLE','受信团队服务需要系统保护的设备密钥。');
+  const requestUrl=route=>trusted?trusted.url(route):API_BASE+route;
   let token = null, current = null, generation = 0,wechat,device,replacement;
   const projectMigrationInvalidators=new Set();
   const invalidateProjectMigrationSources=()=>{for(const invalidate of projectMigrationInvalidators)try{invalidate();}catch{}};
@@ -138,16 +142,23 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();
     const transportSignal=materialHooks?AbortSignal.any([AbortSignal.timeout(materialPreservationExport?180000:15000),...(materialHooks.signal?[materialHooks.signal]:[])]):AbortSignal.timeout(15000);
     const materialCheck=()=>{if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();materialHooks?.assertCurrent?.();if(materialHooks?.signal?.aborted)throw failure('MATERIAL_EXPORT_CANCELED','本次资料保全导出已停止。');};
+    materialCheck();
+    if(trusted&&route!=='/api/auth/methods'){
+      try{await trusted.probe(materialCheck,transportSignal);}
+      catch(cause){materialCheck();if(cause?.code==='UNTRUSTED_SERVER'){clear();throw cause;}if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('SERVICE_UNAVAILABLE','无法核验受信团队服务，业务已暂停；联网后请重新核验。');}
+    }
     materialCheck();beforeSend?.();let response;
-    try { onDispatch?.();response = await fetchImpl(API_BASE + route, {method, redirect: 'error', signal: transportSignal,
+    const target=requestUrl(route);
+    try { onDispatch?.();response = await fetchImpl(target, {method, redirect: 'error', signal: transportSignal,
       headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'}),...(signed?.headers??{})},
       ...(serialized === undefined ? {} : {body: serialized})}); }
-    catch { if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');signed?.assertCurrent();if(materialHooks)materialCheck();if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('SERVICE_UNAVAILABLE', protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':'无法连接本机团队服务，业务已暂停；联网后请重新核验。'); }
+    catch { if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');signed?.assertCurrent();if(materialHooks)materialCheck();if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('SERVICE_UNAVAILABLE', protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':(trusted?'无法连接受信HTTPS团队服务，业务已暂停；联网后请重新核验。':'无法连接本机团队服务，业务已暂停；联网后请重新核验。')); }
     if (at !== generation) {
-      if(discardSessionOnChange&&response.ok)try{await revokeResponseToken(await boundedBytes(response,1024*1024));}catch{}
+      if(discardSessionOnChange&&response.ok)try{trusted?.responseIdentity(response,target);await revokeResponseToken(await boundedBytes(response,1024*1024));}catch{}
       throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');
     }
     signed?.assertCurrent();if(materialHooks)materialCheck();
+    try{trusted?.responseIdentity(response,target);}catch(cause){void response.body?.cancel().catch(()=>{});clear();if(protectedRoute&&!['GET','HEAD'].includes(method))throw failure('SERVICE_UNAVAILABLE','已发操作结果未确认，服务身份无法核验；请按原查询编号核对，勿重复提交。');throw cause;}
     if (response.status === 401 && authenticated && bearer===token) { clear(); throw failure('SIGN_IN_REQUIRED', '登录已失效，请重新登录。', 401); }
     if (!response.ok) {
       const messages = {400:'提交内容无效，请检查后重试。',401:'账号或密码无效，请检查后重试。',403:'当前操作未获授权。',404:'任务不存在或当前账号无权访问。',409:'任务状态或版本已更新，请刷新后重试。',413:'资料超过12 MiB，请选择较小的文件。',429:'尝试过于频繁，请稍后重试。'};
@@ -166,14 +177,18 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     if(materialPreservationExport)return {bytes:responseBytes,contentType:response.headers.get('content-type'),contentLength:response.headers.get('content-length'),contentDisposition:response.headers.get('content-disposition'),cacheControl:response.headers.get('cache-control'),sha256:response.headers.get('x-shenyi-material-export-sha256'),planSha256:response.headers.get('x-shenyi-material-plan-sha256')};
     if(materialPreviewHead)return {bytes:responseBytes,projectRevision:response.headers.get('x-project-revision'),materialRevision:response.headers.get('x-material-revision'),sha256:response.headers.get('x-content-sha256'),byteLength:response.headers.get('content-length')};
     if (binary) return {bytes:responseBytes, contentDisposition: response.headers.get('content-disposition') || ''};
-    try { return JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(responseBytes)); }
+    let data;
+    try { data=JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(responseBytes)); }
     catch {if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('INVALID_RESPONSE',protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':'团队服务返回格式无效。'); }
+    if(trusted&&route==='/api/auth/methods')try{trusted.methodsIdentity(data);}catch(cause){clear();throw cause;}
+    return data;
   }
   async function detachedPost(route,body,bearer){
     // Only closure-created cancel/logout paths use this cleanup transport. It
     // may outlive generation changes; it never adopts or exposes a response.
-    const response=await fetchImpl(API_BASE+route,{method:'POST',redirect:'error',signal:AbortSignal.timeout(5000),headers:{Origin:'shenyi://app','Content-Type':'application/json',...(bearer?{Authorization:'Bearer '+bearer}:{})},body:JSON.stringify(body)});
-    await response.body?.cancel();
+    if(trusted)await trusted.probe();
+    const target=requestUrl(route),response=await fetchImpl(target,{method:'POST',redirect:'error',signal:AbortSignal.timeout(5000),headers:{Origin:'shenyi://app','Content-Type':'application/json',...(bearer?{Authorization:'Bearer '+bearer}:{})},body:JSON.stringify(body)});
+    try{trusted?.responseIdentity(response,target);}finally{await response.body?.cancel();}
   }
   device=createDeviceSession({identity:deviceIdentity,now,error:failure,getAccount:()=>({token,current,generation}),clearAccount:clear,onContextChange:invalidateProjectMigrationSources,
     adopt:data=>{const value=cleanSession(data);if(typeof data.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(data.token))throw failure('INVALID_RESPONSE','账号服务返回格式无效。');current=value;token=data.token;generation++;return snapshot();},
@@ -471,7 +486,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
       return {phoneVerified:true,phoneMasked:result.phoneMasked};
     },
     async getSession() { if (!token) return null; const data = await request('/api/auth/session'); current = cleanSession(data); return snapshot(); },
-    async logout() { try { if (token) await request('/api/auth/logout', {method:'POST',body:{}}); } finally { clear(); } return {signedOut:true}; },
+    async logout() { const at=generation,bearer=token;try { if (bearer) await request('/api/auth/logout', {method:'POST',body:{}}); } finally { if(at===generation&&bearer===token)clear(); } return {signedOut:true}; },
     async listTasks(input) { exactKeys(input, ['teamId','q','after','limit']);
       const params = new URLSearchParams();
       if (input.q !== undefined) { if (typeof input.q !== 'string' || input.q.length > 100) throw failure('INVALID_INPUT','搜索内容最多100字。'); params.set('q', input.q); }

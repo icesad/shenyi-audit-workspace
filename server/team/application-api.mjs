@@ -28,10 +28,18 @@ import {ApiError, json} from './http-utils.mjs';
 
 /** Local M2 application boundary. No fake registration/phone verification. */
 export async function handleTeamApplicationRequest(request, options = {}) {
-  const response=await applicationResponse(request,options);
-  // HEAD never carries a body, including origin/auth/method/clock errors
-  // produced before the collection handler is reached.
-  return request.method==='HEAD'?new Response(null,{status:response.status,statusText:response.statusText,headers:response.headers}):response;
+  // Read existing metadata before dispatch, never initialize identity here.
+  // Even early errors share this public identity boundary in strict mode.
+  let serverId,response;
+  if(options.identityProviders?.deviceProofRequired===true){
+    try{const value=deviceServerId(options.db);if(typeof value!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value))throw Error();serverId=value;}
+    catch{response=json({error:{code:'SERVICE_UNAVAILABLE',message:'团队服务暂不可用。'}},503);}
+  }
+  response??=await applicationResponse(request,options);
+  const headers=new Headers(response.headers);
+  if(serverId!==undefined)headers.set('X-Shenyi-Server-Id',serverId);
+  // HEAD never carries a body, including metadata/origin/auth/clock errors.
+  return new Response(request.method==='HEAD'?null:response.body,{status:response.status,statusText:response.statusText,headers});
 }
 async function applicationResponse(request, {db, now = Date.now,identityProviders={}} = {}) {
   try {
