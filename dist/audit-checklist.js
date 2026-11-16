@@ -294,14 +294,14 @@
     if(!name||name.length>180)fail('资料文件名无效或过长。');return name;
   }
   function utf8(bytes){let value;try{value=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{fail('文本资料须为有效UTF-8编码，请另存UTF-8后上传，原文件未保存。');}if(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value))fail('文本资料含不支持的控制字符。');return value;}
-  function xmlDocument(bytes){const value=utf8(bytes);if(/<!DOCTYPE|<!ENTITY/iu.test(value))fail('XML/SVG/Office资料含DOCTYPE或实体声明，当前不接收外部实体，未保存。');const doc=new root.DOMParser().parseFromString(value,'application/xml');if(doc.querySelector('parsererror')||!doc.documentElement)fail('XML资料结构无效，文件内容与扩展名不符。');return doc;}
+  function xmlDocument(bytes,DOMParser=root.DOMParser){const value=utf8(bytes);if(/<!DOCTYPE|<!ENTITY/iu.test(value))fail('XML/SVG/Office资料含DOCTYPE或实体声明，当前不接收外部实体，未保存。');const doc=new DOMParser().parseFromString(value,'application/xml');if(doc.querySelector('parsererror')||!doc.documentElement)fail('XML资料结构无效，文件内容与扩展名不符。');return doc;}
   function matchingMime(ext,mime){
     if(typeof mime!=='string'||!mime.trim())return;const m=mime.toLowerCase().split(';')[0].trim();if(['application/octet-stream','binary/octet-stream','application/x-download'].includes(m)||m===FILE_TYPES[ext])return;
     const aliases={doc:['application/vnd.ms-word'],rtf:['text/rtf'],xls:['application/msexcel','application/x-msexcel'],ppt:['application/mspowerpoint'],csv:['application/csv','application/vnd.ms-excel','text/plain'],tsv:['text/plain'],md:['text/plain','text/x-markdown'],json:['text/json','text/plain'],html:['application/xhtml+xml'],xml:['text/xml'],rar:['application/x-rar-compressed'],zip:['application/x-zip-compressed']};
     if(aliases[ext]?.includes(m)||['docx','xlsx','pptx','odt','ods','odp'].includes(ext)&&['application/zip','application/x-zip-compressed'].includes(m))return;fail('所选文件MIME类型与扩展名不符，未保存。');
   }
   // Read only bounded ZIP metadata for Office identity. No entry is executed or extracted to disk.
-  async function officePackage(bytes,ext){
+  async function officePackage(bytes,ext,DOMParser=root.DOMParser){
     const d=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),u16=i=>d.getUint16(i,true),u32=i=>d.getUint32(i,true),bad=()=>fail('Office压缩容器损坏、加密或格式不受支持，未保存。');
     if(bytes.length<22)bad();const minimum=Math.max(0,bytes.length-65557);let end=bytes.length-22;for(;end>=minimum;end--)if(u32(end)===0x06054b50&&end+22+u16(end+20)===bytes.length)break;
     if(end<minimum||u16(end+4)||u16(end+6)||u16(end+8)!==u16(end+10))bad();const count=u16(end+10),start=u32(end+16),length=u32(end+12);if(!count||count>2048||start+length!==end)bad();
@@ -314,11 +314,11 @@
       if(out.length!==e.size)bad();let crc=0xffffffff;for(const b of out){crc^=b;for(let j=0;j<8;j++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}if(((crc^0xffffffff)>>>0)!==e.crc)bad();return out;
     }
     if(['docx','xlsx','pptx'].includes(ext)){
-      const main={docx:['word/document.xml','application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml','document'],xlsx:['xl/workbook.xml','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml','workbook'],pptx:['ppt/presentation.xml','application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml','presentation']}[ext],types=xmlDocument(await part('[Content_Types].xml'));
+      const main={docx:['word/document.xml','application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml','document'],xlsx:['xl/workbook.xml','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml','workbook'],pptx:['ppt/presentation.xml','application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml','presentation']}[ext],types=xmlDocument(await part('[Content_Types].xml'),DOMParser);
       if([...types.getElementsByTagName('*')].some(n=>/macroEnabled|vbaProject/iu.test(n.getAttribute('ContentType')||'')&&(n.localName==='Override'&&parts.has((n.getAttribute('PartName')||'').replace(/^\//,'').toLowerCase())||n.localName==='Default'&&[...parts.keys()].some(p=>p.endsWith('.'+(n.getAttribute('Extension')||'').toLowerCase())))))fail('Office内容声明含宏类型，当前不接收。');
-      if(![...types.getElementsByTagName('*')].some(n=>n.localName==='Override'&&n.getAttribute('PartName')==='/'+main[0]&&n.getAttribute('ContentType')===main[1]))bad();const document=xmlDocument(await part(main[0])),kind={docx:'wordprocessingml',xlsx:'spreadsheetml',pptx:'presentationml'}[ext],namespaces=['http://schemas.openxmlformats.org/'+kind+'/2006/main','http://purl.oclc.org/ooxml/'+kind+'/main'];if(types.documentElement.localName!=='Types'||types.documentElement.namespaceURI!=='http://schemas.openxmlformats.org/package/2006/content-types'||document.documentElement.localName!==main[2]||!namespaces.includes(document.documentElement.namespaceURI))bad();
+      if(![...types.getElementsByTagName('*')].some(n=>n.localName==='Override'&&n.getAttribute('PartName')==='/'+main[0]&&n.getAttribute('ContentType')===main[1]))bad();const document=xmlDocument(await part(main[0]),DOMParser),kind={docx:'wordprocessingml',xlsx:'spreadsheetml',pptx:'presentationml'}[ext],namespaces=['http://schemas.openxmlformats.org/'+kind+'/2006/main','http://purl.oclc.org/ooxml/'+kind+'/main'];if(types.documentElement.localName!=='Types'||types.documentElement.namespaceURI!=='http://schemas.openxmlformats.org/package/2006/content-types'||document.documentElement.localName!==main[2]||!namespaces.includes(document.documentElement.namespaceURI))bad();
     }else{
-      if(utf8(await part('mimetype'))!==FILE_TYPES[ext])bad();const content=xmlDocument(await part('content.xml')),manifest=xmlDocument(await part('META-INF/manifest.xml')),ns='urn:oasis:names:tc:opendocument:xmlns:office:1.0',body=content.getElementsByTagNameNS(ns,'body')[0],kind={odt:'text',ods:'spreadsheet',odp:'presentation'}[ext];if(content.documentElement.localName!=='document-content'||content.documentElement.namespaceURI!==ns||manifest.documentElement.localName!=='manifest'||manifest.documentElement.namespaceURI!=='urn:oasis:names:tc:opendocument:xmlns:manifest:1.0'||!body||![...body.children].some(n=>n.namespaceURI===ns&&n.localName===kind))bad();if([...manifest.getElementsByTagName('*')].some(n=>n.localName==='encryption-data'))fail('不接收加密ODF资料，请另存未加密副本后上传。');
+      if(utf8(await part('mimetype'))!==FILE_TYPES[ext])bad();const content=xmlDocument(await part('content.xml'),DOMParser),manifest=xmlDocument(await part('META-INF/manifest.xml'),DOMParser),ns='urn:oasis:names:tc:opendocument:xmlns:office:1.0',body=content.getElementsByTagNameNS(ns,'body')[0],kind={odt:'text',ods:'spreadsheet',odp:'presentation'}[ext];if(content.documentElement.localName!=='document-content'||content.documentElement.namespaceURI!==ns||manifest.documentElement.localName!=='manifest'||manifest.documentElement.namespaceURI!=='urn:oasis:names:tc:opendocument:xmlns:manifest:1.0'||!body||![...body.children].some(n=>n.namespaceURI===ns&&n.localName===kind))bad();if([...manifest.getElementsByTagName('*')].some(n=>n.localName==='encryption-data'))fail('不接收加密ODF资料，请另存未加密副本后上传。');
     }
   }
   function compoundOffice(bytes,ext){
@@ -326,13 +326,13 @@
     const names=[],dirs=new Set();next=u32(48);while(next!==0xfffffffe){if(dirs.has(next)||dirs.size>count)bad();dirs.add(next);const p=offset(next);for(let j=0;j<sector;j+=128){const len=u16(p+j+64),kind=bytes[p+j+66];if(!kind)continue;if(len<2||len>64||len%2)bad();if(kind===2)names.push(new TextDecoder('utf-16le',{fatal:true}).decode(bytes.subarray(p+j,p+j+len-2)));}next=fat[next];if(next===undefined)bad();}
     if(names.some(n=>/^(?:EncryptedPackage|EncryptionInfo)$/i.test(n)))fail('旧Office资料已加密，当前无法核验；请另存未加密文件。');const expected={doc:/^WordDocument$/i,xls:/^(?:Workbook|Book)$/i,ppt:/^PowerPoint Document$/i}[ext];if(!names.some(n=>expected.test(n)))bad();
   }
-  async function preparedFile(file){
+  async function preparedFile(file,{DOMParser=root.DOMParser}={}){
     if(!file||typeof file.arrayBuffer!=='function'||!Number.isSafeInteger(file.size)||file.size<1||file.size>FILE_MAX)fail('每份资料文件须为 1 字节至 12 MiB。');
     const name=safeName(file.name),ext=name.split('.').at(-1).toLowerCase(),type=FILE_TYPES[ext];if(!type){if(['tif','tiff','heic','heif'].includes(ext))fail('当前离线版没有TIFF/HEIC解码能力，暂不接收；请提供PNG、JPEG或PDF副本。');if(['docm','xlsm','pptm','dotm','xlam','ppam'].includes(ext))fail('当前不接收宏类型Office资料，请另存DOCX、XLSX或PPTX无宏副本。');fail('不支持的资料文件类型。');}matchingMime(ext,file.type);
     const bytes=new Uint8Array(await file.arrayBuffer());if(bytes.length!==file.size)fail('文件读取不完整，未保存。');const start=xs=>xs.every((v,i)=>bytes[i]===v),ascii=(a,b)=>new TextDecoder('ascii').decode(bytes.subarray(a,b)),d=new DataView(bytes.buffer),zip=()=>start([0x50,0x4b])&&[[3,4],[5,6],[7,8]].some(p=>bytes[2]===p[0]&&bytes[3]===p[1]),mismatch=()=>fail('文件内容与扩展名不符，未保存。');
     if(ext==='pdf'){if(!start([37,80,68,70,45]))mismatch();}
     else if(['doc','xls','ppt'].includes(ext)){if(!start([208,207,17,224,161,177,26,225]))mismatch();compoundOffice(bytes,ext);}
-    else if(['docx','xlsx','pptx','odt','ods','odp'].includes(ext)){if(!zip())mismatch();await officePackage(bytes,ext);}
+    else if(['docx','xlsx','pptx','odt','ods','odp'].includes(ext)){if(!zip())mismatch();await officePackage(bytes,ext,DOMParser);}
     else if(ext==='zip'){if(!zip())mismatch();}
     else if(ext==='rar'){if(!(start([82,97,114,33,26,7,0])||start([82,97,114,33,26,7,1,0])))mismatch();}
     else if(ext==='png'){if(bytes.length<45||!start([137,80,78,71,13,10,26,10])||ascii(12,16)!=='IHDR'||d.getUint32(8)!==13||!d.getUint32(16)||!d.getUint32(20)||ascii(bytes.length-8,bytes.length-4)!=='IEND')mismatch();}
@@ -342,7 +342,7 @@
     else if(ext==='bmp'){if(bytes.length<26||ascii(0,2)!=='BM'||d.getUint32(2,true)!==bytes.length||d.getUint32(10,true)<26||d.getUint32(10,true)>=bytes.length||![12,40,52,56,108,124].includes(d.getUint32(14,true)))mismatch();}
     else if(ext==='avif'){if(bytes.length<24||ascii(4,8)!=='ftyp'||d.getUint32(0)<16||d.getUint32(0)>bytes.length)mismatch();const end=d.getUint32(0),brands=[ascii(8,12)];for(let i=16;i+4<=end;i+=4)brands.push(ascii(i,i+4));if(!brands.some(x=>x==='avif'||x==='avis'))mismatch();}
     else if(ext==='rtf'){if(!/^\s*\{\\rtf[1-9]/u.test(ascii(0,96)))mismatch();}
-    else {const text=utf8(bytes);if(ext==='json'){try{JSON.parse(text);}catch{fail('JSON语法无效，未保存。');}}else if(ext==='html'){if(!/<(?:!doctype\s+html|html|head|body|div|p|table|script|h[1-6]|span|meta|section|article)(?:\s|>)/iu.test(text))mismatch();}else if(['xml','svg'].includes(ext)){const doc=xmlDocument(bytes);if(ext==='svg'&&(doc.documentElement.localName!=='svg'||doc.documentElement.namespaceURI!=='http://www.w3.org/2000/svg'))mismatch();}}
+    else {const text=utf8(bytes);if(ext==='json'){try{JSON.parse(text);}catch{fail('JSON语法无效，未保存。');}}else if(ext==='html'){if(!/<(?:!doctype\s+html|html|head|body|div|p|table|script|h[1-6]|span|meta|section|article)(?:\s|>)/iu.test(text))mismatch();}else if(['xml','svg'].includes(ext)){const doc=xmlDocument(bytes,DOMParser);if(ext==='svg'&&(doc.documentElement.localName!=='svg'||doc.documentElement.namespaceURI!=='http://www.w3.org/2000/svg'))mismatch();}}
     const digest=await root.crypto.subtle.digest('SHA-256',bytes),sha256=Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('');return {name,size:bytes.length,type,sha256,blob:new Blob([bytes],{type})};
   }
   function metadataIn(r,nodeId,fileId){
@@ -445,6 +445,6 @@
     });
   }
   const open=()=>openDatabase(DB),openTrial=()=>openDatabase(TRIAL_DB,true);
-  const api=Object.freeze({parse,create,createTree,apply,gate,validate,open,openTrial,TRIAL_ID,STATES,FILE_TYPES,leafNodes:r=>r?.schema===2?copy(leafNodesOf(validateV2(r).nodes)):copy(validateV1(r).items)});
+  const api=Object.freeze({parse,create,createTree,apply,gate,validate,open,openTrial,TRIAL_ID,STATES,FILE_TYPES,prepareFile:preparedFile,leafNodes:r=>r?.schema===2?copy(leafNodesOf(validateV2(r).nodes)):copy(validateV1(r).items)});
   if(typeof module==='object'&&module.exports)module.exports=api;else root.AuditChecklist=api;
 })(globalThis);

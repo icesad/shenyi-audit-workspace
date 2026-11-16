@@ -96,7 +96,7 @@ test('fixture: strict independent signature reaches existing own history and dow
 
 test('own plan contains only selected original metadata and independently verifiable canonical digest; no business writes',async t=>{
  const f=await fixture(t),actor=await f.bound(),before=f.snapshot(),schema=f.schema();
- assert.equal(schema.filter(row=>row.type==='table').length,60);assert.equal(schema.length,138);
+ assert.equal(schema.filter(row=>row.type==='table').length,66);assert.equal(schema.length,189);
  const response=await f.api(f.own(),{actor}),plan=accepted(response);exactKeys(plan,['manifest','sha256']);
  const m=plan.manifest;exactKeys(m,['format','schemaVersion','scope','task','files','policy']);assert.equal(m.format,'shenyi-task-originals-export');assert.equal(m.schemaVersion,1);
  assert.deepEqual(m.scope,{kind:'own',teamId:'team-a',taskId:'task-a',userId:'intern-a'});

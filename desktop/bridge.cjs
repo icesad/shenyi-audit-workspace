@@ -4,6 +4,7 @@ const path = require('node:path');
 const {MAX_FILE_BYTES,ClientError} = require('./team-client.cjs');
 const {createTaskOriginalsExporter}=require('./task-originals-export.cjs');
 const {createProjectMigrationManager}=require('./project-migration.cjs');
+const {createProjectMaterialsManager}=require('./project-materials.cjs');
 const APP_URL = 'shenyi://app/index.html';
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 function input(value, keys) {
@@ -31,6 +32,7 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   const channels=[];
   const originalsExporter=createTaskOriginalsExporter({client,dialog,window});
   const projectMigration=createProjectMigrationManager({client,dialog,window});
+  const projectMaterials=createProjectMaterialsManager({client,dialog,window});
   const safeError=error=>({ok:false,error:{code:error instanceof ClientError?error.code:'OPERATION_FAILED',message:error instanceof ClientError?error.message:'操作未完成，请刷新后重试。'}});
   function handle(name, action) {
     const channel='shenyi:'+name;channels.push(channel);
@@ -79,6 +81,16 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('administrator-business-roles',arg=>client.listAdministratorBusinessRoles(input(arg===undefined?{}:arg,['q','after','limit'])));
   handle('administrator-business-role-change',arg=>client.changeAdministratorBusinessRole(input(arg,['userId','revision','role','currentPassword','confirmed'])));
   handle('project-access',arg=>{noArgs(arg);return client.getProjectAccess();});
+  handle('project-material-access',arg=>client.getProjectMaterialAccess(input(arg,['teamId','projectId'])));
+  handle('project-material-members',arg=>client.listProjectMaterialMembers(input(arg,['teamId','projectId','q','after','limit'])));
+  handle('project-material-access-change',arg=>client.changeProjectMaterialAccess(input(arg,['teamId','projectId','projectRevision','userId','memberRevision','grantRevision','read','import','review','close','currentPassword','confirmed'])));
+  handle('project-material-import-open',arg=>projectMaterials.chooseProjectMaterialImport(input(arg,['teamId','projectId','projectRevision'])));
+  handle('project-material-import-discard',arg=>projectMaterials.discardProjectMaterialImport(input(arg,['handle'])));
+  handle('project-material-import',arg=>projectMaterials.importProjectMaterials(input(arg,['handle','teamId','projectId','projectRevision','sourceSha256','currentPassword','confirmed'])));
+  handle('project-material-receipt',arg=>client.getProjectMaterialReceipt(input(arg,['teamId','projectId','requestId'])));
+  handle('project-material-record',async arg=>{const target=input(arg,['teamId','projectId']),guard=client.guardSession();guard();const record=await client.getProjectMaterials(target);guard();return record;});
+  handle('project-material-download',arg=>projectMaterials.downloadProjectMaterial(input(arg,['teamId','projectId','fileId'])));
+  handle('project-material-change',arg=>projectMaterials.changeProjectMaterials(input(arg,['teamId','projectId','requestId','projectRevision','materialRevision','recordSha256','action','currentPassword','confirmed'])));
   handle('projects',arg=>client.listProjects(input(arg,['teamId','q','after','limit'])));
   handle('project',arg=>client.getProject(input(arg,['teamId','projectId'])));
   handle('project-members',arg=>client.listProjectMembers(input(arg,['teamId','projectId','q','after','limit'])));
@@ -188,6 +200,6 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
     await fs.writeFile(selected.filePath,file.bytes);
     return {saved:true,filename:path.basename(selected.filePath),byteLength:file.bytes.length};
   });
-  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);projectMigration.dispose();client.clearSession();};
+  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
 }
 module.exports={APP_URL,registerDesktopBridge,readChosenFile,safeDownloadName};

@@ -4,6 +4,7 @@ import {hashPassword} from './passwords.mjs';
 import {ensureSessionMetadata} from './auth-api.mjs';
 import {installRecoveryEpochTriggers} from './recovery-review-epochs.mjs';
 import {ensureDeviceServerId} from './device-policy.mjs';
+import {installMaterialQualificationTriggers} from './materials-scope.mjs';
 
 export function initializeTeamDatabase(db) {
   db.exec('PRAGMA foreign_keys = ON');
@@ -25,6 +26,8 @@ export function initializeTeamDatabase(db) {
       db.exec(readFileSync(fileURLToPath(new URL('./project-access-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./administrator-business-role-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./migration-schema.sql', import.meta.url)), 'utf8'));
+      db.exec(readFileSync(fileURLToPath(new URL('./materials-schema.sql', import.meta.url)), 'utf8'));
+      installMaterialQualificationTriggers(db);
       ensureDeviceServerId(db);
       installRecoveryEpochTriggers(db);
       db.exec(readFileSync(fileURLToPath(new URL('./session-schema.sql', import.meta.url)), 'utf8'));
@@ -49,6 +52,8 @@ export function initializeTeamDatabase(db) {
     db.exec(readFileSync(fileURLToPath(new URL('./project-access-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./administrator-business-role-schema.sql', import.meta.url)), 'utf8'));
     db.exec(readFileSync(fileURLToPath(new URL('./migration-schema.sql', import.meta.url)), 'utf8'));
+    db.exec(readFileSync(fileURLToPath(new URL('./materials-schema.sql', import.meta.url)), 'utf8'));
+    installMaterialQualificationTriggers(db);
     ensureDeviceServerId(db);
     installRecoveryEpochTriggers(db);
     db.exec(readFileSync(fileURLToPath(new URL('./session-schema.sql', import.meta.url)), 'utf8'));

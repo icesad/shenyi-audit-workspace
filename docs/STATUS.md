@@ -1,8 +1,10 @@
+当前M4G在`codex/team-materials-module`从d9c2f00接[团队资料清单模块](TEAM_MATERIALS_MODULE_CONTRACT.md)，[正常使用路径与证据](TEAM_MATERIALS_MODULE.md)已记录。用户已批准owner密码逐项self/授senior、close与review独立；server15、独立正文/安全60、desktop59专题及最终Windows原生4case/6图/6库/4vault/93依赖保持已通过。原生实际覆盖真实旧UI包迁入、独立核对关门、历史原件、unknown单发及撤权零发布；不是只有归属登记或存包。单次完整回归3092项全部通过（0fail/skip/cancel，1042676.3935ms），901源运行前后保持；旧19组原生兼容（11diagnostic+8strict）具独审通过证据；full后只修3旧native父标题定位，当前其余898源及全部156选入/新native93保持，本片Windows本地候选已验；424旧源已备份，原专业规则保持。共享预览只做已验证的加法schema升级，原60表全部行保持、新六表空；未写业务资料或权限、未写生产，未push/main/上线，M4和整体Goal仍active。
+
 # 当前状态与交接
 
 记录日期：2026-11-16。GitHub 地址：<https://github.com/icesad/shenyi-audit-workspace>。
 
-当前 `codex/legacy-project-registration` 已按 [M4F合同](LEGACY_PROJECT_REGISTRATION_CONTRACT.md)实现并通过旧正式项目来源及归属负责人审核的Windows本地候选验收。用户已确认由产品负责人审核，只有正常新项目创建路径仍待答。最终完整可移植2958通过/0失败/0跳过、875459.4356ms，758运行/测试源全程稳定；新192包含于总数。独立安全100、来源20、server30、桌面42，严格Windows新原生6case/5图/5DB/4vault及旧18组兼容具通过证据；旧admin时窗首失败/原样复验和partial首次完整命令的旧计数失配均保留。共享4RO备份独审保旧57表127DDL全部row，新60/138，ordinary9/review16仅独立新审核员。两真一键可达；不称客户材料已迁入，不开放一般新项目创建。404原版备份，未push/main/上线，M4/整体商业化仍未完成。
+上一M4F `codex/legacy-project-registration` 已按 [M4F合同](LEGACY_PROJECT_REGISTRATION_CONTRACT.md)实现并通过旧正式项目来源及归属负责人审核的Windows本地候选验收。用户已确认由产品负责人审核，只有正常新项目创建路径仍待答。最终完整可移植2958通过/0失败/0跳过、875459.4356ms，758运行/测试源全程稳定；新192包含于总数。独立安全100、来源20、server30、桌面42，严格Windows新原生6case/5图/5DB/4vault及旧18组兼容具通过证据；旧admin时窗首失败/原样复验和partial首次完整命令的旧计数失配均保留。共享4RO备份独审保旧57表127DDL全部row，新60/138，ordinary9/review16仅独立新审核员。两真一键可达；不称客户材料已迁入，不开放一般新项目创建。404原版备份，未push/main/上线，M4/整体商业化仍未完成。
 
 上一M4E `codex/task-originals-export`从M4D本地`74e7b31`接续[正常团队桌面单任务所选原件导出](TASK_ORIGINALS_EXPORT.md)，Windows本地候选已验。完整可移植回归2766通过/0失败/0跳过（818962.8099ms），34源全程SHA不变；独立权限77、核心42/格式44/client13/bridge15/DOM19、真实strict原生4ZIP/6图/5DB/4vault与旧17native兼容通过。81窄RPC/14form20密码，无新schema；两真一键可达、共享ordinary9/review15全部57表127定义及所有行保全。只导出明确所选当前可下载原件与最小清单；本人/项目review权限分开，任一失权整包拒绝，不称完整备份/专业签审，不改项目创建或旧归属政策。首次全量的两旧名单兼容已窄修，原未改HTTP测试首次fetch失败原因未确证，原样复验及最终完整均通过，失败日志保留。M4/完整Goal继续active，未push/main/上线。
 

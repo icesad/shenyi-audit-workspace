@@ -1,8 +1,10 @@
 import {prepareProjectAccessRevocation,finishProjectAccessRevocation} from './project-access-policy.mjs';
 import {businessRoleRevision,businessRoleIncrement,businessRoleConflict} from './business-role-policy.mjs';
+import {revokeMaterialAccess} from './materials-policy.mjs';
 
 // Internal transaction helper; caller owns membership, approval and final audit.
 export function revokeBusinessRoleAccess(db,{actorId,teamId,userId,at,reason='business-role.changed'}){
+ revokeMaterialAccess(db,{actorId,teamId,userId,at,reason});
  const tasks=db.prepare(`SELECT DISTINCT assignment.task_id,CAST(COALESCE(version.revision,0) AS TEXT) AS revision
  FROM team_task_assignments assignment LEFT JOIN team_task_versions version ON version.team_id=assignment.team_id AND version.task_id=assignment.task_id
  WHERE assignment.team_id=? AND assignment.user_id=? AND assignment.status='active'`).all(teamId,userId).map(row=>({...row,next:businessRoleIncrement(row.revision),revision:businessRoleRevision(row.revision)}));

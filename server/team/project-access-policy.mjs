@@ -4,6 +4,7 @@ import {currentDeviceLease} from './device-policy.mjs';
 import {safeMemberText} from './member-access-policy.mjs';
 import {ApiError,ID,deny,invalid} from './http-utils.mjs';
 import {noReviewerHistorySql} from './reviewer-policy.mjs';
+import {materialVisibilitySql} from './materials-scope.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex'),UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 export const projectConflict=()=>{throw new ApiError(409,'PROJECT_ACCESS_CONFLICT','项目或授权状态已改变，请刷新核对。');};
 export function projectRevision(value,min=1){const n=Number(value);if(!Number.isSafeInteger(n)||n<min)projectConflict();return n;}
@@ -40,7 +41,7 @@ export function projectScope(actor,{projectAlias='project',metadataAlias='metada
  let permission;
  if(owner){permission=acl('project.owner');if(read||manage||review)permission+=' AND '+grant('collection.read');if(manage)permission+=' AND '+grant('collection.manage');if(review)permission+=' AND '+acl('collection.review');}
  else if(read||manage||review){permission=grant('collection.read');if(manage)permission+=' AND '+grant('collection.manage');if(review)permission+=' AND '+acl('collection.review');}
- else permission='('+acl('project.owner')+' OR '+grant('collection.read')+')';
+ else{const governance=acl('project.owner'),collection=grant('collection.read');parameters.push(actor.userId);permission='('+governance+' OR '+collection+' OR '+materialVisibilitySql('?')+')';}
  return {sql:`metadata.team_id=project.team_id AND metadata.project_id=project.project_id AND project.status IN ('active','frozen') AND ${identity} AND (${permission})`,parameters};
 }
 export function managedProject(db,teamId,projectId){
@@ -54,7 +55,8 @@ export function projectContext(db,actor,teamId,projectId,{read=false,manage=fals
  const legacy=db.prepare("SELECT permission FROM team_project_grants WHERE team_id=? AND project_id=? AND user_id=? AND status='active'").all(teamId,projectId,actor.userId);
  const own=db.prepare("SELECT permission,CAST(revision AS TEXT) AS revision FROM team_project_access_grants WHERE team_id=? AND project_id=? AND user_id=? AND status='active'").all(teamId,projectId,actor.userId);for(const row of own)projectRevision(row.revision);
  const context={member,project,read:legacy.some(row=>row.permission==='collection.read'),manage:legacy.some(row=>row.permission==='collection.manage'),review:own.some(row=>row.permission==='collection.review'),owner:project.createdBy===actor.userId&&own.some(row=>row.permission==='project.owner')};
- if(!context.read&&!context.owner||owner&&!context.owner||(read||manage||review)&&!context.read||manage&&!context.manage||review&&!context.review)deny();if(active&&project.status!=='active')projectConflict();return context;
+ const materialVisible=!!db.prepare('SELECT 1 FROM team_material_grants WHERE team_id=? AND project_id=? AND user_id=? AND eligible=1 AND can_read=1').get(teamId,projectId,actor.userId);
+ if(!context.read&&!context.owner&&!materialVisible||owner&&!context.owner||(read||manage||review)&&!context.read||manage&&!context.manage||review&&!context.review)deny();if(active&&project.status!=='active')projectConflict();return context;
 }
 export const canReadProject=context=>!!context?.read;
 export const canManageProject=context=>!!context?.read&&!!context?.manage;

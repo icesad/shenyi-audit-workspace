@@ -14,6 +14,7 @@ const ASSETS=Object.freeze({
   '/index.html':{file:path.join(__dirname,'team-ui/index.html'),mime:'text/html; charset=utf-8'},
   '/team-ui.css':{file:path.join(__dirname,'team-ui/team-ui.css'),mime:'text/css; charset=utf-8'},
   '/team-ui.js':{file:path.join(__dirname,'team-ui/team-ui.js'),mime:'text/javascript; charset=utf-8'},
+  '/project-materials.js':{file:path.join(__dirname,'team-ui/project-materials.js'),mime:'text/javascript; charset=utf-8'},
   '/brand-shenyi.png':{file:path.join(__dirname,'../dist/brand-shenyi.png'),mime:'image/png'},
 });
 
