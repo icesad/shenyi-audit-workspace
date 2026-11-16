@@ -14,7 +14,7 @@
 - 密码恢复审核已确认：团队管理员审核员工，管理员本人由产品负责人审核，仍须本人短信；审批/一次性授权签发链已有本机候选，缺真实供应商/生产身份时服务保持关闭。
 - 采集任务指派对象已确认仅本团队有效实习生/助理；经理/合伙人还须具体项目显式采集管理权，不能按职级或技术管理员身份扩大范围。指派/退回桌面候选已接版本校验，成员停用已确认：团队管理员可停用本团队业务成员（含经理、合伙人）；技术管理员本人由产品负责人处理，业务职级本身不授予停用权；[成员停用候选](docs/MEMBER_DEACTIVATION.md)已实现本地API/UI、会话与在途授权撤销，真实生产管理和首版设备仍待验收。
 - 本轮已确认：团队管理员管理普通员工四业务职级，管理员本人兼任业务职级由产品负责人审核；经理和合伙人均可新建项目，创建者管理该项目授权。[M4A普通员工职级调整](docs/BUSINESS_ROLE_MANAGEMENT.md)已通过Windows本地候选验收，不从职级自动附送项目权限；后续继续管理员兼职审核及项目创建/授权等切片。
-- [M4B项目授权、采集任务与资料核对公共基础](docs/PROJECT_ACCESS_COLLECTION.md)已通过2202项全量回归及Windows原生独立验收，精确规则见[执行合同](docs/PROJECT_ACCESS_COLLECTION_CONTRACT.md)。旧正式立项仍须最新中标报价；是否允许先建采集工作区的产品选择待答，正常项目创建入口尚未开放，不自动登记旧project owner。
+- [M4B项目授权、采集任务与资料核对公共基础](docs/PROJECT_ACCESS_COLLECTION.md)已通过2202项全量回归及Windows原生独立验收，精确规则见[执行合同](docs/PROJECT_ACCESS_COLLECTION_CONTRACT.md)。旧正式立项仍须最新中标报价；用户已确认允许先建仅采集工作区，当前M4K按独立创建合同实现；正式化仍须可信最新中标报价与原编号，不自动登记旧project owner。
 - [M4C管理员兼任业务职级审核](docs/ADMINISTRATOR_BUSINESS_ROLE.md)已通过Windows本地候选验收及2407项完整回归，独立负责人可核准/收回兼任，技术与业务资格及旧采集/项目/恢复/换机出口统一；规则见[执行合同](docs/ADMINISTRATOR_BUSINESS_ROLE_CONTRACT.md)。不从兼职职级附送项目，不等待项目创建选择而停止独立工作。
 - M4D已按[单项目资料保全与本机恢复合同](docs/MATERIAL_PRESERVATION_CONTRACT.md)补齐旧端清单及所有留痕引用原件的可靠来源包，并恢复到同UUID空本机资料区；[使用与证据说明](docs/MATERIAL_PRESERVATION.md)区分保全范围、旧上传内容准入和团队接入边界。2026-11-16用户已确认由产品负责人审核目标团队与首位负责人，按M4F显式来源/审批合同接治理登记；仍不把本机恢复或治理登记当整个软件／客户原件迁移完成。
 - [M4E单任务所选原件导出](docs/TASK_ORIGINALS_EXPORT.md)已通过Windows本地候选验收及2766项完整可移植回归，精确规则见[合同](docs/TASK_ORIGINALS_EXPORT_CONTRACT.md)。正常团队桌面两个入口分别守本人/项目核对下载权、最后fresh批量复核并原子发布，不自动导出全部历史、形成专业签审或新增项目归属。
@@ -67,3 +67,5 @@
 - M4J接[采集提交原件预览合同](docs/TASK_SUBMISSION_PREVIEW_CONTRACT.md)，沿已有本人下载或项目read＋review补两处正常阅读入口，不授新scope／不关联材料清单；Windows本地候选技术验证及3386项完整回归、strict原生和旧5相关兼容均通过独审；整个M4/Goal仍active，用户已确认下一片允许先采集工作区再按原规则正式立项。
 
 - 最新产品决定：2026-11-16用户已确认允许正式中标前先建仅资料采集工作区，正式中标后再立项；工作区须明确未正式立项，不提前生成正式业务编号或伪造报价，正式立项继续最新中标报价及原编号规则。 接续M4J预览后实施采集工作区创建；不再将这项选择列待答，可信正式化及专业模块仍逐项验收。
+
+当前M4K已按[采集工作区创建合同](docs/COLLECTION_WORKSPACE_CREATION_CONTRACT.md)与[使用说明](docs/COLLECTION_WORKSPACE_CREATION.md)通过Windows本地候选验收：完整3493项、strict原生7场景、旧5兼容与共享数据保全具独审证据。先采集后正式立项的产品选择已落实至创建；正式化关联仍须可信最新中标报价与原编号，M4及整个Goal继续active。实际commit／main／一键／线上状态见进度及外部final-delivery，不把本机候选当商业化生产完成。

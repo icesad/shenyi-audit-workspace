@@ -5,6 +5,7 @@ import {safeMemberText} from './member-access-policy.mjs';
 import {ApiError,ID,deny,invalid} from './http-utils.mjs';
 import {noReviewerHistorySql} from './reviewer-policy.mjs';
 import {materialVisibilitySql} from './materials-scope.mjs';
+import {COLLECTION_WORKSPACE_KIND,collectionWorkspaceKind} from './workspace-creation-policy.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex'),UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 export const projectConflict=()=>{throw new ApiError(409,'PROJECT_ACCESS_CONFLICT','项目或授权状态已改变，请刷新核对。');};
 export function projectRevision(value,min=1){const n=Number(value);if(!Number.isSafeInteger(n)||n<min)projectConflict();return n;}
@@ -48,14 +49,14 @@ export function managedProject(db,teamId,projectId){
  const row=db.prepare(`SELECT project.project_id,project.title,project.status,metadata.created_by,metadata.created_at,metadata.request_id,metadata.request_sha256,
  CAST(metadata.revision AS TEXT) AS revision FROM team_projects project JOIN team_project_access_projects metadata
  ON metadata.team_id=project.team_id AND metadata.project_id=project.project_id WHERE project.team_id=? AND project.project_id=?`).get(teamId,projectId);
- return row?{teamId,id:row.project_id,title:safeProjectTitle(row.title,row.project_id),status:row.status,revision:projectRevision(row.revision),createdBy:row.created_by,createdAt:projectTime(row.created_at),requestId:row.request_id,requestSha256:row.request_sha256}:null;
+ return row?{teamId,id:row.project_id,title:safeProjectTitle(row.title,row.project_id),status:row.status,revision:projectRevision(row.revision),createdBy:row.created_by,createdAt:projectTime(row.created_at),requestId:row.request_id,requestSha256:row.request_sha256,...(collectionWorkspaceKind(db,teamId,projectId)?{kind:COLLECTION_WORKSPACE_KIND}:{})}:null;
 }
 export function projectContext(db,actor,teamId,projectId,{read=false,manage=false,review=false,owner=false,active=false}={}){
  const member=ordinaryTeamContext(db,actor.userId,teamId);if(!member)deny();const project=managedProject(db,teamId,projectId);if(!project||!['active','frozen'].includes(project.status))deny();
  const legacy=db.prepare("SELECT permission FROM team_project_grants WHERE team_id=? AND project_id=? AND user_id=? AND status='active'").all(teamId,projectId,actor.userId);
  const own=db.prepare("SELECT permission,CAST(revision AS TEXT) AS revision FROM team_project_access_grants WHERE team_id=? AND project_id=? AND user_id=? AND status='active'").all(teamId,projectId,actor.userId);for(const row of own)projectRevision(row.revision);
  const context={member,project,read:legacy.some(row=>row.permission==='collection.read'),manage:legacy.some(row=>row.permission==='collection.manage'),review:own.some(row=>row.permission==='collection.review'),owner:project.createdBy===actor.userId&&own.some(row=>row.permission==='project.owner')};
- const materialVisible=!!db.prepare('SELECT 1 FROM team_material_grants WHERE team_id=? AND project_id=? AND user_id=? AND eligible=1 AND can_read=1').get(teamId,projectId,actor.userId);
+ const materialVisible=project.kind!==COLLECTION_WORKSPACE_KIND&&!!db.prepare('SELECT 1 FROM team_material_grants WHERE team_id=? AND project_id=? AND user_id=? AND eligible=1 AND can_read=1').get(teamId,projectId,actor.userId);
  if(!context.read&&!context.owner&&!materialVisible||owner&&!context.owner||(read||manage||review)&&!context.read||manage&&!context.manage||review&&!context.review)deny();if(active&&project.status!=='active')projectConflict();return context;
 }
 export const canReadProject=context=>!!context?.read;
@@ -63,7 +64,7 @@ export const canManageProject=context=>!!context?.read&&!!context?.manage;
 export const canReviewProject=context=>!!context?.read&&!!context?.review;
 export const canOwnProject=context=>!!context?.owner;
 export function projectView(context){return {id:context.project.id,title:context.project.title,status:context.project.status,revision:context.project.revision,
- canRead:canReadProject(context),canManageAccess:context.project.status==='active'&&context.project.revision<Number.MAX_SAFE_INTEGER&&canOwnProject(context),canCreateTask:context.project.status==='active'&&context.project.revision<Number.MAX_SAFE_INTEGER&&canManageProject(context),canReview:canReviewProject(context)};}
+ canRead:canReadProject(context),canManageAccess:context.project.status==='active'&&context.project.revision<Number.MAX_SAFE_INTEGER&&canOwnProject(context),canCreateTask:context.project.status==='active'&&context.project.revision<Number.MAX_SAFE_INTEGER&&canManageProject(context),canReview:canReviewProject(context),...(context.project.kind===COLLECTION_WORKSPACE_KIND?{kind:COLLECTION_WORKSPACE_KIND}:{})};}
 export function projectQuery(params,{qLimit=100,allowQ=true}={}){
  for(const name of params.keys())if(!['after','limit',...(allowQ?['q']:[])].includes(name)||params.getAll(name).length!==1)invalid();
  const q=params.get('q')??'',after=params.get('after')??'',limit=params.get('limit');if(q.length>qLimit||!q.isWellFormed()||/[\p{Cc}\p{Cf}]/u.test(q)||params.has('after')&&!ID.test(after)||limit!==null&&!/^(?:[1-9]|[1-4][0-9]|50)$/.test(limit))invalid();return {q,after,limit:limit===null?20:Number(limit)};

@@ -28,6 +28,7 @@ export function initializeTeamDatabase(db) {
       db.exec(readFileSync(fileURLToPath(new URL('./migration-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./materials-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./materials-maintenance-schema.sql', import.meta.url)), 'utf8'));
+      db.exec(readFileSync(fileURLToPath(new URL('./workspace-creation-schema.sql', import.meta.url)), 'utf8'));
       installMaterialQualificationTriggers(db);
       ensureDeviceServerId(db);
       installRecoveryEpochTriggers(db);
@@ -55,6 +56,7 @@ export function initializeTeamDatabase(db) {
     db.exec(readFileSync(fileURLToPath(new URL('./migration-schema.sql', import.meta.url)), 'utf8'));
     db.exec(readFileSync(fileURLToPath(new URL('./materials-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./materials-maintenance-schema.sql', import.meta.url)), 'utf8'));
+    db.exec(readFileSync(fileURLToPath(new URL('./workspace-creation-schema.sql', import.meta.url)), 'utf8'));
     installMaterialQualificationTriggers(db);
     ensureDeviceServerId(db);
     installRecoveryEpochTriggers(db);

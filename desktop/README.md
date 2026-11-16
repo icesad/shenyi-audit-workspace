@@ -166,3 +166,9 @@ node desktop/administrator-business-role-smoke.cjs
 [使用说明](../docs/TASK_SUBMISSION_PREVIEW.md)与[执行合同](../docs/TASK_SUBMISSION_PREVIEW_CONTRACT.md)说明本人历史和项目核对原件的软件内阅读；权限沿原下载，不因为历史可见、manage、owner或材料read就开放。复用现受限阅读窗口，不创建磁盘原件，保存仍走原流程。
 
 本片107个窄RPC，19表单及24处密码输入保持；前文各阶段数字属于历史。实际分层验证、Mac／客户业务／生产及main／一键／上线状态以使用说明、根目录进度和本片外部实际报告为准。
+
+## M4K正常采集工作区创建
+
+[使用说明](../docs/COLLECTION_WORKSPACE_CREATION.md)与[执行合同](../docs/COLLECTION_WORKSPACE_CREATION_CONTRACT.md)说明经理／合伙人先建采集工作区、显式选择初始权限、当前密码复核与永久回执。工作区明确未正式立项，材料模块锁定，不生成正式业务编号、报价或合同；中标后的可信正式化另行接入。
+
+当前109个窄RPC、20个表单、25处密码输入。提交结果未知时保留原公开编号，只读查询并恢复当前项目能力，禁止自动重复创建。专题、Windows原生闭环、完整回归及共享预览保全的实际结果以根目录进度与本轮外部证据为准，分层验证不互相替代。Mac／客户／生产和两负责人业务签收未完成，未push／main／上线。

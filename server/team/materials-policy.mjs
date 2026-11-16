@@ -5,6 +5,7 @@ import {safeMemberText} from './member-access-policy.mjs';
 import {ApiError,ID,deny,invalid} from './http-utils.mjs';
 import A from '../../dist/audit-checklist.js';
 import {maintenanceGrant} from './materials-maintenance-grant.mjs';
+import {COLLECTION_WORKSPACE_KIND,collectionWorkspaceAbsentSql} from './workspace-creation-policy.mjs';
 export const CHUNK_BYTES=1048576,PACKAGE_BYTES=180*1048576,STAGING_BYTES=360*1048576,STAGE_TTL=30*60000;
 export const materialConflict=()=>{throw new ApiError(409,'MATERIALS_CONFLICT','资料、授权或版本已改变，请刷新并核对回执。');};
 export const materialDigest=value=>createHash('sha256').update(value).digest('hex');
@@ -14,7 +15,7 @@ export function materialGrant(db,teamId,projectId,userId){
  return {revision:row?materialInteger(row.revision,1):0,read:row?.eligible===1&&row.can_read===1,import:row?.eligible===1&&row.can_import===1,review:row?.eligible===1&&row.can_review===1,close:row?.eligible===1&&row.can_close===1};
 }
 export function materialContext(db,actor,teamId,projectId,{read=false,import:importing=false,review=false,close=false,maintain=false,owner=false,active=false,visible=false}={}){
- const member=ordinaryTeamContext(db,actor.userId,teamId);if(!member)deny();const project=managedProject(db,teamId,projectId);if(!project||!['active','frozen'].includes(project.status))deny();
+ const member=ordinaryTeamContext(db,actor.userId,teamId);if(!member)deny();const project=managedProject(db,teamId,projectId);if(!project||!['active','frozen'].includes(project.status)||project.kind===COLLECTION_WORKSPACE_KIND)deny();
  const grant=materialGrant(db,teamId,projectId,actor.userId),isOwner=!!db.prepare("SELECT 1 FROM team_project_access_grants WHERE team_id=? AND project_id=? AND user_id=? AND permission='project.owner' AND status='active'").get(teamId,projectId,actor.userId)&&project.createdBy===actor.userId;
  const maintenance=maintenanceGrant(db,teamId,projectId,actor.userId,grant);
  if(owner&&!isOwner||read&&!grant.read||importing&&!grant.import||review&&!grant.review||close&&!grant.close||maintain&&!maintenance.maintain)deny();
@@ -26,7 +27,7 @@ export function materialSqlScope(actor,{owner=false,read=true}={}){
  const scope=projectScope(actor,{owner,...(owner?{}:{})}),parameters=[...scope.parameters];
  // projectScope's generic visibility is deliberately broader than collection
  // read, but material data always requires its independent explicit read grant.
- let sql=scope.sql;if(read){sql+=` AND EXISTS(SELECT 1 FROM team_material_grants material_scope WHERE material_scope.team_id=project.team_id AND material_scope.project_id=project.project_id AND material_scope.user_id=? AND material_scope.eligible=1 AND material_scope.can_read=1)`;parameters.push(actor.userId);}
+ let sql=scope.sql+' AND '+collectionWorkspaceAbsentSql();if(read){sql+=` AND EXISTS(SELECT 1 FROM team_material_grants material_scope WHERE material_scope.team_id=project.team_id AND material_scope.project_id=project.project_id AND material_scope.user_id=? AND material_scope.eligible=1 AND material_scope.can_read=1)`;parameters.push(actor.userId);}
  return {sql,parameters};
 }
 export function materialListQuery(params){

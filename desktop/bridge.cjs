@@ -9,6 +9,7 @@ const {createMaterialPreviewManager}=require('./material-preview.cjs');
 const {createMaterialPreviewWindow}=require('./material-preview-window.cjs');
 const {createMaterialMaintenanceManager}=require('./material-maintenance.cjs');
 const {createTaskSubmissionPreviewManager}=require('./task-submission-preview.cjs');
+const {createCollectionWorkspaceManager}=require('./collection-workspace.cjs');
 const APP_URL = 'shenyi://app/index.html';
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 function input(value, keys) {
@@ -40,6 +41,8 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   let materialPreview;
   let materialMaintenance;
   let submissionPreview;
+  let workspaceCreation;
+  const workspaces=()=>workspaceCreation??=createCollectionWorkspaceManager({client});
   const previews=()=>materialPreview??=(createMaterialPreviewManager({client,openWindow:hooks=>{submissionPreview?.closeAll();return createMaterialPreviewWindow({parent:window,...hooks});}}));
   const submissionPreviews=()=>submissionPreview??=(createTaskSubmissionPreviewManager({client,openWindow:hooks=>{materialPreview?.closeAll();return createMaterialPreviewWindow({parent:window,...hooks});}}));
   const maintenance=()=>materialMaintenance??=(createMaterialMaintenanceManager({client,dialog,window}));
@@ -224,6 +227,8 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('task-submission-preview',arg=>submissionPreviews().previewTaskSubmission(input(arg,['requestId','teamId','taskId','revision','submissionId'])));
   handle('project-submission-preview',arg=>submissionPreviews().previewProjectSubmission(input(arg,['requestId','teamId','projectId','projectRevision','taskId','revision','submissionId'])));
   handle('task-submission-preview-close',arg=>{const value=input(arg,['previewId']);if(Object.keys(value).length!==1||typeof value.previewId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value.previewId))throw Error('原件预览标识无效。');return submissionPreview?submissionPreview.closeTaskSubmissionPreview(value):{closed:false};});
-  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',closeMaterialPreview);materialPreview?.dispose();submissionPreview?.dispose();materialMaintenance?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
+  handle('collection-workspace-create',arg=>workspaces().createCollectionWorkspace(input(arg,['requestId','teamId','title','read','manage','review','currentPassword','confirmed'])));
+  handle('collection-workspace-receipt',arg=>client.getCollectionWorkspaceReceipt(input(arg,['teamId','requestId'])));
+  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',closeMaterialPreview);materialPreview?.dispose();submissionPreview?.dispose();materialMaintenance?.dispose();workspaceCreation?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
 }
 module.exports={APP_URL,registerDesktopBridge,readChosenFile,safeDownloadName};

@@ -110,4 +110,6 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   previewTaskSubmission:submission=>invoke('task-submission-preview',submission),
   previewProjectSubmission:submission=>invoke('project-submission-preview',submission),
   closeTaskSubmissionPreview:preview=>invoke('task-submission-preview-close',preview),
+  createCollectionWorkspace:confirmation=>invoke('collection-workspace-create',confirmation),
+  getCollectionWorkspaceReceipt:query=>invoke('collection-workspace-receipt',query),
 }));
