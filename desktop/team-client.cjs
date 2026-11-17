@@ -9,6 +9,7 @@ const {createMaterialPreservationExportClient,PACKAGE_MAX}=require('./material-p
 const {createCollectionWorkspaceClient}=require('./collection-workspace-client.cjs');
 const {createWorkspaceFormalizationClient}=require('./workspace-formalization-client.cjs');
 const {createTrustedTeamServiceTransport}=require('./trusted-team-service-client.cjs');
+const {createIsolatedPreviewTransport}=require('./isolated-preview-transport.cjs');
 const {createMyDeviceClient}=require('./my-device-client.cjs');
 const {createWorkspaceSourceClient,MAX_SOURCE_BYTES}=require('./workspace-source-client.cjs');
 const {createLedgerCheckClient,ledgerTransportValid,MAX_LEDGER_SNAPSHOT_BYTES}=require('./ledger-check-client.cjs');
@@ -118,9 +119,10 @@ async function preservationBytes(response,limit,check,signal,label='资料保全
   }finally{for(const chunk of chunks)chunk.fill(0);if(!complete)void reader.cancel().catch(()=>{});}
 }
 
-function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wechatPolicy,openAuthorization,now=Date.now,deviceIdentity,trustedService} = {}) {
+function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wechatPolicy,openAuthorization,now=Date.now,deviceIdentity,trustedService,isolatedPreview} = {}) {
   if (baseUrl !== API_BASE || typeof fetchImpl !== 'function') throw failure('INVALID_SERVER', '预览版只连接本机审易服务。');
-  const trusted=trustedService===undefined?null:createTrustedTeamServiceTransport({profile:trustedService,fetchImpl,boundedBytes,error:failure});
+  if(trustedService!==undefined&&isolatedPreview!==undefined)throw failure('INVALID_SERVER','团队服务配置不能混用。');
+  const trusted=isolatedPreview!==undefined?createIsolatedPreviewTransport({profile:isolatedPreview,fetchImpl,boundedBytes,error:failure}):trustedService===undefined?null:createTrustedTeamServiceTransport({profile:trustedService,fetchImpl,boundedBytes,error:failure});
   if(trusted&&(!deviceIdentity||!['win32','darwin'].includes(deviceIdentity.platform)||!deviceIdentity.vault||!['getPublicIdentity','signChallenge','signRequest'].every(name=>typeof deviceIdentity.vault[name]==='function')))throw failure('DEVICE_VAULT_UNAVAILABLE','受信团队服务需要系统保护的设备密钥。');
   const requestUrl=route=>trusted?trusted.url(route):API_BASE+route;
   let token = null, current = null, generation = 0,wechat,device,replacement,workpaperClient;
@@ -172,7 +174,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     try { onDispatch?.();response = await fetchImpl(target, {method, redirect: 'error', signal: transportSignal,
       headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'}),...(signed?.headers??{})},
       ...(serialized === undefined ? {} : {body: serialized})}); }
-    catch { if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');signed?.assertCurrent();if(guardedHooks)materialCheck();if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('SERVICE_UNAVAILABLE', protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':(trusted?'无法连接受信HTTPS团队服务，业务已暂停；联网后请重新核验。':'无法连接本机团队服务，业务已暂停；联网后请重新核验。')); }
+    catch { if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');signed?.assertCurrent();if(guardedHooks)materialCheck();if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('SERVICE_UNAVAILABLE', protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':(isolatedPreview?'无法连接独立合成预览，业务已暂停；请核对该候选窗口。':trusted?'无法连接受信HTTPS团队服务，业务已暂停；联网后请重新核验。':'无法连接本机团队服务，业务已暂停；联网后请重新核验。')); }
     if (at !== generation) {
       if(workpaper)void response.body?.cancel().catch(()=>{});
       if(discardSessionOnChange&&response.ok)try{trusted?.responseIdentity(response,target);await revokeResponseToken(await boundedBytes(response,1024*1024));}catch{}

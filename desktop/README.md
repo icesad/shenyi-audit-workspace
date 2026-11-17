@@ -1,6 +1,10 @@
 # 审易团队采集桌面预览（M2/M3/M4A–M4E）
 
-独立的Electron候选壳，沿用现有审易品牌。只连接本机`http://127.0.0.1:8774`合成服务；不接原浏览器业务库，不用于正式客户资料。[正常设备会话](../docs/DESKTOP_DEVICE_SESSION.md)与[员工/管理员换机审批](../docs/DEVICE_REPLACEMENT.md)已通过Windows本地验收；生产HTTPS、签名/安装/更新、Mac实机、最高审核账号自身恢复及商业化能力仍未完成。
+独立的Electron候选壳，沿用现有审易品牌。普通入口连接本机`http://127.0.0.1:8774`合成服务；另有[独立合成候选入口](../docs/ISOLATED_CANDIDATE_PREVIEW.md)，每次建立独立动态端口和全新数据，供保留旧预览时查看当前分支；不接原浏览器业务库，不用于正式客户资料。[正常设备会话](../docs/DESKTOP_DEVICE_SESSION.md)与[员工/管理员换机审批](../docs/DEVICE_REPLACEMENT.md)已通过Windows本地验收；生产HTTPS、签名/安装/更新、Mac实机、最高审核账号自身恢复及商业化能力仍未完成。
+
+## 保留旧预览时查看当前候选
+
+Windows 双击根目录 `Start-Team-Candidate-Preview.cmd`。新窗口有“独立合成候选预览”标题，不连接或升级旧8774共享库；每次启动新的合成库、profile和设备密钥，关闭后文件保留但不自动续用。合成账号 `manager-a`、`partner-a`、`intern-a`、`assistant-a`，密码 `ShenyiDemo!2026`；登录仍须明确登记电脑。macOS命令和边界见[候选预览说明](../docs/ISOLATED_CANDIDATE_PREVIEW.md)，Mac实机未验。
 
 ## 本机运行
 
