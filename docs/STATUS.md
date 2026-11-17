@@ -1,5 +1,7 @@
 # 当前状态：M4O本地候选（完整严格门：PASS）
 
+2026-11-17用户决定：首版暂不开放产品负责人等最高审核账号的密码找回及换机恢复，具体线下处理规则后续另定；现有普通流程继续拒绝这些身份。不再把该能力作为首版待实现项；员工和团队管理员的已确认恢复／换机规则沿用。详见[首版范围决定](PRIVILEGED_ACCOUNT_RECOVERY_DECISION.md)。
+
 M4O立项来源独立授权、查阅及规范JSON保存已实现，分支 `codex/workspace-source-access`，实现基线 `5b855c7`，范围见[实施合同](WORKSPACE_SOURCE_ACCESS_CONTRACT.md)。负责人验证当前密码，为自己或本项目有效经理／合伙人分别配置read和export；执行保存必须read && export，01可独立存权但不补授read。覆盖W工作区业务确认来源及旧Q迁入来源；旧自动回执无read时只显示一般已确认状态，unknown保留原查询编号且不重发POST。职级、owner、技术管理员、资料清单权均不自动获得来源权，不构成现实中标查证、最终项目金额或专业审计签发。
 
 Windows正常入口12场景／7PNG／148依赖及独立原生产物复核已通过：正常W创建、原件上传和业务确认、Q审核迁入后的正常查阅、负责人逐项授权、source-only非负责人入口、AND四组合、W/Q原规范JSON逐byte保存、held Save撤权／取消零发布、真实rename后结果未知不重试均有证据。服务端51、client93、UI34及各独立专题通过；这些组存在重叠，不与完整回归相加。旧8组strict原生兼容一批通过，265.265秒、577源及原始输入保持；97份旧验收适配／8阶段125条转换链已独审，旧历史66/189、69/209、70/217均真重建，早期失败和P2修前证据保留。
@@ -8,7 +10,7 @@ Windows正常入口12场景／7PNG／148依赖及独立原生产物复核已通�
 
 四次实际只读在线备份及独审保留原71表223定义、全部typed行（含auth，无豁免）、9／16合成账号和两UUID；升级后73表252定义，仅新增2表／26trigger／1index，两来源表空。两个原cmd入口当次真实窗口、health及设备协议可达，不宣称持续存活。1108原文件51,358,212B和13处既存CRLF前件保留；范围预审为115旧改＋23新、993原raw保持，业务公式、原编号／Q-W及历史原件不变。证据根 `D:/codex-temp/shenyi-workspace-source-access-20261117/`，原生／兼容／共享及范围独审分别见 `independent-native-review/review-final.json`、`independent-compatibility-review/review.json`、`independent-shared-final-review/review.json`、`independent-scope-review/report.json`。
 
-本地交付状态 windows_local_candidate_technical_verified；实际commit与最终门禁以外部 `D:/codex-temp/shenyi-workspace-source-access-20261117/final-delivery.json` 及Git为准，不预填未来SHA。未push／进入main／上线。M4整体及完整Goal保持active，其他专业模块逐出口授权／显式迁入、最高审核账号恢复、真实身份与商户／支付供应商、订阅席位、国内域名服务器及备案、Mac／真人picker／真实异机／双平台签名发行和两负责人业务签收仍按独立关卡推进。本片不代替这些验收；既有M3E和M4历史原样保留。
+本地交付状态 windows_local_candidate_technical_verified；实际commit与最终门禁以外部 `D:/codex-temp/shenyi-workspace-source-access-20261117/final-delivery.json` 及Git为准，不预填未来SHA。未push／进入main／上线。M4整体及完整Goal保持active，其他专业模块逐出口授权／显式迁入、真实身份与商户／支付供应商、订阅席位、国内域名服务器及备案、Mac／真人picker／真实异机／双平台签名发行和两负责人业务签收仍按独立关卡推进。本片不代替这些验收；既有M3E和M4历史原样保留。
 
 ## 最近已验交付：M3E本人电脑信息与记录
 

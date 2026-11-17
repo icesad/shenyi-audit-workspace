@@ -1,5 +1,7 @@
 # 审易 GOAL · 团队商业化接续版
 
+2026-11-17用户决定：首版暂不开放产品负责人等最高审核账号的密码找回及换机恢复，具体线下处理规则后续另定；现有普通流程继续拒绝这些身份。不再把该能力作为首版待实现项；员工和团队管理员的已确认恢复／换机规则沿用。详见[首版范围决定](docs/PRIVILEGED_ACCOUNT_RECOVERY_DECISION.md)。
+
 更新：2026-11-17。当前用户已授权整理并建立持续推进的团队商业化Goal；以下新增范围优先于旧轮次的范围描述，既有审计业务规则继续保留。
 
 ## 当前执行目标
@@ -12,7 +14,7 @@ Windows正常入口12场景／7PNG／148依赖及独立原生产物复核已通�
 
 四次实际只读在线备份及独审保留原71表223定义、全部typed行（含auth，无豁免）、9／16合成账号和两UUID；升级后73表252定义，仅新增2表／26trigger／1index，两来源表空。两个原cmd入口当次真实窗口、health及设备协议可达，不宣称持续存活。1108原文件51,358,212B和13处既存CRLF前件保留；范围预审为115旧改＋23新、993原raw保持，业务公式、原编号／Q-W及历史原件不变。证据根 `D:/codex-temp/shenyi-workspace-source-access-20261117/`，原生／兼容／共享及范围独审分别见 `independent-native-review/review-final.json`、`independent-compatibility-review/review.json`、`independent-shared-final-review/review.json`、`independent-scope-review/report.json`。
 
-本地交付状态 windows_local_candidate_technical_verified；实际commit与最终门禁以外部 `D:/codex-temp/shenyi-workspace-source-access-20261117/final-delivery.json` 及Git为准，不预填未来SHA。未push／进入main／上线。M4整体及完整Goal保持active，其他专业模块逐出口授权／显式迁入、最高审核账号恢复、真实身份与商户／支付供应商、订阅席位、国内域名服务器及备案、Mac／真人picker／真实异机／双平台签名发行和两负责人业务签收仍按独立关卡推进。本片不代替这些验收；既有M3E和M4历史原样保留。
+本地交付状态 windows_local_candidate_technical_verified；实际commit与最终门禁以外部 `D:/codex-temp/shenyi-workspace-source-access-20261117/final-delivery.json` 及Git为准，不预填未来SHA。未push／进入main／上线。M4整体及完整Goal保持active，其他专业模块逐出口授权／显式迁入、真实身份与商户／支付供应商、订阅席位、国内域名服务器及备案、Mac／真人picker／真实异机／双平台签名发行和两负责人业务签收仍按独立关卡推进。本片不代替这些验收；既有M3E和M4历史原样保留。
 
 ### 最近已验交付：M3E本人电脑信息与记录
 
