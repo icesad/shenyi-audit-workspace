@@ -1,4 +1,5 @@
 'use strict';
+const {ledgerLegacyFormCount}=require('./helpers/ledger-check-entry-layer.cjs');
 const {withDeviceDiagnostic}=require('./helpers/desktop-device-diagnostic.cjs');
 // Synthetic bridge + actual renderer DOM. No browser, QR, SMS, or WeChat traffic.
 const test=require('node:test');const assert=require('node:assert/strict');
@@ -38,7 +39,7 @@ test('browser authorization completes through polling without exposing or persis
   assert.equal(count(f,'pollWechatLogin'),0);f.poll();await until(()=>!f.id('workspace-view').hidden&&!f.id('logout').disabled);
   assert.equal(f.id('account-name').textContent,SESSION.account.displayName);assert.equal(f.id('role-label').textContent,'实习生');assert.equal(f.id('wechat-progress').hidden,true);assert.equal(f.timers.size,0);
   assert.deepEqual(f.calls.filter(call=>['startWechatLogin','pollWechatLogin'].includes(call.name)).map(call=>call.arg),[undefined,undefined]);
-  assert.deepEqual(f.writes,[]);assert.equal(f.d.querySelector('img[alt*="二维码"]'),null);assert.equal(f.d.querySelectorAll('form').length,22);
+  assert.deepEqual(f.writes,[]);assert.equal(f.d.querySelector('img[alt*="二维码"]'),null);assert.equal(ledgerLegacyFormCount(f.d),22);
   for(const input of f.d.querySelectorAll('input[type=password]'))assert.equal(input.value,'');
 });
 

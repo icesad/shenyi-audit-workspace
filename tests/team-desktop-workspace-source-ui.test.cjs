@@ -1,4 +1,5 @@
 'use strict';
+const {ledgerLegacyFormCount,ledgerLegacySecretCount}=require('./helpers/ledger-check-entry-layer.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{createHash}=require('node:crypto'),{JSDOM}=require('jsdom');
 const html=fs.readFileSync(path.join(__dirname,'../desktop/team-ui/index.html'),'utf8'),script=fs.readFileSync(path.join(__dirname,'../desktop/team-ui/team-ui.js'),'utf8');
 const sourceFixture=require('./helpers/legacy-project-source-fixture.cjs'),codec=require('../dist/legacy-project-source.js');
@@ -33,7 +34,7 @@ function proof(f){f.id('workspace-source-password').value='  Exact source grant 
 async function readSource(f){f.click('workspace-source-view');await until(()=>!f.id('workspace-source-data').hidden&&!f.id('workspace-source-refresh').disabled);}
 
 test('source UI adds one isolated grant form and secret while missing methods fail closed',async t=>{
-  const f=fixture(t,{getWorkspaceSource:undefined});await projectOpen(f);assert.equal(f.id('workspace-source-panel').hidden,true);assert.equal(count(f,'getWorkspaceSourceAccess'),0);assert.equal(count(f,'getWorkspaceSource'),0);assert.equal(f.d.querySelectorAll('form').length,22);assert.equal(f.d.querySelectorAll('input[type=password]').length,27);assert.deepEqual(f.writes,[]);
+  const f=fixture(t,{getWorkspaceSource:undefined});await projectOpen(f);assert.equal(f.id('workspace-source-panel').hidden,true);assert.equal(count(f,'getWorkspaceSourceAccess'),0);assert.equal(count(f,'getWorkspaceSource'),0);assert.equal(ledgerLegacyFormCount(f.d),22);assert.equal(ledgerLegacySecretCount(f.d),27);assert.deepEqual(f.writes,[]);
 });
 test('source owner without read can explicitly select self but never automatically receives source body',async t=>{
   const f=fixture(t);await sourceOpen(f);assert.equal(f.id('workspace-source-access-form').hidden,false);assert.match(f.id('workspace-source-members').textContent,/选择自己/);assert.equal(f.id('workspace-source-view').disabled,true);assert.equal(count(f,'getWorkspaceSource'),0);assert.equal(count(f,'exportWorkspaceSource'),0);assert.equal(f.id('workspace-source-data').textContent,'');assert.match(f.id('workspace-source-status').textContent,/未获来源查阅权/);

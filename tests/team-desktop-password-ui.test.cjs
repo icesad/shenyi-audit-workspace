@@ -1,4 +1,5 @@
 'use strict';
+const {ledgerLegacyFormCount,ledgerLegacySecretCount}=require('./helpers/ledger-check-entry-layer.cjs');
 const {withDeviceDiagnostic}=require('./helpers/desktop-device-diagnostic.cjs');
 // Actual renderer DOM with a synthetic narrow bridge. No supplier or native user.
 const test=require('node:test'),assert=require('node:assert/strict');
@@ -54,7 +55,7 @@ test('wrong current password keeps account usable and can be retried with cleare
 });
 test('confirmed success clears tasks, identity and all fifteen password inputs',async t=>{
   const f=fixture(t);await login(f);await open(f);for(const input of f.d.querySelectorAll('input[type=password]'))input.value='SYNTHETIC_STALE_SECRET';fill(f);f.submit('password-change-form');await until(()=>f.id('workspace-view').hidden);
-  assert.equal(f.d.querySelectorAll('form').length,22);assert.equal(f.d.querySelectorAll('input[type=password]').length,27);for(const input of f.d.querySelectorAll('input[type=password]'))assert.equal(input.value,'');assert.equal(f.id('account-name').textContent,'');assert.equal(f.id('task-list').children.length,0);assert.equal(f.id('password-change-panel').open,false);assert.match(f.id('login-message').textContent,/全部旧登录已退出/);assert.deepEqual(f.writes,[]);
+  assert.equal(ledgerLegacyFormCount(f.d),22);assert.equal(ledgerLegacySecretCount(f.d),27);for(const input of f.d.querySelectorAll('input[type=password]'))assert.equal(input.value,'');assert.equal(f.id('account-name').textContent,'');assert.equal(f.id('task-list').children.length,0);assert.equal(f.id('password-change-panel').open,false);assert.match(f.id('login-message').textContent,/全部旧登录已退出/);assert.deepEqual(f.writes,[]);
 });
 test('closing a submitted change clears proof but a later confirmed success still signs out',async t=>{
   const wait=deferred(),f=fixture(t,{changeOwnPassword:()=>wait.promise});await login(f);await open(f);fill(f);f.submit('password-change-form');await until(()=>count(f,'changeOwnPassword')===1);f.id('password-change-panel').querySelector('summary').click();assertClean(f);assert.match(f.id('workspace-message').textContent,/已提交的请求仍可能完成/);wait.resolve(safe({signedOut:true}));await until(()=>f.id('workspace-view').hidden);assert.match(f.id('login-message').textContent,/密码已修改/);

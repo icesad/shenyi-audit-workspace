@@ -1,4 +1,5 @@
 'use strict';
+const {ledgerLegacyFormCount,ledgerLegacySecretCount}=require('./helpers/ledger-check-entry-layer.cjs');
 const {withDeviceDiagnostic}=require('./helpers/desktop-device-diagnostic.cjs');
 // Actual renderer and a synthetic narrow bridge; no OS save dialog or customer files.
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{JSDOM}=require('jsdom');
@@ -22,7 +23,7 @@ async function ready(f){await login(f);await select(f);}
 function startDownload(f){f.download().click();}
 
 test('normal download submits only the current narrow identifiers and reports the saved filename',async t=>{
- const f=fixture(t);await ready(f);assert.equal(f.id('task-upload').disabled,true);startDownload(f);await until(()=>f.id('workspace-message').textContent.includes('原件副本已保存'));assert.deepEqual({...f.calls.find(call=>call.name==='downloadAttachment').input},{teamId:'team-a',taskId:'task-a',attachmentId:'attachment-a'});assert.equal(f.id('workspace-message').textContent,'原件副本已保存：合成原件A.txt');assert.equal(f.download().disabled,false);assert.equal(count(f,'downloadAttachment'),1);assert.equal(f.d.querySelectorAll('form').length,22);assert.equal(f.d.querySelectorAll('input[type=password]').length,27);
+ const f=fixture(t);await ready(f);assert.equal(f.id('task-upload').disabled,true);startDownload(f);await until(()=>f.id('workspace-message').textContent.includes('原件副本已保存'));assert.deepEqual({...f.calls.find(call=>call.name==='downloadAttachment').input},{teamId:'team-a',taskId:'task-a',attachmentId:'attachment-a'});assert.equal(f.id('workspace-message').textContent,'原件副本已保存：合成原件A.txt');assert.equal(f.download().disabled,false);assert.equal(count(f,'downloadAttachment'),1);assert.equal(ledgerLegacyFormCount(f.d),22);assert.equal(ledgerLegacySecretCount(f.d),27);
 });
 test('save cancellation stays distinct from completion and releases only the current busy state',async t=>{
  const pending=deferred(),f=fixture(t,{downloadAttachment:async()=>pending.promise});await ready(f);startDownload(f);assert.equal(f.id('refresh').disabled,true);assert.equal(f.download().disabled,true);pending.resolve(safe({canceled:true}));await until(()=>!f.id('refresh').disabled);assert.equal(f.id('workspace-message').textContent,'已取消，未保存副本。');assert.equal(count(f,'downloadAttachment'),1);assert.ok(!f.id('workspace-message').textContent.includes('已保存：'));

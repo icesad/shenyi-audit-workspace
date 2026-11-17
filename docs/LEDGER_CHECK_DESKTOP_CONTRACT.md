@@ -1,6 +1,6 @@
 # M4P 账表快照桌面主进程合同（候选）
 
-日期：2026-11-17。分支 `codex/ledger-check-readonly`，本轮起点 `0c11f29ad52d9c0e905bab5ebeb676e4c686cbb4`。依据[来源决定](LEDGER_CHECK_ACCESS_DECISION.md)、[快照合同](LEDGER_CHECK_SNAPSHOT_CONTRACT.md)及[服务端合同](LEDGER_CHECK_SERVER_CONTRACT.md)。本轮实现客户端传输与私有文件处理组件；正常桌面IPC、preload、界面和原生验收尚未接入，不把内部组件检查称为用户已可使用。
+日期：2026-11-17。分支 `codex/ledger-check-readonly`，本轮起点 `0c11f29ad52d9c0e905bab5ebeb676e4c686cbb4`。依据[来源决定](LEDGER_CHECK_ACCESS_DECISION.md)、[快照合同](LEDGER_CHECK_SNAPSHOT_CONTRACT.md)及[服务端合同](LEDGER_CHECK_SERVER_CONTRACT.md)。本轮实现客户端传输与私有文件处理组件；后续正常桌面IPC、preload和界面已接候选，见[正常界面合同](LEDGER_CHECK_UI_CONTRACT.md)；原生、完整门及独立验收仍未完成。
 
 ## 客户端传输
 
@@ -26,4 +26,4 @@
 
 早期客户端14项通过；主进程首轮27项25pass／2fail，失败为回执查询fixture误带额外版本字段，接口严格拒绝，已修正测试参数。另保留`metadata-retire-before.tap`：新增真实迟到错误用例修前失败并会暂停当前设备；修为四类元数据读取均捕获查阅代次后执行相关回归。没有放宽接口或旧测试断言。
 
-下一步注册窄IPC／preload、正常来源核验和只读工作台，保持既有`desktop/brand-spec.md`，完成账号／项目切换、退出、撤权及迟到响应清理，然后Windows原生、所需完整严格门及独立验收。独立额度限制不取消验收。本轮没有增加RPC、HTTP或schema，不打开／升级共享演示库，不修改原专业算法或旧端页面；未push、进入main或上线，一键入口未重验，Goal继续active。
+后续已按正常界面合同注册12项窄IPC及preload、来源核验和只读工作台，沿用既有`desktop/brand-spec.md`。下一步Windows原生、所需完整严格门和独立验收。独立额度限制不取消验收。该主进程基础阶段没有增加RPC、HTTP或schema；后续UI增加12项窄RPC，不打开／升级共享演示库，不修改原专业算法或旧端页面；未push、进入main或上线，一键入口未重验，Goal继续active。

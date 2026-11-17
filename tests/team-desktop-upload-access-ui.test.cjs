@@ -1,4 +1,5 @@
 'use strict';
+const {ledgerLegacyFormCount,ledgerLegacySecretCount}=require('./helpers/ledger-check-entry-layer.cjs');
 const {withDeviceDiagnostic}=require('./helpers/desktop-device-diagnostic.cjs');
 // Actual renderer with a synthetic narrow bridge. No native dialogs or audit data.
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{JSDOM}=require('jsdom');
@@ -21,7 +22,7 @@ async function select(f,taskId='task-a'){[...f.d.querySelectorAll('.task-button'
 async function ready(f){await login(f);await select(f);await until(()=>f.id('task-upload')&&!f.id('task-upload').disabled);}
 
 test('only a current matching server capability enables upload and sends the displayed revision',async t=>{
- const f=fixture(t);await ready(f);assert.match(f.id('task-submission-access-message').textContent,/已核验/);f.click('task-upload');await until(()=>count(f,'chooseAndUpload')===1&&!f.id('task-upload').disabled);assert.deepEqual({...f.calls.find(call=>call.name==='chooseAndUpload').input},{teamId:'team-a',taskId:'task-a',revision:3});assert.equal(count(f,'getTaskSubmissionAccess'),2);assert.match(f.id('workspace-message').textContent,/已取消，未提交/);assert.equal(f.d.querySelectorAll('form').length,22);assert.equal(f.d.querySelectorAll('input[type=password]').length,27);
+ const f=fixture(t);await ready(f);assert.match(f.id('task-submission-access-message').textContent,/已核验/);f.click('task-upload');await until(()=>count(f,'chooseAndUpload')===1&&!f.id('task-upload').disabled);assert.deepEqual({...f.calls.find(call=>call.name==='chooseAndUpload').input},{teamId:'team-a',taskId:'task-a',revision:3});assert.equal(count(f,'getTaskSubmissionAccess'),2);assert.match(f.id('workspace-message').textContent,/已取消，未提交/);assert.equal(ledgerLegacyFormCount(f.d),22);assert.equal(ledgerLegacySecretCount(f.d),27);
 });
 test('pending capability is visibly disabled even after global busy is released or a synthetic click',async t=>{
  const pending=deferred(),f=fixture(t,{getTaskSubmissionAccess:async()=>pending.promise});await login(f);await select(f);assert.equal(f.id('task-upload').disabled,true);assert.match(f.id('task-submission-access-message').textContent,/正在核验/);f.fire('task-upload');assert.equal(count(f,'chooseAndUpload'),0);pending.resolve(safe({canSubmit:true,revision:3}));await until(()=>!f.id('task-upload').disabled);

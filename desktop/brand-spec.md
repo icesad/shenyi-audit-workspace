@@ -14,3 +14,5 @@
 M2交互验收覆盖登录→读取任务→详情/提交记录→受控选择文件→上传保存→下载→退出；完整视觉升级留M6。
 
 M4H原件只读预览沿用同一视觉，不改变品牌或核心布局：独立阅读窗口使用真实logo、墨绿标题区、米白背景、白色文档区及原控件层级；文件名和正文可换行，关闭按钮、加载与失败提示及键盘焦点清楚可达。保持8px节奏、6px按钮圆角、原中文字体，减少动态效果。当前为extension/preserve，visual-variance 1、motion-intensity 0、information-density 6、asset-dependence 3、brand-fidelity 10；近距离笔记本阅读、安静且严谨，document内容优先。完整配色／字号升级仍归M6。
+
+M4P账表保存记录沿用同一视觉，属于Extension：独立授权项目列表、两份明确确认form和按需展开的只读数据树；保持真实logo、墨绿／米白、原中文字体与控件尺寸，不改变品牌或核心布局。visual-variance 1、motion-intensity 0、information-density 6、asset-dependence 3、brand-fidelity 10。源文件SHA可换行，长字段分段显示，键盘summary与焦点沿用既有规则；1280×900及900×900实际Chrome检查及截图已复看。整体视觉升级仍归M6，不借原保存结果暗示重新计算或专业签发。

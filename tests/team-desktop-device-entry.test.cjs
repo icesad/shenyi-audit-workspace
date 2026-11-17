@@ -1,4 +1,5 @@
 'use strict';
+const {ledgerOldChannelNames}=require('./helpers/ledger-check-entry-layer.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {EventEmitter}=require('node:events');
 const {resolveDeviceVaultDirectory}=require('../desktop/device-key-directory.cjs');
@@ -28,5 +29,5 @@ test('three new device IPCs reject foreign frames and arbitrary network/path inp
   const dispose=registerDesktopBridge({ipcMain:{handle:(key,fn)=>handlers.set(key,fn),removeHandler:key=>handlers.delete(key)},window:{webContents},client,dialog:{}}),event={sender:webContents,senderFrame:frame};
   for(const name of ['device-status','device-enroll','device-reconnect','device-replacement-status','device-replacement-request','device-replacement-withdraw','device-replacement-activate','device-replacement-review-access','device-replacement-reviews','device-replacement-review'])for(const foreign of [{sender:{},senderFrame:frame},{sender:webContents,senderFrame:{url:APP_URL}},{sender:webContents,senderFrame:{url:'https://evil.invalid'}}])assert.equal((await handlers.get('shenyi:'+name)(foreign,{})).error.code,'UNTRUSTED_SENDER');
   assert.equal((await handlers.get('shenyi:device-status')(event,{token:'secret'})).ok,false);assert.equal((await handlers.get('shenyi:device-reconnect')(event,{url:'https://evil.invalid'})).ok,false);assert.equal((await handlers.get('shenyi:device-enroll')(event,{confirmed:true,currentPassword:'synthetic',displayName:'设备',path:'D:/private'})).ok,false);assert.equal(calls,0);
-  assert.equal((await handlers.get('shenyi:device-status')(event)).ok,true);assert.equal((await handlers.get('shenyi:device-reconnect')(event)).ok,true);assert.equal(calls,2);assert.equal(handlers.size,123);dispose();assert.equal(handlers.size,0);
+  assert.equal((await handlers.get('shenyi:device-status')(event)).ok,true);assert.equal((await handlers.get('shenyi:device-reconnect')(event)).ok,true);assert.equal(calls,2);assert.equal(ledgerOldChannelNames(handlers).length,123);dispose();assert.equal(handlers.size,0);
 });

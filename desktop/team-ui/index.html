@@ -9,6 +9,7 @@
   <title>审易 · 团队采集预览</title>
   <link rel="stylesheet" href="team-ui.css">
   <script src="project-materials.js" defer></script>
+  <script src="ledger-checks.js" defer></script>
   <script src="team-ui.js" defer></script>
 </head>
 <body>
@@ -16,7 +17,7 @@
     <div class="brand"><img src="brand-shenyi.png" alt="审易标识" width="64" height="52"><span>审易<small>AUDIT WORKSPACE</small></span></div>
     <div class="workspace-label">团队工作空间</div>
     <div class="nav-active"><span class="nav-number">01</span> 我的采集任务</div>
-    <div class="scope-note">仅显示当前账号获指派的资料任务。项目及资料的其他内容不在此工作空间展示。</div>
+    <div class="scope-note">仅展示当前账号已获授权的任务和业务记录。<br>每个模块单独授权，范围以服务端当前核验为准。</div>
     <div class="sidebar-foot"><span class="status-dot"></span> <span id="service-preview-label">本机合成演示</span><br><small>团队模式 · M2 开发预览</small></div>
   </aside>
   <main>
@@ -120,6 +121,31 @@
       </details>
       <details id="account-sessions-panel" class="identity-panel account-sessions-panel"><summary>我的登录会话</summary><p id="account-sessions-guidance" class="identity-note">仅显示你的有效登录。填写当前密码后可退出指定或其他登录；退出当前或全部登录将返回登录页。这里不代表已绑定的电脑。</p><div class="account-sessions-heading"><span id="account-sessions-count" class="identity-note"></span><button id="account-sessions-refresh" class="button" type="button">刷新登录列表</button></div><ul id="account-sessions-list" class="account-sessions-list"></ul><button id="account-sessions-more" class="button" type="button" hidden>继续加载登录</button><div class="account-sessions-proof"><label for="account-sessions-password">当前账号密码</label><input id="account-sessions-password" type="password" autocomplete="current-password" maxlength="1024" placeholder="输入当前密码后选择退出操作" aria-describedby="account-sessions-guidance"><div class="account-sessions-bulk" role="group" aria-label="退出登录操作"><button id="account-sessions-revoke-others" class="button" type="button">退出其他登录</button><button id="account-sessions-revoke-all" class="button account-sessions-danger" type="button">退出全部登录</button></div></div><p id="account-sessions-message" class="feedback" role="status" aria-live="polite"></p></details>
       <details id="password-change-panel" class="identity-panel password-change-panel"><summary>修改账号密码</summary><p id="password-change-guidance" class="identity-note">修改成功后，包括当前窗口在内的全部旧登录都会退出，请使用新密码重新登录。这里通过当前密码验证，不是短信找回。</p><form id="password-change-form" class="password-change-form"><div class="password-change-fields"><div><label for="password-change-current">当前密码</label><input id="password-change-current" type="password" autocomplete="current-password" maxlength="512" placeholder="输入当前账号密码" aria-describedby="password-change-guidance"></div><div><label for="password-change-new">新密码</label><input id="password-change-new" type="password" autocomplete="new-password" maxlength="512" placeholder="12至128个字符，保留首尾空格" aria-describedby="password-change-policy"></div><div><label for="password-change-confirm">确认新密码</label><input id="password-change-confirm" type="password" autocomplete="new-password" maxlength="512" placeholder="再次输入相同的新密码" aria-describedby="password-change-policy"></div></div><p id="password-change-policy" class="identity-note">新密码需12至128个字符，首尾空格和大小写按原样保留。请自行妥善保管。</p><div class="password-change-actions"><button id="password-change-submit" class="button primary" type="submit" disabled>修改密码并退出全部登录</button><button id="password-change-clear" class="button" type="button">清空并收起</button></div></form><p id="password-change-message" class="feedback" role="status" aria-live="polite"></p></details>
+      <details id="ledger-check-panel" class="identity-panel ledger-check-panel" hidden>
+        <summary>账表校验记录 · 只读</summary>
+        <p class="identity-note">仅查阅从旧版显式导入的已保存记录，不重新运行校验、不改映射、不写底稿。没有记录时如实为空；原结果不等于审计结论。</p>
+        <div class="member-management-tools"><input id="ledger-check-project-search" type="search" maxlength="80" autocomplete="off" placeholder="查找获准的账表项目" aria-label="查找账表项目"><button id="ledger-check-project-search-button" class="button" type="button">查询项目</button></div>
+        <ul id="ledger-check-projects" class="member-management-list"></ul><button id="ledger-check-projects-more" class="button" type="button" hidden>继续加载项目</button>
+        <section id="ledger-check-detail" hidden>
+          <div class="invitation-list-heading"><div><h3 id="ledger-check-title"></h3><p id="ledger-check-status" class="identity-note"></p></div><button id="ledger-check-refresh" class="button" type="button">刷新当前权限和记录</button></div>
+          <p id="ledger-check-permission" class="identity-note"></p>
+          <section id="ledger-check-owner" hidden>
+            <h4>单独设置查阅权</h4><p class="identity-note">项目负责人不自动获得查阅权。可为自己或本团队合格项目经理／合伙人明确授权；不同时开通其他模块。</p>
+            <div class="member-management-tools"><input id="ledger-check-member-search" type="search" maxlength="80" autocomplete="off" aria-label="查找可授权人员" placeholder="按姓名查找"><button id="ledger-check-member-search-button" class="button" type="button">查询人员</button></div>
+            <ul id="ledger-check-members" class="member-management-list"></ul><button id="ledger-check-members-more" class="button" type="button" hidden>继续加载人员</button>
+            <form id="ledger-check-grant-form"><fieldset id="ledger-check-grant-fields" disabled><legend>确认本项目查阅授权</legend><p id="ledger-check-member-target" class="identity-note">尚未选择人员。</p><label class="device-consent"><input id="ledger-check-grant-read" type="checkbox">允许查阅本项目已导入账表记录</label><label for="ledger-check-grant-password">本人当前密码</label><input id="ledger-check-grant-password" type="password" autocomplete="current-password" maxlength="512"><label class="device-consent"><input id="ledger-check-grant-confirmed" type="checkbox">我已核对人员及本次查阅权。</label><button id="ledger-check-grant-submit" class="button primary" type="submit" disabled>确认修改查阅权</button></fieldset></form>
+          </section>
+          <section id="ledger-check-import" hidden>
+            <h4>负责人核验并导入快照</h4><p class="identity-note">先在旧版“项目登记表”显式导出已保存的账表校验快照。这里的格式与哈希检查不证明账套真实、原件完整或计算正确；请本人核验来源后确认。导入追加历史版本，不覆盖原记录。</p>
+            <form id="ledger-check-import-form"><fieldset id="ledger-check-import-fields" disabled><legend>本次来源确认</legend><div class="device-actions"><button id="ledger-check-source-open" class="button" type="button">选择旧版账表快照JSON</button><button id="ledger-check-source-discard" class="button" type="button" disabled>清除本次来源</button></div><div id="ledger-check-source-summary" class="ledger-check-proof"></div><label class="device-consent"><input id="ledger-check-source-verified" type="checkbox">我已核验这份已保存快照确属当前项目。来源预检不代表重新校验或审计签发。</label><label for="ledger-check-import-password">本人当前密码</label><input id="ledger-check-import-password" type="password" autocomplete="current-password" maxlength="512"><label class="device-consent"><input id="ledger-check-import-confirmed" type="checkbox">确认追加导入此快照；不运行校验、不写底稿。</label><button id="ledger-check-import-submit" class="button primary" type="submit" disabled>确认导入已保存快照</button></fieldset></form>
+          </section>
+          <section id="ledger-check-records" hidden><h4>已导入的历史版本</h4><p class="identity-note">按服务端导入版本排列。原保存时间与导入时间分别保留，不自动认定旧文件为当前最新结果。</p><ul id="ledger-check-history" class="member-management-list"></ul><button id="ledger-check-history-more" class="button" type="button" hidden>继续加载版本</button></section>
+          <section id="ledger-check-viewer" hidden><h4 id="ledger-check-data-title"></h4><p class="identity-note">以下为原快照中的保存内容，未重新计算。空数据、不完整状态和差异提示按原样显示。</p><div id="ledger-check-tabs" class="device-actions" role="group" aria-label="选择原快照内容"></div><div id="ledger-check-data" class="ledger-check-data"></div></section>
+          <section id="ledger-check-query" hidden><h4>负责人核对原导入操作</h4><p class="identity-note">仅原导入负责人可查询本人的回执。结果未知时保留原编号；暂未查到不代表取消，也不会自动重新提交。</p><label for="ledger-check-operation-id">原操作编号</label><input id="ledger-check-operation-id" autocomplete="off" maxlength="36"><button id="ledger-check-receipt" class="button" type="button">只读查询原操作</button><ul id="ledger-check-attempts" class="member-management-list"></ul><div id="ledger-check-receipt-summary" class="ledger-check-proof"></div></section>
+        </section>
+        <p id="ledger-check-message" class="feedback" role="status" aria-live="polite"></p>
+      </details>
+
       <p id="workspace-message" class="feedback" role="status" aria-live="polite"></p>
       <div class="collection-layout"><section class="task-list-panel" aria-label="获指派任务"><div class="panel-title"><h2>任务列表</h2><span id="task-count"></span></div><div id="task-list" class="task-list"></div><button id="load-more" class="button load-more" type="button" hidden>继续加载</button></section>
       <section id="task-detail" class="task-detail" aria-label="任务详情"><div class="detail-empty"><span class="empty-symbol" aria-hidden="true">▤</span><h2>从左侧选择任务</h2><p>任务要求和你的提交记录将在这里显示。</p></div></section></div>

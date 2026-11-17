@@ -15,6 +15,7 @@ const {createMaterialPreservationExporter}=require('./material-preservation-expo
 const {myDeviceQuery}=require('./my-device-client.cjs');
 const {workspaceSourceInput}=require('./workspace-source-client.cjs');
 const {createWorkspaceSourceExporter,workspaceSourceExportInput,workspaceSourceCancelInput}=require('./workspace-source-export.cjs');
+const {createLedgerCheckBridge}=require('./ledger-check-bridge.cjs');
 const APP_URL = 'shenyi://app/index.html';
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 function input(value, keys) {
@@ -50,6 +51,8 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   let workspaceFormalization;
   let materialPreservationExport;
   let workspaceSourceExport;
+  let ledgerCheckBridge;
+  const ledgers=()=>ledgerCheckBridge??=createLedgerCheckBridge({client,dialog,window});
   const preservations=()=>materialPreservationExport??=createMaterialPreservationExporter({client,dialog,window});
   const formalizations=()=>workspaceFormalization??=createWorkspaceFormalizationManager({client,dialog,window});
   const sourceExports=()=>workspaceSourceExport??=createWorkspaceSourceExporter({client,dialog,window});
@@ -58,7 +61,7 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   const submissionPreviews=()=>submissionPreview??=(createTaskSubmissionPreviewManager({client,openWindow:hooks=>{materialPreview?.closeAll();return createMaterialPreviewWindow({parent:window,...hooks});}}));
   const maintenance=()=>materialMaintenance??=(createMaterialMaintenanceManager({client,dialog,window}));
   const closeMaterialPreview=()=>{materialPreview?.closeAll();submissionPreview?.closeAll();materialMaintenance?.closeAll();};
-  const clearRendererResources=()=>{materialPreservationExport?.closeAll();workspaceSourceExport?.closeAll();closeMaterialPreview();workspaceFormalization?.clearSource();};
+  const clearRendererResources=()=>{ledgerCheckBridge?.clearAll();materialPreservationExport?.closeAll();workspaceSourceExport?.closeAll();closeMaterialPreview();workspaceFormalization?.clearSource();};
   const parentContents=window.webContents;
   const parentNavigation=(_event,_url,_inPlace,isMainFrame)=>{if(isMainFrame!==false)clearRendererResources();};
   parentContents.on?.('did-start-navigation',parentNavigation);
@@ -255,6 +258,18 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('workspace-source',arg=>client.getWorkspaceSource(workspaceSourceInput(arg,'access',(...args)=>new ClientError(...args))));
   handle('workspace-source-export',arg=>{const value=workspaceSourceExportInput(arg);return sourceExports().exportWorkspaceSource(value);});
   handle('workspace-source-export-cancel',arg=>{const value=workspaceSourceCancelInput(arg);return workspaceSourceExport?workspaceSourceExport.cancelWorkspaceSourceExport(value):{canceled:false};});
-  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',clearRendererResources);materialPreview?.dispose();submissionPreview?.dispose();materialMaintenance?.dispose();workspaceCreation?.dispose();workspaceFormalization?.dispose();materialPreservationExport?.dispose();workspaceSourceExport?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
+  handle('ledger-check-view-open',arg=>ledgers().openLedgerCheckView(arg));
+  handle('ledger-check-view-close',arg=>ledgers().closeLedgerCheckView(arg));
+  handle('ledger-check-projects',arg=>ledgers().listLedgerCheckProjects(arg));
+  handle('ledger-check-access',arg=>ledgers().getLedgerCheckAccess(arg));
+  handle('ledger-check-members',arg=>ledgers().listLedgerCheckMembers(arg));
+  handle('ledger-check-access-change',arg=>ledgers().changeLedgerCheckAccess(arg));
+  handle('ledger-check-history',arg=>ledgers().listLedgerCheckSnapshots(arg));
+  handle('ledger-check-snapshot',arg=>ledgers().getLedgerCheckSnapshot(arg));
+  handle('ledger-check-import-receipt',arg=>ledgers().getLedgerCheckImportReceipt(arg));
+  handle('ledger-check-source-open',arg=>ledgers().chooseLedgerCheckSource(arg));
+  handle('ledger-check-source-confirm',arg=>ledgers().confirmLedgerCheckImport(arg));
+  handle('ledger-check-source-discard',arg=>ledgers().discardLedgerCheckSource(arg));
+  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',clearRendererResources);ledgerCheckBridge?.dispose();materialPreview?.dispose();submissionPreview?.dispose();materialMaintenance?.dispose();workspaceCreation?.dispose();workspaceFormalization?.dispose();materialPreservationExport?.dispose();workspaceSourceExport?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
 }
 module.exports={APP_URL,registerDesktopBridge,readChosenFile,safeDownloadName};
