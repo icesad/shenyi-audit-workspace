@@ -1,6 +1,6 @@
 # M4P 账表快照正常桌面界面合同（候选）
 
-日期：2026-11-17。分支 `codex/ledger-check-readonly`，起点 `7d59b6c`。依据[用户决定](LEDGER_CHECK_ACCESS_DECISION.md)、[服务端合同](LEDGER_CHECK_SERVER_CONTRACT.md)及[主进程合同](LEDGER_CHECK_DESKTOP_CONTRACT.md)。本轮接入正常团队页面、受控应用资源和窄IPC，修正后的Windows原生、原完整单元严格门及旧8组原生兼容root检查已通过，仍待共享候选保全／原一键入口及独立复核；不宣称整个M4P或商业化Goal完成。
+日期：2026-11-17。分支 `codex/ledger-check-readonly`，起点 `7d59b6c`。依据[用户决定](LEDGER_CHECK_ACCESS_DECISION.md)、[服务端合同](LEDGER_CHECK_SERVER_CONTRACT.md)及[主进程合同](LEDGER_CHECK_DESKTOP_CONTRACT.md)。本轮接入正常团队页面、受控应用资源和窄IPC，修正后的Windows原生、原完整单元严格门及旧8组原生兼容root检查已通过，原一键／共享数据保全也已通过root检查，仍待独立复核；不宣称整个M4P或商业化Goal完成。
 
 ## 正常入口和权限
 
@@ -30,7 +30,7 @@
 
 实际Chrome检查运行正常HTML、CSS、preload与主进程桥，后端使用真实TeamClient、设备签名Request应用边界和隔离SQLite；原生picker与Electron主frame由fixture注入，未当作OS或Electron验收。1280×900及900×900无横向溢出，动态HTML字符串按文本显示，关闭可清空并重开；源文件SHA、规范JSON及26张原资源表保持，只有一笔导入POST和一份新版本，无计算引擎资源或pageerror。首轮截图发现过时侧栏范围说明，修正后重新执行并复看截图，原图与技术报告保留。
 
-本轮不新增HTTP或schema、不打开／升级共享演示库，不改原专业算法和旧版dist页面；独立复核仍待额度条件解除，不用root检查代替。尚未push、进入main或上线，一键入口未重验。下一步为共享候选保全／原一键入口与独立验收，Goal保持active。
+本轮不新增HTTP或schema、不打开／升级共享演示库，不改原专业算法和旧版dist页面；独立复核仍待额度条件解除，不用root检查代替。尚未push、进入main或上线，一键入口未重验。下一步为独立验收及其发现问题的修正，Goal保持active。
 
 ## 2026-11-17 原生与完整门验收修正
 
@@ -50,4 +50,14 @@
 
 旧8组执行在 `old-native-compatibility/run-20261117T063350273386Z/`：正常入口、业务确认、旧项目迁入、项目授权、资料清单、W/Q资料身份、本人电脑、受信HTTPS。原脚本只在外部loader应用48处精确新增层投影／报告实际数量／新证据目录适配，原assert调用数和其他bytes可逆保留；Electron产品main／preload／renderer不加载该loader。每组实际记录135RPC／24form／29密码及77表／290定义（适用组），101次运行层核验，8份PASS报告和46PNG保留。`old-native-compatibility-root-audit.json`核对报告、日志、源和原输入SHA；代表性本人电脑及错误UUID截图已复看。此为root检查，不代替待补独审；picker／Save仍为原合成fixture。
 
-共享库预备：`shared-readonly-proof-2026-11-17T06-50-14-803Z/report.json`实际以readOnly＋query_only备份普通／审核两库，均与前次已验73表／252定义、9／16账号及固定UUID逐typed快照相同。在各自私有副本模拟原启动的初始化及幂等seed，原73表全部typed行（含auth无豁免）和252定义保持，只增4空表／33trigger／1index；重复初始化一致，每库5种篡改被校验拒绝。共享原库未初始化、未重启；现有审核预览公开接口可达不等于本轮候选一键已验。
+共享库预备（原启动前记录）：`shared-readonly-proof-2026-11-17T06-50-14-803Z/report.json`实际以readOnly＋query_only备份普通／审核两库，均与前次已验73表／252定义、9／16账号及固定UUID逐typed快照相同。在各自私有副本模拟原启动的初始化及幂等seed，原73表全部typed行（含auth无豁免）和252定义保持，只增4空表／33trigger／1index；重复初始化一致，每库5种篡改被校验拒绝。该预备试验未初始化或重启共享原库；随后原入口实际验收见下节。
+
+## 2026-11-17 原一键与实际共享数据保全root结果
+
+`shared-oneclick/root-audited-report.json`核对普通与审核两原cmd的实际进程树、新Electron窗口、公开health和设备协议；普通UUID `2ca00942-a098-4c03-a020-5f65fd716ae9`、审核UUID `5c1e076f-7d9a-40e6-8a3e-c15174f9f468`均保持，deviceBinding required=true／protocolVersion1。仅正常关闭唯一已核对归属的旧预览，未force；原审核预览已恢复打开，最后活性07:37:41 UTC是当次观察，不承诺持续。未登录或向共享库发送业务请求；该入口检查不冒充共享账号的账表业务全流程、安装签名、Mac或生产验收。
+
+两共享库均有before／after／正常关闭时的实际只读在线备份，全部连接readOnly＋query_only。普通／审核分别9／16账号，原73表全部typed行（含auth，无豁免）和252定义逐项保持，且实际after快照等于之前私有副本模拟启动结果；仅新增4张空账表表、33trigger和1index至77／290。共享升级由原启动脚本执行，保全脚本不写共享库。全部备份通过integrity／FK检查，源1168文件在原一键周期before／after raw一致。
+
+两张实际原生登录页PNG已复看，按Windows120DPI／125%显示缩放使用per-monitor-v2线程上下文取得1515×1000物理图，捕获后还原线程DPI，不改窗口大小或焦点。初次日期值经字符串Parse失真，以及1212×800裁切图均已留证并修正外部取证驱动；未把裁切图当产品布局缺陷。停止阶段原报告的空表布尔按mode填写，root audit从保留的真实快照重算实际4表为空，原报告未改写。这些更正没有修改产品或源测试代码。
+
+独审资料包 `D:/codex-temp/shenyi-ledger-check-acceptance-20261117/independent-review-package.json`已准备，覆盖base `881165a`至实现 `9e19da8`的6提交／133改动路径和121份运行或测试文件绑定；要求复核源码、明确授权、并发撤权、私有文件与生命周期，以及所有旧检查适配和原生／共享实际证据。仅标prepared，未执行独审；额度限制不豁免该关卡。M4P／M4和完整Goal继续进行中，未push、进入main或上线；账表运行、映射保存和底稿写入仍关闭，其他专业模块、真实供应商／支付、Mac、签名发行与国内上线仍按完整路线推进。

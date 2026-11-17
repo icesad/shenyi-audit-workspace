@@ -1,5 +1,7 @@
 # M4P 账表校验只读接入合同（进行中）
 
+当前接入状态（2026-11-17）：正常界面、Windows原生、4324项可移植单元严格门、旧8组原生兼容及原一键／共享保全均已通过root检查，独立复核仍待完成。实际证据及各阶段范围见[正常界面合同](LEDGER_CHECK_UI_CONTRACT.md)和[进度](../进度.md)；下文基础阶段记录保留，不把root结果当独审、Mac或生产验收。
+
 基线：`881165a958a06c07a356e6d84dc5006de554c116`；分支 `codex/ledger-check-readonly`。政策依据见[用户决定](LEDGER_CHECK_ACCESS_DECISION.md)。完整商业化Goal继续，M4P不是整个M4或正式发行验收。
 
 ## 当前实际产物

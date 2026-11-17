@@ -1,5 +1,7 @@
 # M4P 账表快照桌面主进程合同（候选）
 
+当前接入状态（2026-11-17）：正常界面、Windows原生、4324项可移植单元严格门、旧8组原生兼容及原一键／共享保全均已通过root检查，独立复核仍待完成。实际证据及各阶段范围见[正常界面合同](LEDGER_CHECK_UI_CONTRACT.md)和[进度](../进度.md)；下文基础阶段记录保留，不把root结果当独审、Mac或生产验收。
+
 日期：2026-11-17。分支 `codex/ledger-check-readonly`，本轮起点 `0c11f29ad52d9c0e905bab5ebeb676e4c686cbb4`。依据[来源决定](LEDGER_CHECK_ACCESS_DECISION.md)、[快照合同](LEDGER_CHECK_SNAPSHOT_CONTRACT.md)及[服务端合同](LEDGER_CHECK_SERVER_CONTRACT.md)。本轮实现客户端传输与私有文件处理组件；后续正常桌面IPC、preload和界面已接候选，见[正常界面合同](LEDGER_CHECK_UI_CONTRACT.md)；原生、完整门及独立验收仍未完成。
 
 ## 客户端传输
