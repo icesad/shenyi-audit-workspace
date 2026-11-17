@@ -27,6 +27,37 @@ const SOURCES=Object.freeze([
   Object.freeze({name:'operator',invitations:'team_operator_employee_invitations',challenges:'team_operator_employee_activation_challenges',authorized:canOperateTeam}),
 ]);
 const sourceOf=row=>SOURCES.find(source=>source.name===row.source);
+function invitationListQuery(url,userId,teamId){
+  const keys=[...url.searchParams.keys()];
+  if(keys.some(key=>!['after','limit'].includes(key))||new Set(keys).size!==keys.length)invalid();
+  const limitText=url.searchParams.get('limit');
+  if(limitText!==null&&!/^(?:[1-9]|[1-4][0-9]|50)$/.test(limitText))invalid();
+  const limit=limitText===null?50:Number(limitText),after=url.searchParams.get('after');
+  if(after===null)return {limit,position:null};
+  if(!after||after.length>1024||!/^[A-Za-z0-9_-]+$/.test(after))invalid();
+  const bytes=Buffer.from(after,'base64url');if(bytes.toString('base64url')!==after)invalid();
+  const text=bytes.toString('utf8');if(!Buffer.from(text,'utf8').equals(bytes))invalid();
+  let tuple;try{tuple=JSON.parse(text);}catch{invalid();}
+  if(!Array.isArray(tuple)||tuple.length!==6||JSON.stringify(tuple)!==text||tuple[0]!==1||
+    typeof tuple[1]!=='string'||!ID.test(tuple[1])||tuple[1]!==userId||typeof tuple[2]!=='string'||!ID.test(tuple[2])||tuple[2]!==teamId||
+    typeof tuple[3]!=='string'||!SOURCES.some(source=>source.name===tuple[3])||
+    !Number.isSafeInteger(tuple[4])||tuple[4]<0||typeof tuple[5]!=='string'||!ID.test(tuple[5]))invalid();
+  return {limit,position:{source:tuple[3],createdAt:tuple[4],invitationId:tuple[5]}};
+}
+function invitationPosition(userId,teamId,row){return Buffer.from(JSON.stringify([1,userId,teamId,row.source,row.created_at,row.invitation_id])).toString('base64url');}
+function compareInvitations(a,b){return b.created_at-a.created_at||(a.invitation_id<b.invitation_id?1:a.invitation_id>b.invitation_id?-1:0)||(a.source<b.source?1:a.source>b.source?-1:0);}
+function invitationList(db,request,url,userId,teamId,now){
+  const {limit,position}=invitationListQuery(url,userId,teamId);
+  if(position){const source=SOURCES.find(value=>value.name===position.source);if(!db.prepare('SELECT 1 FROM '+source.invitations+' WHERE team_id=? AND invitation_id COLLATE BINARY=? AND created_at=?').get(teamId,position.invitationId,position.createdAt))invalid();}
+  const rows=SOURCES.flatMap(source=>{
+    const seek=position?' AND (created_at<? OR (created_at=? AND invitation_id COLLATE BINARY<?) OR (created_at=? AND invitation_id COLLATE BINARY=? AND ? COLLATE BINARY<?))':'';
+    const params=position?[teamId,position.createdAt,position.createdAt,position.invitationId,position.createdAt,position.invitationId,source.name,position.source,limit+1]:[teamId,limit+1];
+    return db.prepare('SELECT * FROM '+source.invitations+' WHERE team_id=?'+seek+' ORDER BY created_at DESC,invitation_id COLLATE BINARY DESC LIMIT ?').all(...params).map(row=>({...row,source:source.name}));
+  }).sort(compareInvitations);
+  const at=now();sameActor(db,request,userId,at);if(!canInvite(db,userId,teamId))deny();
+  const page=rows.slice(0,limit),nextCursor=rows.length>limit?invitationPosition(userId,teamId,page[page.length-1]):null;
+  return json({invitations:page.map(row=>({invitationId:row.invitation_id,...publicInvitation(row),status:row.accepted_at!==null?'accepted':row.revoked_at!==null?'revoked':row.expires_at<=at?'expired':'pending'})),nextCursor});
+}
 function canInvite(db,userId,teamId){return SOURCES.some(source=>source.authorized(db,userId,teamId));}
 function sameActor(db,request,userId,at){const actor=authenticated(db,request,at);if(actor.userId!==userId)deny();return actor;}
 function findInvitation(db,where,params){
@@ -70,7 +101,7 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
   const base=/^\/api\/teams\/([^/]+)\/employee-invitations(?:\/(access)|\/([^/]+)\/(revoke))?$/.exec(path);
   const action=path.startsWith('/api/auth/onboarding/')?path.slice('/api/auth/onboarding/'.length):null;
   if(!base&&!action)return null;
-  if(url.search)invalid();
+  if(url.search&&!(base&&!base[2]&&!base[3]&&request.method==='GET'))invalid();
   if(action==='capabilities'){
     if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
     return json({available:onboardingAvailable(identityProviders),invitationOnly:true});
@@ -97,11 +128,7 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
         return json({revoked:true});
       });
     }
-    if(request.method==='GET'){
-      const rows=SOURCES.flatMap(source=>db.prepare('SELECT * FROM '+source.invitations+' WHERE team_id=? ORDER BY created_at DESC,invitation_id DESC LIMIT 50').all(teamId))
-        .sort((a,b)=>b.created_at-a.created_at||(a.invitation_id<b.invitation_id?1:a.invitation_id>b.invitation_id?-1:0)).slice(0,50);
-      return json({invitations:rows.map(row=>({invitationId:row.invitation_id,...publicInvitation(row),status:row.accepted_at!==null?'accepted':row.revoked_at!==null?'revoked':row.expires_at<=now()?'expired':'pending'}))});
-    }
+    if(request.method==='GET')return invitationList(db,request,url,identity.userId,teamId,now);
     if(request.method!=='POST')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET, POST'});
     const body=await readJson(request,['phone','role']),phone=normalizePhone(body.phone);
     if(!['intern','assistant'].includes(body.role))invalid();

@@ -167,7 +167,7 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('onboarding-status',()=>client.getOnboardingStatus());
   handle('invitation-access',arg=>client.getInvitationAccess(input(arg,['teamId'])));
   handle('invitation-create',arg=>client.createEmployeeInvitation(input(arg,['teamId','phone','role'])));
-  handle('invitation-list',arg=>client.listEmployeeInvitations(input(arg,['teamId'])));
+  handle('invitation-list',arg=>client.listEmployeeInvitations(input(arg,['teamId','after','limit'])));
   handle('invitation-revoke',arg=>client.revokeEmployeeInvitation(input(arg,['teamId','invitationId'])));
   handle('activation-preview',arg=>client.previewEmployeeInvitation(input(arg,['invitationCode','phone'])));
   handle('activation-challenge',arg=>client.requestEmployeeActivation(input(arg,['invitationCode','phone'])));

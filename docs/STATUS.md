@@ -1,5 +1,13 @@
 # 当前状态：M4团队模块接入（进行中）
 
+## 2026-11-18 最新：员工邀请历史分页
+
+`codex/employee-invitation-pagination`从`ad421a0`接续M4，邀请列表可按每页最多50条前后查询；两来源稳定seek、账号／团队游标锚点和逐页权限核验，仍仅掩码、低权限员工定向邀请，无真实SMS。界面当前页／一次性码／关闭重开与context清理、单次创建／撤销已覆盖；跨来源同ID及pending写入切团队问题经审查纠正。
+
+独立13完整文件249/249、零失败／跳过、76695ms；52新项包含于总数。1152源门内raw同；收口仅新API测试EOF去2B、原断言29项复验，最终1151raw同＋1纯格式，旧1149仅5product＋旧expected null共6路径变化；UI有已披露EOL机械变化，非目标raw未宣称同。真实TCP21请求逐项对照／5业务签名带完整query重核，撤权分页404，194实际依赖同、自有服务关闭。均不是原生Win/Mac发行验收；342文件仅runner发现，未跑完整strict。
+
+两旧预览按用户决定保留，root仅进程／窗口／公开methods前后核同，未操作UI／DB／vault或升级共享库。未push／main／原一键重验／上线；报告待原答复，M4及完整Goal active。详见[进度](../进度.md)、[分页合同](EMPLOYEE_INVITATION_PAGING_CONTRACT.md)和`D:/codex-temp/shenyi-invitation-pagination-20261118/independent/gate-result.json`。以下保留历史范围。
+
 ## 2026-11-18 最新：正常Windows资料回执验收
 
 当前资料回执修复已在全新正常Windows候选首轮standalone exit0实跑：正常账号／DPAPI／创建及来源核验／UI五权，import与add自动fresh后回执10／13字段对真实持久事件一致；commit／add各一次、无回执GET补救。撤read后清正文详情，typed GET404；3原件加55B后4份，历史保持。

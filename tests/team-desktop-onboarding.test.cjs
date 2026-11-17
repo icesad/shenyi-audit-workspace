@@ -20,7 +20,7 @@ test('employee management requires main session before any request',async()=>{
 test('management DTOs preserve masked list, reject extra response fields, and expose code only at creation',async()=>{
   const f=signed('',(url)=>url.endsWith('/access')?json({canInvite:true,role:'partner'}):json({invitations:[{...INVITE,invitationId:'i-a',status:'pending',phone:PHONE,invitationCode:CODE}]}));await login(f);
   assert.deepEqual(await f.client.getInvitationAccess({teamId:'team-a'}),{canInvite:true});
-  assert.deepEqual(await f.client.listEmployeeInvitations({teamId:'team-a'}),{invitations:[{...INVITE,invitationId:'i-a',status:'pending'}]});
+  assert.deepEqual(await f.client.listEmployeeInvitations({teamId:'team-a'}),{invitations:[{...INVITE,invitationId:'i-a',status:'pending'}],nextCursor:null});
   assert.equal(f.calls.at(-1).options.headers.Authorization,'Bearer '+TOKEN);
   const created=signed('',()=>json({...INVITE,invitationId:'i-a',invitationCode:CODE,phone:PHONE,token:TOKEN}));await login(created);
   const value=await created.client.createEmployeeInvitation({teamId:'team-a',phone:PHONE,role:'intern'});assert.deepEqual(value,{...INVITE,invitationId:'i-a',invitationCode:CODE});

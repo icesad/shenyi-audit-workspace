@@ -40,6 +40,14 @@ function passwordInput(value) {
   return value;
 }
 function invitationCodeInput(value){if(typeof value!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(value)||Buffer.from(value,'base64url').toString('base64url')!==value)throw failure('INVALID_INPUT','请填写本次收到的完整邀请码。');return value;}
+function invitationCursorValid(value){return typeof value==='string'&&value.length>=1&&value.length<=1024&&/^[A-Za-z0-9_-]+$/.test(value)&&Buffer.from(value,'base64url').toString('base64url')===value;}
+function invitationListQuery(input){
+  exactKeys(input,['teamId','after','limit']);
+  const query=new URLSearchParams();
+  if(Object.hasOwn(input,'after')){if(!invitationCursorValid(input.after))throw failure('INVALID_INPUT','邀请翻页位置无效，请刷新列表。');query.set('after',input.after);}
+  if(Object.hasOwn(input,'limit')){if(!Number.isSafeInteger(input.limit)||input.limit<1||input.limit>50)throw failure('INVALID_INPUT','邀请每页数量需要1至50。');query.set('limit',String(input.limit));}
+  return query.size?'?'+query.toString():'';
+}
 function invitationView(value,expectedTeam){
   if(!value||typeof value.teamId!=='string'||!ID.test(value.teamId)||(expectedTeam&&value.teamId!==expectedTeam)||!['intern','assistant'].includes(value.role)||typeof value.phoneMasked!=='string'||!/^[+0-9* ]{7,32}$/.test(value.phoneMasked)||!value.phoneMasked.includes('*')||!Number.isSafeInteger(value.expiresAt))throw failure('INVALID_RESPONSE','邀请信息格式无效。');
   return {teamId:value.teamId,role:value.role,phoneMasked:value.phoneMasked,expiresAt:value.expiresAt};
@@ -468,7 +476,19 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
       if(typeof data.invitationId!=='string'||!ID.test(data.invitationId))throw failure('INVALID_RESPONSE','邀请信息格式无效。');
       return {...view,invitationId:data.invitationId,invitationCode:invitationCodeInput(data.invitationCode)};
     },
-    async listEmployeeInvitations(input){exactKeys(input,['teamId']);const data=await onboardingRequest(invitationPath(input.teamId));if(!Array.isArray(data?.invitations)||data.invitations.length>50)throw failure('INVALID_RESPONSE','邀请列表格式无效。');return {invitations:data.invitations.map(item=>{const view=invitationView(item,input.teamId);if(typeof item.invitationId!=='string'||!ID.test(item.invitationId)||!['pending','revoked','accepted','expired'].includes(item.status))throw failure('INVALID_RESPONSE','邀请列表格式无效。');return {...view,invitationId:item.invitationId,status:item.status};})};},
+    async listEmployeeInvitations(input){
+      const query=invitationListQuery(input),data=await onboardingRequest(invitationPath(input.teamId)+query);
+      if(!Array.isArray(data?.invitations)||data.invitations.length>(input.limit??50))throw failure('INVALID_RESPONSE','邀请列表格式无效。');
+      // Only the original unpaged call may consume a legacy server response.
+      const hasCursor=Object.hasOwn(data,'nextCursor');
+      if((query&&!hasCursor)||(hasCursor&&data.nextCursor!==null&&(!invitationCursorValid(data.nextCursor)||data.nextCursor===input.after||data.invitations.length===0)))throw failure('INVALID_RESPONSE','邀请翻页信息无效，请刷新列表。');
+      const invitations=data.invitations.map(item=>{
+        const view=invitationView(item,input.teamId);
+        if(typeof item.invitationId!=='string'||!ID.test(item.invitationId)||!['pending','revoked','accepted','expired'].includes(item.status))throw failure('INVALID_RESPONSE','邀请列表格式无效。');
+        return {...view,invitationId:item.invitationId,status:item.status};
+      });
+      return {invitations,nextCursor:hasCursor?data.nextCursor:null};
+    },
     async revokeEmployeeInvitation(input){exactKeys(input,['teamId','invitationId']);const data=await onboardingRequest(invitationPath(input.teamId)+'/'+id(input.invitationId)+'/revoke',{method:'POST',body:{}});if(data?.revoked!==true)throw failure('INVALID_RESPONSE','撤销结果无效。');return {revoked:true};},
     async previewEmployeeInvitation(input){const body=activationTarget(input,['invitationCode','phone']);return invitationView(await onboardingRequest('/api/auth/onboarding/preview',{method:'POST',authenticated:false,body}));},
     async requestEmployeeActivation(input){const body=activationTarget(input,['invitationCode','phone']);const data=await onboardingRequest('/api/auth/onboarding/challenges',{method:'POST',authenticated:false,body});if(typeof data?.challengeId!=='string'||!ID.test(data.challengeId)||!Number.isSafeInteger(data.expiresAt))throw failure('INVALID_RESPONSE','员工验证信息格式无效。');return {challengeId:data.challengeId,expiresAt:data.expiresAt};},

@@ -19,7 +19,7 @@
 | `GET /api/auth/onboarding/capabilities` | `{available,invitationOnly:true}`；不改变既有`/api/auth/methods`形状，无供应商秘密 |
 | `GET /api/teams/:teamId/employee-invitations/access` | 有效成员的当前邀请能力；UI读取此结果，不用前端角色值代替权限 |
 | `POST /api/teams/:teamId/employee-invitations` | 生成随机32字节邀请码，仅存SHA-256；固定目标手机号及intern/assistant，测试期限24小时 |
-| `GET`同路径 | 最近最多50条，脱敏手机号、角色、期限、状态；不再返回邀请码 |
+| `GET`同路径 | 每页最多50条，可前后翻查历史；脱敏手机号、角色、期限、状态，不再返回邀请码；见[分页合同](EMPLOYEE_INVITATION_PAGING_CONTRACT.md) |
 | `POST /api/teams/:teamId/employee-invitations/:id/revoke` | 再次校验当前角色和独立权限；撤销并使未消费激活挑战失败 |
 | `POST /api/auth/onboarding/preview` | 精确邀请码＋手机号才返回最小团队/岗位/脱敏手机号/期限，不说明账号是否存在 |
 | `POST /api/auth/onboarding/challenges` | 服务端SMS适配器、activate专用挑战；5分钟且不晚于邀请到期，绑定目的/邀请/手机号/期限的HMAC，无明文code落库 |
@@ -31,7 +31,7 @@
 
 当前对“已有任意业务或技术归属记录（含停用/撤销）”保守拒绝新增归属；这是多团队、离职转所及所有权政策未确认前的实验限制，不是已批准的商业规则。人工开通候选已实现首管理员，真实团队/主体核验、所有权转移和恢复仍待完成。不会把团队名称或ID当成已核实的机构身份。
 
-技术管理员的员工票据及挑战新增独立表，避免旧业务邀请的membership外键迫使技术账号获得审计职级。相同API只由服务端可信source选择表；列表合并后仍最多50，明文票只创建时返回。旧业务票仍依赖原经理/合伙人授权，新technical授权不能救活已降职票据；跨source出现歧义拒绝。
+技术管理员的员工票据及挑战新增独立表，避免旧业务邀请的membership外键迫使技术账号获得审计职级。相同API只由服务端可信source选择表；列表按[分页合同](EMPLOYEE_INVITATION_PAGING_CONTRACT.md)跨来源稳定排序、每页最多50，明文票只创建时返回。旧业务票仍依赖原经理/合伙人授权，新technical授权不能救活已降职票据；跨source出现歧义拒绝。
 
 `activation-schema.sql`只给标记正确的M2隔离库增加两张表，不改既有SMS用途CHECK、旧平台或客户库。升级共享合成库前已做SQLite在线备份；禁止将该脚本当作正式数据库迁移包。
 
