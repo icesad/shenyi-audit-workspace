@@ -1,5 +1,5 @@
 'use strict';
-const {ledgerCheckSchemaLayer}=require('./helpers/ledger-check-schema-layer.cjs');
+const {laterTeamSchemaLayers:ledgerCheckSchemaLayer}=require('./helpers/workpaper-access-schema-layer.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
 const {createWorkspaceMaterialsFixture,PASSWORD,digest,source,preservation}=require('./helpers/workspace-material-identity-fixture.cjs');
 const {createTeamMaterialsFixture}=require('./helpers/team-materials-fixture.cjs');

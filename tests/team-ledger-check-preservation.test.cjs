@@ -1,9 +1,10 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),{DatabaseSync}=require('node:sqlite'),{createHash}=require('node:crypto');
 const {source}=require('./helpers/project-access-fixture.cjs');
+const {withoutEmptyWorkpaperLayer}=require('./helpers/workpaper-access-schema-layer.cjs');
 function state(db){
  const definitions=db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all();
- const tables=definitions.filter(x=>x.type==='table').map(({name})=>{const q=db.prepare('SELECT * FROM "'+name+'" ORDER BY rowid');q.setReadBigInts(true);const rows=q.all().map(row=>Object.fromEntries(Object.entries(row).map(([k,v])=>[k,typeof v==='bigint'?['integer',v.toString()]:v instanceof Uint8Array?['blob',v.byteLength,createHash('sha256').update(v).digest('hex')]:[v===null?'null':typeof v,v]])));return{name,rows};});return{definitions,tables};
+ const tables=definitions.filter(x=>x.type==='table').map(({name})=>{const q=db.prepare('SELECT * FROM "'+name+'" ORDER BY rowid');q.setReadBigInts(true);const rows=q.all().map(row=>Object.fromEntries(Object.entries(row).map(([k,v])=>[k,typeof v==='bigint'?['integer',v.toString()]:v instanceof Uint8Array?['blob',v.byteLength,createHash('sha256').update(v).digest('hex')]:[v===null?'null':typeof v,v]])));return{name,rows};});return withoutEmptyWorkpaperLayer(db,{definitions,tables});
 }
 test('new ledger schema adds only its four empty tables and 38 definitions; old typed data and DDL survive upgrade',async t=>{
  const {initializeTeamDatabase,seedDemoTeamData}=await source('database.mjs'),db=new DatabaseSync(':memory:');t.after(()=>db.close());initializeTeamDatabase(db);await seedDemoTeamData(db);

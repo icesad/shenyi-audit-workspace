@@ -1,7 +1,7 @@
 'use strict';
 const {test,after}=require('node:test'),assert=require('node:assert/strict'),{DatabaseSync}=require('node:sqlite');
 const {createWorkspaceSourceFixture,source,uuid,restorePasswordWork}=require('./helpers/workspace-source-fixture.cjs');
-const {ledgerCheckSchemaLayer}=require('./helpers/ledger-check-schema-layer.cjs');
+const {laterTeamSchemaLayers:ledgerCheckSchemaLayer}=require('./helpers/workpaper-access-schema-layer.cjs');
 after(restorePasswordWork);
 const definitions=db=>db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' AND sql IS NOT NULL ORDER BY type,name").all().map(r=>({...r}));
 const tableNames=db=>db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(r=>r.name);

@@ -1,6 +1,6 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),{DatabaseSync}=require('node:sqlite');
-const {peelLedgerCheckSchema,assertLedgerCheckSchemaRestored}=require('./helpers/ledger-check-schema-peel.cjs');
+const {peelLedgerAndWorkpaperSchema:peelLedgerCheckSchema,assertLedgerAndWorkpaperSchemaRestored:assertLedgerCheckSchemaRestored}=require('./helpers/workpaper-access-schema-layer.cjs');
 const {source}=require('./helpers/project-access-fixture.cjs');
 const {createLedgerFixture,good}=require('./helpers/ledger-check-fixture.cjs');
 const schema=db=>db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().map(row=>({...row}));

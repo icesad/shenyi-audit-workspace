@@ -7,6 +7,7 @@ import {ensureDeviceServerId} from './device-policy.mjs';
 import {installMaterialQualificationTriggers} from './materials-scope.mjs';
 import {installWorkspaceSourceQualificationTriggers} from './workspace-source-scope.mjs';
 import {installLedgerCheckQualificationTriggers} from './ledger-check-scope.mjs';
+import {installWorkpaperAccessQualificationTriggers} from './workpaper-access-scope.mjs';
 
 export function initializeTeamDatabase(db) {
   db.exec('PRAGMA foreign_keys = ON');
@@ -35,9 +36,11 @@ export function initializeTeamDatabase(db) {
       db.exec(readFileSync(fileURLToPath(new URL('./workspace-formalization-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./workspace-source-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./ledger-check-schema.sql', import.meta.url)), 'utf8'));
+      db.exec(readFileSync(fileURLToPath(new URL('./workpaper-access-schema.sql', import.meta.url)), 'utf8'));
       installMaterialQualificationTriggers(db);
       installWorkspaceSourceQualificationTriggers(db);
       installLedgerCheckQualificationTriggers(db);
+      installWorkpaperAccessQualificationTriggers(db);
       ensureDeviceServerId(db);
       installRecoveryEpochTriggers(db);
       db.exec(readFileSync(fileURLToPath(new URL('./session-schema.sql', import.meta.url)), 'utf8'));
@@ -69,9 +72,11 @@ export function initializeTeamDatabase(db) {
       db.exec(readFileSync(fileURLToPath(new URL('./workspace-formalization-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./workspace-source-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./ledger-check-schema.sql', import.meta.url)), 'utf8'));
+      db.exec(readFileSync(fileURLToPath(new URL('./workpaper-access-schema.sql', import.meta.url)), 'utf8'));
     installMaterialQualificationTriggers(db);
       installWorkspaceSourceQualificationTriggers(db);
       installLedgerCheckQualificationTriggers(db);
+      installWorkpaperAccessQualificationTriggers(db);
     ensureDeviceServerId(db);
     installRecoveryEpochTriggers(db);
     db.exec(readFileSync(fileURLToPath(new URL('./session-schema.sql', import.meta.url)), 'utf8'));

@@ -1,5 +1,5 @@
 'use strict';
-const {ledgerCheckSchemaLayer}=require('./helpers/ledger-check-schema-layer.cjs');
+const {laterTeamSchemaLayers:ledgerCheckSchemaLayer}=require('./helpers/workpaper-access-schema-layer.cjs');
 const {grantSourceRead}=require('./helpers/explicit-workspace-source-read.cjs');
 // Independent M4L: isolated real SQLite, strict signed requests and actual desktop seams.
 const nodeTest=require('node:test'),assert=require('node:assert/strict');

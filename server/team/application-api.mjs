@@ -18,6 +18,7 @@ import {handleCollectionWorkspaceCreationRequest} from './workspace-creation-api
 import {handleWorkspaceFormalizationRequest} from './workspace-formalization-api.mjs';
 import {handleWorkspaceSourceRequest} from './workspace-source-api.mjs';
 import {handleLedgerCheckRequest} from './ledger-check-api.mjs';
+import {handleWorkpaperAccessRequest} from './workpaper-access-api.mjs';
 import {handleTeamMaterialsRequest} from './materials-api.mjs';
 import {handleMaterialPreservationRequest} from './materials-preservation-api.mjs';
 import {handleAdministratorBusinessRoleRequest} from './administrator-business-role-api.mjs';
@@ -76,6 +77,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       || await handleBusinessRoleRequest(request,options)
       || await handleProjectMigrationRequest(request,options)
       || await handleCollectionWorkspaceCreationRequest(request,options)
+      || await handleWorkpaperAccessRequest(request,options)
       || await handleLedgerCheckRequest(request,options)
       || await handleWorkspaceSourceRequest(request,options)
       || await handleWorkspaceFormalizationRequest(request,options)
@@ -94,6 +96,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       || await handleCollectionWriteRequest(request,options)
       || await handleTeamCollectionRequest(request,options);
   } catch (error) {
+    if(error?.message?.includes('WORKPAPER_ACCESS_CONFLICT'))return json({error:{code:'WORKPAPER_ACCESS_CONFLICT',message:'底稿授权状态冲突，请刷新核对。'}},409);
     if(error?.message?.includes('LEDGER_CHECK_CONFLICT'))return json({error:{code:'LEDGER_CHECK_CONFLICT',message:'账表来源、授权或版本冲突，请刷新或查询原回执。'}},409);
     if(error?.message?.includes('SOURCE_REVISION_CONFLICT'))return json({error:{code:'WORKSPACE_SOURCE_CONFLICT',message:'来源授权状态冲突，请刷新核对。'}},409);
     if(error?.message?.includes('WORKSPACE_FORMALIZATION_CONFLICT'))return json({error:{code:'WORKSPACE_FORMALIZATION_CONFLICT',message:'来源、工作区或业务确认状态冲突，请只读核对原回执。'}},409);

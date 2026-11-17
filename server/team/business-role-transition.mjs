@@ -3,9 +3,11 @@ import {businessRoleRevision,businessRoleIncrement,businessRoleConflict} from '.
 import {revokeMaterialAccess} from './materials-policy.mjs';
 import {revokeWorkspaceSourceAccess} from './workspace-source-grant.mjs';
 import {revokeLedgerAccess} from './ledger-check-grant.mjs';
+import {revokeWorkpaperAccess} from './workpaper-access-grant.mjs';
 
 // Internal transaction helper; caller owns membership, approval and final audit.
 export function revokeBusinessRoleAccess(db,{actorId,teamId,userId,at,reason='business-role.changed'}){
+ revokeWorkpaperAccess(db,{actorId,teamId,userId,at,reason});
  revokeLedgerAccess(db,{actorId,teamId,userId,at,reason});
  revokeWorkspaceSourceAccess(db,{actorId,teamId,userId,at,reason});
  revokeMaterialAccess(db,{actorId,teamId,userId,at,reason});

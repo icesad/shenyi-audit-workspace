@@ -1,6 +1,6 @@
 'use strict';
-const {peelLedgerCheckSchema,assertLedgerCheckSchemaRestored}=require('./helpers/ledger-check-schema-peel.cjs');
-const {ledgerCheckSchemaLayer}=require('./helpers/ledger-check-schema-layer.cjs');
+const {peelLedgerAndWorkpaperSchema:peelLedgerCheckSchema,assertLedgerAndWorkpaperSchemaRestored:assertLedgerCheckSchemaRestored}=require('./helpers/workpaper-access-schema-layer.cjs');
+const {laterTeamSchemaLayers:ledgerCheckSchemaLayer}=require('./helpers/workpaper-access-schema-layer.cjs');
 const {grantSourceRead}=require('./helpers/explicit-workspace-source-read.cjs');
 const {peelWorkspaceSourceSchema,assertWorkspaceSourceSchemaRestored}=require('./helpers/workspace-source-schema-peel.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');

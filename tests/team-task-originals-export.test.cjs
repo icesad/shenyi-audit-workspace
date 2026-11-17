@@ -1,5 +1,5 @@
 'use strict';
-const {ledgerCheckSchemaLayer}=require('./helpers/ledger-check-schema-layer.cjs');
+const {laterTeamSchemaLayers:ledgerCheckSchemaLayer}=require('./helpers/workpaper-access-schema-layer.cjs');
 // Genuine isolated SQLite + strict application routes. Direct SQL only prepares
 // synthetic edge states; all requests traverse the real device gate and API.
 const test=require('node:test'),assert=require('node:assert/strict');

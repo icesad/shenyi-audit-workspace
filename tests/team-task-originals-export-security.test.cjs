@@ -1,5 +1,5 @@
 'use strict';
-const {ledgerCheckSchemaLayer}=require('./helpers/ledger-check-schema-layer.cjs');
+const {laterTeamSchemaLayers:ledgerCheckSchemaLayer}=require('./helpers/workpaper-access-schema-layer.cjs');
 // Independent acceptance: genuine isolated SQLite and application requests with
 // separately encoded Ed25519 proofs. No customer/demo database, UI or product
 // manifest validator is used as the authorization or canonical-hash oracle.

@@ -1,5 +1,5 @@
 'use strict';
-const {ledgerCheckSchemaLayer}=require('./helpers/ledger-check-schema-layer.cjs');
+const {laterTeamSchemaLayers:ledgerCheckSchemaLayer}=require('./helpers/workpaper-access-schema-layer.cjs');
 const {sourceSchemaNames}=require('./helpers/workspace-source-schema-peel.cjs');
 // Real SQL/KDF and application boundary with an explicitly synthetic SMS sink.
 const test=require('node:test'),assert=require('node:assert/strict');

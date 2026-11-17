@@ -1,5 +1,5 @@
 'use strict';
-const {ledgerCheckSchemaLayer}=require('./helpers/ledger-check-schema-layer.cjs');
+const {laterTeamSchemaLayers:ledgerCheckSchemaLayer}=require('./helpers/workpaper-access-schema-layer.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
 const {createProjectMigrationFixture,migrationSource,REVIEWER,PASSWORD,digest,source}=require('./helpers/project-migration-fixture.cjs');
 const exact=(value,names)=>assert.deepEqual(Object.keys(value).sort(),[...names].sort());

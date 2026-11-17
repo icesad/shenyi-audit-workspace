@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
 const {createProjectAccessFixture,PASSWORD,NOW,source,digest}=require('./helpers/project-access-fixture.cjs');
-const {ledgerCheckSchemaLayer}=require('./helpers/ledger-check-schema-layer.cjs');
+const {laterTeamSchemaLayers:ledgerCheckSchemaLayer}=require('./helpers/workpaper-access-schema-layer.cjs');
 const CAP='/api/auth/project-access',snapshot=db=>JSON.stringify(db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().filter(row=>!['team_auth_limits','team_device_request_replays'].includes(row.name)).map(({name})=>[name,db.prepare('SELECT * FROM '+name).all()]));
 const events=db=>db.prepare('SELECT * FROM team_project_access_events').all();
 test('additive schema retains the 73 tables/252 objects baseline plus the bounded empty ledger layer and never registers a shared legacy project or public creation endpoint',async t=>{

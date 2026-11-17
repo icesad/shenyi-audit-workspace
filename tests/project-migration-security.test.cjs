@@ -1,5 +1,5 @@
 'use strict';
-const {ledgerCheckSchemaLayer}=require('./helpers/ledger-check-schema-layer.cjs');
+const {laterTeamSchemaLayers:ledgerCheckSchemaLayer}=require('./helpers/workpaper-access-schema-layer.cjs');
 // Independent M4F: real SQLite/application, native password work and separately
 // encoded device proofs. No product source builder or customer/shared database.
 const nodeTest=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto');
