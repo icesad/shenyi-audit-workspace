@@ -1,4 +1,5 @@
 'use strict';
+const {grantSourceRead}=require('./helpers/explicit-workspace-source-read.cjs');
 // Independent M4L: isolated real SQLite, strict signed requests and actual desktop seams.
 const nodeTest=require('node:test'),assert=require('node:assert/strict');
 const {fixture,actualClient,good,denied,uuid,sha,deferred,codec,migrationSource,PASSWORD,restorePasswordWork}=require('./helpers/workspace-formalization-security-fixture.cjs');
@@ -11,7 +12,7 @@ const exact=(value,keys)=>assert.deepEqual(Object.keys(value).sort(),[...keys].s
 const rejected=response=>{assert.ok([401,403,404,409].includes(response.status),JSON.stringify(response.data));assert.ok(response.data?.error);};
 
 test('normal owner confirms saved source while preserving W original data rights creation and source policy',async t=>{
- const f=await fixture(t),task=good(await f.createTask(f.actor,{projectId:f.projectId}),201).task;
+ const f=await fixture(t);await grantSourceRead(f);const task=good(await f.createTask(f.actor,{projectId:f.projectId}),201).task;
  const before=f.snapshot({omit:[FORMAL],revisionOf:f.projectId}),value=f.body(),oldView=good(await f.view()).project,context=good(await f.context()).context;exact(context,['teamId','projectId','projectRevision','canConfirm','confirmation']);assert.equal(context.canConfirm,true);assert.equal(context.confirmation,null);
  const result=good(await f.confirm(value),201);exact(result,['receipt']);exact(result.receipt,RECEIPT);const r=result.receipt;
  assert.equal(r.requestId,value.requestId);assert.equal(r.projectId,f.projectId);assert.notEqual(r.projectId,r.sourceProjectId);assert.equal(r.sourceProjectId,value.source.quote.id);assert.equal(r.sourceSha256,value.sourceSha256);assert.equal(r.confirmedBy,'manager-a');assert.equal(r.confirmedAt,f.clock.value);assert.equal(r.projectRevisionBefore,value.projectRevision);assert.equal(r.projectRevisionAfter,value.projectRevision+1);assert.equal(r.confirmationMode,MODE);
@@ -43,7 +44,7 @@ test('wrong owner password cannot publish formal facts or advance workspace revi
 });
 
 test('frozen context and committed receipt remain readable while new confirmation and archived reads close',async t=>{
- const f=await fixture(t),first=f.body();f.db.prepare("UPDATE team_projects SET status='frozen' WHERE project_id=?").run(f.projectId);assert.equal(good(await f.context()).context.canConfirm,false);denied(await f.confirm(first),409);f.db.prepare("UPDATE team_projects SET status='active' WHERE project_id=?").run(f.projectId);const r=good(await f.confirm({...first,projectRevision:f.revision(f.projectId)}),201).receipt;f.db.prepare("UPDATE team_projects SET status='frozen' WHERE project_id=?").run(f.projectId);assert.deepEqual(good(await f.receipt(r.requestId)).receipt,r);assert.equal(good(await f.context()).context.canConfirm,false);f.db.prepare("UPDATE team_projects SET status='archived' WHERE project_id=?").run(f.projectId);denied(await f.context(),404);denied(await f.receipt(r.requestId),404);
+ const f=await fixture(t);await grantSourceRead(f);const first=f.body();f.db.prepare("UPDATE team_projects SET status='frozen' WHERE project_id=?").run(f.projectId);assert.equal(good(await f.context()).context.canConfirm,false);denied(await f.confirm(first),409);f.db.prepare("UPDATE team_projects SET status='active' WHERE project_id=?").run(f.projectId);const r=good(await f.confirm({...first,projectRevision:f.revision(f.projectId)}),201).receipt;f.db.prepare("UPDATE team_projects SET status='frozen' WHERE project_id=?").run(f.projectId);assert.deepEqual(good(await f.receipt(r.requestId)).receipt,r);assert.equal(good(await f.context()).context.canConfirm,false);f.db.prepare("UPDATE team_projects SET status='archived' WHERE project_id=?").run(f.projectId);denied(await f.context(),404);denied(await f.receipt(r.requestId),404);
 });
 
 test('MAX safe project revision refuses confirmation without overflowing or writing audit',async t=>{
@@ -59,7 +60,7 @@ test('Q already belonging to another team project or collection workspace cannot
 });
 
 test('W and Q are globally one to one and a duplicate request never republishes',async t=>{
- const f=await fixture(t),value=f.body(),r=good(await f.confirm(value),201).receipt,other=good(await f.create(),201).receipt,before=f.snapshot({resourcesOnly:true});denied(await f.confirm(value),409);denied(await f.confirm(f.body({source:migrationSource({id:uuid(),sequence:44})})),409);denied(await f.confirm({...value,requestId:uuid(),projectRevision:f.revision(other.projectId)},{id:other.projectId}),409);assert.deepEqual(f.snapshot({resourcesOnly:true}),before);assert.deepEqual(good(await f.receipt(r.requestId)).receipt,r);denied(await f.receipt(r.requestId,{id:other.projectId}),404);
+ const f=await fixture(t);await grantSourceRead(f);const value=f.body(),r=good(await f.confirm(value),201).receipt,other=good(await f.create(),201).receipt,before=f.snapshot({resourcesOnly:true});denied(await f.confirm(value),409);denied(await f.confirm(f.body({source:migrationSource({id:uuid(),sequence:44})})),409);denied(await f.confirm({...value,requestId:uuid(),projectRevision:f.revision(other.projectId)},{id:other.projectId}),409);assert.deepEqual(f.snapshot({resourcesOnly:true}),before);assert.deepEqual(good(await f.receipt(r.requestId)).receipt,r);denied(await f.receipt(r.requestId,{id:other.projectId}),404);
 });
 
 test('same team year sequence conflicts in both M4F directions even with changed display risk',async t=>{
@@ -81,8 +82,8 @@ test('reserved Q rejects raw project INSERT and genuine key UPDATE but accepts a
 
 test('formalization retains immutable facts with precisely one new table and seven guards',async t=>{
  const f=await fixture(t),value=f.body();good(await f.confirm(value),201);const before=f.snapshot();assert.throws(()=>f.db.prepare('UPDATE '+FORMAL+' SET source_title=? WHERE request_id=?').run('replacement',value.requestId),/immutable/);assert.throws(()=>f.db.prepare('DELETE FROM '+FORMAL+' WHERE request_id=?').run(value.requestId),/retained/);assert.deepEqual(f.snapshot(),before);
- const definitions=f.db.prepare("SELECT name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' AND sql IS NOT NULL").all();assert.equal(definitions.filter(v=>/^workspace_formalization_/.test(v.name)).length,7);assert.equal(f.db.prepare("SELECT count(*) n FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n,71);
- assert.equal(definitions.length,223);assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(),[]);
+ const definitions=f.db.prepare("SELECT name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' AND sql IS NOT NULL").all();assert.equal(definitions.filter(v=>/^workspace_formalization_/.test(v.name)).length,7);assert.equal(f.db.prepare("SELECT count(*) n FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n,73);
+ assert.equal(definitions.length,252);assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(),[]);
 });
 
 test('real password work cannot survive owner role revoke and restore ABA',async t=>{
@@ -126,7 +127,7 @@ test('an audit trigger cannot smuggle a task mutation outside the explicit owner
 });
 
 test('receipt SELECT followed by actual owner revocation returns no stale source facts',async t=>{
- const f=await fixture(t),value=f.body();good(await f.confirm(value),201);const prepare=f.db.prepare;let hit=false;f.db.prepare=function(sql){const st=prepare.call(this,sql);if(sql.startsWith('SELECT formal.request_id')){const get=st.get;st.get=function(...args){const row=get.apply(this,args);if(!hit){hit=true;prepare.call(f.db,"UPDATE team_project_access_grants SET status='revoked',revision=revision+1 WHERE project_id=? AND permission='project.owner'").run(f.projectId);}return row;};}return st;};t.after(()=>{f.db.prepare=prepare;});const r=await f.receipt(value.requestId);rejected(r);assert.equal(hit,true);assert.equal(Object.hasOwn(r.data,'receipt'),false);
+ const f=await fixture(t);await grantSourceRead(f);const value=f.body();good(await f.confirm(value),201);const prepare=f.db.prepare;let hit=false;f.db.prepare=function(sql){const st=prepare.call(this,sql);if(sql.startsWith('SELECT formal.request_id')){const get=st.get;st.get=function(...args){const row=get.apply(this,args);if(!hit){hit=true;prepare.call(f.db,"UPDATE team_project_access_grants SET status='revoked',revision=revision+1 WHERE project_id=? AND permission='project.owner'").run(f.projectId);}return row;};}return st;};t.after(()=>{f.db.prepare=prepare;});const r=await f.receipt(value.requestId);rejected(r);assert.equal(hit,true);assert.equal(Object.hasOwn(r.data,'receipt'),false);
 });
 
 test('approved administrator owner is eligible but its approval ABA during KDF cannot publish',async t=>{
@@ -135,7 +136,7 @@ test('approved administrator owner is eligible but its approval ABA during KDF c
 });
 
 test('normal new lease reconciles immutable owner receipt while foreign owner and old lease are denied',async t=>{
- const f=await fixture(t),value=f.body(),r=good(await f.confirm(value),201).receipt,current=await f.ready('manager-a',f.keys.get('manager-a'));assert.notEqual(current.lease.id,f.actor.lease.id);assert.deepEqual(good(await f.receipt(value.requestId,{current})).receipt,r);rejected(await f.receipt(value.requestId));const other=await f.ready('partner-a');denied(await f.receipt(value.requestId,{current:other}),404);denied(await f.receipt(uuid(),{current}),404);
+ const f=await fixture(t);await grantSourceRead(f);const value=f.body(),r=good(await f.confirm(value),201).receipt,current=await f.ready('manager-a',f.keys.get('manager-a'));assert.notEqual(current.lease.id,f.actor.lease.id);assert.deepEqual(good(await f.receipt(value.requestId,{current})).receipt,r);rejected(await f.receipt(value.requestId));const other=await f.ready('partner-a');denied(await f.receipt(value.requestId,{current:other}),404);denied(await f.receipt(uuid(),{current}),404);
 });
 
 test('actual main keeps a private chosen byte snapshot and public handle is the outgoing request identity',async t=>{
@@ -144,7 +145,7 @@ test('actual main keeps a private chosen byte snapshot and public handle is the 
 });
 
 test('actual COMMIT followed by lost reply returns unknown with one POST and only GET reconciliation',async t=>{
- const f=await fixture(t),c=await actualClient(f,t),selected=await c.choose();let drop=true;c.transport.rewrite=(info,response)=>{if(drop&&info.method==='POST'&&info.path.endsWith('/formalization')){drop=false;assert.equal(response.status,201);throw Error('Independent loss after real COMMIT');}return response;};const result=await c.manager.confirmWorkspaceFormalization(c.input(selected));assert.deepEqual(result,{status:'unknown',requestId:selected.handle});assert.equal(c.posts().length,1);assert.equal(f.db.prepare('SELECT count(*) n FROM '+FORMAL).get().n,1);assert.equal((await c.client.getDeviceStatus()).state,'paused');await c.client.reconnectDevice();const receipt=await c.client.getWorkspaceFormalizationReceipt({teamId:'team-a',projectId:f.projectId,requestId:selected.handle});exact(receipt,RECEIPT);assert.equal(receipt.confirmedBy,'manager-a');await assert.rejects(c.manager.confirmWorkspaceFormalization(c.input(selected)),e=>e.code==='FORMALIZATION_SOURCE_CHANGED');assert.equal(c.posts().length,1);
+ const f=await fixture(t);await grantSourceRead(f);const c=await actualClient(f,t),selected=await c.choose();let drop=true;c.transport.rewrite=(info,response)=>{if(drop&&info.method==='POST'&&info.path.endsWith('/formalization')){drop=false;assert.equal(response.status,201);throw Error('Independent loss after real COMMIT');}return response;};const result=await c.manager.confirmWorkspaceFormalization(c.input(selected));assert.deepEqual(result,{status:'unknown',requestId:selected.handle});assert.equal(c.posts().length,1);assert.equal(f.db.prepare('SELECT count(*) n FROM '+FORMAL).get().n,1);assert.equal((await c.client.getDeviceStatus()).state,'paused');await c.client.reconnectDevice();const receipt=await c.client.getWorkspaceFormalizationReceipt({teamId:'team-a',projectId:f.projectId,requestId:selected.handle});exact(receipt,RECEIPT);assert.equal(receipt.confirmedBy,'manager-a');await assert.rejects(c.manager.confirmWorkspaceFormalization(c.input(selected)),e=>e.code==='FORMALIZATION_SOURCE_CHANGED');assert.equal(c.posts().length,1);
 });
 
 test('held native picker loses real owner rights before it returns and opens no source file',async t=>{
@@ -160,7 +161,7 @@ test('obsolete source A discard cannot erase source B and malformed renderer sou
 });
 
 test('actual strict client rejects malformed context and receipt projections instead of exposing extra source fields',async t=>{
- const f=await fixture(t),c=await actualClient(f,t);for(const patch of [v=>{v.context.source_json='private source';},v=>{v.context.canConfirm='true';},v=>{v.context.projectId=uuid();}]){c.transport.rewrite=async(info,response)=>{if(info.method==='GET'&&info.path.endsWith('/formalization')){const value=await response.json();patch(value);return new Response(JSON.stringify(value),{status:200});}return response;};await assert.rejects(c.client.getWorkspaceFormalization({teamId:'team-a',projectId:f.projectId}),e=>e.code==='INVALID_RESPONSE');}c.transport.rewrite=null;const selected=await c.choose(),saved=(await c.manager.confirmWorkspaceFormalization(c.input(selected))).receipt;
+ const f=await fixture(t);await grantSourceRead(f);const c=await actualClient(f,t);for(const patch of [v=>{v.context.source_json='private source';},v=>{v.context.canConfirm='true';},v=>{v.context.projectId=uuid();}]){c.transport.rewrite=async(info,response)=>{if(info.method==='GET'&&info.path.endsWith('/formalization')){const value=await response.json();patch(value);return new Response(JSON.stringify(value),{status:200});}return response;};await assert.rejects(c.client.getWorkspaceFormalization({teamId:'team-a',projectId:f.projectId}),e=>e.code==='INVALID_RESPONSE');}c.transport.rewrite=null;const selected=await c.choose(),saved=(await c.manager.confirmWorkspaceFormalization(c.input(selected))).receipt;
  for(const patch of [v=>{v.receipt.source_json='extra';},v=>{v.receipt.confirmationMode='server-verified';},v=>{v.receipt.projectRevisionAfter++;},v=>{v.receipt.projectId=uuid();}]){c.transport.rewrite=async(info,response)=>{if(info.path.endsWith('/receipts/'+saved.requestId)){const value=await response.json();patch(value);return new Response(JSON.stringify(value),{status:200});}return response;};await assert.rejects(c.client.getWorkspaceFormalizationReceipt({teamId:'team-a',projectId:f.projectId,requestId:saved.requestId}),e=>e.code==='INVALID_RESPONSE');}assert.equal(c.posts().length,1);
 });
 
@@ -170,5 +171,5 @@ test('actual project client accepts only old eight unconfirmed nine and true con
 });
 
 test('clearing the panel after actual COMMIT cannot replay and preserves the preknown unknown request ID',async t=>{
- const f=await fixture(t),c=await actualClient(f,t),selected=await c.choose(),h=c.hold('after'),pending=c.manager.confirmWorkspaceFormalization(c.input(selected));const actual=await h.entered.promise;assert.equal(actual.status,201);assert.equal(f.db.prepare('SELECT request_id FROM '+FORMAL).get().request_id,selected.handle);assert.deepEqual(c.manager.discardWorkspaceFormalizationSource({handle:selected.handle}),{discarded:true});h.release.resolve();assert.deepEqual(await pending,{status:'unknown',requestId:selected.handle});const receipt=await c.client.getWorkspaceFormalizationReceipt({teamId:'team-a',projectId:f.projectId,requestId:selected.handle});assert.equal(receipt.requestId,selected.handle);await assert.rejects(c.manager.confirmWorkspaceFormalization(c.input(selected)),e=>e.code==='FORMALIZATION_SOURCE_CHANGED');assert.equal(c.posts().length,1);
+ const f=await fixture(t);await grantSourceRead(f);const c=await actualClient(f,t),selected=await c.choose(),h=c.hold('after'),pending=c.manager.confirmWorkspaceFormalization(c.input(selected));const actual=await h.entered.promise;assert.equal(actual.status,201);assert.equal(f.db.prepare('SELECT request_id FROM '+FORMAL).get().request_id,selected.handle);assert.deepEqual(c.manager.discardWorkspaceFormalizationSource({handle:selected.handle}),{discarded:true});h.release.resolve();assert.deepEqual(await pending,{status:'unknown',requestId:selected.handle});const receipt=await c.client.getWorkspaceFormalizationReceipt({teamId:'team-a',projectId:f.projectId,requestId:selected.handle});assert.equal(receipt.requestId,selected.handle);await assert.rejects(c.manager.confirmWorkspaceFormalization(c.input(selected)),e=>e.code==='FORMALIZATION_SOURCE_CHANGED');assert.equal(c.posts().length,1);
 });

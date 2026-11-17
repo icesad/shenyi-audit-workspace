@@ -1,10 +1,14 @@
-# 当前状态：立项来源授权政策已确认，待有界合同与实现
+# 当前状态：M4O本地候选（完整严格门：PASS）
 
-当前接续为立项来源查阅／导出分权的文档确认：`codex/workspace-source-access`，base `6d5eb15c3abc6f84afa833b74c3e3e4d28ae764e`（root显式参数已与执行时HEAD核对）。M3E是最近已验交付，以下保留其全部历史证据；本次只记录政策，不宣称新权限已实现。
+M4O立项来源独立授权、查阅及规范JSON保存已实现，分支 `codex/workspace-source-access`，实现基线 `5b855c7`，范围见[实施合同](WORKSPACE_SOURCE_ACCESS_CONTRACT.md)。负责人验证当前密码，为自己或本项目有效经理／合伙人分别配置read和export；执行保存必须read && export，01可独立存权但不补授read。覆盖W工作区业务确认来源及旧Q迁入来源；旧自动回执无read时只显示一般已确认状态，unknown保留原查询编号且不重发POST。职级、owner、技术管理员、资料清单权均不自动获得来源权，不构成现实中标查证、最终项目金额或专业审计签发。
 
-用户已确认立项来源（含客户、金额等）的查阅与导出分开明确授权。项目负责人验证密码后，分别明确授予自己或本项目有效经理／合伙人；资料清单权限不涵盖本项，不从职级、负责人身份、技术管理员身份或另一项权利推导。此决定不等于审计报告签发。决策见[立项来源授权决定](WORKSPACE_SOURCE_ACCESS_DECISION.md)。
+Windows正常入口12场景／7PNG／148依赖及独立原生产物复核已通过：正常W创建、原件上传和业务确认、Q审核迁入后的正常查阅、负责人逐项授权、source-only非负责人入口、AND四组合、W/Q原规范JSON逐byte保存、held Save撤权／取消零发布、真实rename后结果未知不重试均有证据。服务端51、client93、UI34及各独立专题通过；这些组存在重叠，不与完整回归相加。旧8组strict原生兼容一批通过，265.265秒、577源及原始输入保持；97份旧验收适配／8阶段125条转换链已独审，旧历史66/189、69/209、70/217均真重建，早期失败和P2修前证据保留。
 
-下一单项先盘点真实代码和受保护出口，写有界实现合同后再实施；不重复询问本次已确认的授权决定。不预设导出依赖关系、文件范围、API或收费。当前专业模块保持原关闭状态，不因本决定开放能力；既有资料权限、W/Q身份、历史原件与M3E源码不作改动。M4及完整Goal仍active；最高审核账号恢复、Mac／真人picker／真实异机／真实供应商／生产仍是独立后续关卡。
+原固定Node24 `scripts/test.mjs --unit --strict` 最终门：PASS；tests 4214／pass 4214／fail 0／skip 0／cancel 0／todo 0，TAP 1773861.365 ms、inner wrapper（Date.now） 1770471 ms、outer wrapper 1774860 ms；215 selected／59整browser粗排除，1022源before-after-current raw状态 一致。最终报告 D:/codex-temp/shenyi-workspace-source-access-20261117/full/full-audited-report.json；TAP SHA-256 217ac227106debb9386545dab0eb729eaa6b111a54dd55b76eab7714929fa7b5；独立完整门复核 D:/codex-temp/shenyi-workspace-source-access-20261117/independent-full-review/review.json。计数来自最终连续TAP/plan/footer与源清单，不采用途中计数。
+
+四次实际只读在线备份及独审保留原71表223定义、全部typed行（含auth，无豁免）、9／16合成账号和两UUID；升级后73表252定义，仅新增2表／26trigger／1index，两来源表空。两个原cmd入口当次真实窗口、health及设备协议可达，不宣称持续存活。1108原文件51,358,212B和13处既存CRLF前件保留；范围预审为115旧改＋23新、993原raw保持，业务公式、原编号／Q-W及历史原件不变。证据根 `D:/codex-temp/shenyi-workspace-source-access-20261117/`，原生／兼容／共享及范围独审分别见 `independent-native-review/review-final.json`、`independent-compatibility-review/review.json`、`independent-shared-final-review/review.json`、`independent-scope-review/report.json`。
+
+本地交付状态 windows_local_candidate_technical_verified；实际commit与最终门禁以外部 `D:/codex-temp/shenyi-workspace-source-access-20261117/final-delivery.json` 及Git为准，不预填未来SHA。未push／进入main／上线。M4整体及完整Goal保持active，其他专业模块逐出口授权／显式迁入、最高审核账号恢复、真实身份与商户／支付供应商、订阅席位、国内域名服务器及备案、Mac／真人picker／真实异机／双平台签名发行和两负责人业务签收仍按独立关卡推进。本片不代替这些验收；既有M3E和M4历史原样保留。
 
 ## 最近已验交付：M3E本人电脑信息与记录
 

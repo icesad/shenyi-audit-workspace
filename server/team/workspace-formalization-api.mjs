@@ -5,6 +5,7 @@ import {projectActor,currentActor,projectContext,projectScope,projectIncrement,p
 import {COLLECTION_WORKSPACE_KIND} from './workspace-creation-policy.mjs';
 import {formalizationConflict,formalizationDigest,formalizationReceipt,formalizationRequestUsed,FORMALIZATION_MODE} from './workspace-formalization-policy.mjs';
 import {UUID} from './device-policy.mjs';
+import {workspaceSourceActor,currentWorkspaceSourceActor,workspaceSourceGrant} from './workspace-source-policy.mjs';
 import {ApiError,ID,deny,invalid,json,readJson,transaction} from './http-utils.mjs';
 const FIELDS=['requestId','source','sourceSha256','projectRevision','currentPassword','businessConfirmed'];
 const RECEIPT='formal.request_id,formal.team_id,formal.project_id,formal.source_project_id,formal.source_title,formal.source_sha256,formal.business_number,formal.confirmed_by,CAST(formal.confirmed_at AS TEXT) confirmed_at,CAST(formal.project_revision_before AS TEXT) project_revision_before,CAST(formal.project_revision_after AS TEXT) project_revision_after,formal.confirmation_mode';
@@ -28,11 +29,12 @@ export async function handleWorkspaceFormalizationRequest(request,{db,now=Date.n
  const url=new URL(request.url),match=/^\/api\/teams\/([^/]+)\/projects\/([^/]+)\/formalization(?:\/receipts\/([^/]+))?$/.exec(url.pathname);if(!match)return null;
  const [,teamId,projectId,requestId]=match;if(!ID.test(teamId)||!ID.test(projectId)||requestId&&!UUID.test(requestId))deny();if(url.search)invalid();
  if(requestId?request.method!=='GET':!['GET','POST'].includes(request.method))return method(requestId?'GET':'GET, POST');
- const options={now,identityProviders,deviceContext},actor=projectActor(db,request,options,projectTime(now())),before=ownerContext(db,actor,teamId,projectId),facts=resourceFacts(db,teamId,projectId);
- const fresh=(revision=before.project.revision)=>{const current=currentActor(db,request,actor,options,projectTime(now())),context=ownerContext(db,current,teamId,projectId);if(context.member.stamp!==before.member.stamp||context.project.revision!==revision||resourceFacts(db,teamId,projectId)!==facts)formalizationConflict();return context;};
+ const options={now,identityProviders,deviceContext},actor=workspaceSourceActor(db,request,options,projectTime(now())),before=ownerContext(db,actor,teamId,projectId),facts=resourceFacts(db,teamId,projectId);
+ const fresh=(revision=before.project.revision)=>{const current=currentWorkspaceSourceActor(db,request,actor,options,projectTime(now())),context=ownerContext(db,current,teamId,projectId);if(context.member.stamp!==before.member.stamp||context.project.revision!==revision||resourceFacts(db,teamId,projectId)!==facts)formalizationConflict();return context;};
  if(request.method==='GET'){
-  const row=scopedRow(db,actor,teamId,projectId,requestId);fresh();if(requestId&&!row)deny();
-  return requestId?json({receipt:formalizationReceipt(row)}):json({context:{teamId,projectId,projectRevision:before.project.revision,canConfirm:before.project.status==='active'&&before.project.revision<Number.MAX_SAFE_INTEGER&&!row,confirmation:row?formalizationReceipt(row):null}});
+  const grant=workspaceSourceGrant(db,teamId,projectId,actor.userId);if(requestId&&!grant.read)deny();
+  const row=scopedRow(db,actor,teamId,projectId,requestId);fresh();if(workspaceSourceGrant(db,teamId,projectId,actor.userId).stamp!==grant.stamp)formalizationConflict();if(requestId&&!row)deny();
+  return requestId?json({receipt:formalizationReceipt(row)}):json({context:{teamId,projectId,projectRevision:before.project.revision,canConfirm:before.project.status==='active'&&before.project.revision<Number.MAX_SAFE_INTEGER&&!row,confirmation:row&&grant.read?formalizationReceipt(row):null}});
  }
  const body=await readJson(request,FIELDS,132*1024);fresh();
  if(Object.keys(body).length!==FIELDS.length||!UUID.test(body.requestId??'')||typeof body.sourceSha256!=='string'||!/^[a-f0-9]{64}$/.test(body.sourceSha256)||!Number.isSafeInteger(body.projectRevision)||body.projectRevision<1||body.businessConfirmed!==true||typeof body.currentPassword!=='string'||!body.currentPassword||Buffer.byteLength(body.currentPassword)>512)invalid();

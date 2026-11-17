@@ -120,4 +120,10 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   getWorkspaceFormalizationReceipt:query=>invoke('workspace-formalization-receipt',query),
   discardWorkspaceFormalizationSource:source=>invoke('workspace-formalization-source-discard',source),
   getMyDeviceOverview:query=>invoke('my-device-overview',query),
+  getWorkspaceSourceAccess:query=>invoke('workspace-source-access',query),
+  listWorkspaceSourceMembers:query=>invoke('workspace-source-members',query),
+  changeWorkspaceSourceAccess:confirmation=>invoke('workspace-source-access-change',confirmation),
+  getWorkspaceSource:query=>invoke('workspace-source',query),
+  exportWorkspaceSource:confirmation=>invoke('workspace-source-export',confirmation),
+  cancelWorkspaceSourceExport:operation=>invoke('workspace-source-export-cancel',operation),
 }));

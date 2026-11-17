@@ -5,6 +5,7 @@ import {prepareProjectAccessRevocation,finishProjectAccessRevocation} from './pr
 import {memberAccessAuthority,memberAccessOverview,memberAccessOwner,memberAccessTarget,memberIdentityRevision,memberListQuery,listMemberAccessTargets} from './member-access-policy.mjs';
 import {ApiError,ID,deny,invalid,json,readJson,transaction} from './http-utils.mjs';
 import {revokeMaterialAccess} from './materials-policy.mjs';
+import {revokeWorkspaceSourceAccess} from './workspace-source-grant.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const conflict=()=>{throw new ApiError(409,'MEMBER_ACCESS_CONFLICT','成员或授权状态已改变，请刷新核对。');};
 const method=allow=>json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:allow});
@@ -17,6 +18,7 @@ function currentState(db,request,actorId,kind,teamId,userId,at,stamp,revision){
   return {authority,target};
 }
 function disableMember(db,actorId,kind,teamId,target,at){
+  revokeWorkspaceSourceAccess(db,{actorId,teamId,userId:target.id,reason:'member.disabled',at});
   revokeMaterialAccess(db,{actorId,teamId,userId:target.id,reason:'member.disabled',at});
   const tasks=db.prepare(`SELECT DISTINCT assignment.task_id,CAST(COALESCE(version.revision,0) AS TEXT) AS revision
     FROM team_task_assignments AS assignment LEFT JOIN team_task_versions AS version

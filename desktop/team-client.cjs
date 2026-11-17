@@ -10,6 +10,7 @@ const {createCollectionWorkspaceClient}=require('./collection-workspace-client.c
 const {createWorkspaceFormalizationClient}=require('./workspace-formalization-client.cjs');
 const {createTrustedTeamServiceTransport}=require('./trusted-team-service-client.cjs');
 const {createMyDeviceClient}=require('./my-device-client.cjs');
+const {createWorkspaceSourceClient,MAX_SOURCE_BYTES}=require('./workspace-source-client.cjs');
 
 // Main-process only. The renderer never receives bearer tokens or raw fetch.
 const API_BASE = 'http://127.0.0.1:8774';
@@ -103,9 +104,9 @@ async function boundedBytes(response, limit) {
   return bytes;
 }
 
-async function preservationBytes(response,limit,check,signal){
+async function preservationBytes(response,limit,check,signal,label='资料保全包'){
   check();const length=response.headers.get('content-length');
-  if(length!==null&&(!/^(?:0|[1-9]\d*)$/.test(length)||Number(length)>limit))throw failure('RESPONSE_TOO_LARGE','资料保全包超过大小限制。');
+  if(length!==null&&(!/^(?:0|[1-9]\d*)$/.test(length)||Number(length)>limit))throw failure('RESPONSE_TOO_LARGE',label+'超过大小限制。');
   const reader=response.body?.getReader();if(!reader)return new Uint8Array();
   const chunks=[];let size=0,complete=false;
   try{for(;;){check();let remove;const aborted=new Promise((_,reject)=>{const stop=()=>reject(failure('SERVICE_UNAVAILABLE','资料保全响应读取已停止，请重新核验。'));if(signal.aborted)stop();else{signal.addEventListener('abort',stop,{once:true});remove=()=>signal.removeEventListener('abort',stop);}});let part;try{part=await Promise.race([reader.read(),aborted]);}finally{remove?.();}check();if(part.done){complete=true;break;}if(!(part.value instanceof Uint8Array)||size+part.value.length>limit)throw failure('RESPONSE_TOO_LARGE','资料保全包超过大小限制。');size+=part.value.length;chunks.push(Uint8Array.from(part.value));}
@@ -130,19 +131,25 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   async function revokeResponseToken(bytes){
     try{const data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));if(typeof data?.token==='string'&&/^[A-Za-z0-9_-]{43}$/.test(data.token))await detachedPost('/api/auth/logout',{},data.token);}catch{}
   }
-  async function request(route, {method = 'GET', body, authenticated = true, binary = false, unavailableMessage,temporaryBearer,discardSessionOnChange=false,messagesOverride,beforeSend,onDispatch,responseLimit,materialPreviewHead=false,materialPreservationPlan,materialPreservationExport} = {}) {
+  async function request(route, {method = 'GET', body, authenticated = true, binary = false, unavailableMessage,temporaryBearer,discardSessionOnChange=false,messagesOverride,beforeSend,onDispatch,responseLimit,materialPreviewHead=false,materialPreservationPlan,materialPreservationExport,workspaceSourceExport,workspaceSourceRead} = {}) {
     if(materialPreviewHead&&(method!=='HEAD'||!binary||!/^\/api\/teams\/[A-Za-z0-9_-]+\/projects\/[A-Za-z0-9_-]+\/materials\/files\/[A-Fa-f0-9-]+$/.test(route)))throw failure('INVALID_INPUT','预览响应范围无效。');
     if(responseLimit!==undefined&&(responseLimit!==26*1024*1024||method!=='GET'||binary||!/^\/api\/teams\/[A-Za-z0-9_-]+\/projects\/[A-Za-z0-9_-]+\/materials$/.test(route)))throw failure('INVALID_INPUT','响应范围无效。');
     const materialHooks=materialPreservationExport??materialPreservationPlan;
     if(materialHooks&&(!authenticated||temporaryBearer||method!=='GET'||body!==undefined||materialPreservationExport&&(!binary||!/^\/api\/teams\/[A-Za-z0-9_-]+\/projects\/[A-Fa-f0-9-]+\/materials\/export-package\?projectRevision=[1-9]\d*&materialRevision=[1-9]\d*&recordSha256=[a-f0-9]{64}&planSha256=[a-f0-9]{64}$/.test(route))||materialPreservationPlan&&(binary||!/^\/api\/teams\/[A-Za-z0-9_-]+\/projects\/[A-Fa-f0-9-]+\/materials\/export-plan$/.test(route))))throw failure('INVALID_INPUT','资料保全响应范围无效。');
+    const sourceIsBytes=workspaceSourceExport!==undefined,sourceHooks=sourceIsBytes?workspaceSourceExport:workspaceSourceRead;
+    if(sourceHooks!==undefined){
+      const ds=sourceHooks&&Object.getPrototypeOf(sourceHooks)===Object.prototype?Object.getOwnPropertyDescriptors(sourceHooks):null,keys=ds?Reflect.ownKeys(ds):[];
+      if(!ds||keys.some(k=>typeof k!=='string'||!['assertCurrent','signal'].includes(k)||!ds[k].enumerable||!Object.hasOwn(ds[k],'value'))||typeof ds.assertCurrent?.value!=='function'||ds.signal&&!(ds.signal.value instanceof AbortSignal)||sourceIsBytes&&workspaceSourceRead!==undefined||materialHooks||materialPreviewHead||responseLimit!==undefined||!authenticated||temporaryBearer||method!=='GET'||body!==undefined||(sourceIsBytes?(!binary||!/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/projects\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/initiation-source\/export\?projectRevision=[1-9]\d*&grantRevision=[1-9]\d*$/.test(route)):(binary||!/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/projects\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/initiation-source(?:\/access)?$/.test(route))))throw failure('INVALID_INPUT','立项来源响应范围无效。');
+    }
+    const guardedHooks=sourceHooks??materialHooks;
     if (authenticated && !token && !temporaryBearer) throw failure('SIGN_IN_REQUIRED', '请先登录。', 401);
     const at = generation, bearer = temporaryBearer||token,serialized=body===undefined?undefined:JSON.stringify(body),bytes=serialized===undefined?Buffer.alloc(0):Buffer.from(serialized,'utf8');
     const protectedRoute=device?.required&&!device.isBootstrap(method,route);
     if(protectedRoute&&(!authenticated||temporaryBearer))throw failure('INVALID_INPUT','此操作需要当前已证明的设备会话。');
     const signed=protectedRoute?await device.prepare(method,route,bytes):null;
     if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();
-    const transportSignal=materialHooks?AbortSignal.any([AbortSignal.timeout(materialPreservationExport?180000:15000),...(materialHooks.signal?[materialHooks.signal]:[])]):AbortSignal.timeout(15000);
-    const materialCheck=()=>{if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();materialHooks?.assertCurrent?.();if(materialHooks?.signal?.aborted)throw failure('MATERIAL_EXPORT_CANCELED','本次资料保全导出已停止。');};
+    const transportSignal=guardedHooks?AbortSignal.any([AbortSignal.timeout(materialPreservationExport?180000:15000),...(guardedHooks.signal?[guardedHooks.signal]:[])]):AbortSignal.timeout(15000);
+    const materialCheck=()=>{if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();guardedHooks?.assertCurrent?.();if(guardedHooks?.signal?.aborted)throw failure(sourceHooks?'WORKSPACE_SOURCE_EXPORT_CANCELED':'MATERIAL_EXPORT_CANCELED',sourceHooks?'本次立项来源保存已停止。':'本次资料保全导出已停止。');};
     materialCheck();
     if(trusted&&route!=='/api/auth/methods'){
       try{await trusted.probe(materialCheck,transportSignal);}
@@ -153,34 +160,35 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     try { onDispatch?.();response = await fetchImpl(target, {method, redirect: 'error', signal: transportSignal,
       headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'}),...(signed?.headers??{})},
       ...(serialized === undefined ? {} : {body: serialized})}); }
-    catch { if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');signed?.assertCurrent();if(materialHooks)materialCheck();if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('SERVICE_UNAVAILABLE', protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':(trusted?'无法连接受信HTTPS团队服务，业务已暂停；联网后请重新核验。':'无法连接本机团队服务，业务已暂停；联网后请重新核验。')); }
+    catch { if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');signed?.assertCurrent();if(guardedHooks)materialCheck();if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('SERVICE_UNAVAILABLE', protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':(trusted?'无法连接受信HTTPS团队服务，业务已暂停；联网后请重新核验。':'无法连接本机团队服务，业务已暂停；联网后请重新核验。')); }
     if (at !== generation) {
       if(discardSessionOnChange&&response.ok)try{trusted?.responseIdentity(response,target);await revokeResponseToken(await boundedBytes(response,1024*1024));}catch{}
       throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');
     }
-    signed?.assertCurrent();if(materialHooks)materialCheck();
+    signed?.assertCurrent();if(guardedHooks)materialCheck();
     try{trusted?.responseIdentity(response,target);}catch(cause){void response.body?.cancel().catch(()=>{});clear();if(protectedRoute&&!['GET','HEAD'].includes(method))throw failure('SERVICE_UNAVAILABLE','已发操作结果未确认，服务身份无法核验；请按原查询编号核对，勿重复提交。');throw cause;}
     if (response.status === 401 && authenticated && bearer===token) { clear(); throw failure('SIGN_IN_REQUIRED', '登录已失效，请重新登录。', 401); }
     if (!response.ok) {
       const messages = {400:'提交内容无效，请检查后重试。',401:'账号或密码无效，请检查后重试。',403:'当前操作未获授权。',404:'任务不存在或当前账号无权访问。',409:'任务状态或版本已更新，请刷新后重试。',413:'资料超过12 MiB，请选择较小的文件。',429:'尝试过于频繁，请稍后重试。'};
       if(device?.required&&signed&&!(method==='HEAD'&&response.status===404)){
-        let code;try{const payload=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(await boundedBytes(response,65536)));code=payload?.error?.code;}catch{if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed.assertCurrent();device.pause();throw failure('SERVICE_UNAVAILABLE','服务响应无法确认，业务已暂停，请联网后核对结果。');}
-        if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed.assertCurrent();
+        let code,errorBytes;try{errorBytes=await boundedBytes(response,65536);const payload=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(errorBytes));code=payload?.error?.code;}catch{if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed.assertCurrent();if(sourceHooks)materialCheck();device.pause();throw failure('SERVICE_UNAVAILABLE','服务响应无法确认，业务已暂停，请联网后核对结果。');}finally{if(sourceHooks)errorBytes?.fill(0);}
+        if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed.assertCurrent();if(sourceHooks)materialCheck();
         if(['DEVICE_PROOF_REQUIRED','DEVICE_BODY_MISMATCH','DEVICE_REQUEST_REPLAY','DEVICE_PROOF_LIMIT','DEVICE_STATE_CHANGED'].includes(code)){device.pause();throw failure(code,'设备业务状态需要重新在线核验；已发操作请先核对结果。',response.status);}
       }
       // Do not forward arbitrary provider messages, stack traces, or response bodies.
       throw failure(`HTTP_${response.status}`, response.status === 503 && unavailableMessage ? unavailableMessage : messagesOverride?.[response.status]||messages[response.status] || '团队服务暂时无法完成操作。', response.status);
     }
     let responseBytes;
-    try{responseBytes=materialHooks?await preservationBytes(response,materialPreservationExport?PACKAGE_MAX:1024*1024,materialCheck,transportSignal):await boundedBytes(response, responseLimit??(binary ? MAX_FILE_BYTES : 1024 * 1024));}catch(cause){if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();if(materialHooks)materialCheck();if(!temporaryBearer||temporaryBearer===token)device?.pause();if(protectedRoute&&!['GET','HEAD'].includes(method))throw failure('SERVICE_UNAVAILABLE','已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。');throw cause instanceof ClientError?cause:failure('SERVICE_UNAVAILABLE','服务响应未读完，业务已暂停，请联网后核对结果。');}
-    if (at !== generation) {if(discardSessionOnChange)await revokeResponseToken(responseBytes);throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');}signed?.assertCurrent();
-    if(materialHooks)materialCheck();
+    try{responseBytes=guardedHooks?await preservationBytes(response,sourceHooks?(sourceIsBytes?MAX_SOURCE_BYTES:MAX_SOURCE_BYTES+4096):materialPreservationExport?PACKAGE_MAX:1024*1024,materialCheck,transportSignal,sourceHooks?'立项来源':'资料保全包'):await boundedBytes(response, responseLimit??(binary ? MAX_FILE_BYTES : 1024 * 1024));}catch(cause){if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();if(guardedHooks)materialCheck();if(!temporaryBearer||temporaryBearer===token)device?.pause();if(protectedRoute&&!['GET','HEAD'].includes(method))throw failure('SERVICE_UNAVAILABLE','已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。');throw cause instanceof ClientError?cause:failure('SERVICE_UNAVAILABLE','服务响应未读完，业务已暂停，请联网后核对结果。');}
+    try{if (at !== generation) {if(discardSessionOnChange)await revokeResponseToken(responseBytes);throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');}signed?.assertCurrent();if(guardedHooks)materialCheck();}catch(error){if(sourceHooks)responseBytes.fill(0);throw error;}
+    if(sourceIsBytes)return {bytes:responseBytes,contentType:response.headers.get('content-type'),contentLength:response.headers.get('content-length'),contentDisposition:response.headers.get('content-disposition'),cacheControl:response.headers.get('cache-control'),sourceSha256:response.headers.get('x-shenyi-source-sha256'),sourceProjectId:response.headers.get('x-shenyi-source-project-id'),sourceKind:response.headers.get('x-shenyi-source-kind'),projectRevision:response.headers.get('x-shenyi-project-revision'),grantRevision:response.headers.get('x-shenyi-source-grant-revision')};
     if(materialPreservationExport)return {bytes:responseBytes,contentType:response.headers.get('content-type'),contentLength:response.headers.get('content-length'),contentDisposition:response.headers.get('content-disposition'),cacheControl:response.headers.get('cache-control'),sha256:response.headers.get('x-shenyi-material-export-sha256'),planSha256:response.headers.get('x-shenyi-material-plan-sha256')};
     if(materialPreviewHead)return {bytes:responseBytes,projectRevision:response.headers.get('x-project-revision'),materialRevision:response.headers.get('x-material-revision'),sha256:response.headers.get('x-content-sha256'),byteLength:response.headers.get('content-length')};
     if (binary) return {bytes:responseBytes, contentDisposition: response.headers.get('content-disposition') || ''};
     let data;
     try { data=JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(responseBytes)); }
-    catch {if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('INVALID_RESPONSE',protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':'团队服务返回格式无效。'); }
+    catch {if(sourceHooks){responseBytes.fill(0);materialCheck();}if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('INVALID_RESPONSE',protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':'团队服务返回格式无效。'); }
+    if(sourceHooks)responseBytes.fill(0);
     if(trusted&&route==='/api/auth/methods')try{trusted.methodsIdentity(data);}catch(cause){clear();throw cause;}
     return data;
   }
@@ -518,6 +526,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     ...createCollectionWorkspaceClient({request,failure,capture(){if(!token||!current)throw failure('SIGN_IN_REQUIRED','请先登录。',401);if(!device.required)throw failure('DEVICE_NOT_READY','创建工作区需要当前已持钥核验的业务登录。');const at=generation,actorId=current.account.id,deviceGuard=device.guard();const assertCurrent=()=>{if(at!==generation||!token||current?.account.id!==actorId)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');deviceGuard();};assertCurrent();return{actorId,assertCurrent};}}),
     ...createWorkspaceFormalizationClient({request,failure,capture(){if(!token||!current)throw failure('SIGN_IN_REQUIRED','请先登录。',401);if(!device.required)throw failure('DEVICE_NOT_READY','业务确认需要当前已持钥核验的业务登录。');const at=generation,actorId=current.account.id,deviceGuard=device.guard();const assertCurrent=()=>{if(at!==generation||!token||current?.account.id!==actorId)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');deviceGuard();};assertCurrent();return{actorId,assertCurrent};}}),
     ...createMyDeviceClient({request,failure,capture(){if(!token||!current)throw failure('SIGN_IN_REQUIRED','请先登录。',401);if(!device.required)throw failure('DEVICE_NOT_READY','本人电脑资料需要当前已持钥核验的业务登录。');const at=generation,bearer=token,actorId=current.account.id,deviceGuard=device.guard(),deviceId=device.status().device?.id;const assertCurrent=()=>{if(at!==generation||token!==bearer||current?.account.id!==actorId)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');deviceGuard();};assertCurrent();return{deviceId,assertCurrent};}}),
+    ...createWorkspaceSourceClient({request,failure,capture(){if(!token||!current)throw failure('SIGN_IN_REQUIRED','请先登录。',401);if(!device.required)throw failure('DEVICE_NOT_READY','立项来源需要当前已持钥核验的业务登录。');const at=generation,bearer=token,actorId=current.account.id,deviceGuard=device.guard();const assertCurrent=()=>{if(at!==generation||token!==bearer||current?.account.id!==actorId)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');deviceGuard();};assertCurrent();return{actorId,assertCurrent};}}),
   });
 }
 module.exports = {createTeamClient,ClientError,API_BASE,MAX_FILE_BYTES,boundedBytes};
