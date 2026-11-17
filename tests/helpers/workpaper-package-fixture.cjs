@@ -1,0 +1,17 @@
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto');
+const {zip,unzip,crc}=require('./material-preservation-security-fixture.cjs');
+const codec=require('../../dist/workpaper-package.js');
+const ID='11111111-1111-4111-8111-111111111111',OTHER='22222222-2222-4222-8222-222222222222',NOW='2026-11-17T00:00:00.000Z';
+const sha=x=>crypto.createHash('sha256').update(x).digest('hex'),json=x=>JSON.parse(JSON.stringify(x));
+async function fixture({freeze=false,id=ID}={}){
+ const original=Buffer.from('synthetic original worksheet\0公式与链接保留'),E=sha(original),raw=zip([{name:'初步活动/原表.xlsx',data:original}]),H=sha(raw),archive={name:'合成底稿原包.zip',hash:H,blob:new Blob([raw],{type:'application/zip'})},index=[{name:'初步活动/原表.xlsx',path:'初步活动/原表.xlsx',sha256:E,size:original.length}];
+ const supplemental=Buffer.from('synthetic supplemental original\0补充原件'),sup=new Blob([supplemental],{type:'application/octet-stream'});
+ const record={id,rev:7,updatedAt:NOW,choices:{8:'yes'},directoryRevisions:{8:'已保存修订'},archive,index,riskArchive:null,riskIndex:[],workpaperSources:{[H]:{archive,index,phase:3,canonicalName:'合成底稿原包.zip'}},workpaperRouteSelections:{},answers:{[E]:{'原工作表':{A1:'=文本形式保留公式，不计算',B1:'<img src=x onerror=alert(1)>'}}},docAnswers:{},workpaperLocks:{},industryTag:'通用制造业',workpaperReuseProvenance:{},autoFillProvenance:{},workpaperReuseTemplates:{},supplementalWorkpapers:[{id:OTHER,subjectCode:'1000',subjectName:'现金',file:{name:'补充证据.bin',mime:sup.type,size:sup.size,sha256:sha(supplemental),blob:sup},createdAt:NOW}],amountCents:999999,firm:{secret:'EXCLUDED_FIRM'},contract:{secret:'EXCLUDED_CONTRACT'},signedContract:{secret:'EXCLUDED_SIGNED'},projectInvoice:{secret:'EXCLUDED_INVOICE'},reportDraft:{secret:'EXCLUDED_REPORT'},reconciliation:{secret:'EXCLUDED_LEDGER'},archiveLinks:[{secret:'EXCLUDED_MATERIAL_LINK'}],projectRegister:{manager:'EXCLUDED_REGISTER'}};
+ if(freeze){const target={id:E+'::原工作表',sha256:E,path:index[0].path,archiveId:H,kind:'excel',sheet:'原工作表',fields:['A1','B1'],fieldPolicy:'declared-structural-blank-input-boxes-v1'},root={Blob,TextEncoder,crypto:crypto.webcrypto,WorkpaperRouteCatalog:{rows:{8:{mode:'targets',code:'1000',name:'合成原表',targets:[target]}},incompleteLayouts:{}}};vm.createContext(root);for(const name of ['workpaper-routing.js','workpaper-governance.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../../dist',name),'utf8'),root);const verified={files:index.map(x=>({...x,archiveId:H,archive})),sources:[{archive,index,phase:3}]};record.workpaperLocks[8]=structuredClone(await root.WorkpaperGovernance.createLock(record,8,[target],{name:'合成核对人',attested:true},verified));}
+ return{record,H,E,raw,original,supplemental};
+}
+const create=f=>codec.create({record:f.record,readCurrent:async()=>f.record,createdAt:NOW});
+async function rewrite(alter){const f=await fixture(),made=await create(f),entries=unzip(made.bytes);alter(entries);return zip(entries);}
+function manifest(entries,change){const file=entries.find(x=>x.name==='manifest.json'),value=JSON.parse(file.data);change(value);file.data=Buffer.from(JSON.stringify(value));}
+function record(entries,change){const file=entries.find(x=>x.name==='record.json'),value=JSON.parse(file.data);change(value);file.data=Buffer.from(JSON.stringify(value));manifest(entries,m=>{m.record.bytes=file.data.length;m.record.sha256=sha(file.data);});}
+module.exports={codec,fixture,create,sha,zip,unzip,crc,json,rewrite,manifest,record,ID,OTHER,NOW};

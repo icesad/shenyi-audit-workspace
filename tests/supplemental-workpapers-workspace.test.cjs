@@ -4,8 +4,8 @@ const dist=path.resolve(__dirname,'../dist'),P='00000000-0000-4000-8000-00000000
 
 test('actual WorkpaperWorkspace stage9 guards unsaved supplements once, saves real IndexedDB and reloads unchanged originals',async t=>{
  let chromium;try{({chromium}=require('playwright'));}catch{return t.skip('existing Playwright unavailable');}
- if(!fs.existsSync(chromium.executablePath()))return t.skip('existing Chromium unavailable');
- const browser=await chromium.launch({headless:true,executablePath:chromium.executablePath(),chromiumSandbox:true}),page=await browser.newPage({viewport:{width:1280,height:900},acceptDownloads:true}),errors=[],remote=[];
+ if(!fs.existsSync((process.env.QUOTE_LEDGER_CHROMIUM_EXECUTABLE||chromium.executablePath())))return t.skip('existing Chromium unavailable');
+ const browser=await chromium.launch({headless:true,executablePath:(process.env.QUOTE_LEDGER_CHROMIUM_EXECUTABLE||chromium.executablePath()),chromiumSandbox:true}),page=await browser.newPage({viewport:{width:1280,height:900},acceptDownloads:true}),errors=[],remote=[];
  const out=process.env.V56_SUPPLEMENTAL_QA_DIR?path.resolve(process.env.V56_SUPPLEMENTAL_QA_DIR,'supplemental-workspace-'+Date.now()):null;if(out)fs.mkdirSync(out,{recursive:true});
  page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(/^https?:/.test(r.url()))remote.push(r.url());});
  try{
