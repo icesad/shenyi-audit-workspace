@@ -1,5 +1,17 @@
 # 当前状态：M4团队模块接入（进行中）
 
+## 2026-11-18 最新：正常Windows七块限流续传验收
+
+本轮在`codex/native-seven-chunk-resume`从`d66cedc`接续M4，仅派生仓库外驱动及更新检查点，1148既有运行／测试文件原字节保持。正常desktop main／preload／renderer首轮standalone日志exit0，client、fetch、vault、IPC与界面未替换；只为本次两份合成文件注入dialog路径。6329728B包／7块含6MiB随机原件、有效Office原包和1份既有冻结；预检与实际运行各用独立随机身份，不混用包SHA。
+
+初始9账号／0绑定，正常UI本人验密与同意登记DPAPI、创建工作区、核对来源及分别授本人三权。真实5秒心跳／15秒权限poll下，业务120后首1398191B JSON块429且响应时正文已完整，heartbeat200／poll429；测试服务时钟推进60001ms，本人刷新、重核与验密后按原ID明确续传。7成功PUT(0..6)＋1拒绝，begin1／commit1／head1，同epoch／session／lease、临时块清零。发布后正常UI撤本人三权清正文；typed填写main拒绝WORKPAPER_CHANGED，entries POST0。
+
+root与独审实际核7份SQLite完整性／FK、来源record.json原字节、两BLOB逐byte及SHA、A2／C1和freeze1；发布／撤权／退出三库的5底稿表typed/raw行保持。5个ZIP容器／35成员CRC与4索引成员SHA、冻结snapshotHash独立复算通过。4张PNG已实际查看，无横向溢出。367条真实HTTP监听记录，175签名由运行时观察器实际crypto.verify/assert；redacted日志不保原proof／正文，不声称离线重放或独立正文SHA复算。628运行源before→after→current一致，本轮没有TAP，也未重复旧85门或完整unit／browser严格门。
+
+主驱动／服务Node24.22.1，实际Electron45.3.2内嵌Node24.22.2；main43064与3个Chromium子进程出生profile、真实DPAPI、155API／26表单／31密码清空及七项webPreferences保持。launcher33632单列，结束后launcher＋4Electron及5291监听均实际查无残留。Playwright debug／engine flags（含NetworkServiceSandbox例外）不代表发行环境。原审核与ac503898两预览进程／窗口和公开methods标识保持，不操作其UI／DB／vault，不升级实际共享库。正常桌面入口本轮已实跑；一键cmd、OS Open／Save、Mac、TLS／生产及530MiB仍未验。报告授权待原答复；未push／进入main／上线，M4和完整Goal active。
+
+证据根`D:/codex-temp/shenyi-native-seven-chunk-20261118/`：`root-evidence-audit.json`、`independent/final-review.json`与`author/run-2026-11-17T20-42-21-464Z-97d4e2ef/`；命令、exit、驱动／源、截图／库及清理由原清单绑定。启动前发现并修正的外部清理误报、语法准备旧稿均保留，没有失败GUI运行。以下保留前项记录及其当时范围。
+
 ## 2026-11-18 最新：分块拼装与早拒HTTP传输修复
 
 本轮在`codex/workpaper-chunk-assembly`从`9b6c18a`接续M4。服务端提交改为先查块数，再预留一个整包缓冲并按块号迭代复制；缺块在整包分配前拒绝，块号／余长／块摘要、实际复制总长及全包SHA仍逐项检查。原验密、权限／session／lease／来源重核、Worker校验、事务与发布语义保持。6MiB合成原件的7块测试中，SQLite单次返回的块负载最大1MiB，移除旧全量块数组加独立concat的重复；codec仍有全包快照与原件副本，不声称总RSS或530MiB容量已验。
