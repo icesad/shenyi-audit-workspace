@@ -1,0 +1,51 @@
+# M4Q 团队底稿首次导入与不可变版本合同
+
+本阶段接续[底稿授权](WORKPAPER_ACCESS_CONTRACT.md)和[完整包格式](WORKPAPER_PACKAGE_CONTRACT.md)：实现完整包首次导入、版本1、按权查阅记录／原件／历史和本人原操作回执。后续团队填写须另接原表可编辑字段、公式／链接／隐藏及只读保护，再实现CAS追加版本；当前没有任意JSON覆盖、填写或团队导出接口。完整M4Q仍在进行中，不将首次导入称为团队填写已经完成。
+
+## 权限与来源
+
+所有业务请求沿用严格设备签名、当前账号、单会话租约和团队／项目资格。查阅须明确底稿read；首次导入预检、建立临时上传、上传和提交还须项目owner、read && write及active项目。职级、owner、技术管理员、资料／来源／账表权均不补授底稿权。提交必须明确sourceVerified:true并验证当前密码；权限／角色／密码／租约／来源变化后旧请求失效，包括撤销再授的ABA。
+
+只接受已有正式来源的项目：W工作区通过已保存业务确认解析原Q，旧Q通过已审核迁入来源解析。当前授权及来源stamp贯穿正文读取、密码KDF、每轮包摘要和事务提交；不信任请求里声称的未来版本，也不更换原Q或固定业务编号。完整包不含立项编号权威事实，SHA和负责人确认不替代现实业务真实性或专业审计审批。
+
+## HTTP协议
+
+以下均相对 `/api/teams/:teamId/projects/:projectId/workpapers`，每次均重新鉴权。
+
+| 方法与路径 | 规则及结果 |
+| --- | --- |
+| GET /import-capabilities | 选文件前只读预检owner、read、write、active、来源及尚未导入，给出Q／项目与grant版本／固定块长及包上限 |
+| POST /imports | 精确七字段requestId、projectRevision、grantRevision、sourceProjectId、packageSha256、byteLength、chunkCount，永久保留原编号，建立30分钟临时导入 |
+| PUT /imports/:requestId/chunks/:index | 精确sha256和规范base64 data；1MiB整块或最后一块准确余长；同摘要同长度重发幂等，不能替换已存块 |
+| GET /imports/:requestId | 仅本人owner且read，查状态、到期及已收块号；发布后附原回执；查询不续期、不写库 |
+| DELETE /imports/:requestId | 仅当前本人owner且read；允许撤write后显式清临时数据；未知编号404，已发布409；不撤回已提交结果 |
+| POST /imports/:requestId/commit | 精确projectRevision、grantRevision、sourceVerified、currentPassword；先限额KDF，再拼接／严格检查全包，原子发布版本1和回执 |
+| GET 根路径、/versions | 独立read下查当前元数据／最多50项历史；不给他人的操作编号或其他模块资料 |
+| GET /record、/originals/:sha256 | 精确version、projectRevision、grantRevision查询；原件须在该项目该版本中被引用；固定响应摘要／Q／版本头，读前后检查上下文 |
+| GET /receipts/:requestId | 独立read及当前来源下仅原操作者查询，身份／项目和操作编号绑定；无原记录不虚构成功 |
+
+未收到提交响应不等于失败或取消。客户端后续必须保留原requestId并只读查原阶段／回执；不得自动重发提交或换新编号掩盖未知结果。已派发建立请求尚未可见时DELETE返回404，不声称该在途建立操作已回滚。已经成功提交的版本永久保留。无授权、过期或失效上下文不通过“重试”复活。
+
+## 事务和存储
+
+只新增5表：team_workpaper_data_heads、versions、originals、imports、chunks；17触发器和1索引，总23定义。隔离候选总84表／342定义；原79表／319定义保持。head固定原Q、身份stamp、来源JSON／manifest／摘要／操作者；版本记录、原件和来源不可更新、删除或替换；版本要求连续，version1精确绑定原来源JSON、SHA和rev。后续entries类型只是存储约束预留，当前无可写接口。
+
+发布在同一事务插入head、按SHA去重原件、版本1、将阶段置published并清临时块。提交前后核对原件、记录及精确写入数；无关项目写入、授权变化、触发器故障或COMMIT故障均不得留下部分成果。读取使用事务和总写入计数保护。任一新增表存在孤儿历史时，禁止自动重新生成设备服务器UUID；幂等升级保护全部旧typed行（含auth）与DDL。
+
+原保存rev和所有已冻结快照按完整包及原WorkpaperGovernance校验保持。原ZIP字节不改写、不重新计算专业公式；内部Office内容当前仍是原始不透明字节，不宣称已验证其全部版式、公式或外链。新增复核／冻结／重开仍待米老师明确，不通过填写权或导入绕开。
+
+## 资源边界和验证范围
+
+HTTP元信息／提交仍为4096字节；仅精确签名块路径允许1500KiB JSON，解码后最多1MiB。不提高全局17MiB上限。每个数据库／账号同时一个块或提交、进程最多4个相关正文／1个大包校验，直到处理完成才释放；数据库活跃阶段总预留不超过2×530MiB，单账号一个active阶段。到期／取消临时块只在明确写操作中清理；读请求不写清理。上述是单进程候选限额，不是集群配额或生产容量承诺；530MiB上限未做真实设备最大压力验收。
+
+使用固定Node24、真实Ed25519签名Request应用边界与隔离SQLite验证低职级／跨团队／项目／原件、读写双权、正文／KDF／实际摘要等待撤权、ABA／重登录、取消／并发／未知结果、来源绑定、不可变历史、故障回滚、容量预留及旧schema兼容。真实超过1MiB的两块包另测；此前Chrome正常旧index实际下载的合成包将按原SHA经旧Q审核来源导入并逐byte读回，作为跨阶段根检查证据。
+
+历史测试适配仅剥离精确SHA固定、确认全空的新增5表／23定义，先校验所有层再DROP，异常DDL／非空资料一律拒绝。原旧断言与数字基线保持，仓库外记录逆变换字节证明。最终相关门、源before／after、保留失败及回执见 `D:/codex-temp/shenyi-workpaper-data-20261117/`；不是完整严格门、TCP/TLS、正常桌面、原生或独立验收。
+
+实际共享库本阶段未打开／迁移，一键团队入口未针对新增数据层重验；未push／进入main／上线。独立agent受既有额度限制尚不可用，待恢复后补审，root检查不替代独审。实际客户迁入仍另行授权；Mac／生产、真实脱敏样例及两负责人签收按整体Goal保留。
+
+## 当前root结果（2026-11-17）
+
+最终27文件相关门683/683，0fail／skip／cancel／todo，434.219秒；1203源before／after raw一致，TAP SHA `58f4f287991e0151e6eb1cabd95dcd49811e62d1612876c1883b0bfc269f3feb`。原runner可发现238个可移植文件／62个整browser文件粗排除；本阶段没有运行完整严格门。旧index包真实签名应用边界迁入旧Q的单项另有exit0证据，不累加为完整回归。
+
+保留首轮API诊断的auth到期fixture失败（正确旧会话401，新合法登录后阶段410）；容量fixture曾复用业务编号被原规则拒绝，改用独立编号后通过，未放宽产品冲突判断。取消语义在检查中收紧为未知404／已发布409，并覆盖KDF在途取消及发布后原回执。独立复核仍待额度恢复。

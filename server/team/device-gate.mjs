@@ -6,6 +6,8 @@ import proof from '../../shared/device-proof.cjs';
 import {recordDeviceUsage} from './device-usage.mjs';
 import {ledgerRequestBodyPolicy} from './ledger-check-policy.mjs';
 import {acquireLedgerImportPermit} from './ledger-check-import-budget.mjs';
+import {workpaperDataBodyPolicy} from './workpaper-data-policy.mjs';
+import {acquireWorkpaperDataPermit} from './workpaper-data-budget.mjs';
 const BODY_LIMIT=17*1024*1024,NONCE_LIMIT=2048;
 const BOOTSTRAP_GET=new Set(['/api/auth/methods','/api/auth/session','/api/auth/onboarding/capabilities','/api/auth/recovery-requests/capabilities','/api/auth/devices','/api/auth/device-replacements']);
 const BOOTSTRAP_POST=new Set(['/api/auth/login','/api/auth/logout','/api/auth/phone/login','/api/auth/phone/challenges','/api/auth/phone/reset','/api/auth/recovery-requests',
@@ -55,8 +57,8 @@ export async function authorizeDeviceRequest(request,{db,now=Date.now,identityPr
   consume(db,'device-request:'+digest(identity.userId),now(),60000,120);
   // Verify the claimed hash first, so unauthenticated payloads do not cause a
   // large body read. Then retain exactly the authenticated bytes for dispatch.
-  const requestBodyPolicy=ledgerRequestBodyPolicy(db,request,identity.userId,BODY_LIMIT);
-  const release=requestBodyPolicy.ledgerImportStamp?acquireLedgerImportPermit(db,identity.userId):undefined;
+  const requestBodyPolicy=workpaperDataBodyPolicy(db,request,identity,ledgerRequestBodyPolicy(db,request,identity.userId,BODY_LIMIT),now());
+  const release=requestBodyPolicy.workpaperDataPermit?acquireWorkpaperDataPermit(db,identity.userId,{large:requestBodyPolicy.workpaperDataPermit==='large'}):requestBodyPolicy.ledgerImportStamp?acquireLedgerImportPermit(db,identity.userId):undefined;
   try {
   const bytes=await bodyBytes(request,requestBodyPolicy.maximum);if(digest(bytes)!==bodySha256)throw new ApiError(403,'DEVICE_BODY_MISMATCH','请求资料与设备签名不一致。');
   const fresh=freshLease(db,request,identity,serverId,now()),nonceHash=digest(nonceRaw);
@@ -68,7 +70,7 @@ export async function authorizeDeviceRequest(request,{db,now=Date.now,identityPr
     if(db.prepare('SELECT COUNT(*) n FROM team_device_request_replays WHERE lease_id=?').get(current.leaseId).n>=NONCE_LIMIT)throw new ApiError(429,'DEVICE_PROOF_LIMIT','设备请求过于频繁，请稍后重新持钥登录。');
     db.prepare('INSERT INTO team_device_request_replays(lease_id,nonce_hash,created_at) VALUES (?,?,?)').run(current.leaseId,nonceHash,time);
     recordDeviceUsage(db,current.userId,current.deviceId,time);
-    return {userId:current.userId,deviceId:current.deviceId,bindingRevision:current.bindingRevision,leaseId:current.leaseId,stamp:current.stamp,serverId,...(requestBodyPolicy.ledgerImportStamp?{ledgerImportStamp:requestBodyPolicy.ledgerImportStamp}:{})};
+    return {userId:current.userId,deviceId:current.deviceId,bindingRevision:current.bindingRevision,leaseId:current.leaseId,stamp:current.stamp,serverId,...(requestBodyPolicy.ledgerImportStamp?{ledgerImportStamp:requestBodyPolicy.ledgerImportStamp}:{}),...(requestBodyPolicy.workpaperDataStamp?{workpaperDataStamp:requestBodyPolicy.workpaperDataStamp,workpaperStageStamp:requestBodyPolicy.workpaperStageStamp}:{})};
   });
   const rebuilt=new Request(request.url,{method:request.method,headers:new Headers(request.headers),signal:request.signal,
     ...(!['GET','HEAD'].includes(request.method)&&request.body!==null?{body:bytes}:{} )});

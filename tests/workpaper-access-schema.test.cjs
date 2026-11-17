@@ -1,7 +1,8 @@
 const {test,after}=require('node:test'),assert=require('node:assert/strict');
 const {createWorkpaperAccessFixture:fixture,good,denied,source,restorePasswordWork}=require('./helpers/workpaper-access-fixture.cjs');
+const {withoutEmptyDataDefinitions}=require('./helpers/workpaper-data-schema-layer.cjs');
 after(restorePasswordWork);
-const defs=db=>db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().map(x=>({...x}));
+const defs=db=>withoutEmptyDataDefinitions(db,db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().map(x=>({...x})));
 function typedRows(db,names){return names.map(name=>{const query=db.prepare('SELECT * FROM "'+name+'"');query.setReadBigInts(true);return{name,rows:query.all().map(row=>JSON.stringify(Object.keys(row).sort().map(key=>[key,typeof row[key]==='bigint'?['integer',String(row[key])]:row[key] instanceof Uint8Array?['blob',Buffer.from(row[key]).toString('base64')]:row[key]]))).sort()};});}
 
 test('upgrade adds only two empty tables and 29 definitions; all old 77 typed tables and 290 DDL persist',async t=>{

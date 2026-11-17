@@ -37,6 +37,7 @@ export function initializeTeamDatabase(db) {
       db.exec(readFileSync(fileURLToPath(new URL('./workspace-source-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./ledger-check-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./workpaper-access-schema.sql', import.meta.url)), 'utf8'));
+      db.exec(readFileSync(fileURLToPath(new URL('./workpaper-data-schema.sql', import.meta.url)), 'utf8'));
       installMaterialQualificationTriggers(db);
       installWorkspaceSourceQualificationTriggers(db);
       installLedgerCheckQualificationTriggers(db);
@@ -73,6 +74,7 @@ export function initializeTeamDatabase(db) {
       db.exec(readFileSync(fileURLToPath(new URL('./workspace-source-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./ledger-check-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./workpaper-access-schema.sql', import.meta.url)), 'utf8'));
+      db.exec(readFileSync(fileURLToPath(new URL('./workpaper-data-schema.sql', import.meta.url)), 'utf8'));
     installMaterialQualificationTriggers(db);
       installWorkspaceSourceQualificationTriggers(db);
       installLedgerCheckQualificationTriggers(db);
