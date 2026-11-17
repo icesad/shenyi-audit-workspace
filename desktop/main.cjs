@@ -18,6 +18,11 @@ const ASSETS=Object.freeze({
   '/team-ui.js':{file:path.join(__dirname,'team-ui/team-ui.js'),mime:'text/javascript; charset=utf-8'},
   '/project-materials.js':{file:path.join(__dirname,'team-ui/project-materials.js'),mime:'text/javascript; charset=utf-8'},
   '/ledger-checks.js':{file:path.join(__dirname,'team-ui/ledger-checks.js'),mime:'text/javascript; charset=utf-8'},
+  '/workpapers.js':{file:path.join(__dirname,'team-ui/workpapers.js'),mime:'text/javascript; charset=utf-8'},
+  '/workpapers.css':{file:path.join(__dirname,'team-ui/workpapers.css'),mime:'text/css; charset=utf-8'},
+  '/workpaper-sheets.js':{file:path.join(__dirname,'../dist/workpaper-sheets.js'),mime:'text/javascript; charset=utf-8'},
+  '/workpaper-original-sheet.js':{file:path.join(__dirname,'../dist/workpaper-original-sheet.js'),mime:'text/javascript; charset=utf-8'},
+  '/workpaper-original-word.js':{file:path.join(__dirname,'../dist/workpaper-original-word.js'),mime:'text/javascript; charset=utf-8'},
   '/brand-shenyi.png':{file:path.join(__dirname,'../dist/brand-shenyi.png'),mime:'image/png'},
 });
 

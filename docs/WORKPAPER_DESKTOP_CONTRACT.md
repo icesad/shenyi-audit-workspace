@@ -1,5 +1,17 @@
 # M4Q 团队底稿桌面主进程与私有文件流程合同
 
+## 2026-11-17 最新：正常底稿桌面入口
+
+M4Q正常底稿桌面候选已接入：旧135接口保持、尾部追加20窄IPC；负责人验密分别配置查阅／填写／导出，完整包显式首次迁入，原表／历史版本、CAS填写保存、原编号回执及所选版本原生导出进入正常页面。实习生／助理入口隐藏且直调拒绝；账号／设备／项目或失权清除旧内容，未知操作不盲重发。
+
+Node24完整可移植单元严格复验262文件4756/4756通过，0失败／跳过／取消／todo，1190.891秒；1264候选文件运行期间raw一致，TAP编号／plan／footer和exit0已核。按原脚本--unit发现集合，粗排除63整文件，不称完整browser strict。原串行4732项中的辅助层清单遗漏、随后4750项中的文件晚改校验盲区均已修，原失败保留；最终按相同260文件＋新增回归2文件重新执行，2并发，未改原runner／旧测试断言或工作因子。证据根D:/codex-temp/shenyi-workpaper-ui-20261117/。
+
+真实Chrome作者28项／8图、Windows正常Electron合成闭环另行记录；严格签名HTTP／DPAPI／SQLite、155 API／channel、26表单／31密码框及退出清理均分层验证。Chrome native geometry为明确受控视图，不冒充真实catalog；Windows注入文件选择路径，不冒充实际OS文件对话框操作。deadline／IPC／UI／兼容层、schema剥层及持久内容复核分别独审，已确证问题的原失败、修复与关闭证据已由root按原始TAP／manifest／当前源码复核。
+
+实际共享库仅作只读备份与隔离副本预演，尚未升级，本轮原一键未重验；未push／进入main／上线。M4和完整Goal active。下一步补完整browser strict、最新Windows原生独立复核、实际OS选件／保存、实际共享库升级保全及两原一键重验、M4P整体独审与其余M4模块；Mac、安装更新、最大容量及真实供应商／客户／生产仍未验，专业复核／新冻结／重开仍待米老师。见[正常底稿桌面合同](WORKPAPER_UI_CONTRACT.md)。
+
+以下记录保留其历史阶段范围。
+
 本阶段接续[服务端权限](WORKPAPER_ACCESS_CONTRACT.md)、[完整旧包](WORKPAPER_PACKAGE_CONTRACT.md)、[首次迁入](WORKPAPER_DATA_CONTRACT.md)、[原表](WORKPAPER_FORM_CONTRACT.md)、[填写](WORKPAPER_ENTRIES_CONTRACT.md)和[团队导出](WORKPAPER_EXPORT_CONTRACT.md)。实现现有createTeamClient的受限底稿能力、完整包选择／分块迁入／原编号续查及临时文件流式保存。尚未注册正常底稿IPC或UI，不把主进程和注入对话框测试冒作用户已可从一键入口使用。
 
 ## 主进程请求与响应

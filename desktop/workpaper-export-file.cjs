@@ -94,6 +94,11 @@ async function inspectWorkpaperExportFile({handle,byteLength,sha256,expected,ass
  }
  const finalCentral=await read(centralOffset,centralSize),finalEnd=await read(byteLength-22,22);if(!central.equals(finalCentral)||!end.equals(finalEnd))fail();whole.update(finalCentral);whole.update(finalEnd);if(whole.digest('hex')!==sha256)fail();
  const manifest=canonicalJson(metadata.get('manifest.json')),source=canonicalJson(metadata.get('source-manifest.json')),record=canonicalJson(metadata.get('record.json'));if(!plain(manifest))fail();const declared=files(manifest.files).found;if(proof.size!==declared.size||[...declared].some(([hash,item])=>proof.get(hash)?.bytes!==item.bytes))fail();
- const summary=validateMetadata(manifest,source,record,metadata,declared,proof,expected);const finalStat=await stat();if(['dev','ino','size','mtimeNs','ctimeNs'].some(k=>finalStat[k]!==initialStat[k]))fail();await check();return{byteLength,sha256,...summary};
+ const summary=validateMetadata(manifest,source,record,metadata,declared,proof,expected);
+ // Recheck persisted content after parsing. A short in-place write can retain
+ // identical filesystem timestamps while changing bytes already read above.
+ const persisted=createHash('sha256');for(let at=0;at<byteLength;at+=BLOCK)persisted.update(await read(at,Math.min(BLOCK,byteLength-at)));
+ if(persisted.digest('hex')!==sha256)fail();
+ const finalStat=await stat();if(['dev','ino','size','mtimeNs','ctimeNs'].some(k=>finalStat[k]!==initialStat[k]))fail();await check();return{byteLength,sha256,...summary};
 }
 module.exports={inspectWorkpaperExportFile};

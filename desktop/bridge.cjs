@@ -16,6 +16,7 @@ const {myDeviceQuery}=require('./my-device-client.cjs');
 const {workspaceSourceInput}=require('./workspace-source-client.cjs');
 const {createWorkspaceSourceExporter,workspaceSourceExportInput,workspaceSourceCancelInput}=require('./workspace-source-export.cjs');
 const {createLedgerCheckBridge}=require('./ledger-check-bridge.cjs');
+const {createWorkpaperBridge}=require('./workpaper-bridge.cjs');
 const APP_URL = 'shenyi://app/index.html';
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 function input(value, keys) {
@@ -52,6 +53,8 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   let materialPreservationExport;
   let workspaceSourceExport;
   let ledgerCheckBridge;
+  let workpaperBridge;
+  const workpapers=()=>workpaperBridge??=createWorkpaperBridge({client,dialog,window});
   const ledgers=()=>ledgerCheckBridge??=createLedgerCheckBridge({client,dialog,window});
   const preservations=()=>materialPreservationExport??=createMaterialPreservationExporter({client,dialog,window});
   const formalizations=()=>workspaceFormalization??=createWorkspaceFormalizationManager({client,dialog,window});
@@ -61,7 +64,7 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   const submissionPreviews=()=>submissionPreview??=(createTaskSubmissionPreviewManager({client,openWindow:hooks=>{materialPreview?.closeAll();return createMaterialPreviewWindow({parent:window,...hooks});}}));
   const maintenance=()=>materialMaintenance??=(createMaterialMaintenanceManager({client,dialog,window}));
   const closeMaterialPreview=()=>{materialPreview?.closeAll();submissionPreview?.closeAll();materialMaintenance?.closeAll();};
-  const clearRendererResources=()=>{ledgerCheckBridge?.clearAll();materialPreservationExport?.closeAll();workspaceSourceExport?.closeAll();closeMaterialPreview();workspaceFormalization?.clearSource();};
+  const clearRendererResources=()=>{workpaperBridge?.clearAll();ledgerCheckBridge?.clearAll();materialPreservationExport?.closeAll();workspaceSourceExport?.closeAll();closeMaterialPreview();workspaceFormalization?.clearSource();};
   const parentContents=window.webContents;
   const parentNavigation=(_event,_url,_inPlace,isMainFrame)=>{if(isMainFrame!==false)clearRendererResources();};
   parentContents.on?.('did-start-navigation',parentNavigation);
@@ -270,6 +273,26 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('ledger-check-source-open',arg=>ledgers().chooseLedgerCheckSource(arg));
   handle('ledger-check-source-confirm',arg=>ledgers().confirmLedgerCheckImport(arg));
   handle('ledger-check-source-discard',arg=>ledgers().discardLedgerCheckSource(arg));
-  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',clearRendererResources);ledgerCheckBridge?.dispose();materialPreview?.dispose();submissionPreview?.dispose();materialMaintenance?.dispose();workspaceCreation?.dispose();workspaceFormalization?.dispose();materialPreservationExport?.dispose();workspaceSourceExport?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
+  handle('workpaper-view-open',arg=>workpapers().openWorkpaperView(arg));
+  handle('workpaper-view-close',arg=>workpapers().closeWorkpaperView(arg));
+  handle('workpaper-projects',arg=>workpapers().listWorkpaperProjects(arg));
+  handle('workpaper-access',arg=>workpapers().getWorkpaperAccess(arg));
+  handle('workpaper-members',arg=>workpapers().listWorkpaperMembers(arg));
+  handle('workpaper-access-change',arg=>workpapers().changeWorkpaperAccess(arg));
+  handle('workpaper-data',arg=>workpapers().getWorkpaperData(arg));
+  handle('workpaper-versions',arg=>workpapers().listWorkpaperVersions(arg));
+  handle('workpaper-record',arg=>workpapers().getWorkpaperRecord(arg));
+  handle('workpaper-form',arg=>workpapers().getWorkpaperForm(arg));
+  handle('workpaper-entries-save',arg=>workpapers().saveWorkpaperEntries(arg));
+  handle('workpaper-receipt',arg=>workpapers().getWorkpaperReceipt(arg));
+  handle('workpaper-source-open',arg=>workpapers().chooseWorkpaperSource(arg));
+  handle('workpaper-source-confirm',arg=>workpapers().confirmWorkpaperImport(arg));
+  handle('workpaper-source-resume',arg=>workpapers().resumeWorkpaperImport(arg));
+  handle('workpaper-import-query',arg=>workpapers().queryWorkpaperImport(arg));
+  handle('workpaper-import-cancel',arg=>workpapers().cancelWorkpaperSourceImport(arg));
+  handle('workpaper-source-discard',arg=>workpapers().discardWorkpaperSource(arg));
+  handle('workpaper-export',arg=>workpapers().exportWorkpapers(arg));
+  handle('workpaper-export-cancel',arg=>workpapers().cancelWorkpaperExport(arg));
+  return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',clearRendererResources);workpaperBridge?.dispose();ledgerCheckBridge?.dispose();materialPreview?.dispose();submissionPreview?.dispose();materialMaintenance?.dispose();workspaceCreation?.dispose();workspaceFormalization?.dispose();materialPreservationExport?.dispose();workspaceSourceExport?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
 }
 module.exports={APP_URL,registerDesktopBridge,readChosenFile,safeDownloadName};

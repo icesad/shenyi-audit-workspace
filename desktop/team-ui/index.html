@@ -10,6 +10,11 @@
   <link rel="stylesheet" href="team-ui.css">
   <script src="project-materials.js" defer></script>
   <script src="ledger-checks.js" defer></script>
+  <script src="workpaper-sheets.js" defer></script>
+  <script src="workpaper-original-sheet.js" defer></script>
+  <script src="workpaper-original-word.js" defer></script>
+  <script src="workpapers.js" defer></script>
+  <link rel="stylesheet" href="workpapers.css">
   <script src="team-ui.js" defer></script>
 </head>
 <body>
@@ -144,6 +149,36 @@
           <section id="ledger-check-query" hidden><h4>负责人核对原导入操作</h4><p class="identity-note">仅原导入负责人可查询本人的回执。结果未知时保留原编号；暂未查到不代表取消，也不会自动重新提交。</p><label for="ledger-check-operation-id">原操作编号</label><input id="ledger-check-operation-id" autocomplete="off" maxlength="36"><button id="ledger-check-receipt" class="button" type="button">只读查询原操作</button><ul id="ledger-check-attempts" class="member-management-list"></ul><div id="ledger-check-receipt-summary" class="ledger-check-proof"></div></section>
         </section>
         <p id="ledger-check-message" class="feedback" role="status" aria-live="polite"></p>
+      </details>
+      <details id="workpaper-panel" class="identity-panel workpaper-panel" hidden>
+        <summary>项目底稿</summary>
+        <p class="identity-note">仅显示本模块获准项目。查阅、填写与导出分别授权；负责人身份不自动开放资料。</p>
+        <div class="member-management-tools"><input id="workpaper-project-search" type="search" maxlength="80" autocomplete="off" aria-label="查找底稿项目" placeholder="按项目名称查找"><button id="workpaper-project-search-button" class="button" type="button">查询项目</button></div>
+        <ul id="workpaper-projects" class="member-management-list"></ul><button id="workpaper-projects-more" class="button" type="button" hidden>继续加载项目</button>
+        <section id="workpaper-detail" hidden>
+          <div class="invitation-list-heading"><div><h3 id="workpaper-title"></h3><p id="workpaper-status" class="identity-note"></p></div><button id="workpaper-refresh" class="button" type="button">刷新权限与版本</button></div>
+          <p id="workpaper-permission" class="identity-note"></p>
+          <section id="workpaper-owner" hidden>
+            <h4>独立授权</h4><p class="identity-note">勾选本项目的查阅、填写或导出权。填写和导出还须同时具有查阅权。</p>
+            <div class="member-management-tools"><input id="workpaper-member-search" type="search" maxlength="80" autocomplete="off" aria-label="查找可授权人员" placeholder="按姓名查找"><button id="workpaper-member-search-button" class="button" type="button">查询人员</button></div>
+            <ul id="workpaper-members" class="member-management-list"></ul><button id="workpaper-members-more" class="button" type="button" hidden>继续加载人员</button>
+            <form id="workpaper-grant-form"><fieldset id="workpaper-grant-fields" disabled><legend>确认本项目底稿授权</legend><p id="workpaper-member-target" class="identity-note">尚未选择人员。</p><div class="workpaper-permission-options"><label class="device-consent"><input id="workpaper-grant-read" type="checkbox">查阅</label><label class="device-consent"><input id="workpaper-grant-write" type="checkbox">填写</label><label class="device-consent"><input id="workpaper-grant-export" type="checkbox">导出</label></div><label for="workpaper-grant-password">本人当前密码</label><input id="workpaper-grant-password" type="password" autocomplete="current-password" maxlength="512"><label class="device-consent"><input id="workpaper-grant-confirmed" type="checkbox">我已核对人员及三项授权。</label><button id="workpaper-grant-submit" class="button primary" type="submit" disabled>确认修改底稿权限</button></fieldset></form>
+          </section>
+          <section id="workpaper-import" hidden>
+            <h4>首次迁入完整底稿包</h4><p class="identity-note">选择旧版显式导出的完整包，核验原件、保存填写和既有冻结快照。不会自动迁入本机资料。</p>
+            <form id="workpaper-import-form"><fieldset id="workpaper-import-fields" disabled><legend>来源与本次迁入</legend><div class="device-actions"><button id="workpaper-source-open" class="button" type="button">选择完整底稿包</button><button id="workpaper-source-discard" class="button" type="button" disabled>清除私有来源</button></div><div id="workpaper-source-summary" class="workpaper-proof"></div><label class="device-consent"><input id="workpaper-source-verified" type="checkbox">我已核验此包确属当前项目，原件与既有冻结保持。</label><label for="workpaper-import-password">本人当前密码</label><input id="workpaper-import-password" type="password" autocomplete="current-password" maxlength="512"><label class="device-consent"><input id="workpaper-import-confirmed" type="checkbox">确认首次迁入；不新建专业复核或签发结论。</label><div class="device-actions"><button id="workpaper-import-submit" class="button primary" type="submit" disabled>确认迁入</button><button id="workpaper-import-resume" class="button" type="button" hidden>按原编号继续上传</button></div></fieldset></form>
+          </section>
+          <section id="workpaper-records" hidden><h4>已保存版本</h4><p class="identity-note">历史版本只读。原件及既有冻结不因填写保存而改变。</p><ul id="workpaper-history" class="member-management-list"></ul><button id="workpaper-history-more" class="button" type="button" hidden>继续加载版本</button></section>
+          <section id="workpaper-viewer" hidden>
+            <div class="invitation-list-heading"><div><h4 id="workpaper-data-title"></h4><p id="workpaper-version-note" class="identity-note"></p></div><div class="device-actions"><button id="workpaper-save" class="button primary" type="button" disabled>保存填写</button><button id="workpaper-draft-discard" class="button" type="button" disabled>丢弃未保存填写</button></div></div>
+            <p id="workpaper-draft-status" class="identity-note" aria-live="polite"></p>
+            <details id="workpaper-originals-panel"><summary>保存的原件清单</summary><ul id="workpaper-originals" class="member-management-list"></ul><button id="workpaper-originals-more" class="button" type="button" hidden>继续显示原件</button></details>
+            <div class="workpaper-content"><aside class="workpaper-files-pane"><h5>原件与表单</h5><ul id="workpaper-files" class="workpaper-files"></ul></aside><div class="workpaper-form-pane"><div id="workpaper-sheets" class="device-actions" role="group" aria-label="工作表"></div><p id="workpaper-form-note" class="identity-note"></p><div id="workpaper-page-tools" class="device-actions" hidden><button id="workpaper-page-prev" class="button" type="button">上一页</button><span id="workpaper-page-status" class="identity-note"></span><button id="workpaper-page-next" class="button" type="button">下一页</button></div><div id="workpaper-form" class="workpaper-form" tabindex="-1"></div></div></div>
+            <div id="workpaper-export-controls" class="workpaper-export-controls" hidden><label class="device-consent"><input id="workpaper-export-confirmed" type="checkbox">我已核对所选保存版本，确认导出完整原件及填写。</label><button id="workpaper-export" class="button" type="button" disabled>导出此保存版本</button><button id="workpaper-export-cancel" class="button" type="button" hidden>停止本次导出</button></div>
+          </section>
+          <section id="workpaper-query" hidden><h4>核对原操作</h4><p class="identity-note">结果未知时保留原编号。暂未查到不等于取消，不会自动重发提交。</p><div class="member-management-tools"><input id="workpaper-operation-id" autocomplete="off" maxlength="36" aria-label="原操作编号" placeholder="原操作 UUID"><select id="workpaper-operation-kind" aria-label="原操作类型"><option value="import">完整包迁入</option><option value="entries">填写保存</option></select><button id="workpaper-receipt" class="button" type="button">只读查询原操作</button></div><label class="device-consent"><input id="workpaper-operation-cancel-confirmed" type="checkbox">确认停止此编号的临时上传并清理；发布结果仍按原回执核对。</label><button id="workpaper-import-cancel" class="button" type="button" disabled>确认取消原上传</button><ul id="workpaper-attempts" class="member-management-list"></ul><div id="workpaper-receipt-summary" class="workpaper-proof"></div></section>
+        </section>
+        <p id="workpaper-message" class="feedback" role="status" aria-live="polite"></p>
       </details>
 
       <p id="workspace-message" class="feedback" role="status" aria-live="polite"></p>

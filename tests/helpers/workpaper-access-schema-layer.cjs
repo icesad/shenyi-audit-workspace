@@ -14,7 +14,7 @@ function peelLedgerAndWorkpaperSchema(db){
  // Validate every complete empty later layer before the first DROP. Refuse active data.
  laterTeamSchemaLayers(db);const data=peelWorkpaperDataSchema(db),workpaper=definitions(db);
  for(const row of workpaper.filter(x=>x.type!=='table'))db.exec('DROP '+row.type+' "'+row.name+'"');for(const name of TABLES)db.exec('DROP TABLE "'+name+'"');assert.deepEqual(definitions(db),[]);
- const ledger=peelLedgerCheckSchema(db);return{...ledger,names:[...ledger.names,...workpaper.map(x=>x.name),...data.map(x=>x.name)],workpaper,data};
+ const ledger=peelLedgerCheckSchema(db);return{...ledger,tables:[...ledger.tables,...TABLES,...DATA_TABLES],names:[...ledger.names,...workpaper.map(x=>x.name),...data.map(x=>x.name)],workpaper,data};
 }
 function assertLedgerAndWorkpaperSchemaRestored(db,layer){assertLedgerCheckSchemaRestored(db,layer);assert.deepEqual(definitions(db),layer.workpaper);workpaperAccessSchemaLayer(db);assert.deepEqual(dataDefinitions(db),layer.data);workpaperDataSchemaLayer(db);}
 function withoutEmptyWorkpaperLayer(db,state){

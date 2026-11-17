@@ -1,8 +1,9 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),{EventEmitter}=require('node:events'),{JSDOM}=require('jsdom');
 const {registerDesktopBridge,APP_URL}=require('../desktop/bridge.cjs');
+const {workpaperOldApi}=require('./helpers/workpaper-entry-layer.cjs');
 const {ledgerOldApiNames,ledgerOldChannelNames,ledgerLegacyFormCount,ledgerLegacySecretCount,ledgerDomLayer}=require('./helpers/ledger-check-entry-layer.cjs');
-function api(){let result;vm.runInNewContext(fs.readFileSync('desktop/preload.cjs','utf8'),{require:()=>({contextBridge:{exposeInMainWorld:(_n,v)=>{result=v;}},ipcRenderer:{invoke(){}}})});return result;}
+function api(){let result;vm.runInNewContext(fs.readFileSync('desktop/preload.cjs','utf8'),{require:()=>({contextBridge:{exposeInMainWorld:(_n,v)=>{result=v;}},ipcRenderer:{invoke(){}}})});return workpaperOldApi(result);}
 test('legacy API projection rejects unrelated extra missing renamed or reordered methods',()=>{
  const value=api(),names=Object.keys(value);assert.equal(ledgerOldApiNames(value).length,123);
  for(const entries of [Object.entries(value).slice(1),[...Object.entries(value),['unexpected',()=>{}]],Object.entries(value).map(([k,v],i)=>[i===125?'unexpected':k,v]),[...Object.entries(value).slice(1,2),...Object.entries(value).slice(0,1),...Object.entries(value).slice(2)]])assert.throws(()=>ledgerOldApiNames(Object.fromEntries(entries)));

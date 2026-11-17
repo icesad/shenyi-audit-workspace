@@ -14,7 +14,7 @@ const {createWorkspaceSourceClient,MAX_SOURCE_BYTES}=require('./workspace-source
 const {createLedgerCheckClient,ledgerTransportValid,MAX_LEDGER_SNAPSHOT_BYTES}=require('./ledger-check-client.cjs');
 const {createWorkpaperClient,workpaperTransportValid,workpaperResponseLimit}=require('./workpaper-client.cjs');
 const {createWorkpaperExportClient}=require('./workpaper-export-client.cjs');
-const {workpaperHooks,workpaperExportTransportValid,workpaperBinaryMetadata,streamedWorkpaperExport}=require('./workpaper-transport.cjs');
+const {workpaperHooks,workpaperExportTransportValid,workpaperBinaryMetadata,streamedWorkpaperExport,workpaperTimeoutMilliseconds}=require('./workpaper-transport.cjs');
 
 // Main-process only. The renderer never receives bearer tokens or raw fetch.
 const API_BASE = 'http://127.0.0.1:8774';
@@ -160,7 +160,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     if(protectedRoute&&(!authenticated||temporaryBearer))throw failure('INVALID_INPUT','此操作需要当前已证明的设备会话。');
     const signed=protectedRoute?await device.prepare(method,route,bytes):null;
     if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();
-    const transportSignal=guardedHooks?AbortSignal.any([AbortSignal.timeout(workpaper?.kind==='export'?1800000:materialPreservationExport?180000:15000),...(guardedHooks.signal?[guardedHooks.signal]:[])]):AbortSignal.timeout(15000);
+    const transportSignal=guardedHooks?AbortSignal.any([AbortSignal.timeout(workpaper?workpaperTimeoutMilliseconds(route,{kind:workpaper.kind,method}):materialPreservationExport?180000:15000),...(guardedHooks.signal?[guardedHooks.signal]:[])]):AbortSignal.timeout(15000);
     const materialCheck=()=>{if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();guardedHooks?.assertCurrent?.();if(guardedHooks?.signal?.aborted)throw failure(workpaper?'WORKPAPER_CANCELED':ledgerCheck?'LEDGER_CHECK_CANCELED':sourceHooks?'WORKSPACE_SOURCE_EXPORT_CANCELED':'MATERIAL_EXPORT_CANCELED',workpaper?'本次底稿操作已停止；已发操作仍须按原编号核对。':ledgerCheck?'本次账表查阅已停止；已发导入仍须查询原操作。':sourceHooks?'本次立项来源保存已停止。':'本次资料保全导出已停止。');};
     materialCheck();
     if(trusted&&route!=='/api/auth/methods'){

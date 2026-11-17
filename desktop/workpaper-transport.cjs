@@ -14,6 +14,17 @@ function workpaperExportTransportValid(route,{method,binary,body}){
  const id='[A-Za-z0-9][A-Za-z0-9_-]{0,127}',re=new RegExp('^/api/teams/'+id+'/projects/'+id+'/workpapers/export\\?version=[1-9]\\d*&projectRevision=[1-9]\\d*&grantRevision=[1-9]\\d*$');
  return method==='GET'&&binary===true&&body===undefined&&matches(re,route);
 }
+// Budget only already-qualified workpaper operations; ordinary control routes
+// retain the existing15s cap. The Office worker itself may need45s.
+function workpaperTimeoutMilliseconds(route,{kind,method='GET'}={}){
+ const id='[A-Za-z0-9][A-Za-z0-9_-]{0,127}',hash='[a-f0-9]{64}',uuid='[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}',base='/api/teams/'+id+'/projects/'+id+'/workpapers',version='\\?version=[1-9]\\d*&projectRevision=[1-9]\\d*&grantRevision=[1-9]\\d*';
+ if(kind==='export'&&workpaperExportTransportValid(route,{method,binary:true}))return 1800000;
+ const suffix={record:'/record',original:'/originals/'+hash,form:'/forms/'+hash}[kind];
+ if(method==='GET'&&suffix&&matches(new RegExp('^'+base+suffix+version+'$'),route))return 90000;
+ if(method==='POST'&&kind==='json'&&matches(new RegExp('^'+base+'/entries/'+hash+'$'),route))return 90000;
+ if(method==='POST'&&kind==='json'&&matches(new RegExp('^'+base+'/imports/'+uuid+'/commit$'),route))return 180000;
+ return 15000;
+}
 function workpaperBinaryMetadata(response){const get=k=>response.headers.get(k);return{contentType:get('content-type'),contentLength:get('content-length'),cacheControl:get('cache-control'),contentDisposition:get('content-disposition'),nosniff:get('x-content-type-options'),version:get('x-shenyi-workpaper-version'),recordRevision:get('x-shenyi-workpaper-record-revision'),recordSha256:get('x-shenyi-workpaper-record-sha256'),sourceProjectId:get('x-shenyi-workpaper-source-project-id'),projectRevision:get('x-shenyi-project-revision'),grantRevision:get('x-shenyi-workpaper-grant-revision'),originalSha256:get('x-shenyi-workpaper-original-sha256'),sha256:get('x-shenyi-workpaper-export-sha256')};}
 async function abortable(work,signal,failure){
  let remove;if(signal.aborted)throw failure('WORKPAPER_CANCELED','本次底稿保存已停止。');
@@ -38,4 +49,4 @@ async function streamedWorkpaperExport(response,{check,signal,onHeaders,onChunk}
   current();if(size!==length||digest.digest('hex')!==meta.sha256)bad();complete=true;return Object.freeze({...meta,byteLength:size});
  }finally{signal.removeEventListener('abort',cancel);if(!complete)cancel();}
 }
-module.exports={workpaperHooks,workpaperExportTransportValid,workpaperBinaryMetadata,streamedWorkpaperExport,EXPORT_MAX_BYTES};
+module.exports={workpaperHooks,workpaperExportTransportValid,workpaperBinaryMetadata,streamedWorkpaperExport,workpaperTimeoutMilliseconds,EXPORT_MAX_BYTES};
