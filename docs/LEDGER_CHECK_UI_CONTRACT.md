@@ -1,6 +1,6 @@
 # M4P 账表快照正常桌面界面合同（候选）
 
-日期：2026-11-17。分支 `codex/ledger-check-readonly`，起点 `7d59b6c`。依据[用户决定](LEDGER_CHECK_ACCESS_DECISION.md)、[服务端合同](LEDGER_CHECK_SERVER_CONTRACT.md)及[主进程合同](LEDGER_CHECK_DESKTOP_CONTRACT.md)。本轮接入正常团队页面、受控应用资源和窄IPC，修正后的Windows原生root检查已通过，仍待原完整严格门复验、所需旧原生兼容及独立复核；不宣称整个M4P或商业化Goal完成。
+日期：2026-11-17。分支 `codex/ledger-check-readonly`，起点 `7d59b6c`。依据[用户决定](LEDGER_CHECK_ACCESS_DECISION.md)、[服务端合同](LEDGER_CHECK_SERVER_CONTRACT.md)及[主进程合同](LEDGER_CHECK_DESKTOP_CONTRACT.md)。本轮接入正常团队页面、受控应用资源和窄IPC，修正后的Windows原生、原完整单元严格门及旧8组原生兼容root检查已通过，仍待共享候选保全／原一键入口及独立复核；不宣称整个M4P或商业化Goal完成。
 
 ## 正常入口和权限
 
@@ -30,7 +30,7 @@
 
 实际Chrome检查运行正常HTML、CSS、preload与主进程桥，后端使用真实TeamClient、设备签名Request应用边界和隔离SQLite；原生picker与Electron主frame由fixture注入，未当作OS或Electron验收。1280×900及900×900无横向溢出，动态HTML字符串按文本显示，关闭可清空并重开；源文件SHA、规范JSON及26张原资源表保持，只有一笔导入POST和一份新版本，无计算引擎资源或pageerror。首轮截图发现过时侧栏范围说明，修正后重新执行并复看截图，原图与技术报告保留。
 
-本轮不新增HTTP或schema、不打开／升级共享演示库，不改原专业算法和旧版dist页面；独立复核仍待额度条件解除，不用root检查代替。尚未push、进入main或上线，一键入口未重验。下一步为原完整严格门复验、所需旧原生兼容与独立验收，Goal保持active。
+本轮不新增HTTP或schema、不打开／升级共享演示库，不改原专业算法和旧版dist页面；独立复核仍待额度条件解除，不用root检查代替。尚未push、进入main或上线，一键入口未重验。下一步为共享候选保全／原一键入口与独立验收，Goal保持active。
 
 ## 2026-11-17 原生与完整门验收修正
 
@@ -40,4 +40,14 @@
 
 原生取证首次失败为Electron evaluate中误用require，第二次缺少显式member-access合成管理员seed；外部驱动按已存在前提修正，失败和原驱动保留。第三轮链路通过，但截图发现撤权后正文清除而权限标签仍残留已授权；`permission-status-before.tap.log`两项均失败。产品仅在update依据当前access同步标签，增加两项真实DOM回归。第四轮原生加入同一标签断言后通过并复看截图，未改变服务端权限或专业算法。
 
-原固定Node24 `scripts/test.mjs --unit --strict` 首轮连续4319项：4284通过／35失败／零skip、cancel、todo，1871.656秒，1165源before／after raw保持；224文件选入、61整browser文件粗排除，不能称完整browser严格门。35处均为新增4表／38定义或12RPC与旧固定基线冲突，分类与全部失败TAP保留。27份旧检查81项精确表达式／导入适配可逆重建原bytes；原123／73／252、历史66／189、69／209、70／217及relative47基线不变，先验证唯一新增层再投影；历史升级真实剥离空账表层并逐DDL还原，非空或多出对象的层在DROP前拒绝。新增三项helper验证。隔离方案86项及两项DOM／三项helper试验不代替实际仓库门，实际修后结果以 `fix-related/report.json`为准。完整严格门复验仍待完成，执行原命令与原选择规则，不跳过任何已选测试、不弱化原业务断言。
+原固定Node24 `scripts/test.mjs --unit --strict` 首轮连续4319项：4284通过／35失败／零skip、cancel、todo，1871.656秒，1165源before／after raw保持；224文件选入、61整browser文件粗排除，不能称完整browser严格门。35处均为新增4表／38定义或12RPC与旧固定基线冲突，分类与全部失败TAP保留。27份旧检查81项精确表达式／导入适配可逆重建原bytes；原123／73／252、历史66／189、69／209、70／217及relative47基线不变，先验证唯一新增层再投影；历史升级真实剥离空账表层并逐DDL还原，非空或多出对象的层在DROP前拒绝。新增三项helper验证。隔离方案86项及两项DOM／三项helper试验不代替实际仓库门，实际修后结果以 `fix-related/report.json`为准。该前序记录时完整严格门仍待复验；后续已执行原命令与原选择规则并通过，不跳过任何已选测试、不弱化原业务断言。
+
+## 2026-11-17 本地技术门root检查结果
+
+最新root检查：原Node24 `scripts/test.mjs --unit --strict` 4324/4324通过，0失败／跳过／取消／todo，1889.031秒；连续TAP／plan／footer及exit0已复核，226文件选入／61整browser粗排除，1168源before／after／当次current raw保持。旧8组Windows原生兼容270.079秒通过，48处外部精确适配可逆重建原bytes、原业务断言调用数不变，实际新增层另行核验；不与986专题门或前序计数累加。两个共享库仅只读备份并完成私有副本升级保全，实际共享库／一键候选未动。证据根 `D:/codex-temp/shenyi-ledger-check-acceptance-20261117/`；独立复核不豁免，未push／进入main／上线。
+
+门禁对应实现检查点 `9e19da82e80e407b24ef2019cdb90881cd23f216`，TAP SHA-256 `b9706b2efee3313c0da0b2d9258adf6b5e8ac1da431f6976638e90de1e446483`，TAP duration 1888406.2348 ms，外层1889.031秒。首轮35处失败均在本次通过，新增5项回归；原224选入文件零移除，仅新增两份回归文件至226，61份browser粗排除沿用。`full-unit-after-fixes/root-audited-report.json`核对完整连续结果、plan、footer、exit及1168源，不将其称为全browser严格门或独立验收。后续只改检查点文档和BACKLOG排版，不改本次已验产品或测试代码。
+
+旧8组执行在 `old-native-compatibility/run-20261117T063350273386Z/`：正常入口、业务确认、旧项目迁入、项目授权、资料清单、W/Q资料身份、本人电脑、受信HTTPS。原脚本只在外部loader应用48处精确新增层投影／报告实际数量／新证据目录适配，原assert调用数和其他bytes可逆保留；Electron产品main／preload／renderer不加载该loader。每组实际记录135RPC／24form／29密码及77表／290定义（适用组），101次运行层核验，8份PASS报告和46PNG保留。`old-native-compatibility-root-audit.json`核对报告、日志、源和原输入SHA；代表性本人电脑及错误UUID截图已复看。此为root检查，不代替待补独审；picker／Save仍为原合成fixture。
+
+共享库预备：`shared-readonly-proof-2026-11-17T06-50-14-803Z/report.json`实际以readOnly＋query_only备份普通／审核两库，均与前次已验73表／252定义、9／16账号及固定UUID逐typed快照相同。在各自私有副本模拟原启动的初始化及幂等seed，原73表全部typed行（含auth无豁免）和252定义保持，只增4空表／33trigger／1index；重复初始化一致，每库5种篡改被校验拒绝。共享原库未初始化、未重启；现有审核预览公开接口可达不等于本轮候选一键已验。
