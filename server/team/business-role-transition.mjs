@@ -2,9 +2,11 @@ import {prepareProjectAccessRevocation,finishProjectAccessRevocation} from './pr
 import {businessRoleRevision,businessRoleIncrement,businessRoleConflict} from './business-role-policy.mjs';
 import {revokeMaterialAccess} from './materials-policy.mjs';
 import {revokeWorkspaceSourceAccess} from './workspace-source-grant.mjs';
+import {revokeLedgerAccess} from './ledger-check-grant.mjs';
 
 // Internal transaction helper; caller owns membership, approval and final audit.
 export function revokeBusinessRoleAccess(db,{actorId,teamId,userId,at,reason='business-role.changed'}){
+ revokeLedgerAccess(db,{actorId,teamId,userId,at,reason});
  revokeWorkspaceSourceAccess(db,{actorId,teamId,userId,at,reason});
  revokeMaterialAccess(db,{actorId,teamId,userId,at,reason});
  const tasks=db.prepare(`SELECT DISTINCT assignment.task_id,CAST(COALESCE(version.revision,0) AS TEXT) AS revision

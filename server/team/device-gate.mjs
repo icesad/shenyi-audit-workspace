@@ -4,6 +4,8 @@ import {ApiError,invalid,transaction} from './http-utils.mjs';
 import {UUID,digest,deviceServerId,currentDeviceLease,deviceConflict,deviceRequired} from './device-policy.mjs';
 import proof from '../../shared/device-proof.cjs';
 import {recordDeviceUsage} from './device-usage.mjs';
+import {ledgerRequestBodyPolicy} from './ledger-check-policy.mjs';
+import {acquireLedgerImportPermit} from './ledger-check-import-budget.mjs';
 const BODY_LIMIT=17*1024*1024,NONCE_LIMIT=2048;
 const BOOTSTRAP_GET=new Set(['/api/auth/methods','/api/auth/session','/api/auth/onboarding/capabilities','/api/auth/recovery-requests/capabilities','/api/auth/devices','/api/auth/device-replacements']);
 const BOOTSTRAP_POST=new Set(['/api/auth/login','/api/auth/logout','/api/auth/phone/login','/api/auth/phone/challenges','/api/auth/phone/reset','/api/auth/recovery-requests',
@@ -24,13 +26,13 @@ export function deviceBootstrapAllowed(request){
   const wechat=/^\/api\/auth\/wechat\/transactions\/([^/]+)\/(status|cancel|link|exchange)$/.exec(url.pathname);
   return !!wechat&&UUID.test(wechat[1]);
 }
-async function bodyBytes(request){
+async function bodyBytes(request,maximum=BODY_LIMIT){
   const length=request.headers.get('Content-Length');
-  if(length!==null&&(!/^\d+$/.test(length)||Number(length)>BODY_LIMIT))throw new ApiError(413,'TOO_LARGE','资料超过大小限制。');
+  if(length!==null&&(!/^\d+$/.test(length)||Number(length)>maximum))throw new ApiError(413,'TOO_LARGE','资料超过大小限制。');
   if(['GET','HEAD'].includes(request.method)){if(length!==null&&Number(length)!==0)invalid();return Buffer.alloc(0);}
   const reader=request.body?.getReader();if(!reader)return Buffer.alloc(0);
   const chunks=[];let total=0;
-  for(;;){const part=await reader.read();if(part.done)break;total+=part.value.byteLength;if(total>BODY_LIMIT){await reader.cancel();throw new ApiError(413,'TOO_LARGE','资料超过大小限制。');}chunks.push(part.value);}
+  for(;;){const part=await reader.read();if(part.done)break;total+=part.value.byteLength;if(total>maximum){await reader.cancel();throw new ApiError(413,'TOO_LARGE','资料超过大小限制。');}chunks.push(part.value);}
   return Buffer.concat(chunks);
 }
 function freshLease(db,request,before,serverId,at){
@@ -53,7 +55,10 @@ export async function authorizeDeviceRequest(request,{db,now=Date.now,identityPr
   consume(db,'device-request:'+digest(identity.userId),now(),60000,120);
   // Verify the claimed hash first, so unauthenticated payloads do not cause a
   // large body read. Then retain exactly the authenticated bytes for dispatch.
-  const bytes=await bodyBytes(request);if(digest(bytes)!==bodySha256)throw new ApiError(403,'DEVICE_BODY_MISMATCH','请求资料与设备签名不一致。');
+  const requestBodyPolicy=ledgerRequestBodyPolicy(db,request,identity.userId,BODY_LIMIT);
+  const release=requestBodyPolicy.ledgerImportStamp?acquireLedgerImportPermit(db,identity.userId):undefined;
+  try {
+  const bytes=await bodyBytes(request,requestBodyPolicy.maximum);if(digest(bytes)!==bodySha256)throw new ApiError(403,'DEVICE_BODY_MISMATCH','请求资料与设备签名不一致。');
   const fresh=freshLease(db,request,identity,serverId,now()),nonceHash=digest(nonceRaw);
   const context=transaction(db,()=>{
     const time=now(),current=freshLease(db,request,fresh,serverId,time);
@@ -63,9 +68,10 @@ export async function authorizeDeviceRequest(request,{db,now=Date.now,identityPr
     if(db.prepare('SELECT COUNT(*) n FROM team_device_request_replays WHERE lease_id=?').get(current.leaseId).n>=NONCE_LIMIT)throw new ApiError(429,'DEVICE_PROOF_LIMIT','设备请求过于频繁，请稍后重新持钥登录。');
     db.prepare('INSERT INTO team_device_request_replays(lease_id,nonce_hash,created_at) VALUES (?,?,?)').run(current.leaseId,nonceHash,time);
     recordDeviceUsage(db,current.userId,current.deviceId,time);
-    return {userId:current.userId,deviceId:current.deviceId,bindingRevision:current.bindingRevision,leaseId:current.leaseId,stamp:current.stamp,serverId};
+    return {userId:current.userId,deviceId:current.deviceId,bindingRevision:current.bindingRevision,leaseId:current.leaseId,stamp:current.stamp,serverId,...(requestBodyPolicy.ledgerImportStamp?{ledgerImportStamp:requestBodyPolicy.ledgerImportStamp}:{})};
   });
   const rebuilt=new Request(request.url,{method:request.method,headers:new Headers(request.headers),signal:request.signal,
     ...(!['GET','HEAD'].includes(request.method)&&request.body!==null?{body:bytes}:{} )});
-  return {request:rebuilt,context};
+  return {request:rebuilt,context,...(release?{release}:{})};
+  } catch(error) { release?.();throw error; }
 }

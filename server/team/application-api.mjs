@@ -17,6 +17,7 @@ import {handleProjectMigrationRequest} from './migration-api.mjs';
 import {handleCollectionWorkspaceCreationRequest} from './workspace-creation-api.mjs';
 import {handleWorkspaceFormalizationRequest} from './workspace-formalization-api.mjs';
 import {handleWorkspaceSourceRequest} from './workspace-source-api.mjs';
+import {handleLedgerCheckRequest} from './ledger-check-api.mjs';
 import {handleTeamMaterialsRequest} from './materials-api.mjs';
 import {handleMaterialPreservationRequest} from './materials-preservation-api.mjs';
 import {handleAdministratorBusinessRoleRequest} from './administrator-business-role-api.mjs';
@@ -44,6 +45,7 @@ export async function handleTeamApplicationRequest(request, options = {}) {
   return new Response(request.method==='HEAD'?null:response.body,{status:response.status,statusText:response.statusText,headers});
 }
 async function applicationResponse(request, {db, now = Date.now,identityProviders={}} = {}) {
+  let releaseDeviceBody;
   try {
     const at = now();
     if (!Number.isSafeInteger(at) || at < 0) throw new Error('Invalid clock');
@@ -63,6 +65,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
         ...(identityProviders.deviceProofRequired===true?{deviceBinding:{required:true,serverId:deviceServerId(db),protocolVersion:1}}:{})});
     }
     const deviceAuthorization=await authorizeDeviceRequest(request,options);
+    releaseDeviceBody=deviceAuthorization.release;
     request=deviceAuthorization.request;options.deviceContext=deviceAuthorization.context;
     return await handleMyDeviceRequest(request,options)
       || await handleDeviceReplacementRequest(request,options)
@@ -73,6 +76,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       || await handleBusinessRoleRequest(request,options)
       || await handleProjectMigrationRequest(request,options)
       || await handleCollectionWorkspaceCreationRequest(request,options)
+      || await handleLedgerCheckRequest(request,options)
       || await handleWorkspaceSourceRequest(request,options)
       || await handleWorkspaceFormalizationRequest(request,options)
       || await handleMaterialPreservationRequest(request,options)
@@ -90,6 +94,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       || await handleCollectionWriteRequest(request,options)
       || await handleTeamCollectionRequest(request,options);
   } catch (error) {
+    if(error?.message?.includes('LEDGER_CHECK_CONFLICT'))return json({error:{code:'LEDGER_CHECK_CONFLICT',message:'账表来源、授权或版本冲突，请刷新或查询原回执。'}},409);
     if(error?.message?.includes('SOURCE_REVISION_CONFLICT'))return json({error:{code:'WORKSPACE_SOURCE_CONFLICT',message:'来源授权状态冲突，请刷新核对。'}},409);
     if(error?.message?.includes('WORKSPACE_FORMALIZATION_CONFLICT'))return json({error:{code:'WORKSPACE_FORMALIZATION_CONFLICT',message:'来源、工作区或业务确认状态冲突，请只读核对原回执。'}},409);
     if(error?.message?.includes('WORKSPACE_CREATION_CONFLICT')||error?.message?.includes('UNIQUE constraint failed: team_project_access_projects.team_id, team_project_access_projects.created_by, team_project_access_projects.request_id'))return json({error:{code:'WORKSPACE_CREATION_CONFLICT',message:'创建标识或工作区来源冲突，请只读查询原回执。'}},409);
@@ -97,5 +102,5 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
     if(error?.message?.includes('MATERIAL_REVISION_MAX'))return json({error:{code:'MATERIALS_CONFLICT',message:'资料授权版本已达上限，未更改业务资料。'}},409);
     if (error instanceof ApiError) return json({error:{code:error.code,message:error.message}},error.status,error.status===429?{'Retry-After':'60'}:{});
     return json({error:{code:'SERVICE_UNAVAILABLE',message:'团队服务暂不可用。'}},503);
-  }
+  } finally { releaseDeviceBody?.(); }
 }

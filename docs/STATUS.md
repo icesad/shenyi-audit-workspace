@@ -1,12 +1,14 @@
 # 当前状态：M4P账表校验只读接入（进行中，尚未独立验收）
 
-M4P账表校验只读接入进行中：用户已确认先只开放查阅，运行以后再定；旧版显式导出快照，由项目负责人核验并验证当前密码后导入团队，只供查阅，不写底稿。当前已有快照基础与旧版项目登记表显式导出候选；团队HTTP／IPC／授权表／菜单及导入／查阅入口仍未接，不将旧端导出通过写成整个团队查阅功能已交付。
+M4P账表校验只读接入进行中：用户已确认先只开放查阅，运行以后再定；旧版显式导出快照，由项目负责人核验并验证当前密码后导入团队，只供查阅，不写底稿。快照基础、旧端显式导出及独立查阅授权／负责人密码导入／历史查询服务端已有候选；桌面IPC、文件选择与来源核验界面、正常团队查阅入口及独立验收仍待完成，不将服务端检查写成整个功能已交付。
+
+服务端本轮root相关门392/392通过、0失败／跳过／取消／todo，211.656秒；测试期间1150候选文件before／after raw保持。覆盖真实设备签名Request、独立查阅权、无继承授权、负责人密码导入、W→Q及旧Q归属、版本／操作回执、body／KDF撤权ABA、只读／导入额外写回滚、大文件预检及并发限额、旧权限／停用／设备兼容。隔离库新增四空表／38定义至77表／290定义，旧73表／252定义及typed行／UUID保持；四类孤儿账表历史均禁止重建服务器身份。两份旧schema测试只增加显式四空表／38定义层，保留固定历史基线及旧断言。证据：`D:/codex-temp/shenyi-ledger-check-server-20261117/backend-related-final/api-report.json`。首轮相关385项为382pass／3fail，拒绝码断言过窄和两处旧schema数量固定，原失败完整保留；定向75门曾通过，随后补身份历史保护后运行本门。以上不是完整严格门、正常桌面或独立验收；独审额度限制仍待解除，不绕过、不替代。
 
 新快照基础含28项核心／真实Chrome往返检查，连同原勾稽26项相关门共54通过、0失败／跳过／取消／todo；原自动校验专项另有5项通过。两次运行时原1132文件raw保持，之后只更新本项文档；未重跑完整4214门，不把专题累加成完整回归。独立复核仍待完成，不以root检查替代。
 
-本轮旧端导出及兼容相关门139/139通过、0失败／跳过／取消／todo，56.156秒；该门1139候选文件before／after raw保持。真实正常旧index完成下载及编解码读回，全部库typed行／DDL及原件SHA保持；无保存结果、未保存输入、版本／同rev内容／立项／固定身份／关闭上下文变化拒绝，旧归属来源仍逐byte一致。20种loader篡改均被原固定hash守卫拒绝，两份旧测试仅精确loader例外及Chrome环境入口适配，原断言和固定hash未改。以上是root检查，不是M4P独审或完整软件验收。证据：`D:/codex-temp/shenyi-ledger-check-export-20261117/related-after-adapters/related-report.json`、`loader-guard-mutations.json`及原日志。首轮真实页面把编辑触发的既有操作计时混入全库保全，8pass／2fail；拆分独立输入拒绝后新browser 11pass，随后补旧来源兼容进入最终139门。首轮related 133pass／2fail为旧loader守卫及缺默认Chromium，修后原门全部执行；早期失败保留。
+旧端导出阶段兼容相关门139/139通过、0失败／跳过／取消／todo，56.156秒；该门1139候选文件before／after raw保持。真实正常旧index完成下载及编解码读回，全部库typed行／DDL及原件SHA保持；无保存结果、未保存输入、版本／同rev内容／立项／固定身份／关闭上下文变化拒绝，旧归属来源仍逐byte一致。20种loader篡改均被原固定hash守卫拒绝，两份旧测试仅精确loader例外及Chrome环境入口适配，原断言和固定hash未改。以上是root检查，不是M4P独审或完整软件验收。证据：`D:/codex-temp/shenyi-ledger-check-export-20261117/related-after-adapters/related-report.json`、`loader-guard-mutations.json`及原日志。首轮真实页面把编辑触发的既有操作计时混入全库保全，8pass／2fail；拆分独立输入拒绝后新browser 11pass，随后补旧来源兼容进入最终139门。首轮related 133pass／2fail为旧loader守卫及缺默认Chromium，修后原门全部执行；早期失败保留。
 
-继续同一M4P：旧端显式导出已接候选，接下来实现独立项目查阅授权→负责人核验／密码导入与版本回执→正常团队只读展示及撤权测试→独立和Windows原生验收。运行校验、映射保存、底稿写入、其他专业权、Mac与生产保持各自边界；两项用户决定已明确，不重复询问。
+继续同一M4P：服务端候选已通过root相关检查，接下来接桌面窄IPC、文件选择／来源核验及正常团队只读展示，验证撤权和迟到响应，再完成Windows原生、独立审查及所需完整严格门。运行校验、映射保存、底稿写入、其他专业权、Mac与生产仍各自受限；既定来源及权限决定不重复询问。 见[实际服务端合同](LEDGER_CHECK_SERVER_CONTRACT.md)。
 
 证据根 `D:/codex-temp/shenyi-ledger-check-discovery-20261117/`，见 `snapshot-related-report.json`、`legacy-baseline-verified-report.json`。未push／进入main／上线，本轮未重验一键入口；M4整体和完整Goal保持active。见[当前合同](LEDGER_CHECK_SNAPSHOT_CONTRACT.md)及[权限／来源决定](LEDGER_CHECK_ACCESS_DECISION.md)。
 

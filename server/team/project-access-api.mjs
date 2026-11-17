@@ -7,6 +7,7 @@ import {safeMemberText} from './member-access-policy.mjs';
 import {ApiError,ID,deny,invalid,json,readJson,transaction} from './http-utils.mjs';
 import {noReviewerHistorySql} from './reviewer-policy.mjs';
 import {hasWorkspaceSourceGrantFlags,revokeWorkspaceSourceAccess} from './workspace-source-grant.mjs';
+import {hasLedgerGrantFlags,revokeLedgerAccess} from './ledger-check-grant.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const method=allow=>json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:allow});
 const like=value=>'%'+value.replace(/[\\%_]/g,char=>'\\'+char)+'%';
@@ -56,8 +57,8 @@ function changeAccess(db,actor,context,target,desired,at){
  JOIN team_collection_attachments attachment ON attachment.team_id=grant_row.team_id AND attachment.attachment_id=grant_row.attachment_id
  JOIN team_collection_tasks task ON task.team_id=attachment.team_id AND task.task_id=attachment.task_id
  WHERE task.team_id=? AND task.project_id=? AND grant_row.user_id=? AND grant_row.status='active'`).get(teamId,projectId,userId).n;
- const sourceAffected=!desired.read&&hasWorkspaceSourceGrantFlags(db,teamId,projectId,userId);
- if(!operations.length&&!tasks.length&&!attachments&&!sourceAffected)projectConflict();
+ const sourceAffected=!desired.read&&hasWorkspaceSourceGrantFlags(db,teamId,projectId,userId),ledgerAffected=!desired.read&&hasLedgerGrantFlags(db,teamId,projectId,userId);
+ if(!operations.length&&!tasks.length&&!attachments&&!sourceAffected&&!ledgerAffected)projectConflict();
  // Full removal can change only task/attachment scope, which also needs a
  // project revision even when no project-wide grant happened to exist.
  const explicitBump=operations.length?0:1;if(beforeRevision>Number.MAX_SAFE_INTEGER-operations.length-explicitBump)projectConflict();
@@ -74,6 +75,7 @@ function changeAccess(db,actor,context,target,desired,at){
    ON CONFLICT(team_id,task_id) DO UPDATE SET revision=excluded.revision WHERE team_task_versions.revision=?`).run(teamId,task.task_id,task.next,task.revision).changes!==1)projectConflict();
  }
  if(explicitBump&&db.prepare('UPDATE team_project_access_projects SET revision=revision+1 WHERE team_id=? AND project_id=? AND revision=?').run(teamId,projectId,beforeRevision).changes!==1)projectConflict();
+ if(!desired.read)revokeLedgerAccess(db,{actorId:actor.userId,teamId,projectId,userId,reason:'project-access.removed',at});
  if(!desired.read)revokeWorkspaceSourceAccess(db,{actorId:actor.userId,teamId,projectId,userId,reason:'project-access.removed',at});
  db.prepare('UPDATE team_sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL').run(at,userId);
  db.prepare('UPDATE team_device_leases SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL').run(at,userId);
@@ -114,7 +116,7 @@ export async function handleProjectAccessRequest(request,{db,now=Date.now,identi
  if(!Number.isSafeInteger(body.revision)||body.revision<1||typeof body.userId!=='string'||!ID.test(body.userId)||!Number.isSafeInteger(body.memberRevision)||body.memberRevision<0||!['read','manage','review'].every(name=>typeof body[name]==='boolean')||!body.read&&(body.manage||body.review)||typeof body.currentPassword!=='string'||!body.currentPassword||Buffer.byteLength(body.currentPassword)>512)invalid();
  const target=targetMember(db,actor.userId,teamId,body.userId);if(body.userId===before.project.createdBy)deny();if(target.identityRevision!==body.memberRevision)projectConflict();
  const fresh=()=>{const context=sameProject(db,request,actor,options,teamId,projectId,before,body.revision,{owner:true,active:true}),current=targetMember(db,actor.userId,teamId,body.userId);if(current.stamp!==target.stamp||current.identityRevision!==body.memberRevision)projectConflict();return {context,target:current};};fresh();
- const operations=accessOperations(db,teamId,projectId,body.userId,body);if(!operations.length&&body.read)projectConflict();if(!operations.length&&!body.read&&!revokeTasks(db,teamId,projectId,body.userId).length&&!db.prepare(`SELECT 1 FROM team_attachment_grants grant_row JOIN team_collection_attachments attachment ON attachment.team_id=grant_row.team_id AND attachment.attachment_id=grant_row.attachment_id JOIN team_collection_tasks task ON task.team_id=attachment.team_id AND task.task_id=attachment.task_id WHERE task.team_id=? AND task.project_id=? AND grant_row.user_id=? AND grant_row.status='active' LIMIT 1`).get(teamId,projectId,body.userId)&&!hasWorkspaceSourceGrantFlags(db,teamId,projectId,body.userId))projectConflict();
+ const operations=accessOperations(db,teamId,projectId,body.userId,body);if(!operations.length&&body.read)projectConflict();if(!operations.length&&!body.read&&!revokeTasks(db,teamId,projectId,body.userId).length&&!db.prepare(`SELECT 1 FROM team_attachment_grants grant_row JOIN team_collection_attachments attachment ON attachment.team_id=grant_row.team_id AND attachment.attachment_id=grant_row.attachment_id JOIN team_collection_tasks task ON task.team_id=attachment.team_id AND task.task_id=attachment.task_id WHERE task.team_id=? AND task.project_id=? AND grant_row.user_id=? AND grant_row.status='active' LIMIT 1`).get(teamId,projectId,body.userId)&&!hasWorkspaceSourceGrantFlags(db,teamId,projectId,body.userId)&&!hasLedgerGrantFlags(db,teamId,projectId,body.userId))projectConflict();
  consume(db,'project-access:'+digest(actor.userId),projectTime(now()),15*60000,20);
  return limitedPasswordWork(db,async()=>{const valid=await verifyPassword(body.currentPassword,before.member.credential.password_hash);fresh();if(!valid)throw new ApiError(403,'VERIFICATION_FAILED','当前密码验证未通过，请核对后重试。');return transaction(db,()=>{const current=fresh();return json(changeAccess(db,actor,current.context,current.target,body,projectTime(now())));});});
 }
