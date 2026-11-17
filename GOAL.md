@@ -2,6 +2,20 @@
 
 ## 2026-11-18 最新：合成团队库离线备份／恢复演练
 
+## 2026-11-18 最新：业务限流下的设备在线证明与底稿续传
+
+`codex/device-heartbeat-quota`从`4c29272`接续M4。业务请求用满120/分钟时曾同时拒绝设备心跳，导致设备暂停／来源清除；另有权限poll的429清除renderer来源，下一次轮询又关闭main来源。现仅规范GET connection使用本人独立24/分钟控制桶，业务120、签名／新鲜租约／nonce重放与2048总上限保持；不把429当在线证明，不改stage的原session／lease绑定。
+
+明确poll429时隐藏正文／源摘要／成员／回执正文并清密码和确认，保留同view的opaque来源及原编号。未知态阻断业务IPC；fresh项目／grant修订及六能力一致，再重读head与资料，完成后由本人重新确认和验密显式续传。真实拒绝／非法响应／能力或上下文变化退役旧view，不自动POST。独审追加发现恢复途中提前显示正文及取消IPC例外过宽，两项已窄修并原点复验。
+
+最终原有10完整文件229/229，新2完整文件27/27（12服务端＋15UI），零失败／跳过／取消；1143 tracked运行／测试源before→after→current raw一致。固定外部独审13/13，原UI5个失败及第一候选新增2个失败均保留。实际HTML／JSDOM→真实bridge／签名client／strict gate／SQLite／Worker三组合成闭环3/3：heartbeat、no-heartbeat、有效XLSX均按原ID人工续传、同session／lease、begin1／commit1／head1；有效原表A2保存文本与C1公式只读通过。两组最小fixture原件的后续form422单列为限制，原提交终态不变；有效XLSX组无422。不是网络监听HTTP、正常Electron／OS、530MiB最大包或完整unit／browser严格门。
+
+两份保留预览进程／窗口仍响应、公开methods200且设备门开启；本轮不关闭、重载、登录或查询其业务库／vault，旧窗口未加载本次修复。实际共享升级与两原一键继续依用户决定保留，本轮新候选一键也未重跑。未push／进入main／上线；报告授权仍待原问题答复，不擅自开放。M4／完整Goal active，原始ZIP／OS／Mac／发行／供应商／支付／官网及M5—M8和专业决定仍保留。
+
+证据根`D:/codex-temp/shenyi-device-heartbeat-quota-20261118/`：`root-evidence-audit.json`、`root-new-final.tap`、`related-gate/final-candidate2/`；独审及三组闭环见`D:/codex-temp/shenyi-native-readiness-20261118/design-review/final-review.json`与`capacity-preflight/ui-real-client-candidate2-final-with-office.tap`。范围合同见[设备会话合同](docs/DESKTOP_DEVICE_SESSION_CONTRACT.md)与[底稿界面合同](docs/WORKPAPER_UI_CONTRACT.md)。
+
+以下保留前项记录及其当时范围。
+
 `codex/team-offline-backup`从`45e5f9b`接续M4，新增[离线备份与恢复工具](docs/TEAM_OFFLINE_BACKUP.md)。指定只读合成源、新UUID备份／恢复目录、完整schema与全表typed摘要／原件哈希和最终独占发布已实现，真实CLI三流程已验；没有增加在线恢复、业务数据权限或专业动作。
 
 最终两完整文件26/26、零失败／跳过，1036相关源前后保持；4套非空业务的12库经root Python只读交叉核验，独立9项证据审计通过。标量UUID、失败发布、最终目标变更与WAL副本附档问题均有原失败及修后复验。备份含历史凭据及权限且未加密，只供离线核验，不能直接当生产恢复；Mac／ACL／加密／可信撤销重放与正式切换另验。

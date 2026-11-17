@@ -54,7 +54,10 @@ export async function authorizeDeviceRequest(request,{db,now=Date.now,identityPr
   const key=proof.parsePublicKey(identity.publicKey);
   let payload;try{payload=proof.requestProofBytes(fields);}catch{invalid();}
   if(!verify(null,payload,key.key,signatureRaw))deviceRequired();
-  consume(db,'device-request:'+digest(identity.userId),now(),60000,120);
+  // A busy business bucket must not starve the separately bounded online proof.
+  // Keep every signed-body, fresh-lease and replay check below for both classes.
+  const connectionProbe=request.method==='GET'&&url.href===url.origin+'/api/auth/devices/connection';
+  consume(db,(connectionProbe?'device-connection:':'device-request:')+digest(identity.userId),now(),60000,connectionProbe?24:120);
   // Verify the claimed hash first, so unauthenticated payloads do not cause a
   // large body read. Then retain exactly the authenticated bytes for dispatch.
   const requestBodyPolicy=workpaperDataBodyPolicy(db,request,identity,ledgerRequestBodyPolicy(db,request,identity.userId,BODY_LIMIT),now());

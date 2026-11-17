@@ -30,3 +30,11 @@ root的目录helper默认Windows `%LOCALAPPDATA%/ShenyiTeamPreview/device-vault`
 UI沿用现视觉，普通/phone及Wechat都统一设备门；首次绑定复用原login form/password，原登录密码立即清空，重新输入密码、设备名及未默认勾选确认。不同key/revoked只说明员工联系teamadmin、管理员本人联系productowner，不假设审计职级。设备状态由getDeviceStatus轮询本地权威投影，旧epoch/账号/视图结果丢弃；paused隐藏并清业务内容/输入，仅留最小身份和重连/退出；ready后重新读取业务cap/tasks，不自动重放原操作。恢复无需renderer的navigator.onLine授予权限。
 
 验收：三种登录入口、显式首次确认/取消、同key重登、异key/撤销阻断、挑战12域篡改、签名字节/路径/查询/空HEAD、租约续接/自然到期/新实例清退、取消/账号变化各await点、旧401/响应及文件picker竞态、断网暂停/恢复/未知mutation不重放、57IPC/无秘密泄漏。Node24完整portable和相关旧回归；新真实Windows Electron用隔离fresh DB/OSkey/profile、strict HTTP及原件hash和截图验收。当前两旧共享演示库只备份/保全/启动，不自动绑定其9/13账号；Mac/真实SMS/微信/HTTPS/生产缺席分别记未完成。独立关键审查后本地提交并更新进度/BACKLOG/STATUS，Goal继续active。
+
+## 2026-11-18 补充：在线证明配额隔离
+
+已签名请求在原签名验证后分桶：仅规范化URL的href严格等于origin＋`/api/auth/devices/connection`且method为GET，使用本人独立`device-connection`桶，每60秒24次；其他签名请求仍使用本人`device-request`桶，每60秒120次。带query／fragment（包括空分隔符）、其他method和实际未归一的路径别名不享该例外。WHATWG URL已经归一成同一href的路径属于同一规范路由，不声称保留未暴露的原始请求字节。
+
+业务桶满不再单独耗尽在线证明；connection仍不是bootstrap，仍须当前token／租约／绑定、准确方法路径签名、body hash、fresh lease复查、nonce重放与每租约2048上限、usage事务检查。control第25次、断网或真实失效仍按原客户端规则暂停，不把429视为在线成功，不提高业务上限。两个桶的理论满额不保证可持续耗尽整份15分钟租约，2048 nonce上限仍独立有效。
+
+本次配额补充不改变会话轮转、自然到期或原stage的session_hash／lease_id绑定。已暂停的分块只能由同一仍有效上下文核对原状态并明确续传；未知发布不能自动重发。验证范围见[当前进度](../进度.md)，不替代真实HTTP、Windows／Mac、原生文件选择、最大包或生产容量验收。
