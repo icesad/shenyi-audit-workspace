@@ -1,6 +1,6 @@
 # M4P 账表校验只读服务端合同（候选）
 
-日期：2026-11-17。分支 `codex/ledger-check-readonly`；本轮起点 `2000d6ec8523fd3fa11b8ac51a08458207c5c1b4`。依据[用户决定](LEDGER_CHECK_ACCESS_DECISION.md)和[快照合同](LEDGER_CHECK_SNAPSHOT_CONTRACT.md)。本合同记录已实现服务端边界；桌面IPC、文件选择、来源核验界面、正常只读工作台、原生及独立验收仍待完成。M4O仍是最近独立验收通过的功能，完整Goal保持active。
+日期：2026-11-17。分支 `codex/ledger-check-readonly`；本轮起点 `2000d6ec8523fd3fa11b8ac51a08458207c5c1b4`。依据[用户决定](LEDGER_CHECK_ACCESS_DECISION.md)和[快照合同](LEDGER_CHECK_SNAPSHOT_CONTRACT.md)。本合同记录已实现服务端边界；桌面主进程传输与来源预检组件已有候选，见[主进程合同](LEDGER_CHECK_DESKTOP_CONTRACT.md)；桌面IPC、来源核验界面、正常只读工作台、原生及独立验收仍待完成。M4O仍是最近独立验收通过的功能，完整Goal保持active。
 
 ## 权限和来源
 
