@@ -1,0 +1,16 @@
+'use strict';
+const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),{pathToFileURL}=require('node:url');
+const {fixture,codec,create,sha,unzip,zip,NOW}=require('./workpaper-package-fixture.cjs');
+const OUT=process.env.SHENYI_TEST_TMPDIR??path.join(os.tmpdir(),'shenyi-workpaper-export-file');
+const moduleURL=pathToFileURL(path.resolve(__dirname,'../../server/team/workpaper-export-package.mjs')).href;
+async function make({freeze=true,version=1,mutateRecord,mutateSource,mutateManifest,supplementBytes}={}){
+ const f=await fixture({freeze});if(supplementBytes){const file=f.record.supplementalWorkpapers[0].file;file.blob=new Blob([supplementBytes],{type:file.mime});file.size=supplementBytes.length;file.sha256=sha(supplementBytes);}
+ const legacy=await create(f),parsed=await codec.inspectForStorage(legacy.bytes),record=JSON.parse(parsed.storage.recordJson),source=JSON.parse(parsed.storage.manifestJson);
+ if(version>1){record.rev+=version-1;record.docAnswers.savedSeparateAnswer={text:'saved version '+version};}if(mutateRecord)mutateRecord(record,f);
+ const recordJson=JSON.stringify(record);if(version===1){source.record.bytes=Buffer.byteLength(recordJson);source.record.sha256=sha(recordJson);}const initialRecordSha256=source.record.sha256;if(mutateSource)mutateSource(source);
+ const sourceManifestJson=JSON.stringify(source),originals=new Map(parsed.storage.originals.map(x=>[x.sha256,x])),expected={teamId:'team-a',projectId:'workspace-a',sourceProjectId:f.record.id,version,headRevision:Math.max(2,version),projectRevision:3,grantRevision:4,recordSha256:sha(recordJson)},plan=await(await import(moduleURL)).planWorkpaperExport({scope:{teamId:expected.teamId,projectId:expected.projectId,sourceProjectId:expected.sourceProjectId,version,recordRevision:record.rev,recordSha256:sha(recordJson)},source:{packageSha256:sha(legacy.bytes),recordSha256:initialRecordSha256,manifestSha256:sha(sourceManifestJson),importedAt:0},sourceManifestJson,recordJson,originals:parsed.storage.originals.map(x=>({sha256:x.sha256,bytes:x.byteLength})),readOriginal:hash=>Buffer.from(originals.get(hash).bytes),assertCurrent(){},createdAt:NOW});
+ const parts=[];for await(const part of plan.stream())parts.push(Buffer.from(part));let bytes=Buffer.concat(parts);if(mutateManifest){const entries=unzip(bytes),entry=entries.find(x=>x.name==='manifest.json'),value=JSON.parse(entry.data);mutateManifest(value);entry.data=Buffer.from(JSON.stringify(value));bytes=zip(entries);}
+ return{bytes,sha256:sha(bytes),byteLength:bytes.length,expected,record,source,legacy:Buffer.from(legacy.bytes),originals,fixture:f};
+}
+async function opened(t,bytes){await fs.mkdir(OUT,{recursive:true});const directory=await fs.mkdtemp(path.join(OUT,'case-')),filename=path.join(directory,'exclusive.tmp'),handle=await fs.open(filename,'wx+',0o600);await handle.writeFile(bytes);await handle.sync();t.after(async()=>{await handle.close().catch(()=>{});const resolved=path.resolve(directory),root=path.resolve(OUT)+path.sep;if(!resolved.startsWith(root))throw Error('Unsafe test cleanup');await fs.rm(resolved,{recursive:true,force:true});});return{handle,filename};}
+module.exports={make,opened,sha,unzip,zip,OUT};

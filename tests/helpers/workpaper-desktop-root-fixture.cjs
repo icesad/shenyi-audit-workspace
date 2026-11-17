@@ -1,0 +1,13 @@
+const {createWorkpaperDataFixture,good,sha,source,PASSWORD,restorePasswordWork}=require('./workpaper-data-fixture.cjs');
+const {createTeamClient}=require('../../desktop/team-client.cjs'),crypto=require('node:crypto'),proof=require('../../shared/device-proof.cjs');
+async function fixture(t,{originalForm=false,imported=true}={}){
+ const f=originalForm?await require('./workpaper-entries-fixture.cjs').entriesFixture(t):await createWorkpaperDataFixture(t),state={calls:[],before:null,after:null};
+ if(!originalForm&&imported){const id=await f.upload();good(await f.commit(id),201);}good(await f.wpGrant(f.user,{read:true,write:true,export:true}));
+ const pair=f.keys.get(f.user),client=createTeamClient({now:()=>f.clock.value,deviceIdentity:{platform:'win32',displayName:'Synthetic workpaper desktop',vault:{async getPublicIdentity(){return{publicKey:pair.encoded,fingerprint:sha(Buffer.from(pair.encoded,'base64url'))};},async signChallenge(fields){return crypto.sign(null,proof.challengeBytes(fields),pair.privateKey).toString('base64url');},async signRequest(fields){return crypto.sign(null,proof.requestProofBytes(fields),pair.privateKey).toString('base64url');}}},fetchImpl:async(url,settings)=>{
+  const request=new Request(url,settings),call={path:new URL(url).pathname,route:new URL(url).pathname+new URL(url).search,method:request.method,request};state.calls.push({path:call.path,method:call.method});await state.before?.(call);let response=await f.dispatch(request);const replaced=await state.after?.(call,response);return replaced??response;
+ }});await client.login({username:f.user,password:PASSWORD});if(client.getDeviceStatus().state!=='ready')throw Error('Actual main client not device-ready');t.after(()=>client.clearSession());
+ const target={teamId:'team-a',projectId:f.projectId},query=()=>({...target,version:Number(f.db.prepare('SELECT revision FROM team_workpaper_data_heads WHERE project_id=?').get(f.projectId)?.revision??1),projectRevision:f.dataRevision(),grantRevision:f.dataGrantRevision()});
+ const exportInput=async(version)=>{const head=await client.getWorkpaperData(target),chosen=version??head.headRevision,record=await client.getWorkpaperRecord({...target,version:chosen,projectRevision:head.projectRevision,grantRevision:head.grantRevision});return{...target,version:chosen,headRevision:head.headRevision,recordSha256:record.metadata.recordSha256,sourceProjectId:head.sourceProjectId,projectRevision:head.projectRevision,grantRevision:head.grantRevision};};
+ return{...f,client,state,target,query,exportInput};
+}
+module.exports={fixture,good,sha,source,PASSWORD,restorePasswordWork};

@@ -1,0 +1,18 @@
+const {createWorkpaperClient,workpaperTransportValid}=require('../../desktop/workpaper-client.cjs');
+const {createWorkpaperDataFixture,good,sha,source,uuid,PASSWORD,restorePasswordWork}=require('./workpaper-data-fixture.cjs');
+const {entriesFixture}=require('./workpaper-entries-fixture.cjs');
+const error=(code,message=code,status=0)=>Object.assign(Error(message),{code,status});
+async function fixture(t,{admitted=false,...options}={}){
+ const f=await (admitted?entriesFixture(t,options):createWorkpaperDataFixture(t,options)),state={actor:f.actor,generation:0,calls:[],after:null,raw:[]};
+ const request=async(path,settings={})=>{
+  if(!workpaperTransportValid(path,{method:settings.method??'GET',binary:settings.binary??false,body:settings.body,kind:settings.workpaper?.kind}))throw error('TRANSPORT_CAPABILITY_INVALID');
+  settings.beforeSend?.();state.calls.push({path,method:settings.method??'GET',body:settings.body===undefined?undefined:JSON.parse(JSON.stringify(settings.body)),kind:settings.workpaper.kind});settings.onDispatch?.();let response=await f.dispatch(f.makeRequest(path,{method:settings.method??'GET',body:settings.body,session:state.actor}));if(state.after)response=await state.after(path,response,settings)??response;
+  if(!response.ok)throw error('HTTP_'+response.status,'synthetic safe error',response.status);
+  if(settings.binary){const raw={bytes:new Uint8Array(await response.arrayBuffer()),contentType:response.headers.get('content-type'),contentLength:response.headers.get('content-length'),cacheControl:response.headers.get('cache-control'),version:response.headers.get('x-shenyi-workpaper-version'),recordRevision:response.headers.get('x-shenyi-workpaper-record-revision'),recordSha256:response.headers.get('x-shenyi-workpaper-record-sha256'),sourceProjectId:response.headers.get('x-shenyi-workpaper-source-project-id'),projectRevision:response.headers.get('x-shenyi-project-revision'),grantRevision:response.headers.get('x-shenyi-workpaper-grant-revision'),originalSha256:response.headers.get('x-shenyi-workpaper-original-sha256')};state.raw.push(raw);return raw;}return response.json();
+ };
+ const client=createWorkpaperClient({request,failure:error,capture(){const actor=state.actor,at=state.generation;return{actorId:actor.account.id,assertCurrent(){if(state.generation!==at||state.actor!==actor)throw error('SESSION_CHANGED');}};}}),target={teamId:'team-a',projectId:f.projectId};
+ const readInput=(version=1)=>({...target,version,projectRevision:f.dataRevision(),grantRevision:f.dataGrantRevision(state.actor.account.id)}),beginInput=(requestId=uuid(),bytes=f.bytes)=>({...target,requestId,projectRevision:f.dataRevision(),grantRevision:f.dataGrantRevision(state.actor.account.id),sourceProjectId:f.sourceProjectId,packageSha256:sha(bytes),byteLength:bytes.length,chunkCount:Math.ceil(bytes.length/1048576)});
+ async function importing({bytes=f.bytes,requestId=uuid(),password=PASSWORD}={}){const begin=beginInput(requestId,bytes);await client.beginWorkpaperImport(begin);for(let i=0;i<begin.chunkCount;i++){const part=bytes.subarray(i*1048576,(i+1)*1048576);await client.putWorkpaperImportChunk({...target,requestId,chunkIndex:i,sha256:sha(part),data:part.toString('base64')});}const receipt=await client.commitWorkpaperImport({...target,requestId,projectRevision:f.dataRevision(),grantRevision:f.dataGrantRevision(state.actor.account.id),sourceVerified:true,currentPassword:password,confirmed:true});return{begin,receipt};}
+ return{...f,client,state,target,readInput,beginInput,importing,error};
+}
+module.exports={fixture,error,good,sha,source,uuid,PASSWORD,restorePasswordWork};

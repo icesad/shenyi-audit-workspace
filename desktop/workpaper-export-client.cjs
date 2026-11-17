@@ -1,0 +1,18 @@
+'use strict';
+const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/,UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,SHA=/^[a-f0-9]{64}$/;
+const matches=(re,v)=>typeof v==='string'&&re.exec(v)?.[0]===v;
+const positive=v=>Number.isSafeInteger(v)&&v>0;
+function fields(v,allowed,required=allowed){const ds=v&&Object.getPrototypeOf(v)===Object.prototype?Object.getOwnPropertyDescriptors(v):null,keys=ds?Reflect.ownKeys(ds):[];if(!ds||keys.some(k=>typeof k!=='string'||!allowed.includes(k)||!ds[k].enumerable||!Object.hasOwn(ds[k],'value'))||required.some(k=>!Object.hasOwn(ds,k)))return null;return Object.fromEntries(keys.map(k=>[k,ds[k].value]));}
+function createWorkpaperExportClient({request,failure,capture,getWorkpaperClient}){
+ return Object.freeze({async downloadWorkpaperExport(input,options){
+  const v=fields(input,['teamId','projectId','version','headRevision','recordSha256','sourceProjectId','projectRevision','grantRevision']),h=fields(options,['assertCurrent','signal','onHeaders','onChunk'],['onHeaders','onChunk']);
+  if(!v||!matches(ID,v.teamId)||!matches(ID,v.projectId)||!matches(UUID,v.sourceProjectId)||!matches(SHA,v.recordSha256)||!['version','headRevision','projectRevision','grantRevision'].every(k=>positive(v[k]))||v.version>v.headRevision||!h||typeof h.onHeaders!=='function'||typeof h.onChunk!=='function'||h.assertCurrent!==undefined&&typeof h.assertCurrent!=='function'||h.signal!==undefined&&!(h.signal instanceof AbortSignal))throw failure('INVALID_INPUT','请核对本次底稿导出版本和保存上下文。');
+  const c=capture(),check=()=>{c.assertCurrent();h.assertCurrent?.();if(h.signal?.aborted)throw failure('WORKPAPER_CANCELED','本次底稿导出已停止。');},target={teamId:v.teamId,projectId:v.projectId},client=getWorkpaperClient();
+  const changed=()=>{throw failure('WORKPAPER_CHANGED','底稿导出权限、来源或固定版本已改变，未发布文件。');};
+  async function fresh(){check();const access=await client.getWorkpaperAccess(target,{assertCurrent:check,...(h.signal?{signal:h.signal}:{})});check();if(access.read!==true||access.export!==true||access.canExport!==true||access.projectRevision!==v.projectRevision||access.grantRevision!==v.grantRevision)changed();const head=await client.getWorkpaperData(target,{assertCurrent:check,...(h.signal?{signal:h.signal}:{})});check();if(head.headRevision!==v.headRevision||head.sourceProjectId!==v.sourceProjectId||head.projectRevision!==v.projectRevision||head.grantRevision!==v.grantRevision)changed();}
+  await fresh();const query=new URLSearchParams({version:String(v.version),projectRevision:String(v.projectRevision),grantRevision:String(v.grantRevision)});let header=null;
+  const result=await request('/api/teams/'+v.teamId+'/projects/'+v.projectId+'/workpapers/export?'+query,{binary:true,beforeSend:check,workpaper:{kind:'export',assertCurrent:check,...(h.signal?{signal:h.signal}:{}),async onHeaders(meta){check();if(meta.version!==String(v.version)||meta.recordSha256!==v.recordSha256||meta.sourceProjectId!==v.sourceProjectId||meta.projectRevision!==String(v.projectRevision)||meta.grantRevision!==String(v.grantRevision)||meta.contentDisposition!=='attachment; filename="shenyi-team-workpapers-v'+v.version+'.zip"')changed();header=meta;await h.onHeaders(meta);check();},async onChunk(bytes){check();await h.onChunk(bytes);check();}},messagesOverride:{404:'当前底稿导出未获查阅和导出双权。',409:'底稿授权、版本或来源已改变，请重新核对。',429:'底稿大操作仍在处理中，请稍后手动重试。'}});
+  check();if(!header||result.sha256!==header.sha256||result.byteLength!==header.byteLength)changed();await fresh();return Object.freeze({...result,teamId:v.teamId,projectId:v.projectId,headRevision:v.headRevision});
+ }});
+}
+module.exports={createWorkpaperExportClient};
