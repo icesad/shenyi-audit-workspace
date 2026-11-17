@@ -25,7 +25,11 @@ export function dataStage(db,actor,context,requestId,at){
  emptyData(db,context.project.teamId,context.project.id);return row;
 }
 export const stageStamp=row=>dataDigest(JSON.stringify(row));
+export const ENTRIES_BODY=1500*1024;
+export const entryHeadStamp=head=>dataDigest(JSON.stringify({revision:head.revision,sourceProjectId:head.source_project_id,identityStamp:head.identity_stamp,sourcePackageSha256:head.source_package_sha256}));
 export function workpaperDataBodyPolicy(db,request,actor,prior,at){
+ const entryUrl=new URL(request.url),entry=/^\/api\/teams\/([^/]+)\/projects\/([^/]+)\/workpapers\/entries\/([^/]+)$/.exec(entryUrl.pathname);
+ if(entry&&request.method==='POST'){const [,teamId,projectId,hash]=entry;if(!ID.test(teamId)||!ID.test(projectId)||!SHA.test(hash)||hash.length!==64||entryUrl.search||entryUrl.hash||entryUrl.href.endsWith('?'))invalid();const context=dataContext(db,actor,teamId,projectId,{read:true,write:true,active:true}),head=dataHead(db,teamId,projectId);if(!head)deny();if(head.source_project_id!==context.identity.sourceProjectId||head.identity_stamp!==context.identity.stamp||head.revision>=Number.MAX_SAFE_INTEGER)dataConflict();return{...prior,maximum:ENTRIES_BODY,workpaperDataStamp:dataContextStamp(context),workpaperStageStamp:entryHeadStamp(head),workpaperDataPermit:'large'};}
  const url=new URL(request.url),m=/^\/api\/teams\/([^/]+)\/projects\/([^/]+)\/workpapers\/imports(?:\/([^/]+)(?:\/(commit|chunks\/([^/]+)))?)?$/.exec(url.pathname);
  if(!m||!['POST','PUT','DELETE'].includes(request.method))return prior;
  const [,teamId,projectId,requestId,tail,index]=m;if(!ID.test(teamId)||!ID.test(projectId)||url.search||requestId&&!UUID.test(requestId))invalid();

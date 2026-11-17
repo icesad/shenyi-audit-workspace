@@ -1,0 +1,28 @@
+import {workpaperAccessActor,currentWorkpaperAccessActor} from './workpaper-access-policy.mjs';
+import {dataContext,dataContextStamp,dataConflict,dataDigest,entryHeadStamp,ENTRIES_BODY,SHA,UUID} from './workpaper-data-policy.mjs';
+import {changeCount,checkedDataHead,checkedDataVersion,dataReceipt,writeDataRow} from './workpaper-data-store.mjs';
+import {workpaperFormTask} from './workpaper-form-source.mjs';
+import {verifyFrozenWorkpaperSources} from './workpaper-governance-view.mjs';
+import {inspectWorkpaperOriginal} from './workpaper-office.mjs';
+import {applyWorkpaperEntries} from './workpaper-entries-patch.mjs';
+import {projectTime} from './project-access-policy.mjs';
+import {safeMemberText} from './member-access-policy.mjs';
+import {ApiError,ID,deny,invalid,json,readJson,transaction} from './http-utils.mjs';
+export async function handleWorkpaperEntriesRequest(request,{db,now=Date.now,identityProviders={},deviceContext}={}){
+ const url=new URL(request.url),match=/^\/api\/teams\/([^/]+)\/projects\/([^/]+)\/workpapers\/entries\/([^/]+)$/.exec(url.pathname);if(!match)return null;const [,teamId,projectId,hash]=match;if(!ID.test(teamId)||!ID.test(projectId)||url.search||url.hash||url.href.endsWith('?'))invalid();if(!SHA.test(hash)||hash.length!==64)deny();if(request.method!=='POST')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'POST'});
+ const at=()=>projectTime(now()),options={identityProviders,deviceContext},actor=workpaperAccessActor(db,request,options,at()),context=dataContext(db,actor,teamId,projectId,{read:true,write:true,active:true}),stamp=dataContextStamp(context);
+ const fresh=()=>{const current=currentWorkpaperAccessActor(db,request,actor,options,at()),next=dataContext(db,current,teamId,projectId,{read:true,write:true,active:true});if(dataContextStamp(next)!==stamp)dataConflict();};
+ if(deviceContext.workpaperDataStamp!==stamp)dataConflict();const head=checkedDataHead(db,context);if(deviceContext.workpaperStageStamp!==entryHeadStamp(head)||head.revision>=Number.MAX_SAFE_INTEGER)dataConflict();
+ const keys=['requestId','headRevision','projectRevision','grantRevision','changes'],body=await readJson(request,keys,ENTRIES_BODY);if(Object.keys(body).length!==keys.length||keys.some(k=>!Object.hasOwn(body,k))||typeof body.requestId!=='string'||body.requestId.length!==36||!UUID.test(body.requestId)||!Number.isSafeInteger(body.headRevision)||body.headRevision<1||!Number.isSafeInteger(body.projectRevision)||body.projectRevision<1||!Number.isSafeInteger(body.grantRevision)||body.grantRevision<1)invalid();fresh();
+ if(body.headRevision!==head.revision||body.projectRevision!==context.project.revision||body.grantRevision!==context.grant.revision)dataConflict();
+ const unused=()=>{if(db.prepare('SELECT 1 FROM team_workpaper_data_versions WHERE operation_id=? UNION ALL SELECT 1 FROM team_workpaper_data_imports WHERE request_id=?').get(body.requestId,body.requestId))dataConflict();};
+ const initial=transaction(db,()=>{const start=changeCount(db);fresh();unused();const value=checkedDataVersion(db,context);if(entryHeadStamp(value.head)!==entryHeadStamp(head))dataConflict();const task=workpaperFormTask(db,context,value,hash);fresh();if(changeCount(db)!==start)dataConflict();return{value,task,verifiedOriginals:verifyFrozenWorkpaperSources(db,context,value.record)};});
+ let form;try{form=await inspectWorkpaperOriginal(initial.task,{signal:request.signal});}catch{fresh();throw new ApiError(422,'WORKPAPER_FORM_UNAVAILABLE','原表格式、来源或版式未通过核验，未保存填写。');}fresh();
+ const label=db.prepare('SELECT display_name FROM team_credentials WHERE user_id=?').get(actor.userId)?.display_name,actorName=safeMemberText(label,actor.userId),time=at(),patch=applyWorkpaperEntries(initial.value.record,hash,form,body.changes,{at:time,actorName,verifiedOriginals:initial.verifiedOriginals}),requestHash=dataDigest(JSON.stringify({fileSha256:hash,...body}));
+ return transaction(db,()=>{fresh();unused();const start=changeCount(db),current=checkedDataVersion(db,context);if(current.head.revision!==head.revision||current.row.record_sha256!==initial.value.row.record_sha256||current.row.record_json!==initial.value.row.record_json)dataConflict();
+  if(db.prepare('UPDATE team_workpaper_data_heads SET revision=revision+1 WHERE team_id=? AND project_id=? AND revision=?').run(teamId,projectId,head.revision).changes!==1)dataConflict();
+  writeDataRow(db,'team_workpaper_data_versions',{team_id:teamId,project_id:projectId,version:head.revision+1,operation_id:body.requestId,kind:'entries',request_sha256:requestHash,actor_id:actor.userId,actor_name:actorName,record_revision:patch.record.rev,record_json:patch.recordJson,record_sha256:patch.recordSha256,committed_at:time});fresh();
+  const final=checkedDataVersion(db,context),prior=checkedDataVersion(db,context,head.revision);if(final.head.revision!==head.revision+1||final.row.record_json!==patch.recordJson||final.row.record_sha256!==patch.recordSha256||prior.row.record_json!==initial.value.row.record_json||changeCount(db)-start!==2n)dataConflict();
+  const receipt=dataReceipt(db,context,actor.userId,body.requestId);fresh();return json({receipt},201);
+ });
+}

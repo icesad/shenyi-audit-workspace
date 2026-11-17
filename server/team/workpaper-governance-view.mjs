@@ -1,0 +1,13 @@
+import {originalReferences} from './workpaper-data-store.mjs';
+import {dataConflict,dataDigest} from './workpaper-data-policy.mjs';
+function boundArchives(record){const out=[];for(const lock of Object.values(record.workpaperLocks||{})){if(!Array.isArray(lock?.sourceBindings))dataConflict();for(const binding of lock.sourceBindings){let archive;if(binding.slot==='archive')archive=record.archive;else if(binding.slot==='riskArchive')archive=record.riskArchive;else if(binding.slot==='workpaperSources')archive=record.workpaperSources?.[binding.key]?.archive;else dataConflict();if(!archive?.blob)dataConflict();out.push(archive);}}return out;}
+export function verifyFrozenWorkpaperSources(db,context,record){
+ const references=originalReferences(record),verified=new Map();for(const archive of boundArchives(record)){const ref=archive.blob;if(!references.has(ref.sha256))dataConflict();const prior=verified.get(ref.sha256);if(prior){if(prior.byteLength!==ref.bytes)dataConflict();continue;}const row=db.prepare('SELECT byte_length,bytes FROM team_workpaper_data_originals WHERE team_id=? AND project_id=? AND sha256=?').get(context.project.teamId,context.project.id,ref.sha256);if(!row||row.byte_length!==ref.bytes||row.bytes.length!==ref.bytes||dataDigest(row.bytes)!==ref.sha256)dataConflict();verified.set(ref.sha256,{byteLength:row.byte_length});}return verified;
+}
+export function workpaperGovernanceView(record,verified){
+ const bound=boundArchives(record);if(!bound.length)return record;if(!(verified instanceof Map))dataConflict();for(const archive of bound)if(verified.get(archive.blob.sha256)?.byteLength!==archive.blob.bytes)dataConflict();
+ // Existing Governance only asks Blob metadata for source bindings. This view is
+ // backed by verified immutable bytes; it never pretends to provide binary data.
+ const archiveView=archive=>{if(!archive)return archive;const ref=archive.blob,proof=verified.get(ref?.sha256);if(!proof)return archive;if(proof.byteLength!==ref.bytes)dataConflict();const blob=Object.freeze({size:ref.bytes,type:new Blob([],{type:ref.mime}).type,arrayBuffer(){throw Error('Governance metadata view cannot read binary data');}});return{...archive,blob};};
+ return{...record,archive:archiveView(record.archive),riskArchive:archiveView(record.riskArchive),...(record.workpaperSources!==undefined?{workpaperSources:Object.fromEntries(Object.entries(record.workpaperSources).map(([key,value])=>[key,{...value,archive:archiveView(value.archive)}]))}:{})};
+}

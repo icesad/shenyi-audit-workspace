@@ -13,11 +13,11 @@ function withBiffFormulas(input){
  if(patches.length!==3)throw Error('BIFF fixture number records missing');for(const p of bounds){const old=bytes.readUInt32LE(p+4),delta=patches.filter(x=>x.p<old).reduce((n,x)=>n+x.body.length-x.length,0);bytes.writeUInt32LE(old+delta,p+4);}
  const parts=[];let start=0;for(const p of patches){parts.push(bytes.subarray(start,p.p),p.body);start=p.p+p.length;}parts.push(bytes.subarray(start));const output=Buffer.concat(parts);entry.content=new Uint8Array(output);entry.size=output.length;return Buffer.from(xlsx.CFB.write(cfb,{type:'array'}));
 }
-function excel({type='xlsx'}={}){
+function excel({type='xlsx',visibleOther=false}={}){
  if(!xlsx){const context=vm.createContext({});vm.runInContext(fs.readFileSync(path.join(root,'dist/workpaper-xlsx-source.js'),'utf8'),context);vm.runInContext(context.WorkpaperXlsxSource,context);xlsx=context.XLSX;}
  const book=xlsx.utils.book_new(),sheet=xlsx.utils.aoa_to_sheet([['label','plain','formula','link'],['visible','hidden col','array',null],['hidden row'],['merge',null],['tail']]);
  sheet.C1={t:'n',v:2,f:'1+1'};sheet.D1={t:'s',v:'external',l:{Target:'https://example.invalid/original'}};sheet.C2={t:'n',v:3,f:'SUM(A1:A2)',F:'C2:D2'};sheet.D2={t:'n',v:3,F:'C2:D2'};sheet['!merges']=[{s:{r:3,c:0},e:{r:3,c:1}}];sheet['!rows']=[{},{},{hidden:true}];sheet['!cols']=[{},{hidden:true}];
- xlsx.utils.book_append_sheet(book,sheet,'原表');xlsx.utils.book_append_sheet(book,xlsx.utils.aoa_to_sheet([['hidden']]),'隐藏页');book.Workbook={Sheets:[{Hidden:0},{Hidden:1}]};
+ xlsx.utils.book_append_sheet(book,sheet,'原表');xlsx.utils.book_append_sheet(book,xlsx.utils.aoa_to_sheet([['hidden']]),visibleOther?'另外工作表':'隐藏页');book.Workbook={Sheets:[{Hidden:0},{Hidden:visibleOther?0:1}]};
  let bytes=Buffer.from(xlsx.write(book,{bookType:type==='xls'?'biff8':'xlsx',type:'array',compression:true}));if(type==='xls')bytes=withBiffFormulas(bytes);return{bytes,sha256:sha(bytes),name:'synthetic.'+type};
 }
 const NS='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
