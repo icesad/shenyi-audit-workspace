@@ -1,5 +1,15 @@
 # M4Q 团队底稿首次导入与不可变版本合同
 
+## 2026-11-18 最新：有界拼装与早拒HTTP正文处理
+
+提交在验密及当前stage复核后先COUNT临时块；数量不符直接409，避免为空的530MiB预约分配整包。数量正确时只分配一个固定总长Buffer，按已有(request_id,chunk_index)索引迭代，每行核序号、准确块长及SHA后复制；结束再核行数、实际复制字节总数与全包SHA，随后沿用codec、来源／身份复核及原子发布。异常保留可查询／取消的stage，发布成功才清块。逐行查询返回上限1MiB不等于进程内存上限：codec快照／Blob原件等副本仍在，530MiB尚未实压。
+
+实际loopback Node监听器对status>=400的未完整请求尝试丢弃未读正文：同一1000ms调度deadline，17MiB阈值、至多额外读入跨阈值的一块及流内部缓冲；不保留完整正文、不解析或改变鉴权结果。已完成／已destroy／被其他reader锁住时不接管；超时／超限／读错后释放锁且不cancel请求流，在实际writeHead时完整性仍为false就Connection close。不能保证任意慢速／无限／超过阈值输入都收到错误正文；客户端真实网络未知态继续关闭业务，不自动重发。正常成功JSON与流式导出没有新增丢弃等待，既有导出abort/pipeline仍保持。
+
+该处理避免本次Node24/Windows上“未读大正文仍keepalive→下一请求重置”及“立即close→本次错误响应丢失”两条已复现路径；依据[HTTP持久连接完整性](https://www.rfc-editor.org/rfc/rfc9112.html#section-9.3)和[TCP关闭时响应丢失风险](https://www.rfc-editor.org/rfc/rfc9112.html#section-9.6)。只resume后立即end的独立小探针仍重置，最终有界reader方案收到完整429并保持后续请求。
+
+独审12完整文件85/85包括拼装11案与HTTP4案；另真实6304955B/7块TCP续传1/1，293条请求与监听记录对应，6MiB原件、A2／C1保持。HTTP样例无冻结；已有冻结由拼装与API原用例覆盖。root复算持久包3个ZIP层／17成员CRC及manifest内全部记录／原件SHA。未验完整测试集、最大包／RSS、当前原生GUI／OS、Mac／TLS／生产或实际共享升级；两保留预览未操作。证据`D:/codex-temp/shenyi-chunk-assembly-20261118/`，最新root／独审按清单及固定源SHA绑定。以下为历史阶段合同及当时结果。
+
 ## 2026-11-17 最新：桌面主进程与私有文件流程
 
 M4Q已接桌面主进程typed client及私有文件工作流：设备签名／server UUID／窄响应门、完整包native picker与Worker核验、同ID分块迁入／显式续传／未知结果原回执；read && export下流式临时落盘、ZIP实际CRC／SHA／冻结绑定、最终核权及实际发布目标复核。真实createTeamClient到严格服务端的迁入／原表／填写CAS／回执／导出已测，但尚未注册正常底稿IPC与UI。

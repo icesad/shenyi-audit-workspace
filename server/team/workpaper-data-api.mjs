@@ -50,8 +50,17 @@ export async function handleWorkpaperDataRequest(request,{db,now=Date.now,identi
  consume(db,'workpaper-data-password:'+dataDigest(actor.userId),at(),15*60000,20);
  return limitedPasswordWork(db,async()=>{
   const valid=await verifyPassword(body.currentPassword,before.member.credential.password_hash);currentStage();if(!valid)throw new ApiError(403,'VERIFICATION_FAILED','当前密码验证未通过，请核对后重试。');
-  const stage=currentStage(),chunks=db.prepare('SELECT chunk_index,sha256,bytes FROM team_workpaper_data_chunks WHERE request_id=? ORDER BY chunk_index').all(requestId);if(chunks.length!==stage.chunk_count)dataConflict();for(let i=0;i<chunks.length;i++)if(chunks[i].chunk_index!==i||chunks[i].bytes.length!==Math.min(CHUNK_BYTES,stage.byte_length-i*CHUNK_BYTES)||dataDigest(chunks[i].bytes)!==chunks[i].sha256)dataConflict();
-  const bytes=Buffer.concat(chunks.map(x=>x.bytes));if(bytes.length!==stage.byte_length||dataDigest(bytes)!==stage.package_sha256)invalid();let parsed;try{parsed=await codec.inspectForStorage(bytes,{assertCurrent:currentStage});}catch(error){currentStage();if(error instanceof ApiError)throw error;throw new ApiError(400,'WORKPAPER_PACKAGE_INVALID','底稿包、原件或既有冻结快照校验未通过，未发布。');}currentStage();
+  const stage=currentStage(),storedCount=db.prepare('SELECT COUNT(*) total FROM team_workpaper_data_chunks WHERE request_id=?').get(requestId).total;
+  // Reject incomplete stages before reserving the contiguous package buffer.
+  if(storedCount!==stage.chunk_count)dataConflict();
+  const bytes=Buffer.alloc(stage.byte_length);let seen=0,copiedBytes=0;
+  // Materialize one bounded chunk at a time while preserving ordered validation.
+  for(const part of db.prepare('SELECT chunk_index,sha256,bytes FROM team_workpaper_data_chunks WHERE request_id=? ORDER BY chunk_index').iterate(requestId)){
+   if(seen>=stage.chunk_count||part.chunk_index!==seen||part.bytes.length!==Math.min(CHUNK_BYTES,stage.byte_length-seen*CHUNK_BYTES)||dataDigest(part.bytes)!==part.sha256)dataConflict();
+   bytes.set(part.bytes,seen*CHUNK_BYTES);copiedBytes+=part.bytes.length;seen++;
+  }
+  if(seen!==stage.chunk_count)dataConflict();
+  if(copiedBytes!==stage.byte_length||bytes.length!==stage.byte_length||dataDigest(bytes)!==stage.package_sha256)invalid();let parsed;try{parsed=await codec.inspectForStorage(bytes,{assertCurrent:currentStage});}catch(error){currentStage();if(error instanceof ApiError)throw error;throw new ApiError(400,'WORKPAPER_PACKAGE_INVALID','底稿包、原件或既有冻结快照校验未通过，未发布。');}currentStage();
   if(parsed.sha256!==stage.package_sha256||parsed.manifest.sourceProjectId!==before.identity.sourceProjectId||parsed.record.id!==before.identity.sourceProjectId)invalid();const storage=parsed.storage;if(dataDigest(storage.recordJson)!==storage.recordSha256||storage.recordSha256!==parsed.manifest.record.sha256)invalid();
   return transaction(db,()=>{currentStage();const start=changeCount(db),time=at(),requestHash=dataDigest(JSON.stringify({stage:stageStamp(stage),sourceVerified:true}));
    writeDataRow(db,'team_workpaper_data_heads',{team_id:teamId,project_id:projectId,revision:1,source_project_id:before.identity.sourceProjectId,identity_stamp:before.identity.stamp,source_record_revision:parsed.record.rev,source_record_json:storage.recordJson,source_record_sha256:storage.recordSha256,source_manifest_json:storage.manifestJson,source_manifest_sha256:dataDigest(storage.manifestJson),source_package_sha256:stage.package_sha256,imported_by:actor.userId,imported_at:time});

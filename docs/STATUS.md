@@ -1,5 +1,19 @@
 # 当前状态：M4团队模块接入（进行中）
 
+## 2026-11-18 最新：分块拼装与早拒HTTP传输修复
+
+本轮在`codex/workpaper-chunk-assembly`从`9b6c18a`接续M4。服务端提交改为先查块数，再预留一个整包缓冲并按块号迭代复制；缺块在整包分配前拒绝，块号／余长／块摘要、实际复制总长及全包SHA仍逐项检查。原验密、权限／session／lease／来源重核、Worker校验、事务与发布语义保持。6MiB合成原件的7块测试中，SQLite单次返回的块负载最大1MiB，移除旧全量块数组加独立concat的重复；codec仍有全包快照与原件副本，不声称总RSS或530MiB容量已验。
+
+真实大块HTTP另暴露早拒连接问题：旧监听器未收完正文即429并保持连接，随后心跳复用失败；仅加close又使429自身在真实fetch中ECONNRESET。最终仅对错误响应按同一1000ms调度期限、17MiB丢弃阈值读取未消费正文，不聚合／解析／授权，不cancel底层请求，结束时释放reader；阈值可能跨越最后一块。实际发送头时仍未收完整则close，已完整请求保持正常连接复用，成功JSON／流式导出不新增丢弃等待。客户端断网暂停、未知结果与原ID人工续传规则保持。
+
+固定Node24.22.1独立重跑12个完整相关文件85/85，零失败／跳过／取消／todo，1148运行／测试源before→after一致；不是完整338文件或275个粗分unit门。新增拼装11案与HTTP4案包含于85，不重复累加。原拼装预算注入基线10/11、旧监听器早拒1/3、close-only扩展3/4及三次真实7块FAIL均保留；不把预算注入失败称为真实内存耗尽。独立小探针另核Node游标异常释放、实际索引无临时排序、长度校验负向突变及丢弃超时／越阈／锁释放。
+
+最终真实TCP7块另单列1/1通过：6304955B包、6MiB原件、293条client/listener逐条对应；首PUT429后heartbeat200，同epoch／session／lease、原ID明确续传，begin1／commit1／head1，成功7块后临时块清零。运行时逐byte核BLOB、A2填写及C1公式元数据保持；root另复算持久原包3层ZIP／17成员CRC、manifest与record／两原件SHA。此HTTP样例冻结为空，已有冻结保全由独立重跑的拼装／API用例证明。128MiB仅oldgen参数，V8总heap与RSS不在此上限内。
+
+root核1146旧源仅两产品文件变化，其余1144原字节保持，新增两测试。原审核与ac503898两预览进程／窗口及公开methods标识保持，未重载、登录或读取其业务库／vault；实际共享库与两原一键继续保留。当前补丁未做正常Electron／OS、Mac、TLS、最大包或生产验收。报告授权仍待原答复；未push／进入main／上线，M4与完整Goal active。
+
+证据根`D:/codex-temp/shenyi-chunk-assembly-20261118/`：`root-evidence-audit.json`、`independent/transport-review/final-discard/final-review.json`、`author/author-summary.json`及`root-http/run-2026-11-17T20-21-32-426Z-368c5087/`。精确命令、exit、TAP／源及失败工件按各清单绑定。以下保留前项记录及其当时范围。
+
 ## 2026-11-18 最新：正常Windows Electron限流续传与发布后撤权验收
 
 本轮在`codex/workpaper-native-resume`从`aa39e9a`接续M4。全新合成候选直接启动现有desktop正常main／preload／renderer，未替换client、fetch、vault、IPC或界面；仅为自有文件选择器注入合成路径。初始9账号／0绑定，正常UI本人验密并首次登记真实DPAPI密钥，随后正常创建工作区、确认立项来源并分别授予本人三权。main／GPU／network／renderer四进程从出生参数即落本候选profile；155API、26表单／31密码及七项webPreferences保持。

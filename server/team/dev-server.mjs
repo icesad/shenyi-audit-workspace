@@ -9,6 +9,23 @@ import {initializeTeamDatabase,seedDemoTeamData} from './database.mjs';
 import {handleTeamApplicationRequest} from './application-api.mjs';
 import {json} from './http-utils.mjs';
 
+// Finish bounded early-denied bodies without retaining or parsing their bytes.
+async function discardBeforeResponse(incoming,request) {
+  if(incoming.complete||incoming.destroyed||request?.body?.locked)return;
+  let reader,timer;
+  const expired=new Promise(resolve=>{timer=setTimeout(()=>resolve(null),1000);});
+  try {
+    reader=(request?.body??Readable.toWeb(incoming)).getReader();
+    let remaining=17*1024*1024;
+    while(remaining>0){
+      const part=await Promise.race([reader.read(),expired]);
+      if(part===null||part.done)break;
+      remaining-=part.value.byteLength;
+    }
+  } catch { /* The normal response/abort path handles closed or unreadable bodies. */ }
+  finally {clearTimeout(timer);reader?.releaseLock();}
+}
+
 /** Loopback-only demo listener. Tests may request port=0; no public host option. */
 export async function startTeamServer({db,port=8774,now=Date.now,identityProviders={}} = {}) {
   if (!db?.prepare || !Number.isInteger(port) || port<0 || port>65535) throw new Error('Invalid local server options');
@@ -18,26 +35,35 @@ export async function startTeamServer({db,port=8774,now=Date.now,identityProvide
     incoming.once('aborted',abort);outgoing.once('close',closed);
     if(incoming.aborted||outgoing.destroyed)abort();
     try {
-      let response;
+      let response,request;
       try {
         if (incoming.headers.host !== new URL(origin).host || !incoming.url.startsWith('/') || incoming.url.startsWith('//')) response=json({error:{code:'HOST_DENIED',message:'请求地址无效。'}},403);
         else if (incoming.url==='/health' && incoming.method==='GET') response=json({status:'ok',mode:'synthetic-team-demo'});
         else {
           const options={method:incoming.method,headers:incoming.headers,signal:controller.signal};
           if (!['GET','HEAD'].includes(incoming.method)) { options.body=Readable.toWeb(incoming);options.duplex='half'; }
-          response=await handleTeamApplicationRequest(new Request(new URL(incoming.url,origin),options),{db,now,identityProviders});
+          request=new Request(new URL(incoming.url,origin),options);
+          response=await handleTeamApplicationRequest(request,{db,now,identityProviders});
         }
       } catch { response=json({error:{code:'SERVICE_UNAVAILABLE',message:'团队服务暂不可用。'}},503); }
       if(controller.signal.aborted||outgoing.destroyed){await response.body?.cancel();return;}
+      if(response.status>=400)await discardBeforeResponse(incoming,request);
+      if(controller.signal.aborted||outgoing.destroyed){await response.body?.cancel();return;}
+      const writeHeaders=()=>{
+        const headers=Object.fromEntries(response.headers);
+        // Unread request bytes must not carry over to a persistent connection.
+        if(!incoming.complete)headers.connection='close';
+        outgoing.writeHead(response.status,headers);
+      };
       if(response.headers.has('X-Shenyi-Workpaper-Export-Sha256')){
-        outgoing.writeHead(response.status,Object.fromEntries(response.headers));
+        writeHeaders();
         try{await pipeline(Readable.fromWeb(response.body),outgoing,{signal:controller.signal});}
         catch{outgoing.destroy();}
         return;
       }
       const bytes=incoming.method==='HEAD'?null:Buffer.from(await response.arrayBuffer());
       if(controller.signal.aborted||outgoing.destroyed)return;
-      outgoing.writeHead(response.status,Object.fromEntries(response.headers));
+      writeHeaders();
       outgoing.end(bytes);
     } finally {
       incoming.off('aborted',abort);outgoing.off('close',closed);
