@@ -40,6 +40,16 @@ npm test
 
 开发者可设置 `QUOTE_LEDGER_CHROMIUM_EXECUTABLE` 指向本机获准浏览器；runner 默认优先使用已安装的 Playwright Chromium，未安装则保留各专项原有提示。不要把 Windows Edge 的绝对路径照搬到 Mac。
 
+将配套浏览器放在D盘或其他自定义缓存目录时，安装和测试必须使用相同的 `PLAYWRIGHT_BROWSERS_PATH`。例如在PowerShell中：
+
+```powershell
+$env:PLAYWRIGHT_BROWSERS_PATH = "D:/dev-cache/playwright"
+node node_modules/playwright/cli.js install chromium
+node scripts/test.mjs --strict
+```
+
+部分历史专项直接调用 `chromium.executablePath()`，只设置 `QUOTE_LEDGER_CHROMIUM_EXECUTABLE` 不足以满足它们；保留这些专项原断言，使用锁定依赖匹配的配套浏览器。`SHENYI_MATERIAL_PRESERVATION_NATIVE_ZIP` 必须指向实际原生流程已保存、且能核对来源与SHA的合成资料v2包；`CONCLUSION_STAGE_ZIP` 必须是固定身份的授权原始结论包。缺少这些输入时严格门仍未通过，不以其他ZIP或跳过结果替代。
+
 某些原件身份测试需要仓库外的用户授权 ZIP，如 `CONCLUSION_STAGE_ZIP`。不要为了消除 SKIP 把真实原件提交到仓库。历史 `tests/browser/*-smoke.cjs` 是另行执行的 smoke，不会因为名字不是 `*.test.cjs` 而自动纳入全量 runner。
 
 ## 3. 目录规则
