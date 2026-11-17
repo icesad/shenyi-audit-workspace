@@ -21,6 +21,10 @@ npm run dev
 
 用户已要求保留旧窗口时，使用根目录 `Start-Team-Candidate-Preview.cmd` 查看当前分支。该入口为每次新建的合成环境自动选择独立loopback端口，不改变原8773／8774入口或其数据；正常桌面设备签名和业务授权仍生效。账号、目录、关闭行为及Mac限制见[独立候选预览](ISOLATED_CANDIDATE_PREVIEW.md)。请勿重启原审核入口或向候选导入真实客户资料。
 
+## 合成团队库离线恢复演练
+
+`scripts/team-database-backup.mjs`提供`create`、`verify`、`rehearse`三项运维CLI，详见[操作与安全边界](TEAM_OFFLINE_BACKUP.md)。仅使用本次获准的另建合成库，不选择保留中的两份预览；每次新建目录，恢复结果不启动服务。备份含凭据且未加密，不能当普通员工导出或生产切换。
+
 ## 2. 测试命令
 
 ```sh
