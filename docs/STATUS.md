@@ -1,5 +1,17 @@
 # 当前状态：M4团队模块接入（进行中）
 
+## 2026-11-18 最新：正常Windows Electron限流续传与发布后撤权验收
+
+本轮在`codex/workpaper-native-resume`从`aa39e9a`接续M4。全新合成候选直接启动现有desktop正常main／preload／renderer，未替换client、fetch、vault、IPC或界面；仅为自有文件选择器注入合成路径。初始9账号／0绑定，正常UI本人验密并首次登记真实DPAPI密钥，随后正常创建工作区、确认立项来源并分别授予本人三权。main／GPU／network／renderer四进程从出生参数即落本候选profile；155API、26表单／31密码及七项webPreferences保持。
+
+首轮完整运行exit0：实际5秒心跳与15秒权限poll下，业务120后chunk429→新的heartbeat200→access429→本次服务时钟推进60001ms并手动刷新→同view重新核验／验密、按原ID明确续传。begin1／commit1／head1、同session／lease；原包record.json、两原件BLOB、A2已保存填写、C1公式只读及1份既有冻结保持。发布后正常UI收回本人三权，正文清除；强制typed填写在main预检拒绝，entries POST0，五底稿表在撤权／退出后保持。此负向不扩大为“暂停中未发布来源的原生撤权”新验收。
+
+355条真实HTTP、4张PNG／7份SQLite经独审与root交叉复核，完整性／FK、原件SHA、5个ZIP层CRC及4索引SHA通过；628运行源before→after→current一致，root另核1146既有运行／测试文件原字节保持。169条签名由运行时观察器实际crypto.verify并assert，独审复核代码与结果；redacted日志未留原签名／正文，不声称离线169重放或独立POST正文SHA复算，正文SHA仍由正常产品gate检查。root已实际查看四图，无水平溢出。本轮没有产品改动，也未重复执行完整unit／browser严格门。
+
+只关闭本次4个Electron进程与7754监听，原审核与ac503898两预览的四进程／两窗口字段保持，公开methods200／设备门保持；未读取其业务库／vault，未升级实际共享库。正常桌面入口已实跑；一键cmd、实际OS Open／Save、Mac、TLS／生产及530MiB最大包仍未验。Playwright加入debug／engine flags（含NetworkServiceSandbox例外），七项正常产品偏好检查不扩大成发行／整机service sandbox验收。未push／进入main／上线；报告授权仍待原答复，M4和完整Goal active。
+
+证据根`D:/codex-temp/shenyi-workpaper-native-resume-20261118/`：`root-evidence-audit.json`、`independent/final-review.json`与`author/run-2026-11-17T19-21-00-503Z/`；精确命令、源码、截图／库和清理按原始工件绑定。以下保留前项记录及其当时范围。
+
 ## 2026-11-18 最新：真实HTTP限流、丢响应与底稿续传验收
 
 本轮在`codex/workpaper-http-resume`从`827bdf3`接续M4，仅新增共享合成HTTP fixture与两份回归测试，未改产品、旧测试或专业规则。复用实际loopback监听器、isolatedPreview固定origin／UUID、真实fetch／Ed25519设备证明、SQLite及Worker。客户端登录起的被测流量均经过真实TCP；目录与文件选择路径仍为自有合成注入，renderer为JSDOM，时钟／权限轮询由测试控制。
