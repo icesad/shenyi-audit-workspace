@@ -1,5 +1,11 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-18 最新：资料操作确认回执反馈修复
+
+资料操作已确认成功后，自动刷新不再无意清空回执：fresh同scope、设备与读权／版本稳定才恢复详情；503／429等未知只保完成状态和原编号，硬拒绝／关闭／切换／ABA退役旧反馈。覆盖导入、核对、关门／重开、原件新增／移除，未改专业规则、服务端或手工历史回执语义。
+
+固定Node24独审7完整文件113/113，外部硬拒绝9/9另计；20新增已包含于113，旧码同断言真实10RED保留，初版两测试错误已纠正留证。仅JSDOM，非当前原生或完整strict。1148旧源仅1产品改／1147同，两旧预览及共享库保留；未push／main／上线，M4／Goal active，报告权限待原答复。详见[进度](进度.md)及`D:/codex-temp/shenyi-material-receipt-20261118/independent/final/final-review.json`。以下为历史范围。
+
 ## 2026-11-18 最新：正常Windows七块限流续传验收
 
 本轮在`codex/native-seven-chunk-resume`从`d66cedc`接续M4，仅派生仓库外驱动及更新检查点，1148既有运行／测试文件原字节保持。正常desktop main／preload／renderer首轮standalone日志exit0，client、fetch、vault、IPC与界面未替换；只为本次两份合成文件注入dialog路径。6329728B包／7块含6MiB随机原件、有效Office原包和1份既有冻结；预检与实际运行各用独立随机身份，不混用包SHA。

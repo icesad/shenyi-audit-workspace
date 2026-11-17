@@ -1,5 +1,13 @@
 # M4G 团队资料清单模块
 
+## 2026-11-18 补充：已确认写操作与自动刷新
+
+导入、核对、关门／重开、原件新增／移除取得明确committed后，只为本次自动刷新保留局部确认。刷新必须仍是本次view epoch、相同actor／user／team／project／device且面板open／可用，当前七项access稳定且明确read；回执requestId／projectId及projectRevision须与本次出站ID、当前access及data项目版本匹配，才重显完整回执。后台成员加载仅read序号变化不冒充新view。确认不存全局，不在以后自动复活。
+
+刷新503／429或无效资料等暂未知时只显示已确认完成与出站UUID，不恢复SHA、文件／节点／代ID、版本或计数。明确401／403／404／409、会话／设备／服务身份硬拒绝、失权或access变化、关闭／reset／切换／ABA／竞争刷新均使旧反馈退役；保留当前有效提示，不重发写。未确认的unknown操作不显示完成。手工历史回执GET与普通手工refresh清除语义保持。
+
+独审7完整文件113/113（含20新增），外部硬拒绝9/9；新20在旧源码10真实RED。完整失败、两处新测试自身修正与严格源绑定留在D:/codex-temp/shenyi-material-receipt-20261118/。仅JSDOM功能证据，不扩大为当前HTTP／Electron／OS／全量strict或M4／Goal验收；未改任何权限、专业模型、API／IPC／schema、原件／冻结／版本语义。以下保留原模块合同及历史范围。
+
 2026-11-16，base `d9c2f00`，分支 `codex/team-materials-module`，关联 TEAM-M4。424份拟改旧文件已备份 `D:/codex-temp/shenyi-team-materials-20261116/baseline/`，manifest 同级。按长任务保护执行，唯一实现里程碑仍 M4。
 
 ## 已确认授权与本片结果
