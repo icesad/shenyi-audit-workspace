@@ -1,5 +1,13 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-18 最新：同库四模块组合隔离回归通过
+
+`codex/cross-module-isolation`从`93d2708`接续M4，新增合成单库W/Q四模块非空组合回归，无产品／旧测试改动。最终v4完整9/9由作者和独审分别通过；先前三版同组绿门的断言盲区已纠正并保留原稿，不累加次数。四种单模块及逐域撤read、公共拒绝和正向／发现投影、原件及既有freeze保持得到有限矩阵证明，不能扩大为所有权限组合。
+
+两实际TCP场景作者及独审各240请求／112验签；各111 GET空body摘要独立复算，1 POST仅已签摘要头。独审4库／8包及4220物理断言通过；6 raw404正文精确，17 wire404头核准，typed404正文未保存。正常main-client＋内存Ed25519／loopback，不代表GUI、DPAPI、TLS；clearSession不称logout。root核49＋58项证据SHA与1154源同（旧1152无改）。runner仅发现343＝280＋63，未跑完整unit／strict。
+
+两旧预览保留，仅元数据和公开methods与前项检查点核同，本轮无CUA或oldDB／vault操作；共享库未升级，既有OS包Open／Save门仍未通过，工具不变不重试。报告授权及新问M5席位／到期细则待答；M5未启动。未push／main／一键重验／上线，M4／Goal active。证据`D:/codex-temp/shenyi-cross-module-isolation-20261118/independent/final-review.json`；以下保留历史范围。
+
 ## 2026-11-18 最新：真实OS尝试保全，本关未通过
 
 从`705bcab`接续M4，在全新正常Windows候选中实际选入来源JSON，1945B／SHA及WQ持久一致；随后底稿包原生框控件缓存512失效，重绑后同错，按保护规则停止单次尝试。包Open未完成、Save未到，底稿五表及迁入／导出0，不能声称OS pair通过。exec exit1且外部driver清理末尾disposed报错，root已补核5自有PID／4667关闭及停机只读快照；73项物理断言仅核partial事实，1152源未改。
