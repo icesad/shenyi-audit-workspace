@@ -1,5 +1,6 @@
 import http from 'node:http';
 import {Readable} from 'node:stream';
+import {pipeline} from 'node:stream/promises';
 import {DatabaseSync} from 'node:sqlite';
 import {mkdir} from 'node:fs/promises';
 import path from 'node:path';
@@ -27,7 +28,13 @@ export async function startTeamServer({db,port=8774,now=Date.now,identityProvide
           response=await handleTeamApplicationRequest(new Request(new URL(incoming.url,origin),options),{db,now,identityProviders});
         }
       } catch { response=json({error:{code:'SERVICE_UNAVAILABLE',message:'团队服务暂不可用。'}},503); }
-      if(controller.signal.aborted||outgoing.destroyed)return;
+      if(controller.signal.aborted||outgoing.destroyed){await response.body?.cancel();return;}
+      if(response.headers.has('X-Shenyi-Workpaper-Export-Sha256')){
+        outgoing.writeHead(response.status,Object.fromEntries(response.headers));
+        try{await pipeline(Readable.fromWeb(response.body),outgoing,{signal:controller.signal});}
+        catch{outgoing.destroy();}
+        return;
+      }
       const bytes=incoming.method==='HEAD'?null:Buffer.from(await response.arrayBuffer());
       if(controller.signal.aborted||outgoing.destroyed)return;
       outgoing.writeHead(response.status,Object.fromEntries(response.headers));

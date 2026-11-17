@@ -22,6 +22,7 @@ import {handleWorkpaperAccessRequest} from './workpaper-access-api.mjs';
 import {handleWorkpaperDataRequest} from './workpaper-data-api.mjs';
 import {handleWorkpaperFormRequest} from './workpaper-form-api.mjs';
 import {handleWorkpaperEntriesRequest} from './workpaper-entries-api.mjs';
+import {handleWorkpaperExportRequest} from './workpaper-export-api.mjs';
 import {handleTeamMaterialsRequest} from './materials-api.mjs';
 import {handleMaterialPreservationRequest} from './materials-preservation-api.mjs';
 import {handleAdministratorBusinessRoleRequest} from './administrator-business-role-api.mjs';
@@ -80,6 +81,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       || await handleBusinessRoleRequest(request,options)
       || await handleProjectMigrationRequest(request,options)
       || await handleCollectionWorkspaceCreationRequest(request,options)
+      || await handleWorkpaperExportRequest(request,options)
       || await handleWorkpaperEntriesRequest(request,options)
       || await handleWorkpaperFormRequest(request,options)
       || await handleWorkpaperDataRequest(request,options)
