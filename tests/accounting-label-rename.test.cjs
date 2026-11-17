@@ -16,7 +16,11 @@ test('accounting rename changes display strings only; no layout, field, event, p
    assert.equal(source.split(migrationLoaders).length-1,1,'approved migration loaders must occur once in order');
    assert.equal(source.split(initiationLoader+migrationLoaders).length-1,1,'migration loaders must immediately follow initiation dependency');
    for(const name of ['legacy-project-source.js','legacy-project-source-export.js'])assert.equal(source.split(name).length-1,1,'no alternate migration loader reference');
-   source=source.replace(migrationLoaders,'').replace(loader,'').replace('id="page-save">保存</button>', 'id="page-save">暂存</button>');
+   const ledgerLoaders='<script src="ledger-check-snapshot.js"></script><script src="ledger-check-snapshot-export.js"></script>',ledgerDependency='<script src="legacy-project-source-export.js"></script>';
+   assert.equal(source.split(ledgerLoaders).length-1,1,'approved saved-ledger loaders must occur once in order');
+   assert.equal(source.split(ledgerDependency+ledgerLoaders).length-1,1,'saved-ledger loaders must immediately follow existing source export');
+   for(const name of ['ledger-check-snapshot.js','ledger-check-snapshot-export.js'])assert.equal(source.split(name).length-1,1,'no extra or alternate saved-ledger loader reference');
+   source=source.replace(ledgerLoaders,'').replace(migrationLoaders,'').replace(loader,'').replace('id="page-save">保存</button>', 'id="page-save">暂存</button>');
   }
   for(const [oldLabel,newLabel]of [...spec.replacements].reverse()){
    assert.equal(source.split(newLabel).length-1,1,file+' new label must be unique');
