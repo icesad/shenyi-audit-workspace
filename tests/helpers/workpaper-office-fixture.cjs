@@ -1,0 +1,27 @@
+const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),{pathToFileURL}=require('node:url');
+const {sha,zip}=require('./workpaper-package-fixture.cjs');
+const {buildLegacyDoc}=require('../fixtures/legacy-doc-builder.cjs');
+const root=path.resolve(__dirname,'../..'),source=name=>import(pathToFileURL(path.join(root,'server/team',name)).href);
+let xlsx;
+// SheetJS CE writes cached XLS numbers but not formula tokens. Emit explicit
+// synthetic BIFF8 FORMULA/ARRAY records, then adjust BOUNDSHEET stream offsets.
+function withBiffFormulas(input){
+ const cfb=xlsx.CFB.read(new Uint8Array(input),{type:'array'}),entry=cfb.FileIndex.find(x=>x.name==='Workbook'),bytes=Buffer.from(entry.content),patches=[],bounds=[];
+ const record=(id,data)=>{const head=Buffer.alloc(4);head.writeUInt16LE(id);head.writeUInt16LE(data.length,2);return Buffer.concat([head,data]);};
+ const tokens=Buffer.from([0x1e,1,0,0x1e,1,0,0x03]),arrayTokens=Buffer.from([0x1e,1,0,0x1e,2,0,0x03]),exp=Buffer.from([0x01,1,0,2,0]);
+ for(let p=0;p+4<=bytes.length;){const id=bytes.readUInt16LE(p),n=bytes.readUInt16LE(p+2);if(id===0x85)bounds.push(p);if(id===0x203){const row=bytes.readUInt16LE(p+4),col=bytes.readUInt16LE(p+6);if(row===0&&col===2||row===1&&(col===2||col===3)){const code=row===0?tokens:exp,data=Buffer.alloc(22+code.length);bytes.copy(data,0,p+4,p+18);data.writeUInt16LE(code.length,20);code.copy(data,22);let body=record(0x06,data);if(row===0){const hidden=Buffer.alloc(16);hidden.writeUInt16LE(2,0);hidden.writeUInt16LE(4,4);hidden.writeUInt16LE(300,6);hidden[12]=32;body=Buffer.concat([record(0x208,hidden),body]);}if(row===1&&col===2){const arr=Buffer.alloc(14+arrayTokens.length);arr.writeUInt16LE(1,0);arr.writeUInt16LE(1,2);arr[4]=2;arr[5]=3;arr.writeUInt16LE(arrayTokens.length,12);arrayTokens.copy(arr,14);body=Buffer.concat([body,record(0x221,arr)]);}patches.push({p,length:n+4,body});}}p+=n+4;}
+ if(patches.length!==3)throw Error('BIFF fixture number records missing');for(const p of bounds){const old=bytes.readUInt32LE(p+4),delta=patches.filter(x=>x.p<old).reduce((n,x)=>n+x.body.length-x.length,0);bytes.writeUInt32LE(old+delta,p+4);}
+ const parts=[];let start=0;for(const p of patches){parts.push(bytes.subarray(start,p.p),p.body);start=p.p+p.length;}parts.push(bytes.subarray(start));const output=Buffer.concat(parts);entry.content=new Uint8Array(output);entry.size=output.length;return Buffer.from(xlsx.CFB.write(cfb,{type:'array'}));
+}
+function excel({type='xlsx'}={}){
+ if(!xlsx){const context=vm.createContext({});vm.runInContext(fs.readFileSync(path.join(root,'dist/workpaper-xlsx-source.js'),'utf8'),context);vm.runInContext(context.WorkpaperXlsxSource,context);xlsx=context.XLSX;}
+ const book=xlsx.utils.book_new(),sheet=xlsx.utils.aoa_to_sheet([['label','plain','formula','link'],['visible','hidden col','array',null],['hidden row'],['merge',null],['tail']]);
+ sheet.C1={t:'n',v:2,f:'1+1'};sheet.D1={t:'s',v:'external',l:{Target:'https://example.invalid/original'}};sheet.C2={t:'n',v:3,f:'SUM(A1:A2)',F:'C2:D2'};sheet.D2={t:'n',v:3,F:'C2:D2'};sheet['!merges']=[{s:{r:3,c:0},e:{r:3,c:1}}];sheet['!rows']=[{},{},{hidden:true}];sheet['!cols']=[{},{hidden:true}];
+ xlsx.utils.book_append_sheet(book,sheet,'原表');xlsx.utils.book_append_sheet(book,xlsx.utils.aoa_to_sheet([['hidden']]),'隐藏页');book.Workbook={Sheets:[{Hidden:0},{Hidden:1}]};
+ let bytes=Buffer.from(xlsx.write(book,{bookType:type==='xls'?'biff8':'xlsx',type:'array',compression:true}));if(type==='xls')bytes=withBiffFormulas(bytes);return{bytes,sha256:sha(bytes),name:'synthetic.'+type};
+}
+const NS='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+function word({doctype=false}={}){const xml=(doctype?'<!DOCTYPE fake [<!ENTITY e "no">]>':'')+'<w:document xmlns:w="'+NS+'"><w:body><w:p><w:r><w:t>&lt;img src=x onerror=alert(1)&gt;</w:t></w:r></w:p><w:p><w:hyperlink><w:r><w:t>link</w:t></w:r></w:hyperlink></w:p><w:p><w:r><w:instrText>PAGE</w:instrText></w:r></w:p><w:tbl><w:tr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p/></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/></w:tc></w:tr></w:tbl></w:body></w:document>',bytes=zip([{name:'[Content_Types].xml',data:Buffer.from('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')},{name:'_rels/.rels',data:Buffer.from('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')},{name:'word/document.xml',data:Buffer.from(xml)}]);return{bytes,sha256:sha(bytes),name:'synthetic.docx',xml};}
+function legacy(){const bytes=Buffer.from(buildLegacyDoc({pieces:[{text:'合成旧Word\r原文保留\r'}]}));return{bytes,sha256:sha(bytes),name:'synthetic.doc'};}
+const task=file=>({path:file.name,fileSha256:file.sha256,bytes:new Uint8Array(file.bytes),entry:false,strictLayout:false});
+module.exports={source,excel,word,legacy,task,sha,zip,root};
