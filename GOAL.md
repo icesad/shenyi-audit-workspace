@@ -1,6 +1,16 @@
 # 审易 GOAL · 团队商业化接续版
 
-## 2026-11-18 最新：合成团队库离线备份／恢复演练
+## 2026-11-18 最新：真实HTTP限流、丢响应与底稿续传验收
+
+本轮在`codex/workpaper-http-resume`从`827bdf3`接续M4，仅新增共享合成HTTP fixture与两份回归测试，未改产品、旧测试或专业规则。复用实际loopback监听器、isolatedPreview固定origin／UUID、真实fetch／Ed25519设备证明、SQLite及Worker。客户端登录起的被测流量均经过真实TCP；目录与文件选择路径仍为自有合成注入，renderer为JSDOM，时钟／权限轮询由测试控制。
+
+真实业务桶用满120后分块429，设备connection仍200／ready；权限poll429保留原view与来源，fresh核权一致后重新确认和验密，按原ID人工续传，session／lease保持，begin1／commit1／head1，真实有效XLSX的A2保存文本与C1公式只读通过。真实撤权后旧view／来源退役，程序化提交也不能发布。另在服务端已提交head1、发送响应前关闭本次测试socket：客户端实际进入unknown／paused，重新持钥在线恢复后只GET核实原回执，不重发commit。control第25次429仍暂停并清私有续传来源，远端stage保持未发布。
+
+两份新增完整文件5/5及四份原HTTP／transport完整文件35/35通过，零失败／跳过／取消；独立审查者重新执行新增5项并逐请求交叉复核client与listener、固定URL／UUID、真实socket关闭和清理工件。1143份既有运行／测试文件raw保持，独审自身1060文件清单前后同；新增fixture／测试另计，不混作同一来源清单。作者首轮的数据库终态名误期望，以及fetch拒绝早于socket close通知的观察时序错误均保留，分别按现有published语义、等待特定真实close事件修正；没有产品修补或降低断言。
+
+新增测试服务仅监听各自系统分配的loopback端口，均已关闭；两个既有预览不重载、不登录、不读业务库／vault。本轮未重验一键或正常Electron／OS对话框，不代表TLS、Mac、530MiB最大包、完整unit／browser严格门或生产验收。未push／进入main／上线；报告授权仍待原答复，M4和完整Goal active，其余用户保留项与专业决定保持。证据根`D:/codex-temp/shenyi-workpaper-http-resume-20261118/`，实际命令、计数、源码与逐请求工件以`root-evidence-audit.json`及`independent/`最终报告为准。
+
+以下保留前项记录及其当时范围。
 
 ## 2026-11-18 最新：业务限流下的设备在线证明与底稿续传
 
@@ -15,6 +25,8 @@
 证据根`D:/codex-temp/shenyi-device-heartbeat-quota-20261118/`：`root-evidence-audit.json`、`root-new-final.tap`、`related-gate/final-candidate2/`；独审及三组闭环见`D:/codex-temp/shenyi-native-readiness-20261118/design-review/final-review.json`与`capacity-preflight/ui-real-client-candidate2-final-with-office.tap`。范围合同见[设备会话合同](docs/DESKTOP_DEVICE_SESSION_CONTRACT.md)与[底稿界面合同](docs/WORKPAPER_UI_CONTRACT.md)。
 
 以下保留前项记录及其当时范围。
+
+## 2026-11-18 最新：合成团队库离线备份／恢复演练
 
 `codex/team-offline-backup`从`45e5f9b`接续M4，新增[离线备份与恢复工具](docs/TEAM_OFFLINE_BACKUP.md)。指定只读合成源、新UUID备份／恢复目录、完整schema与全表typed摘要／原件哈希和最终独占发布已实现，真实CLI三流程已验；没有增加在线恢复、业务数据权限或专业动作。
 
