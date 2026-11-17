@@ -1,4 +1,5 @@
 'use strict';
+const {ledgerOldChannelNames}=require('./helpers/ledger-check-entry-layer.cjs');
 // Independent M4B acceptance: actual isolated SQLite/application, native scrypt,
 // separately encoded Ed25519 proofs and explicit synthetic registration only.
 // No project-creation product flow, real provider, OS picker or production claim.
@@ -320,7 +321,7 @@ test('a bodyless scoped HEAD 404 stays ready while ambiguous device errors pause
 });
 
 test('positive review save traverses real GET/HEAD, writes the same bytes and returns only basename metadata',async t=>{
- const f=await fixture(t),submission=await upload(f);f.seedScope('p-a','reviewer-a',{read:true,review:true});const target=await f.bound('reviewer-a'),client=normalClient(t,f,target.key);await client.login({username:'reviewer-a',password:PASSWORD});const saved=[];t.mock.method(fs,'writeFile',async(file,bytes)=>{saved.push({file,bytes:Buffer.from(bytes)});});const bridge=desktopBridge(t,client,{showSaveDialog:async()=>({canceled:false,filePath:'D:/synthetic-reviewed-original.bin'})});assert.equal(bridge.handlers.size,123);
+ const f=await fixture(t),submission=await upload(f);f.seedScope('p-a','reviewer-a',{read:true,review:true});const target=await f.bound('reviewer-a'),client=normalClient(t,f,target.key);await client.login({username:'reviewer-a',password:PASSWORD});const saved=[];t.mock.method(fs,'writeFile',async(file,bytes)=>{saved.push({file,bytes:Buffer.from(bytes)});});const bridge=desktopBridge(t,client,{showSaveDialog:async()=>({canceled:false,filePath:'D:/synthetic-reviewed-original.bin'})});assert.equal(ledgerOldChannelNames(bridge.handlers).length,123);
  const result=await bridge.call('project-submission-download',{teamId:'team-a',projectId:'p-a',taskId:'t-a',submissionId:submission.id});assert.equal(result.ok,true);assert.deepEqual(result.value,{saved:true,filename:'synthetic-reviewed-original.bin',byteLength:originalBytes.length});assert.equal(saved.length,1);assert.deepEqual(saved[0].bytes,originalBytes);assert.equal(digest(saved[0].bytes),submission.sha256);assert.equal(f.calls.filter(c=>c.method==='HEAD'&&c.path.endsWith('/file')).length,1);assert.equal(result.value.filePath,undefined);assert.equal(result.value.bytes,undefined);
 });
 

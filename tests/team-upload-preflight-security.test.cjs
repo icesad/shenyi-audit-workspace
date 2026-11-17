@@ -1,4 +1,5 @@
 'use strict';
+const {ledgerOldChannelNames}=require('./helpers/ledger-check-entry-layer.cjs');
 // Independent acceptance using the real client, main bridge, application API and
 // isolated SQLite. Login adoption uses explicitly issued synthetic sessions.
 // The picker is a deterministic synthetic dialog: this is NOT OS-picker proof,
@@ -254,7 +255,7 @@ test('legitimate preexisting manager assignment is retained without role-based u
 
 test('capability RPC is fixed, rejects identity/role/path injection and has exactly 64 channels', async t => {
   const f = await fixture(t);
-  assert.equal(f.handlers.size,123);
+  assert.equal(ledgerOldChannelNames(f.handlers).length,123);
   const count = f.calls.routes.length;
   for (const extra of [{userId:'intern-a'}, {role:'partner'}, {url:'https://provider-secret.invalid'}, {path:f.selectedPath}, {revision:0}]) {
     await assert.rejects(() => f.client.getTaskSubmissionAccess({teamId:'team-a', taskId:'task-a', ...extra}), error => error.code === 'INVALID_INPUT');

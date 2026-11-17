@@ -1,6 +1,6 @@
 # M4P 账表快照正常桌面界面合同（候选）
 
-日期：2026-11-17。分支 `codex/ledger-check-readonly`，起点 `7d59b6c`。依据[用户决定](LEDGER_CHECK_ACCESS_DECISION.md)、[服务端合同](LEDGER_CHECK_SERVER_CONTRACT.md)及[主进程合同](LEDGER_CHECK_DESKTOP_CONTRACT.md)。本轮接入正常团队页面、受控应用资源和窄IPC，仍待Windows原生、完整严格门及独立复核；不宣称整个M4P或商业化Goal完成。
+日期：2026-11-17。分支 `codex/ledger-check-readonly`，起点 `7d59b6c`。依据[用户决定](LEDGER_CHECK_ACCESS_DECISION.md)、[服务端合同](LEDGER_CHECK_SERVER_CONTRACT.md)及[主进程合同](LEDGER_CHECK_DESKTOP_CONTRACT.md)。本轮接入正常团队页面、受控应用资源和窄IPC，修正后的Windows原生root检查已通过，仍待原完整严格门复验、所需旧原生兼容及独立复核；不宣称整个M4P或商业化Goal完成。
 
 ## 正常入口和权限
 
@@ -30,4 +30,14 @@
 
 实际Chrome检查运行正常HTML、CSS、preload与主进程桥，后端使用真实TeamClient、设备签名Request应用边界和隔离SQLite；原生picker与Electron主frame由fixture注入，未当作OS或Electron验收。1280×900及900×900无横向溢出，动态HTML字符串按文本显示，关闭可清空并重开；源文件SHA、规范JSON及26张原资源表保持，只有一笔导入POST和一份新版本，无计算引擎资源或pageerror。首轮截图发现过时侧栏范围说明，修正后重新执行并复看截图，原图与技术报告保留。
 
-本轮不新增HTTP或schema、不打开／升级共享演示库，不改原专业算法和旧版dist页面；独立复核仍待额度条件解除，不用root检查代替。尚未push、进入main或上线，一键入口未重验。下一步为Windows原生链路、所需完整严格门与独立验收，Goal保持active。
+本轮不新增HTTP或schema、不打开／升级共享演示库，不改原专业算法和旧版dist页面；独立复核仍待额度条件解除，不用root检查代替。尚未push、进入main或上线，一键入口未重验。下一步为原完整严格门复验、所需旧原生兼容与独立验收，Goal保持active。
+
+## 2026-11-17 原生与完整门验收修正
+
+最新验收修正：Windows正常main／preload／renderer＋真实严格签名HTTP／SQLite／DPAPI的6场景root通过；撤权旧提示已修，26张原资源表typed行及DDL保持，两份快照逐byte一致、各一笔POST。定向986/986通过、0失败／跳过／取消，624.547秒。原严格门首轮4319项为4284pass／35fail，旧基线兼容修正后仍须原命令复验，不与专题相加。证据根 `D:/codex-temp/shenyi-ledger-check-acceptance-20261117/`；详情见正常界面合同。未push／进入main／上线，一键入口未重验，独立复核不豁免。
+
+原生根 `native/run-2026-11-17T06-05-21-739Z/` 的6场景包含正常W创建与负责人业务确认、独立自授读权及真实旧端快照导入、仅账表读权的另一账号、held正文撤权、held选框关闭迟到、真实COMMIT后响应丢失按原ID只读查询，以及实习生／助理／纯技术管理员的直接IPC拒绝。操作为主进程和真实loopback HTTP，OS文件选择结果与丢包／hold由fixture注入；不算人工picker、Mac、真实跨电脑、发行包、共享一键入口、生产或独立验收。1168源在原生before／after raw保持，三份vault使用OS加密，三个profile仅检查完整来源字节未命中，不承诺片段不存在。报告、5PNG、4阶段库及当前库保留。`native-evidence-after-fixes-root-audit.json`复核typed行／DDL、原件SHA、两个版本及各一笔POST，integrity ok／FK零错误。
+
+原生取证首次失败为Electron evaluate中误用require，第二次缺少显式member-access合成管理员seed；外部驱动按已存在前提修正，失败和原驱动保留。第三轮链路通过，但截图发现撤权后正文清除而权限标签仍残留已授权；`permission-status-before.tap.log`两项均失败。产品仅在update依据当前access同步标签，增加两项真实DOM回归。第四轮原生加入同一标签断言后通过并复看截图，未改变服务端权限或专业算法。
+
+原固定Node24 `scripts/test.mjs --unit --strict` 首轮连续4319项：4284通过／35失败／零skip、cancel、todo，1871.656秒，1165源before／after raw保持；224文件选入、61整browser文件粗排除，不能称完整browser严格门。35处均为新增4表／38定义或12RPC与旧固定基线冲突，分类与全部失败TAP保留。27份旧检查81项精确表达式／导入适配可逆重建原bytes；原123／73／252、历史66／189、69／209、70／217及relative47基线不变，先验证唯一新增层再投影；历史升级真实剥离空账表层并逐DDL还原，非空或多出对象的层在DROP前拒绝。新增三项helper验证。隔离方案86项及两项DOM／三项helper试验不代替实际仓库门，实际修后结果以 `fix-related/report.json`为准。完整严格门复验仍待完成，执行原命令与原选择规则，不跳过任何已选测试、不弱化原业务断言。

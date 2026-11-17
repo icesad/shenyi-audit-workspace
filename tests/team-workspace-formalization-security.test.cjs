@@ -1,4 +1,5 @@
 'use strict';
+const {ledgerCheckSchemaLayer}=require('./helpers/ledger-check-schema-layer.cjs');
 const {grantSourceRead}=require('./helpers/explicit-workspace-source-read.cjs');
 // Independent M4L: isolated real SQLite, strict signed requests and actual desktop seams.
 const nodeTest=require('node:test'),assert=require('node:assert/strict');
@@ -82,8 +83,8 @@ test('reserved Q rejects raw project INSERT and genuine key UPDATE but accepts a
 
 test('formalization retains immutable facts with precisely one new table and seven guards',async t=>{
  const f=await fixture(t),value=f.body();good(await f.confirm(value),201);const before=f.snapshot();assert.throws(()=>f.db.prepare('UPDATE '+FORMAL+' SET source_title=? WHERE request_id=?').run('replacement',value.requestId),/immutable/);assert.throws(()=>f.db.prepare('DELETE FROM '+FORMAL+' WHERE request_id=?').run(value.requestId),/retained/);assert.deepEqual(f.snapshot(),before);
- const definitions=f.db.prepare("SELECT name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' AND sql IS NOT NULL").all();assert.equal(definitions.filter(v=>/^workspace_formalization_/.test(v.name)).length,7);assert.equal(f.db.prepare("SELECT count(*) n FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n,73);
- assert.equal(definitions.length,252);assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(),[]);
+ const definitions=f.db.prepare("SELECT name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' AND sql IS NOT NULL").all();assert.equal(definitions.filter(v=>/^workspace_formalization_/.test(v.name)).length,7);assert.equal(f.db.prepare("SELECT count(*) n FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n-ledgerCheckSchemaLayer(f.db).tables,73);
+ assert.equal(definitions.length-ledgerCheckSchemaLayer(f.db).objects,252);assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(),[]);
 });
 
 test('real password work cannot survive owner role revoke and restore ABA',async t=>{

@@ -1,11 +1,12 @@
 'use strict';
+const {ledgerCheckSchemaLayer}=require('./helpers/ledger-check-schema-layer.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto');
 const {createProjectMigrationFixture,migrationSource,REVIEWER,PASSWORD,digest,source}=require('./helpers/project-migration-fixture.cjs');
 const exact=(value,names)=>assert.deepEqual(Object.keys(value).sort(),[...names].sort());
 const BASE='/api/project-migrations',ACCESS='/api/auth/project-migration/access';
 function snapshot(f){return f.db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('team_auth_limits','team_device_request_replays') ORDER BY name").all().map(({name})=>[name,f.db.prepare('SELECT * FROM "'+name+'"').all().map(row=>JSON.stringify(Object.entries(row).map(([key,value])=>[key,value instanceof Uint8Array?['blob',Buffer.from(value).toString('base64')]:value]))).sort()]);}
 test('fresh additive schema is 60/138; migration reviewer seed is independent/idempotent and never auto-registers projects',async t=>{
- const f=await createProjectMigrationFixture(t);assert.equal(f.db.prepare("SELECT COUNT(*) n FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n,73);assert.equal(f.db.prepare("SELECT COUNT(*) n FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").get().n,252);assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_users').get().n,16);
+ const f=await createProjectMigrationFixture(t);assert.equal(f.db.prepare("SELECT COUNT(*) n FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'").get().n-ledgerCheckSchemaLayer(f.db).tables,73);assert.equal(f.db.prepare("SELECT COUNT(*) n FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").get().n-ledgerCheckSchemaLayer(f.db).objects,252);assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_users').get().n,16);
  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_project_migration_provenance').get().n,0);assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_project_migration_events').get().n,0);assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_memberships WHERE user_id=?').get(REVIEWER).n,0);
  const before=snapshot(f);await(await source('migration-demo.mjs')).seedProjectMigrationDemo(f.db);assert.deepEqual(snapshot(f),before);
 });

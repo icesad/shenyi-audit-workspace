@@ -1,4 +1,5 @@
 'use strict';
+const {ledgerOldChannelNames}=require('./helpers/ledger-check-entry-layer.cjs');
 // Independent download acceptance: actual application API, isolated SQLite,
 // client and main bridge. Sessions, dialogs and file bytes are synthetic.
 // fs.writeFile is observed without creating an export. This is not OS-picker,
@@ -82,7 +83,7 @@ test('authorized download preserves exact original bytes, digest, safe filename 
  assert.deepEqual(result,{ok:true,value:{saved:true,filename:'副本.bin',byteLength:BYTES.length}});
  assert.equal(f.calls.get,1);assert.equal(f.calls.dialog,1);assert.equal(f.calls.head,1);assert.equal(f.calls.write,1);
  assert.deepEqual(f.calls.written[0].bytes,BYTES);assert.equal(createHash('sha256').update(f.calls.written[0].bytes).digest('hex'),createHash('sha256').update(BYTES).digest('hex'));
- assert.equal(JSON.stringify(result).includes('D:/synthetic-not-created'),false);assert.equal(f.handlers.size,123);assert.ok(!f.handlers.has('shenyi:check-attachment-access'));assert.deepEqual(business(f),before);
+ assert.equal(JSON.stringify(result).includes('D:/synthetic-not-created'),false);assert.equal(ledgerOldChannelNames(f.handlers).length,123);assert.ok(!f.handlers.has('shenyi:check-attachment-access'));assert.deepEqual(business(f),before);
  const requests=f.calls.routes.filter(item=>item.route===f.route);assert.deepEqual(requests.map(item=>item.method),['GET','HEAD']);assert.ok(requests.every(item=>item.hasBearer&&item.origin==='shenyi://app'));
 });
 
