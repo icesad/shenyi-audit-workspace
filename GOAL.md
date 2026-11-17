@@ -1,5 +1,11 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-18 最新：真实OS尝试保全，本关未通过
+
+从`705bcab`接续M4，在全新正常Windows候选中实际选入来源JSON，1945B／SHA及WQ持久一致；随后底稿包原生框控件缓存512失效，重绑后同错，按保护规则停止单次尝试。包Open未完成、Save未到，底稿五表及迁入／导出0，不能声称OS pair通过。exec exit1且外部driver清理末尾disposed报错，root已补核5自有PID／4667关闭及停机只读快照；73项物理断言仅核partial事实，1152源未改。
+
+两旧预览继续保留；工具初错捕旧图已排除，未向old输入／请求激活或读DB／vault。记录器首段PNG缺口与来源UIA／actions、未正常logout分别披露。前提未变不自动重试；未push／main／一键重验／上线，M4／Goal active，报告待原答复。见[实际边界](docs/NATIVE_OS_FILE_DIALOG_ACCEPTANCE.md)及`D:/codex-temp/shenyi-native-os-dialogs-20261118/`。以下保留历史范围。
+
 ## 2026-11-18 最新：员工邀请历史分页
 
 `codex/employee-invitation-pagination`从`ad421a0`接续M4，邀请列表可按每页最多50条前后查询；两来源稳定seek、账号／团队游标锚点和逐页权限核验，仍仅掩码、低权限员工定向邀请，无真实SMS。界面当前页／一次性码／关闭重开与context清理、单次创建／撤销已覆盖；跨来源同ID及pending写入切团队问题经审查纠正。

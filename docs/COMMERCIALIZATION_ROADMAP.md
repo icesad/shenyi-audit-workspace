@@ -1,5 +1,11 @@
 # 审易：研发、国内上线与运营路线图
 
+## 2026-11-18 最新：真实OS尝试保全，本关未通过
+
+从`705bcab`接续M4，在全新正常Windows候选中实际选入来源JSON，1945B／SHA及WQ持久一致；随后底稿包原生框控件缓存512失效，重绑后同错，按保护规则停止单次尝试。包Open未完成、Save未到，底稿五表及迁入／导出0，不能声称OS pair通过。exec exit1且外部driver清理末尾disposed报错，root已补核5自有PID／4667关闭及停机只读快照；73项物理断言仅核partial事实，1152源未改。
+
+两旧预览继续保留；工具初错捕旧图已排除，未向old输入／请求激活或读DB／vault。记录器首段PNG缺口与来源UIA／actions、未正常logout分别披露。前提未变不自动重试；未push／main／一键重验／上线，M4／Goal active，报告待原答复。见[实际边界](NATIVE_OS_FILE_DIALOG_ACCEPTANCE.md)及`D:/codex-temp/shenyi-native-os-dialogs-20261118/`。以下保留历史范围。
+
 ## 2026-11-18 最新：合成团队库离线备份／恢复演练
 
 `codex/team-offline-backup`从`45e5f9b`接续M4，新增[离线备份与恢复工具](TEAM_OFFLINE_BACKUP.md)。指定只读合成源、新UUID备份／恢复目录、完整schema与全表typed摘要／原件哈希和最终独占发布已实现，真实CLI三流程已验；没有增加在线恢复、业务数据权限或专业动作。
