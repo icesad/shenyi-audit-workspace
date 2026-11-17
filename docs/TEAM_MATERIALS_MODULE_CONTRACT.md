@@ -1,5 +1,13 @@
 # M4G 团队资料清单模块
 
+## 2026-11-18 补充：正常Windows回执实跑范围
+
+02e4e0b的反馈修复在正常main／preload／renderer首轮exit0通过；9账号／0绑定、DPAPI、W/Q与本模块五权均经正常UI。仅拦截本次三个native选择器路径，不替换client／fetch／IPC／vault。7196B／3原件包import为材料1，新增55B原件add为材料2／记录7，两条自动fresh回执DOM的10／13字段逐项对应耐久事件；只各提交一次，回执GET0。撤read后详情清空且typed GET404。
+
+只读7库与原包／新增原件经root和独审147物理断言，3旧原件／历史保持，最终4份共148B。撤read允许access审计合法追加；维护raw标志可仍1，但有效资格0，本轮不证明全部raw授权行归零。4图已查看无横溢；导入回执只部分在02视口，03是原件区，完整回执依据为真实DOM＋DB。257 listener记录／120运行时verify，不称双端nativefetch multiset或离线原proof／正文复算。
+
+671源与1149runtime/test原字节保持，本轮无产品改动。真实自然窗口等待54957ms／offset0，非429／503故障注入或poll频率实测。当前native范围仅import＋add＋read revoke；item/close/reopen/remove及异步拒绝保留此前JSDOM独审范围。正常桌面可达；未重验一键／OS选择器／Mac／TLS／生产／180MiB最大包或发行环境，debug／engine flags非发行基线。两保留预览及共享库不动，M4／Goal active。证据D:/codex-temp/shenyi-native-material-receipt-20261118/；以下为历史范围。
+
 ## 2026-11-18 补充：已确认写操作与自动刷新
 
 导入、核对、关门／重开、原件新增／移除取得明确committed后，只为本次自动刷新保留局部确认。刷新必须仍是本次view epoch、相同actor／user／team／project／device且面板open／可用，当前七项access稳定且明确read；回执requestId／projectId及projectRevision须与本次出站ID、当前access及data项目版本匹配，才重显完整回执。后台成员加载仅read序号变化不冒充新view。确认不存全局，不在以后自动复活。

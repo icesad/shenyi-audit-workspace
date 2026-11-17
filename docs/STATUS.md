@@ -1,5 +1,11 @@
 # 当前状态：M4团队模块接入（进行中）
 
+## 2026-11-18 最新：正常Windows资料回执验收
+
+当前资料回执修复已在全新正常Windows候选首轮standalone exit0实跑：正常账号／DPAPI／创建及来源核验／UI五权，import与add自动fresh后回执10／13字段对真实持久事件一致；commit／add各一次、无回执GET补救。撤read后清正文详情，typed GET404；3原件加55B后4份，历史保持。
+
+257 HTTP／120运行时验签、7库／4图及147物理断言经独审；完整字段由真实DOM＋DB证明，02图仅部分import、03图为原件区。671运行/helper和1149旧源保持，本轮未改产品、未native测其余四动作或故障／race、未重跑113／全量strict。原预览与共享库保留；未push／main／一键重验／上线，M4／Goal active，报告待答。详见[进度](../进度.md)及D:/codex-temp/shenyi-native-material-receipt-20261118/independent/final-review.json。以下为历史范围。
+
 ## 2026-11-18 最新：资料操作确认回执反馈修复
 
 资料操作已确认成功后，自动刷新不再无意清空回执：fresh同scope、设备与读权／版本稳定才恢复详情；503／429等未知只保完成状态和原编号，硬拒绝／关闭／切换／ABA退役旧反馈。覆盖导入、核对、关门／重开、原件新增／移除，未改专业规则、服务端或手工历史回执语义。
