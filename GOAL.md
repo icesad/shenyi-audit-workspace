@@ -1,5 +1,9 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-18 M7C Windows 候选发布清单签名
+
+本地 Windows 便携候选新增独立 Ed25519 发布签名及全包验签工具。22/22 项关联测试通过。实际 0.61.0 包的 Windows 独立 CLI 验收覆盖九条命令及六种拒绝，2006 个候选包文件实测哈希一致。`Shenyi.exe` Authenticode 实测 `NotSigned`。本机已安装版本由操作者明确提供，安装升级与持久版本管理仍待验。两个旧预览保留，本轮桌面一键未重验。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-signed-candidate-20261118`。正式 Windows 签名、安装回滚、macOS 实机及国内部署仍待完成。 [操作说明](docs/WINDOWS_DESKTOP_CANDIDATE.md)
+
 ## 2026-11-18 M7B 加密备份与离线恢复
 
 已交付将合成 SQLite 与清单加密为单一工件的本地 CLI。恢复在读取数据库前认证密文，并在发布前核验数据库原始字节、SQLite 完整性、原件和业务摘要。36/36 项关联测试通过，零跳过。Windows 独立验收验证两次恢复与两个拒绝场景，98 张表、两份底稿版本和两份原件 BLOB 匹配。两份封存通过独立 Python 验证。证据位于 `D:/codex-temp/shenyi-m7-sealed-backup-20261118`。两个旧预览继续运行，桌面一键本轮未重验。未进入 main、未推送、未上线。生产密钥托管、登录和授权回退处置、正式恢复切换与国内部署仍待完成。 [操作说明](docs/TEAM_OFFLINE_BACKUP.md)

@@ -28,4 +28,27 @@ $env:SHENYI_TEAM_SERVICE_CONFIG = 'D:/local-test-config/trusted-team.json'
 
 ## 发行验收
 
-当前交付采用未签名的便携目录。后续验收还包括 Windows 签名和安装升级、macOS 原生构建及签名公证、独立更新验签、国内部署与备份恢复演练。
+### 发布清单签名与验签
+
+签名人员使用独立保管的 Ed25519 PKCS#8 PEM 私钥。验签人员从可信渠道预先取得对应的 SPKI PEM 公钥。密钥与签名文件放在候选目录和仓库之外，公钥由验签方独立配置。密钥路径使用绝对路径，Windows 路径包含盘符。
+
+```powershell
+node scripts/windows-candidate-signature.mjs sign `
+  --bundle 'D:/codex-temp/shenyi-windows-local/stage-win-x64' `
+  --private-key 'D:/publisher-private/update-ed25519.pem' `
+  --signature 'D:/release-metadata/shenyi-0.61.0-win-x64.sig'
+
+node scripts/windows-candidate-signature.mjs verify `
+  --bundle 'D:/codex-temp/shenyi-windows-local/stage-win-x64' `
+  --public-key 'D:/trusted-config/update-ed25519.pub.pem' `
+  --signature 'D:/release-metadata/shenyi-0.61.0-win-x64.sig' `
+  --installed-version '0.60.0'
+```
+
+签名为 64 字节的独立文件。签名命令先核对清单和全部包文件，在支持硬链接的文件系统上排他发布签名。已有目标不会被覆盖。验签读取配置的公钥，验证签名、版本、精确文件清单、文件大小和 SHA-256。输出记录签名、清单、公钥指纹、候选版本和验签时提供的已安装版本。 [Node.js 签名接口](https://nodejs.org/docs/latest-v24.x/api/crypto.html#cryptosignalgorithm-data-key-callback)
+
+`--installed-version` 取可信的本机已安装版本，使用三段正式版本号。验签会拒绝等于或低于输入版本的候选。当前离线工具由操作者提供这个值，尚未接入安装器读取或持久维护版本。验签检查当时目录中的文件，验签后的保管或安装由部署流程负责。
+
+### 后续发行验证
+
+当前交付是便携目录与独立发布签名。Windows EXE 的 Authenticode 签名、安装与原地升级、可回滚安装验收、macOS 原生构建及签名公证仍待完成。正式发布密钥与操作系统证书需独立配置，本地验证使用合成测试密钥。
