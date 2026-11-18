@@ -89,8 +89,9 @@ async function hashFile(filename,code='BUNDLE_INVALID'){
   return {byteLength:length,sha256:hash.digest('hex'),state:state(before)};
  }catch(error){if(error instanceof OfflineBackupError)throw error;fail(code);}finally{await handle?.close();}
 }
-function readDatabase(filename){
- const db=new DatabaseSync(filename,{readOnly:true,enableForeignKeyConstraints:true,allowExtension:false,timeout:5000});
+function readDatabase(filename,{immutable=false}={}){
+ const source=immutable?pathToFileURL(filename).href+'?mode=ro&immutable=1':filename;
+ const db=new DatabaseSync(source,{readOnly:true,enableForeignKeyConstraints:true,allowExtension:false,timeout:5000});
  try{db.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;');return db;}catch(error){db.close();throw error;}
 }
 function identity(db,{serverId,rehearsal=false}={}){
@@ -173,9 +174,9 @@ async function normalizeOwnedSnapshot(filename){
  const current=await regular(filename,'BUNDLE_INVALID');if(current.dev!==entry.dev||current.ino!==entry.ino)fail('BUNDLE_INVALID');
  await standaloneSnapshot(filename);
 }
-async function inspect(filename,mode){
+async function inspect(filename,mode,readOptions){
  const first=await hashFile(filename);let db;let value;
- try{db=readDatabase(filename);value=inventory(db,mode);}finally{db?.close();}
+ try{db=readDatabase(filename,readOptions);value=inventory(db,mode);}finally{db?.close();}
  const final=await hashFile(filename);
  if(!sameState(first.state,final.state)||first.sha256!==final.sha256||first.byteLength!==final.byteLength)fail('BUNDLE_INVALID');
  return {...value,databaseBytes:first.byteLength,databaseSha256:first.sha256,_fileState:first.state};
@@ -293,12 +294,17 @@ export async function rehearseOfflineRestore(options){
  }catch(error){await failure(directory,error instanceof OfflineBackupError?error.code:'RESTORE_FAILED');if(error instanceof OfflineBackupError)throw error;fail('RESTORE_FAILED');}
 }
 
-function sealedPaths(bundleDirectory, keyFile, outputRoot, sealedInput) {
+function sealedInputPaths(bundleDirectory,keyFile,sealedInput) {
  const code=sealedInput?'SEALED_BUNDLE_INVALID':'BUNDLE_INVALID';
  const bundle=absolute(bundleDirectory,code);
  if(inside(bundle,REPOSITORY))fail(code);
  const keyPath=absolute(keyFile,'INVALID_BACKUP_KEY');
  if(inside(keyPath,REPOSITORY)||inside(keyPath,bundle))fail('INVALID_BACKUP_KEY');
+ return {bundle,keyPath};
+}
+
+function sealedPaths(bundleDirectory,keyFile,outputRoot,sealedInput) {
+ const {bundle,keyPath}=sealedInputPaths(bundleDirectory,keyFile,sealedInput);
  const root=absolute(outputRoot??defaultOfflineBackupRoot());
  if(inside(root,REPOSITORY)||inside(root,bundle))fail('INVALID_INPUT');
  return {bundle,keyPath,root};
@@ -457,10 +463,11 @@ export async function sealOfflineBackup(options) {
  }
 }
 
-function authenticatedManifest(bytes,databaseBytes,mode) {
+function authenticatedManifest({manifest:bytes,databaseSha256},databaseBytes,mode) {
  try{
   const text=new TextDecoder('utf-8',{fatal:true}).decode(bytes),manifest=validateManifest(JSON.parse(text),mode);
-  if(Buffer.byteLength(text)!==bytes.length||text!==canonical(manifest)||manifest.database.byteLength!==databaseBytes)fail('SEALED_BUNDLE_INVALID');
+  if(Buffer.byteLength(text)!==bytes.length||text!==canonical(manifest)||
+     manifest.database.byteLength!==databaseBytes||manifest.database.sha256!==databaseSha256)fail('SEALED_BUNDLE_INVALID');
   return manifest;
  }catch{fail('SEALED_BUNDLE_INVALID');}
 }
@@ -576,7 +583,7 @@ async function rehearseSealedRestore({bundleDirectory,keyFile,outputRoot},mode) 
   const envelope=await readBackupEnvelope(open.handle,Number(open.before.size));
   first=await decryptBackupEnvelope(open.handle,envelope,key);
   await recheckOpenFile(open,'SEALED_BUNDLE_INVALID');
-  const manifest=authenticatedManifest(first.manifest,envelope.databaseBytes,mode);
+  const manifest=authenticatedManifest(first,envelope.databaseBytes,mode);
   const created=await freshDirectory(locations.root,'rehearsal');
   directory=created.directory;
   owned=await openPendingFile(directory,'RESTORE_FAILED');
@@ -620,4 +627,75 @@ export async function rehearseManagedSealedRestore(options) {
  assertOfflineBackupRuntime();
  const {serverId,...selected}=input(options,['bundleDirectory','keyFile','outputRoot','serverId']);
  return rehearseSealedRestore(selected,managedMode(serverId));
+}
+
+function reportArea(name) {
+ if(/^team_(billing|annual|seat|subscription)_/.test(name))return 'billingAndEntitlements';
+ if(/^team_(auth|credential|device|(?:operator_)?employee_activation|first_administrator|phone|recovery|session|user|wechat)(_|s?$)/.test(name))return 'identityAndDevices';
+ if(name==='teams'||/^team_(profiles|memberships|operators|task_assignments|invitations|activity)$/.test(name)||
+    /^team_(administrator_business_role|business_role|project_access|project_migration|member_access|provisioning)_/.test(name)||
+    /(?:_grants|_reviewers|_invitations)$/.test(name))return 'teamAndProjectAccess';
+ return 'other';
+}
+
+function compareSnapshotInventories(current,manifest) {
+ const schemaMatches=current.schemaSha256===manifest.inventory.schemaSha256;
+ const databaseBytesMatch=current.databaseBytes===manifest.database.byteLength&&current.databaseSha256===manifest.database.sha256;
+ const snapshotTables=new Map(manifest.inventory.tables.map(table=>[table.name,table]));
+ const tables={changed:0,added:0,removed:0};
+ const changedAreas={identityAndDevices:0,teamAndProjectAccess:0,billingAndEntitlements:0,other:0};
+ for(const currentTable of current.tables){
+  const previous=snapshotTables.get(currentTable.name);
+  if(!previous){
+   tables.added++;
+   changedAreas[reportArea(currentTable.name)]++;
+  }else if(previous.rowCount!==currentTable.rowCount||previous.rowSha256!==currentTable.rowSha256){
+   tables.changed++;
+   changedAreas[reportArea(currentTable.name)]++;
+  }
+  snapshotTables.delete(currentTable.name);
+ }
+ tables.removed=snapshotTables.size;
+ for(const name of snapshotTables.keys())changedAreas[reportArea(name)]++;
+ const same=schemaMatches&&!tables.changed&&!tables.added&&!tables.removed;
+ if(databaseBytesMatch&&!same)fail('SEALED_BUNDLE_INVALID');
+ return {kind:'shenyi-offline-managed-restore-comparison',status:same?'match':'different',schemaMatches,databaseBytesMatch,
+  tables,changedAreas,offlineOnly:true,onlineCutoverSupported:false};
+}
+
+export async function compareManagedSealedBackup(options) {
+ assertOfflineBackupRuntime();
+ const {sourceDatabase,bundleDirectory,keyFile,serverId}=input(options,['sourceDatabase','bundleDirectory','keyFile','serverId']);
+ const mode=managedMode(serverId),source=absolute(sourceDatabase),{bundle,keyPath}=sealedInputPaths(bundleDirectory,keyFile,true);
+ if(inside(source,REPOSITORY)||inside(source,bundle))fail('INVALID_INPUT');
+ if(samePath(source,keyPath))fail('INVALID_BACKUP_KEY');
+ const sourceBefore=await managedSourceState(source);
+ let key,open,authenticated;
+ try{
+  key=await readKeyFile(keyPath);
+  await checkSealedDirectory(bundle);
+  open=await openCheckedFile(path.join(bundle,SEALED_ARCHIVE),'SEALED_BUNDLE_INVALID');
+  const envelope=await readBackupEnvelope(open.handle,Number(open.before.size));
+  authenticated=await decryptBackupEnvelope(open.handle,envelope,key);
+  const manifest=authenticatedManifest(authenticated,envelope.databaseBytes,mode);
+  let current;
+  try{
+   if(!sameState(sourceBefore,await managedSourceState(source)))fail('SOURCE_INVALID');
+   // Skip SQLite journal handling even if the operator restarts a writer during comparison.
+   current=await inspect(source,mode,{immutable:true});
+   if(!sameState(sourceBefore,current._fileState))fail('SOURCE_INVALID');
+  }catch{fail('SOURCE_INVALID');}
+  await checkSealedDirectory(bundle);
+  await recheckOpenFile(open,'SEALED_BUNDLE_INVALID');
+  if(!sameState(sourceBefore,await managedSourceState(source)))fail('SOURCE_INVALID');
+  return compareSnapshotInventories(current,manifest);
+ }catch(error){
+  if(error instanceof OfflineBackupError)throw error;
+  fail('SEALED_BUNDLE_INVALID');
+ }finally{
+  key?.fill(0);
+  authenticated?.manifest.fill(0);
+  authenticated?.frames.fill(0);
+  await open?.handle.close().catch(()=>{});
+ }
 }

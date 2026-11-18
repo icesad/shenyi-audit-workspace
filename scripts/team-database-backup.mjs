@@ -2,7 +2,7 @@
 // Offline backup and rehearsal for synthetic and managed databases.
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {assertOfflineBackupRuntime,createOfflineBackup,verifyOfflineBackup,rehearseOfflineRestore,sealOfflineBackup,rehearseSealedOfflineRestore,createManagedSealedBackup,rehearseManagedSealedRestore,OfflineBackupError} from '../server/team/offline-backup.mjs';
+import {assertOfflineBackupRuntime,createOfflineBackup,verifyOfflineBackup,rehearseOfflineRestore,sealOfflineBackup,rehearseSealedOfflineRestore,createManagedSealedBackup,rehearseManagedSealedRestore,compareManagedSealedBackup,OfflineBackupError} from '../server/team/offline-backup.mjs';
 
 const serverIdPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const commandOptions = new Map([
@@ -13,6 +13,7 @@ const commandOptions = new Map([
  ['rehearse-sealed', {required:{'--bundle':'bundleDirectory','--key-file':'keyFile'}, optional:{'--output-root':'outputRoot'}}],
  ['create-managed-sealed', {required:{'--source':'sourceDatabase','--server-id':'serverId','--key-file':'keyFile','--output-root':'outputRoot'}}],
  ['rehearse-managed-sealed', {required:{'--bundle':'bundleDirectory','--server-id':'serverId','--key-file':'keyFile','--output-root':'outputRoot'}}],
+ ['compare-managed-sealed', {required:{'--source':'sourceDatabase','--bundle':'bundleDirectory','--server-id':'serverId','--key-file':'keyFile'}}],
 ]);
 
 export function parseOfflineBackupArguments(args){
@@ -44,10 +45,14 @@ export async function runOfflineBackupCommand(args){
  if(command==='rehearse')return rehearseOfflineRestore(options);
  if(command==='seal')return sealOfflineBackup(options);
  if(command==='rehearse-managed-sealed')return rehearseManagedSealedRestore(options);
+ if(command==='compare-managed-sealed')return compareManagedSealedBackup(options);
  return rehearseSealedOfflineRestore(options);
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
- runOfflineBackupCommand(process.argv.slice(2)).then(result=>console.log(JSON.stringify({ok:true,...result}))).catch(error=>{
+ runOfflineBackupCommand(process.argv.slice(2)).then(result=>{
+  console.log(JSON.stringify({ok:true,...result}));
+  if(result.status==='different')process.exitCode=2;
+ }).catch(error=>{
   console.error(JSON.stringify({ok:false,code:error instanceof OfflineBackupError?error.code:'OFFLINE_OPERATION_FAILED',message:error instanceof OfflineBackupError?error.message:'离线操作未完成。',offlineOnly:true,onlineCutoverSupported:false}));process.exitCode=1;
  });
 }

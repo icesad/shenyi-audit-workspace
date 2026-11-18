@@ -92,6 +92,7 @@ export async function decryptBackupEnvelope(handle, envelope, key, { authenticat
   decipher.setAuthTag(tag);
   const manifest = Buffer.alloc(manifestBytes);
   const buffer = Buffer.alloc(snapshotChunk);
+  const databaseDigest = createHash('sha256');
   const payloadBytes = manifestBytes + databaseBytes;
   const frameBytes = Math.ceil(payloadBytes / snapshotChunk) * 32;
   const frames = authenticatedFrames ?? Buffer.alloc(frameBytes);
@@ -111,7 +112,11 @@ export async function decryptBackupEnvelope(handle, envelope, key, { authenticat
         if (plaintext.length !== encrypted.length) invalid();
         const count = Math.min(plaintext.length, Math.max(0, manifestBytes - offset));
         if (count) plaintext.copy(manifest, offset, 0, count);
-        if (writeDatabase && count < plaintext.length) await writeDatabase(plaintext.subarray(count));
+        if (count < plaintext.length) {
+          const database = plaintext.subarray(count);
+          databaseDigest.update(database);
+          if (writeDatabase) await writeDatabase(database);
+        }
       } finally {
         plaintext.fill(0);
       }
@@ -128,7 +133,7 @@ export async function decryptBackupEnvelope(handle, envelope, key, { authenticat
       invalid();
     }
     authenticated = true;
-    return { manifest, frames };
+    return { manifest, frames, databaseSha256: databaseDigest.digest('hex') };
   } finally {
     buffer.fill(0);
     if (!authenticated) {
