@@ -10,6 +10,7 @@ const {
 } = require('./helpers/seat-order-schema-layer.cjs');
 const {withoutEmptySubscriptionDefinitions} = require('./helpers/subscription-schema-layer.cjs');
 const {peelLedgerAndWorkpaperSchema} = require('./helpers/workpaper-access-schema-layer.cjs');
+const {withoutEmptyAnnualSeatPlanLayer, peelAnnualSeatPlanSchema, assertAnnualSeatPlanSchemaRestored} = require('./helpers/annual-seat-plan-schema-layer.cjs');
 
 const TEAM = 'schema-seat-order-team';
 const OTHER_TEAM = 'schema-seat-order-other-team';
@@ -112,8 +113,9 @@ test('fresh initializer has two empty STRICT rowid seat order tables and exactly
   const {db, initializeTeamDatabase} = await database(t);
   assert.deepEqual(seatOrderSchemaLayer(db), {tables: 2, objects: 8});
   const before = snapshot(db);
-  assert.equal(before.tables.length, 92);
-  assert.equal(before.definitions.length, 368);
+  const historical = withoutEmptyAnnualSeatPlanLayer(db, before);
+  assert.equal(historical.tables.length, 92);
+  assert.equal(historical.definitions.length, 368);
   initializeTeamDatabase(db);
   assert.deepEqual(snapshot(db), before);
   checkIntegrity(db);
@@ -122,6 +124,7 @@ test('fresh initializer has two empty STRICT rowid seat order tables and exactly
 test('upgrade from 90 tables changes only the seat order layer with prior billing, capacity, and invitation rows present', async t => {
   const {db, initializeTeamDatabase} = await database(t);
   await retainedOldFacts(db);
+  const annualPlanLayer = peelAnnualSeatPlanSchema(db);
   const layer = peelSeatOrderSchema(db);
   assert.deepEqual(seatOrderDefinitions(db), []);
   const legacy = snapshot(db);
@@ -133,8 +136,9 @@ test('upgrade from 90 tables changes only the seat order layer with prior billin
   }
   initializeTeamDatabase(db);
   assertSeatOrderSchemaRestored(db, layer);
+  assertAnnualSeatPlanSchemaRestored(db, annualPlanLayer);
   const upgraded = snapshot(db);
-  assert.deepEqual(withoutEmptySeatOrderLayer(db, upgraded), legacy);
+  assert.deepEqual(withoutEmptySeatOrderLayer(db, withoutEmptyAnnualSeatPlanLayer(db, upgraded)), legacy);
   initializeTeamDatabase(db);
   assert.deepEqual(snapshot(db), upgraded);
   checkIntegrity(db);

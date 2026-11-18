@@ -1,7 +1,7 @@
 import {ApiError,ID,deny,invalid,json,readJson,transaction} from './http-utils.mjs';
 import {UUID,currentDeviceLease,deviceServerId,deviceConflict,deviceRequired} from './device-policy.mjs';
 import {administratorTechnicalEligible} from './administrator-business-role-policy.mjs';
-import {createAnnualOrderWithinTransaction,readAnnualOrder,readAnnualOrderRequest,listAnnualOrders,recordVerifiedAnnualPayment,fulfilAnnualOrder} from './billing-store.mjs';
+import {createAnnualOrderWithinTransaction,readAnnualOrder,readAnnualOrderRequest,listAnnualOrders,recordVerifiedAnnualPayment,fulfilAnnualOrder,readAnnualSeatRenewalDefaults} from './billing-store.mjs';
 import {createSeatOrderWithinTransaction,readSeatOrder,readSeatOrderRequest,listSeatOrders,recordVerifiedSeatPayment,fulfilSeatOrder} from './seat-order-store.mjs';
 import {ANNUAL_PRODUCT,SEAT_PRODUCT,readSimulationPaymentRequest,verifySimulationPaymentEnvelope} from './billing-simulation.mjs';
 import {readSeatCapacity} from './seat-capacity-store.mjs';
@@ -19,6 +19,11 @@ function actor(db,request,options,teamId,before){
 }
 function seatOrderingEnabled(options){
  return options.seatCapacityEnforcement==='invitation-reservations-v1';
+}
+function renewalSeatSelectionMatches(order,selectedSeats){
+ const plan=order.renewalSeats;
+ if(!plan)return selectedSeats===undefined;
+ return (selectedSeats??plan.defaultSeats)===plan.selectedSeats;
 }
 function settle(db,receipt,now,options){
  if(receipt.product===SEAT_PRODUCT){
@@ -53,7 +58,7 @@ async function lookup(configuration,order){
  ]);}catch{unavailable();}finally{clearTimeout(timer);}
 }
 export async function handleBillingRequest(request,options={}){
- const url=new URL(request.url),match=/^\/api\/teams\/([^/]+)\/billing\/(offers|orders|seats|seat-offer|seat-orders)(?:\/([^/]+)(\/reconcile)?)?$/.exec(url.pathname);
+ const url=new URL(request.url),match=/^\/api\/teams\/([^/]+)\/billing\/(offers|orders|seats|seat-offer|seat-orders|renewal-seats)(?:\/([^/]+)(\/reconcile)?)?$/.exec(url.pathname);
  if(!match)return null;
  const [,teamId,kind,orderId,reconcile]=match;
  const isSeatOrder=kind==='seat-orders',isOrder=kind==='orders'||isSeatOrder;
@@ -61,7 +66,7 @@ export async function handleBillingRequest(request,options={}){
  if(url.hash||url.href.endsWith('?')||(!isOrder||orderId)&&url.search)invalid();
  const {db,billingSimulation,now=Date.now}=options,currentOptions={...options,now};
  const initial=actor(db,request,currentOptions,teamId);
- if(kind==='seats'||isSeatOrder||kind==='seat-offer'){
+ if(kind==='seats'||isSeatOrder||kind==='seat-offer'||kind==='renewal-seats'){
   if(!seatOrderingEnabled(options))unavailable();
  }
  if(kind!=='seats'&&!billingSimulation)unavailable();
@@ -70,6 +75,12 @@ export async function handleBillingRequest(request,options={}){
  const scoped=action=>transaction(db,()=>{const current=actor(db,request,currentOptions,teamId,initial),result=action(current);actor(db,request,currentOptions,teamId,current);return result;});
  if(kind==='seats')return scoped(()=>json({seats:readSeatCapacity(db,teamId,time(now))}));
  if(kind==='offers')return scoped(()=>json({simulation:true,offers:billingSimulation.offers}));
+ if(kind==='renewal-seats')return scoped(()=>{
+  const unitAmountMinor=billingSimulation.annualSeatUnitAmountMinor;
+  if(unitAmountMinor===undefined)unavailable();
+  const defaults=readAnnualSeatRenewalDefaults(db,teamId,time(now));
+  return json({simulation:true,renewalSeats:{...defaults,unitAmountMinor,currency:'CNY'}});
+ });
  if(kind==='seat-offer')return scoped(()=>{
   if(!billingSimulation.seatOffer)unavailable();
   return json({simulation:true,offer:{...billingSimulation.seatOffer,product:SEAT_PRODUCT}});
@@ -92,19 +103,30 @@ export async function handleBillingRequest(request,options={}){
   const query=page(url);return scoped(()=>{const result=listOrders(db,teamId,query);return json({simulation:true,...result,nextCursor:result.hasMore?result.orders.at(-1).id:null});});
  }
  if(url.search)invalid();
- const input=await readJson(request,['requestId','offerId','offerRevision',...(isSeatOrder?['quantity']:[])]);
+ const input=await readJson(request,['requestId','offerId','offerRevision',isSeatOrder?'quantity':'selectedSeats']);
  if(!matches(UUID,input.requestId)||!matches(ID,input.offerId)||!Number.isSafeInteger(input.offerRevision)||input.offerRevision<1)invalid();
  if(isSeatOrder&&(!Number.isSafeInteger(input.quantity)||input.quantity<1||input.quantity>1000))invalid();
+ if(!isSeatOrder&&input.selectedSeats!==undefined&&
+    (!Number.isSafeInteger(input.selectedSeats)||input.selectedSeats<0||Object.is(input.selectedSeats,-0)))invalid();
  return scoped(current=>{
   const existing=readOrderRequest(db,teamId,current.userId,input.requestId);
   if(existing){
-   if(existing.offer.id!==input.offerId||existing.offer.revision!==input.offerRevision||isSeatOrder&&existing.quantity!==input.quantity)throw new ApiError(409,'BILLING_OFFER_CHANGED','模拟方案已改变，请重新核对。');
+   const selectionMatches=isSeatOrder?existing.quantity===input.quantity:renewalSeatSelectionMatches(existing,input.selectedSeats);
+   if(existing.offer.id!==input.offerId||existing.offer.revision!==input.offerRevision||!selectionMatches)throw new ApiError(409,'BILLING_OFFER_CHANGED','模拟方案已改变，请重新核对。');
    return json({simulation:true,order:existing},201);
   }
   const offer=isSeatOrder?billingSimulation.seatOffer:billingSimulation.offers.find(x=>x.id===input.offerId&&x.revision===input.offerRevision);
   if(!offer||offer.id!==input.offerId||offer.revision!==input.offerRevision)throw new ApiError(409,'BILLING_OFFER_CHANGED','模拟方案已改变，请重新核对。');
   const orderInput={teamId,actorId:current.userId,requestId:input.requestId,merchantId:billingSimulation.merchantId,offer};
-  const order=isSeatOrder?createSeatOrderWithinTransaction(db,{...orderInput,quantity:input.quantity},{now}):createAnnualOrderWithinTransaction(db,orderInput,{now});
+  if(isSeatOrder){
+   const order=createSeatOrderWithinTransaction(db,{...orderInput,quantity:input.quantity},{now});
+   return json({simulation:true,order},201);
+  }
+  const unitAmountMinor=billingSimulation.annualSeatUnitAmountMinor;
+  if(input.selectedSeats!==undefined&&unitAmountMinor===undefined)unavailable();
+  const renewalSeats=unitAmountMinor===undefined?undefined:{unitAmountMinor,
+   ...(input.selectedSeats===undefined?{}:{selectedSeats:input.selectedSeats})};
+  const order=createAnnualOrderWithinTransaction(db,orderInput,{now,renewalSeats});
   return json({simulation:true,order},201);
  });
 }

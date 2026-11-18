@@ -1,9 +1,10 @@
 'use strict';
 const assert=require('node:assert/strict'),{createHash}=require('node:crypto');
+const {withoutEmptyAnnualSeatPlanDefinitions}=require('./annual-seat-plan-schema-layer.cjs');
 // Test-only exact empty M5D projection; never application code or a generic name filter.
 const TABLES=Object.freeze(['team_annual_fulfilments','team_annual_orders','team_annual_verified_payments']);
 const EXPECTED_DDL_SHA='2ab22adad96455f932d639b4c0dc0d3c61a777ef7d0afea942d281608cc2cde8';
-const definitions=db=>db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE sql IS NOT NULL AND (name GLOB 'annual_*' OR name GLOB 'team_annual_*' OR tbl_name IN ('team_annual_orders','team_annual_verified_payments','team_annual_fulfilments')) ORDER BY type,name").all().map(row=>({...row}));
+const definitions=db=>withoutEmptyAnnualSeatPlanDefinitions(db,db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE sql IS NOT NULL AND (name GLOB 'annual_*' OR name GLOB 'team_annual_*' OR tbl_name IN ('team_annual_orders','team_annual_verified_payments','team_annual_fulfilments')) ORDER BY type,name").all().map(row=>({...row})));
 function assertBillingSchema(db,{empty=true,allowAbsent=false}={}){
  const rows=definitions(db);if(allowAbsent&&rows.length===0)return rows;
  assert.equal(rows.length,9,'Only the exact reviewed billing layer may be projected');

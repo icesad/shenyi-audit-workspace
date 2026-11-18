@@ -11,6 +11,7 @@ const {
 } = require('./helpers/seat-capacity-schema-layer.cjs');
 const {peelLedgerAndWorkpaperSchema} = require('./helpers/workpaper-access-schema-layer.cjs');
 const {withoutEmptySeatOrderLayer, peelSeatOrderSchema, assertSeatOrderSchemaRestored} = require('./helpers/seat-order-schema-layer.cjs');
+const {withoutEmptyAnnualSeatPlanLayer, peelAnnualSeatPlanSchema, assertAnnualSeatPlanSchemaRestored} = require('./helpers/annual-seat-plan-schema-layer.cjs');
 
 const TEAM = 'schema-capacity-team';
 const ACTOR = 'schema-capacity-actor';
@@ -61,7 +62,7 @@ test('fresh initialization installs one strictly typed empty table and its four 
   const {db, initializeTeamDatabase} = await database(t);
   assert.deepEqual(seatCapacitySchemaLayer(db), {tables: 1, objects: 5});
   const before = snapshot(db);
-  const historical = withoutEmptySeatOrderLayer(db, before);
+  const historical = withoutEmptySeatOrderLayer(db, withoutEmptyAnnualSeatPlanLayer(db, before));
   assert.equal(historical.tables.length, 90);
   assert.equal(historical.definitions.length, 360);
   initializeTeamDatabase(db);
@@ -87,19 +88,23 @@ test('existing 89-table billing database gains only the empty seat layer and pre
   db.prepare("INSERT INTO team_invitations VALUES (?,?,?,'assistant',?,?,NULL)")
     .run('a'.repeat(64), TEAM, 'schema-invitee', ACTOR, AT + 60000);
 
+  const paidBeforeUpgrade = store.readAnnualOrder(db, TEAM, order.id);
+  assert.equal(paidBeforeUpgrade.status, 'paid');
+  const annualPlanLayer = peelAnnualSeatPlanSchema(db);
   const seatOrderLayer = peelSeatOrderSchema(db);
   const layer = peelSeatCapacitySchema(db);
   assert.deepEqual(seatCapacityDefinitions(db), []);
   const before = snapshot(db);
   assert.equal(before.tables.length, 89);
   assert.equal(before.definitions.length, 355);
-  assert.equal(store.readAnnualOrder(db, TEAM, order.id).status, 'paid');
 
   initializeTeamDatabase(db);
   assertSeatCapacitySchemaRestored(db, layer);
   assertSeatOrderSchemaRestored(db, seatOrderLayer);
+  assertAnnualSeatPlanSchemaRestored(db, annualPlanLayer);
+  assert.deepEqual(store.readAnnualOrder(db, TEAM, order.id), paidBeforeUpgrade);
   const upgraded = snapshot(db);
-  assert.deepEqual(withoutEmptySeatCapacityLayer(db, withoutEmptySeatOrderLayer(db, upgraded)), before);
+  assert.deepEqual(withoutEmptySeatCapacityLayer(db, withoutEmptySeatOrderLayer(db, withoutEmptyAnnualSeatPlanLayer(db, upgraded))), before);
   initializeTeamDatabase(db);
   assert.deepEqual(snapshot(db), upgraded);
   assertIntegrity(db);
