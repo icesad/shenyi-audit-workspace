@@ -1,5 +1,9 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-18 M7D Windows 本地便携安装、升级和回滚
+
+已验证专用目录内的已签候选安装、版本切换和回滚。29/29 项相关测试通过。实机从三个安装结果启动，版本顺序为 0.61.0→0.61.1→0.61.0，沿用同一设备密钥，并持钥读取合成指派任务。故障探针核对了切换错误、暂存状态损坏和并发锁；回滚后仍拒绝重新应用已达最高版本。0.61.1 只调整包元数据，用于版本切换演练。两个旧预览保留，桌面一键本轮未重验。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-installed-candidate-20261118`。Windows Authenticode、系统安装器、跨业务版本迁移和 macOS 实机仍待验。 [本地安装说明](docs/WINDOWS_DESKTOP_CANDIDATE.md)
+
 ## 2026-11-18 M7C Windows 候选发布清单签名
 
 本地 Windows 便携候选新增独立 Ed25519 发布签名及全包验签工具。22/22 项关联测试通过。实际 0.61.0 包的 Windows 独立 CLI 验收覆盖九条命令及六种拒绝，2006 个候选包文件实测哈希一致。`Shenyi.exe` Authenticode 实测 `NotSigned`。本机已安装版本由操作者明确提供，安装升级与持久版本管理仍待验。两个旧预览保留，本轮桌面一键未重验。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-signed-candidate-20261118`。正式 Windows 签名、安装回滚、macOS 实机及国内部署仍待完成。 [操作说明](docs/WINDOWS_DESKTOP_CANDIDATE.md)

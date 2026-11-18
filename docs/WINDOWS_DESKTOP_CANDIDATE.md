@@ -47,8 +47,27 @@ node scripts/windows-candidate-signature.mjs verify `
 
 签名为 64 字节的独立文件。签名命令先核对清单和全部包文件，在支持硬链接的文件系统上排他发布签名。已有目标不会被覆盖。验签读取配置的公钥，验证签名、版本、精确文件清单、文件大小和 SHA-256。输出记录签名、清单、公钥指纹、候选版本和验签时提供的已安装版本。 [Node.js 签名接口](https://nodejs.org/docs/latest-v24.x/api/crypto.html#cryptosignalgorithm-data-key-callback)
 
-`--installed-version` 取可信的本机已安装版本，使用三段正式版本号。验签会拒绝等于或低于输入版本的候选。当前离线工具由操作者提供这个值，尚未接入安装器读取或持久维护版本。验签检查当时目录中的文件，验签后的保管或安装由部署流程负责。
+直接调用 `verify` 时，`--installed-version` 由操作者按可信的本机记录提供，使用三段正式版本号。验签会拒绝等于或低于输入版本的候选。使用下文的便携安装工具时，版本依据来自安装目录的状态记录。
+
+### 管理本地便携安装
+
+使用 `manage-windows-candidate-install.mjs` 在专用目录管理便携包。首次安装使用尚未创建或为空的本地目录，目录位于候选包和仓库之外。此入口使用已单独配置的发布公钥，无需提供当前安装版本。示例中的候选包和发布签名是上一节的成对产物。
+
+```powershell
+$installRoot = 'D:/shenyi-local-install'
+$publisherKey = 'D:/trusted-config/update-ed25519.pub.pem'
+node scripts/manage-windows-candidate-install.mjs apply `
+  --root $installRoot --public-key $publisherKey `
+  --bundle 'D:/codex-temp/shenyi-windows-local/stage-win-x64' `
+  --signature 'D:/release-metadata/shenyi-0.61.0-win-x64.sig'
+node scripts/manage-windows-candidate-install.mjs inspect --root $installRoot --public-key $publisherKey
+node scripts/manage-windows-candidate-install.mjs rollback --root $installRoot --public-key $publisherKey
+```
+
+升级沿用同一安装目录和公钥，将 `--bundle` 与 `--signature` 改为更高版本的成对产物。CLI 核验输入与新复制的全部文件，再更新当前版本。`inspect` 重新验签并返回可启动的 `executablePath`。关闭本次演练正在运行的客户端后，按上文配置可信服务，通过返回的路径手动打开已切换版本。
+
+`rollback` 仅切换到仍可通过核验的上一版。回滚后保留已接受的最高版本记录，常规升级仍须超过这个版本。此命令只管理程序目录；客户端配置、设备密钥与服务端数据各自沿用原位置。版本状态保存在安装目录中的 `state.json`，历史程序及失败时保留的复制文件位于 `releases`。Windows 演练在专用目录验证切换与版本读取；系统级安装、断电耐久和跨版本业务数据迁移待单独验收。 [Node.js 文件操作接口](https://nodejs.org/docs/latest-v24.x/api/fs.html#fspromisesrenameoldpath-newpath)
 
 ### 后续发行验证
 
-当前交付是便携目录与独立发布签名。Windows EXE 的 Authenticode 签名、安装与原地升级、可回滚安装验收、macOS 原生构建及签名公证仍待完成。正式发布密钥与操作系统证书需独立配置，本地验证使用合成测试密钥。
+当前交付是便携目录、独立发布签名及本地版本切换工具。Windows EXE 的 Authenticode 签名、系统安装器、macOS 原生构建及签名公证仍待完成。正式发布密钥与操作系统证书需独立配置，本地验证使用合成测试密钥。
