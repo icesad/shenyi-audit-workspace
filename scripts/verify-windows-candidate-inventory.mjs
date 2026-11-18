@@ -9,6 +9,7 @@ const appPackageName = 'resources/app/package.json';
 const manifestLimit = 2 * 1024 * 1024;
 const packageLimit = 16 * 1024;
 const manifestError = 'CANDIDATE_MANIFEST_INVALID';
+export const signedWindowsCandidateStatus = 'authenticode-signed-portable-candidate';
 const inventoryError = 'CANDIDATE_INVENTORY_INVALID';
 const versionError = 'CANDIDATE_VERSION_INVALID';
 const messages = {
@@ -178,12 +179,19 @@ function classify(filename, packages) {
 }
 
 function validateManifest(data) {
+  const signed = data?.schemaVersion === 2;
   exact(data, ['schemaVersion', 'kind', 'platform', 'arch', 'releaseStatus', 'version', 'trustedServiceProfileIncluded',
-    'electron', 'sourceFileCount', 'productionPackageCount', 'files'], manifestError);
-  if (data.schemaVersion !== 1 || data.kind !== 'shenyi-windows-desktop-candidate' || data.platform !== 'win32' || data.arch !== 'x64' ||
-      data.releaseStatus !== 'unsigned-portable-candidate' || data.trustedServiceProfileIncluded !== false ||
+    'electron', 'sourceFileCount', 'productionPackageCount', 'files', ...(signed ? ['authenticode'] : [])], manifestError);
+  if ((!signed && data.schemaVersion !== 1) || data.kind !== 'shenyi-windows-desktop-candidate' || data.platform !== 'win32' || data.arch !== 'x64' ||
+      data.releaseStatus !== (signed ? signedWindowsCandidateStatus : 'unsigned-portable-candidate') || data.trustedServiceProfileIncluded !== false ||
       !positiveSafe(data.sourceFileCount) || !positiveSafe(data.productionPackageCount) ||
       !data.files || Object.getPrototypeOf(data.files) !== Object.prototype) invalid(manifestError);
+  if (signed) {
+    exact(data.authenticode, ['publisherCertificateSha256', 'unsignedExecutableSha256'], manifestError);
+    if (!validHash(data.authenticode.publisherCertificateSha256) || !validHash(data.authenticode.unsignedExecutableSha256) ||
+        data.authenticode.unsignedExecutableSha256 === data.files['Shenyi.exe']?.sha256) invalid(manifestError);
+    Object.freeze(data.authenticode);
+  }
   parseCandidateVersion(data.version);
   exact(data.electron, ['version', 'archive', 'bytes', 'sha256'], manifestError);
   parseCandidateVersion(data.electron.version);

@@ -49,6 +49,33 @@ node scripts/windows-candidate-signature.mjs verify `
 
 直接调用 `verify` 时，`--installed-version` 由操作者按可信的本机记录提供，使用三段正式版本号。验签会拒绝等于或低于输入版本的候选。使用下文的便携安装工具时，版本依据来自安装目录的状态记录。
 
+### 核验 Authenticode 发行包
+
+先构建普通 Windows 候选，从中复制 `Shenyi.exe` 到候选包之外，由负责发行的人员给副本添加内嵌 Authenticode 签名和时间戳。保留原构建目录及清单。用独立可信渠道确认发布者叶证书的 SHA-256 指纹，取证书 DER 完整字节的摘要。只有受信的发布操作员应配置这个值，并在权限受控的本地 Windows 目录中运行以下命令。 [Microsoft Windows 签名工具](https://learn.microsoft.com/en-us/windows/win32/seccrypto/signtool)
+
+```powershell
+node scripts/windows-candidate-authenticode.mjs finalize `
+  --bundle 'D:/release-lab/windows-unsigned' `
+  --signed-exe 'D:/release-lab/externally-signed/Shenyi.exe' `
+  --publisher-sha256 $publisherCertificateSha256 `
+  --output 'D:/release-lab/windows-authenticode'
+```
+
+`finalize` 先核验原候选清单和文件。逐字节核对 PE，只接受签名所需的校验和、证书目录及文件末尾对齐和证书记录的变化。Windows 必须返回有效的内嵌签名、识别到时间戳证书，并匹配指定发布者。整个签名后文件的 SHA-256 进入新包清单，其余文件沿用原构建哈希。输出使用全新目录，原构建和外签副本继续留存。 [PE 文件格式](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format) · [Windows Authenticode 读取](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/get-authenticodesignature?view=powershell-5.1)
+
+对新包完成上一节的 Ed25519 清单签名，再由独立验收人员执行以下双签名核验。发布者证书和清单公钥各自从可信渠道取得。
+
+```powershell
+node scripts/windows-candidate-authenticode.mjs verify `
+  --bundle 'D:/release-lab/windows-authenticode' `
+  --publisher-sha256 $publisherCertificateSha256 `
+  --public-key 'D:/trusted-config/update-ed25519.pub.pem' `
+  --signature 'D:/release-metadata/shenyi-0.61.0-win-x64.sig' `
+  --installed-version '0.60.0'
+```
+
+`verify` 返回 `osSignatureVerified: true` 后再继续发行验收。当前核验范围为 `Shenyi.exe` 的内嵌签名和完整包清单，时间戳结果来自 Windows 验签。Windows 可能按本机信任配置联网检查证书。便携安装工具仍使用 Ed25519 核验包。正式系统安装器、发布证书和终端 Windows 安装验收继续单独办理。
+
 ### 管理本地便携安装
 
 使用 `manage-windows-candidate-install.mjs` 在专用目录管理便携包。首次安装使用尚未创建或为空的本地目录，目录位于候选包和仓库之外。此入口使用已单独配置的发布公钥，无需提供当前安装版本。示例中的候选包和发布签名是上一节的成对产物。
