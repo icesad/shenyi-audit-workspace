@@ -2,7 +2,7 @@
 
 日期：2026-11-18（Asia/Shanghai）。状态：下列席位、业务到期、到期管理、账务操作人和续期日历政策已由产品负责人在当前会话正式确认；本文为这些政策及其边界的canonical记录。[产品需求7.1](TEAM_PRODUCT_REQUIREMENTS.md#71-权益和席位)引用本文件。
 
-订阅基础见[M5A合同](SUBSCRIPTION_FOUNDATION_CONTRACT.md)，17个业务数据写入口见[M5B合同](SUBSCRIPTION_BUSINESS_EXPIRY_CONTRACT.md)，16个现有团队管理写路线的到期分类见[M5C候选](SUBSCRIPTION_MANAGEMENT_EXPIRY_CONTRACT.md)。历史仍按原权查阅／导出，撤权和原安全流程保留。M5仍在进行中，[M5D年单与可信模拟收款](ANNUAL_ORDER_SIMULATION_CONTRACT.md)已通过本地服务端候选验收；合成增购已实现席位兑现，桌面购买与真实支付仍待接入，不代表全M5验收或已经上线。
+订阅基础见[M5A合同](SUBSCRIPTION_FOUNDATION_CONTRACT.md)，17个业务数据写入口见[M5B合同](SUBSCRIPTION_BUSINESS_EXPIRY_CONTRACT.md)，16个现有团队管理写路线的到期分类见[M5C候选](SUBSCRIPTION_MANAGEMENT_EXPIRY_CONTRACT.md)。历史仍按原权查阅／导出，撤权和原安全流程保留。M5仍在进行中，[M5D年单与可信模拟收款](ANNUAL_ORDER_SIMULATION_CONTRACT.md)已通过本地服务端候选验收；合成增购已实现席位兑现，Windows [本地账务候选](M5_LOCAL_ACCEPTANCE.md)已验桌面续订、增购和退款受理。正式购买入口、真实支付和最终权益处置仍待验收。
 
 ## 1. 已确认：席位计数
 

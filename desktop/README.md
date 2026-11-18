@@ -6,6 +6,8 @@
 
 Windows 双击根目录 `Start-Team-Candidate-Preview.cmd`。新窗口有“独立合成候选预览”标题，不连接或升级旧8774共享库；每次启动新的合成库、profile和设备密钥，关闭后文件保留但不自动续用。合成账号 `manager-a`、`partner-a`、`intern-a`、`assistant-a`，密码 `ShenyiDemo!2026`；登录仍须明确登记电脑。macOS命令和边界见[候选预览说明](../docs/ISOLATED_CANDIDATE_PREVIEW.md)，Mac实机未验。
 
+本地合成账务可双击根目录 `Start-Team-Billing-Candidate.cmd`，按[预置订单路线](../docs/M5_LOCAL_ACCEPTANCE.md)试用年费、增购、关单和退款受理。
+
 ## 本机运行
 
 [普通员工业务职级管理](../docs/BUSINESS_ROLE_MANAGEMENT.md)已接入Windows本地候选：团队管理员选择本团队普通员工、新职级、确认收回旧任务/项目权限并验证当前密码；员工须重新登录，升职不自动获取项目或原件。M4B已接入受信任登记项目的创建者授权、采集任务创建及独立资料核对，见[执行合同](../docs/PROJECT_ACCESS_COLLECTION_CONTRACT.md)。M4C已加入产品负责人直接审核管理员业务兼任；管理员不能自授。已确认允许先建采集工作区；创建入口下一单项实施，正式立项仍保留最新中标报价及原编号规则。
