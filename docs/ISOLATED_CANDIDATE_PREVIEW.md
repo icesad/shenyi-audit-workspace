@@ -16,6 +16,8 @@ macOS 目前只有路径和配置逻辑，尚未完成原生实机验收。
 
 每次启动都是全新环境。关闭该候选窗口后，其服务和数据库连接停止，文件保留；本入口不提供续用某次候选目录的选项。请勿在其中存放真实客户资料，也不要把保留目录当作已完成的备份恢复功能。
 
+两位负责人可双击 `Start-Team-Pilot-Candidate.cmd` 打开独立验收环境。此入口另外预置一份已提交的合成原件、明确的经理核对权和可用于退回后补交的文件。每次启动会生成 `pilot-demo-cases.json` 和 `pilot-follow-up.txt`。 [双人演练步骤](TEAM_PILOT_REHEARSAL.md)
+
 ## 隔离与失败规则
 
 - Windows 管理根目录为 `D:/codex-temp/shenyi-team-isolated-preview`；macOS 为 `~/Library/Application Support/ShenyiIsolatedTeamPreview`。根目录须有准确的专用 marker，每次在其下创建新的 `candidate-UUID`。
