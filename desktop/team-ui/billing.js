@@ -199,6 +199,7 @@
       clearBatch();
       message();
       for (const name of ['notice', 'term', 'seats', 'annual-offer', 'order-hint']) node(name).replaceChildren();
+      drawExpiryReminder();
       node('selected-seats').value = '';
       node('seat-quantity').value = '';
       controls();
@@ -289,6 +290,20 @@
       node('order-hint').textContent = hint;
     }
 
+    function drawExpiryReminder(subscription) {
+      const reminder = node('expiry-reminder');
+      const days = subscription?.renewalReminderDays;
+      let text = '';
+      if (subscription?.state === 'expired') {
+        text = '业务新增和修改已暂停。已有资料仍可按原权限查阅或导出。';
+      } else if (subscription?.state === 'active' && Number.isSafeInteger(days) && days >= 1 && days <= 30) {
+        const remaining = days === 1 ? '24 小时' : days + ' 天';
+        text = '团队年订阅将在 ' + remaining + '内到期。请提前安排续费。';
+      }
+      reminder.textContent = text;
+      reminder.hidden = !text;
+    }
+
     function drawOverview(keepDraft = false) {
       const { subscription, seats, annualOffers, renewalSeats } = overview;
       node('notice').textContent = overview.simulation
@@ -296,6 +311,7 @@
         : '当前仅可查阅订阅与席位。在线续费尚未开通。';
       const term = subscription.startsAt == null ? '' : '　' + date(subscription.startsAt) + ' 至 ' + date(subscription.endsAt) + '（北京时间）';
       node('term').textContent = '团队年订阅 · ' + (subscriptionStates[subscription.state] || '状态待核对') + term;
+      drawExpiryReminder(subscription);
       node('seats').replaceChildren();
       const metrics = [
         ['已购', seats.purchasedSeats], ['已启用', seats.activeBusinessSeats], ['邀请预留', seats.reservedInvitationSeats],

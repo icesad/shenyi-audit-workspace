@@ -16,6 +16,7 @@ export const SIMULATION_NOTIFICATION_PATH='/api/billing/simulation/notifications
 export const SIMULATION_PAYMENT_EXCEPTION_PATH='/api/billing/simulation/payment-exceptions';
 export const SIMULATION_ORDER_CLOSURE_PATH='/api/billing/simulation/order-closures';
 const RECONCILIATION_PAGE_SIZE=8;
+const MS_PER_DAY=86_400_000,RENEWAL_REMINDER_DAYS=30;
 const reconcilingTeams=new WeakMap();
 const unavailable=()=>{throw new ApiError(503,'BILLING_UNAVAILABLE','模拟账务尚未配置或暂不可用。');};
 const matches=(re,value)=>typeof value==='string'&&re.exec(value)?.[0]===value;
@@ -52,9 +53,13 @@ function billingAccess(request,options){
   return json({teams});
  });
 }
-function billingOverview(db,teamId,at,billingSimulation){
+function billingOverview(db,teamId,at,billingSimulation,expiryReminder=false){
  const {state,revision,startsAt,endsAt}=readSubscriptionState(db,teamId,at);
- const summary={teamId,subscription:{state,revision,startsAt,endsAt},seats:readSeatCapacity(db,teamId,at)};
+ const subscription={state,revision,startsAt,endsAt},remaining=endsAt-at;
+ if(expiryReminder&&state==='active'&&remaining>0&&remaining<=RENEWAL_REMINDER_DAYS*MS_PER_DAY){
+  subscription.renewalReminderDays=Math.ceil(remaining/MS_PER_DAY);
+ }
+ const summary={teamId,subscription,seats:readSeatCapacity(db,teamId,at)};
  if(!billingSimulation)return json({...summary,simulation:false});
  const unitAmountMinor=billingSimulation.annualSeatUnitAmountMinor;
  const renewalSeats=unitAmountMinor===undefined?null:{
@@ -230,7 +235,8 @@ export async function handleBillingRequest(request,options={}){
  const scoped=action=>transaction(db,()=>{const current=authorize(),result=action(current);authorize();return result;});
  if(kind==='reconciliation')return reconcileBatch(request,{db,teamId,options:currentOptions,now,scoped,authorize});
  if(kind==='seats')return scoped(()=>json({seats:readSeatCapacity(db,teamId,time(now))}));
- if(kind==='overview')return scoped(()=>billingOverview(db,teamId,time(now),billingSimulation));
+ if(kind==='overview')return scoped(()=>billingOverview(db,teamId,time(now),billingSimulation,
+  request.headers.get('X-Shenyi-Billing-View')==='expiry-reminder-v1'));
  if(kind==='offers')return scoped(()=>json({simulation:true,offers:billingSimulation.offers}));
  if(kind==='renewal-seats')return scoped(()=>{
   const unitAmountMinor=billingSimulation.annualSeatUnitAmountMinor;

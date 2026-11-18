@@ -89,6 +89,78 @@ test('managed billing overview carries only a scoped subscription and seat summa
   }
 });
 
+test('renewal reminder days preserve legacy overview DTOs and only project the validated active optional field',async()=>{
+  const {client,responses}=fixture();
+  for(const simulation of [true,false]){
+    const legacy=simulation?OVERVIEW:{teamId:TEAM,simulation:false,subscription:OVERVIEW.subscription,seats:OVERVIEW.seats};
+    responses.push(legacy);
+    const old=await client.getBillingOverview({teamId:TEAM});assert.deepEqual(old,legacy);assert.equal(Object.hasOwn(old.subscription,'renewalReminderDays'),false);
+    for(const renewalReminderDays of [1,15,30]){
+      const data={...legacy,subscription:{...legacy.subscription,renewalReminderDays}};responses.push(data);
+      assert.deepEqual(await client.getBillingOverview({teamId:TEAM}),data);
+    }
+  }
+});
+
+test('renewal reminder rejects malformed, out-of-range and cross-state values without relaxing nested DTO checks',async()=>{
+  const {client,responses}=fixture();
+  const managed={teamId:TEAM,simulation:false,subscription:OVERVIEW.subscription,seats:OVERVIEW.seats};
+  for(const renewalReminderDays of [undefined,null,false,true,0,-0,-1,31,1.5,'1',NaN,Infinity,-Infinity,Number.MAX_SAFE_INTEGER,Number.MAX_SAFE_INTEGER+1,1n,{},[1]]){
+    responses.push({...managed,subscription:{...managed.subscription,renewalReminderDays}});
+    await assert.rejects(client.getBillingOverview({teamId:TEAM}),{code:'INVALID_RESPONSE'});
+  }
+  for(const state of ['unconfigured','scheduled','expired']){
+    const subscription=state==='unconfigured'?{state,revision:0,startsAt:null,endsAt:null}:{...managed.subscription,state};
+    responses.push({...managed,subscription});assert.deepEqual((await client.getBillingOverview({teamId:TEAM})).subscription,subscription);
+    responses.push({...managed,subscription:{...subscription,renewalReminderDays:1}});
+    await assert.rejects(client.getBillingOverview({teamId:TEAM}),{code:'INVALID_RESPONSE'});
+  }
+  for(const data of [
+    {...managed,renewalReminderDays:1},
+    {...managed,subscription:{...managed.subscription,renewalReminderDays:1,sourceRef:'private'}},
+    {...managed,subscription:{...managed.subscription,renewalReminderDays:1},seats:{...managed.seats,renewalReminderDays:1}},
+  ]){responses.push(data);await assert.rejects(client.getBillingOverview({teamId:TEAM}),{code:'INVALID_RESPONSE'});}
+  let reads=0;
+  for(const subscription of [
+    Object.defineProperty({...managed.subscription},'renewalReminderDays',{enumerable:true,get(){reads++;return 1;}}),
+    Object.defineProperty({...managed.subscription},'renewalReminderDays',{value:1}),
+    {...managed.subscription,renewalReminderDays:1,[Symbol('private')]:true},
+    new Proxy({...managed.subscription,renewalReminderDays:1},{get(){reads++;return 1;}}),
+  ]){responses.push({...managed,subscription});await assert.rejects(client.getBillingOverview({teamId:TEAM}),{code:'INVALID_RESPONSE'});}
+  assert.equal(reads,0);
+});
+
+test('expiry view opt-in is fixed by the protected overview transport and never sent on login, access or order operations',async t=>{
+  const {createBusinessRoleFixture,keyPair,PASSWORD}=require('./helpers/business-role-fixture.cjs');
+  const {sign}=require('node:crypto'),proof=require('../shared/device-proof.cjs');
+  const f=await createBusinessRoleFixture(t),pair=keyPair(),fingerprint=proof.parsePublicKey(pair.encoded).fingerprint,calls=[];
+  const vault={
+    getPublicIdentity:async()=>({publicKey:pair.encoded,fingerprint}),
+    signChallenge:async fields=>sign(null,proof.challengeBytes(fields),pair.privateKey).toString('base64url'),
+    signRequest:async fields=>sign(null,proof.requestProofBytes(fields),pair.privateKey).toString('base64url'),
+  };
+  const json=value=>new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
+  const client=createTeamClient({now:()=>f.clock.value,deviceIdentity:{vault,platform:'win32',displayName:'合成提醒测试电脑'},fetchImpl:async(url,settings)=>{
+    const parsed=new URL(url),route=parsed.pathname+parsed.search;calls.push({route,...settings,headers:new Headers(settings.headers)});
+    if(route==='/api/auth/billing/access')return json(ACCESS);
+    if(route==='/api/teams/'+TEAM+'/billing/overview')return json({...OVERVIEW,subscription:{...OVERVIEW.subscription,renewalReminderDays:30}});
+    if(route==='/api/teams/'+TEAM+'/billing/orders?limit=20')return json({simulation:true,orders:[],hasMore:false,nextCursor:null});
+    if(route==='/api/teams/'+TEAM+'/billing/orders')return json({simulation:true,order:ANNUAL_ORDER});
+    if(route===RECONCILIATION_ROUTE)return json(RECONCILIATION_PAGE);
+    return f.dispatch(new Request(url,settings));
+  }});
+  await client.login({username:'administrator-demo',password:PASSWORD});
+  await client.enrollDevice({displayName:'合成提醒测试电脑',currentPassword:PASSWORD,confirmed:true});
+  assert.deepEqual(await client.getBillingAccess(),ACCESS);
+  assert.equal((await client.getBillingOverview({teamId:TEAM})).subscription.renewalReminderDays,30);
+  assert.deepEqual(await client.listBillingOrders({teamId:TEAM,kind:'annual'}),{orders:[],hasMore:false,nextCursor:null});
+  await client.createBillingOrder(SELECTION);await client.reconcileBillingPage({teamId:TEAM,kind:'annual'});
+  const overviews=calls.filter(call=>call.route==='/api/teams/'+TEAM+'/billing/overview');assert.equal(overviews.length,1);
+  assert.equal(overviews[0].method,'GET');assert.equal(overviews[0].body,undefined);assert.ok(overviews[0].headers.get('X-Shenyi-Device-Signature'));
+  assert.ok(calls.some(call=>call.route==='/api/auth/login'));assert.ok(calls.some(call=>call.route.endsWith('/orders')&&call.method==='POST'));
+  for(const call of calls)assert.equal(call.headers.get('X-Shenyi-Billing-View'),call===overviews[0]?'expiry-reminder-v1':null,call.route);
+});
+
 test('scoping, pagination, and DTO integrity fail before any unsupported data crosses to the renderer',async()=>{
   const {client,calls,responses}=fixture();
   let reads=0;

@@ -30,10 +30,10 @@ function snapshot(teamId, committedSeats = 5, defaultSeats = 8) {
   };
 }
 
-function managedSnapshot(teamId, { state = 'active', purchased = 7 } = {}) {
+function managedSnapshot(teamId, { state = 'active', purchased = 7, reminderDays } = {}) {
   return {
     teamId, simulation: false,
-    subscription: { state, startsAt: termStart, endsAt: termEnd },
+    subscription: { state, startsAt: termStart, endsAt: termEnd, ...(reminderDays === undefined ? {} : { renewalReminderDays: reminderDays }) },
     seats: { purchasedSeats: purchased, activeBusinessSeats: 3, reservedInvitationSeats: 2, usedSeats: 5, availableSeats: purchased - 5 }
   };
 }
@@ -97,6 +97,7 @@ test('managed billing renders terms and seats while keeping all order actions cl
   await f.open();
   assert.match(f.id('notice').textContent, /仅可查阅订阅与席位/);
   assert.match(f.id('term').textContent, /有效.*2025.*至.*2026.*北京时间/);
+  assert.equal(f.id('expiry-reminder').hidden, true);
   assert.deepEqual(metrics(), ['已购', '7', '已启用', '3', '邀请预留', '2', '合计占用', '5', '可用', '2']);
   assert.equal(f.id('checkout-section').hidden, true);
   assert.equal(f.id('orders-section').hidden, true);
@@ -109,6 +110,8 @@ test('managed billing renders terms and seats while keeping all order actions cl
   assert.equal(f.id('refresh').disabled, false);
   f.id('refresh').click();
   await until(() => f.id('term').textContent.includes('已到期'));
+  assert.equal(f.id('expiry-reminder').hidden, false);
+  assert.equal(f.id('expiry-reminder').textContent, '业务新增和修改已暂停。已有资料仍可按原权限查阅或导出。');
   assert.equal(f.calls.filter(call => call.name === 'getBillingOverview').length, 2);
   assert.deepEqual(metrics(), ['已购', '9', '已启用', '3', '邀请预留', '2', '合计占用', '5', '可用', '4']);
   assert.equal(f.id('checkout-section').hidden, true);
@@ -117,27 +120,47 @@ test('managed billing renders terms and seats while keeping all order actions cl
   assert.deepEqual(orderCalls(), []);
 });
 
-test('managed billing clears terms on close and ignores an in-flight overview after sign-out', async t => {
+test('managed billing displays the scoped server reminder and clears it on team change', async t => {
+  const next = deferred();
+  const f = fixture(t, { getBillingOverview: ({ teamId }) => teamId === 'a' ? ok(managedSnapshot('a', { reminderDays: 1 })) : next.promise });
+  await f.open();
+  assert.equal(f.id('expiry-reminder').hidden, false);
+  assert.equal(f.id('expiry-reminder').textContent, '团队年订阅将在 24 小时内到期。请提前安排续费。');
+  assert.equal(f.id('checkout-section').hidden, true);
+  f.change('team', 'b');
+  assert.equal(f.id('expiry-reminder').hidden, true);
+  assert.equal(f.id('expiry-reminder').textContent, '');
+  next.resolve(ok(managedSnapshot('b', { reminderDays: 8 })));
+  await until(() => !f.id('overview').hidden);
+  assert.equal(f.id('expiry-reminder').textContent, '团队年订阅将在 8 天内到期。请提前安排续费。');
+});
+
+test('managed billing clears terms and reminders on close and ignores an in-flight overview after sign-out', async t => {
   const pending = deferred();
   let reads = 0;
-  const f = fixture(t, { getBillingOverview: () => ++reads === 1 ? ok(managedSnapshot('a')) : pending.promise });
+  const f = fixture(t, { getBillingOverview: () => ++reads === 1 ? ok(managedSnapshot('a', { reminderDays: 30 })) : pending.promise });
   await f.open();
   assert.match(f.id('term').textContent, /有效/);
+  assert.match(f.id('expiry-reminder').textContent, /30 天内到期/);
   f.panel.open = false;
   await until(() => f.id('overview').hidden);
   assert.equal(f.id('term').textContent, '');
   assert.equal(f.id('seats').textContent, '');
+  assert.equal(f.id('expiry-reminder').hidden, true);
+  assert.equal(f.id('expiry-reminder').textContent, '');
 
   f.panel.open = true;
   await until(() => reads === 2);
   Object.assign(f.context, { ready: false, identity: '' });
   f.view.reset();
-  pending.resolve(ok(managedSnapshot('a', { purchased: 9 })));
+  pending.resolve(ok(managedSnapshot('a', { purchased: 9, reminderDays: 1 })));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(f.panel.hidden, true);
   assert.equal(f.id('overview').hidden, true);
   assert.equal(f.id('term').textContent, '');
   assert.equal(f.id('seats').textContent, '');
+  assert.equal(f.id('expiry-reminder').hidden, true);
+  assert.equal(f.id('expiry-reminder').textContent, '');
   assert.equal(f.id('order-list').childElementCount, 0);
   assert.deepEqual(f.calls.map(call => call.name), ['getBillingAccess', 'getBillingOverview', 'getBillingOverview']);
 });
