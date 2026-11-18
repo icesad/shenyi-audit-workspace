@@ -34,7 +34,7 @@ export async function startTeamServer({db,port=8774,now=Date.now,identityProvide
   if (!db?.prepare || !Number.isInteger(port) || port<0 || port>65535) throw new Error('Invalid local server options');
   subscriptionEnforcementMode(subscriptionEnforcement,identityProviders);
   seatCapacityMode(seatCapacityEnforcement,{subscriptionEnforcement,identityProviders});
-  billingSimulation=billingSimulationConfiguration(billingSimulation,{subscriptionEnforcement,identityProviders});
+  billingSimulation=billingSimulationConfiguration(billingSimulation,{subscriptionEnforcement,identityProviders,seatCapacityEnforcement});
   let origin;
   const server = http.createServer(async (incoming,outgoing) => {
     const controller=new AbortController(),abort=()=>controller.abort(),closed=()=>{if(!outgoing.writableEnded)abort();};

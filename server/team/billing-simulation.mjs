@@ -4,6 +4,8 @@ import {ApiError,ID,invalid} from './http-utils.mjs';
 
 // Server-only synthetic gateway. No merchant adapter, real checkout or client key.
 const DOMAIN='shenyi.billing.simulation.v1\0',MAX_BODY=16384;
+export const ANNUAL_PRODUCT='team-annual-renewal';
+export const SEAT_PRODUCT='team-seat-addition';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const RECEIPT=['protocol','merchantId','eventId','transactionId','orderId','product','amountMinor','currency','status','paidAt'];
 const integer=(v,min=0)=>typeof v==='number'&&Number.isSafeInteger(v)&&!Object.is(v,-0)&&v>=min;
@@ -14,10 +16,10 @@ function fields(value,required,optional=[]){
  if(required.some(k=>!Object.hasOwn(ds,k))||keys.some(k=>typeof k!=='string'||![...required,...optional].includes(k)||!ds[k].enumerable||!Object.hasOwn(ds[k],'value')))invalid();
  return Object.fromEntries(keys.map(k=>[k,ds[k].value]));
 }
-export function billingSimulationConfiguration(value=null,{subscriptionEnforcement,identityProviders}={}){
+export function billingSimulationConfiguration(value=null,{subscriptionEnforcement,identityProviders,seatCapacityEnforcement}={}){
  if(value===null)return null;
  try{
-  const v=fields(value,['mode','merchantId','signingKey','offers'],['lookupPayment']);
+  const v=fields(value,['mode','merchantId','signingKey','offers'],['lookupPayment','seatOffer']);
   if(v.mode!=='simulation-v1'||!matches(ID,v.merchantId)||types.isProxy(v.signingKey)||!Buffer.isBuffer(v.signingKey)||v.signingKey.length<32||v.signingKey.length>128||subscriptionEnforcement!=='team-management-v1'||identityProviders?.deviceProofRequired!==true)throw Error();
   if(!Array.isArray(v.offers)||types.isProxy(v.offers)||Object.getPrototypeOf(v.offers)!==Array.prototype||v.offers.length<1||v.offers.length>10)throw Error();
   const ds=Object.getOwnPropertyDescriptors(v.offers);
@@ -28,12 +30,20 @@ export function billingSimulationConfiguration(value=null,{subscriptionEnforceme
    return Object.freeze(offer);
   });
   if(new Set(offers.map(x=>x.id)).size!==offers.length||v.lookupPayment!==undefined&&typeof v.lookupPayment!=='function')throw Error();
-  return Object.freeze({mode:v.mode,merchantId:v.merchantId,signingKey:Buffer.from(v.signingKey),offers:Object.freeze(offers),...(v.lookupPayment===undefined?{}:{lookupPayment:v.lookupPayment})});
+  let seatOffer;
+  if(v.seatOffer!==undefined){
+   if(seatCapacityEnforcement!=='invitation-reservations-v1')throw Error();
+   const offer=fields(v.seatOffer,['id','revision','annualUnitAmountMinor','currency']);
+   if(!matches(ID,offer.id)||!integer(offer.revision,1)||!integer(offer.annualUnitAmountMinor,1)||offer.currency!=='CNY')throw Error();
+   seatOffer=Object.freeze(offer);
+  }
+  return Object.freeze({mode:v.mode,merchantId:v.merchantId,signingKey:Buffer.from(v.signingKey),offers:Object.freeze(offers),
+    ...(v.lookupPayment===undefined?{}:{lookupPayment:v.lookupPayment}),...(seatOffer===undefined?{}:{seatOffer})});
  }catch{throw new TypeError('Invalid billing simulation configuration; strict management scope and synthetic offers required');}
 }
 export function validateSimulationPaymentReceipt(value){
  const v=fields(value,RECEIPT);
- if(v.protocol!=='shenyi-simulation-payment-v1'||!matches(ID,v.merchantId)||!matches(UUID,v.eventId)||!matches(UUID,v.transactionId)||!matches(UUID,v.orderId)||v.product!=='team-annual-renewal'||!integer(v.amountMinor,1)||v.currency!=='CNY'||v.status!=='succeeded'||!integer(v.paidAt)||v.paidAt>8640000000000000)invalid();
+ if(v.protocol!=='shenyi-simulation-payment-v1'||!matches(ID,v.merchantId)||!matches(UUID,v.eventId)||!matches(UUID,v.transactionId)||!matches(UUID,v.orderId)||![ANNUAL_PRODUCT,SEAT_PRODUCT].includes(v.product)||!integer(v.amountMinor,1)||v.currency!=='CNY'||v.status!=='succeeded'||!integer(v.paidAt)||v.paidAt>8640000000000000)invalid();
  return Object.freeze(Object.fromEntries(RECEIPT.map(k=>[k,v[k]])));
 }
 export function simulationReceiptBytes(receipt){return Buffer.from(JSON.stringify(validateSimulationPaymentReceipt(receipt)));}

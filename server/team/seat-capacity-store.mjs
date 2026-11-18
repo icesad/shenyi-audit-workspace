@@ -27,20 +27,46 @@ function fact(row){
  const request=Object.fromEntries(FIELDS.map(k=>[k,receipt[k]]));if(digest(request)!==row.request_sha256)conflict();return Object.freeze(receipt);
 }
 
-// Trusted internal capacity fact, never a payment claim or an HTTP grant. It
-// owns its transaction and cannot accidentally commit a caller's transaction.
+// Trusted synchronous primitive; caller owns the transaction and rollback.
+export function recordSeatCapacityGrantWithinTransaction(db,value,{now=Date.now}={}){
+ const v=input(value),hash=digest(v);
+ if(typeof now!=='function')invalid();
+ if(db.isTransaction!==true)conflict();
+ team(db,v.teamId);
+ const previous=one(db,'SELECT * FROM team_seat_capacity_grants WHERE grant_id=?',v.grantId);
+ if(previous){
+  const receipt=fact(previous);
+  if(receipt.teamId!==v.teamId||previous.request_sha256!==hash)conflict();
+  return receipt;
+ }
+ const recordedAt=now();
+ if(!integer(recordedAt))conflict();
+ const inserted=db.prepare('INSERT INTO team_seat_capacity_grants(grant_id,team_id,seats,starts_at,ends_at,recorded_at,source_ref,request_sha256) VALUES (?,?,?,?,?,?,?,?)').run(v.grantId,v.teamId,v.seats,v.startsAt,v.endsAt,recordedAt,v.sourceRef,hash);
+ if(inserted.changes!==1)conflict();
+ const receipt=fact(one(db,'SELECT * FROM team_seat_capacity_grants WHERE grant_id=?',v.grantId));
+ if(receipt.teamId!==v.teamId||receipt.recordedAt!==recordedAt||FIELDS.some(k=>receipt[k]!==v[k]))conflict();
+ team(db,v.teamId);
+ return receipt;
+}
+// Preserve the independent trusted service transaction; never join implicitly.
 export function recordSeatCapacityGrant(db,value,{now=Date.now}={}){
- const v=input(value),hash=digest(v);if(typeof now!=='function')invalid();if(db.isTransaction===true)conflict();let began=false;
+ input(value);
+ if(typeof now!=='function')invalid();
+ if(db.isTransaction===true)conflict();
+ let began=false;
  try{
-  db.exec('BEGIN IMMEDIATE');began=true;team(db,v.teamId);
-  const previous=one(db,'SELECT * FROM team_seat_capacity_grants WHERE grant_id=?',v.grantId);
-  if(previous){const receipt=fact(previous);if(receipt.teamId!==v.teamId||previous.request_sha256!==hash)conflict();db.exec('COMMIT');began=false;return receipt;}
-  const recordedAt=now();if(!integer(recordedAt))conflict();
-  const inserted=db.prepare('INSERT INTO team_seat_capacity_grants(grant_id,team_id,seats,starts_at,ends_at,recorded_at,source_ref,request_sha256) VALUES (?,?,?,?,?,?,?,?)').run(v.grantId,v.teamId,v.seats,v.startsAt,v.endsAt,recordedAt,v.sourceRef,hash);
-  if(inserted.changes!==1)conflict();const receipt=fact(one(db,'SELECT * FROM team_seat_capacity_grants WHERE grant_id=?',v.grantId));
-  if(receipt.teamId!==v.teamId||receipt.recordedAt!==recordedAt||FIELDS.some(k=>receipt[k]!==v[k]))conflict();team(db,v.teamId);
-  db.exec('COMMIT');began=false;return receipt;
- }catch(error){if(began)try{db.exec('ROLLBACK');}catch{}if(error instanceof ApiError)throw error;if(typeof error?.errcode==='number'&&[5,6,19].includes(error.errcode&255))conflict();throw error;}
+  db.exec('BEGIN IMMEDIATE');
+  began=true;
+  const receipt=recordSeatCapacityGrantWithinTransaction(db,value,{now});
+  db.exec('COMMIT');
+  began=false;
+  return receipt;
+ }catch(error){
+  if(began)try{db.exec('ROLLBACK');}catch{}
+  if(error instanceof ApiError)throw error;
+  if(typeof error?.errcode==='number'&&[5,6,19].includes(error.errcode&255))conflict();
+  throw error;
+ }
 }
 
 function read(db,teamId,at){

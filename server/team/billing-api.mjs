@@ -2,7 +2,8 @@ import {ApiError,ID,deny,invalid,json,readJson,transaction} from './http-utils.m
 import {UUID,currentDeviceLease,deviceServerId,deviceConflict,deviceRequired} from './device-policy.mjs';
 import {administratorTechnicalEligible} from './administrator-business-role-policy.mjs';
 import {createAnnualOrderWithinTransaction,readAnnualOrder,readAnnualOrderRequest,listAnnualOrders,recordVerifiedAnnualPayment,fulfilAnnualOrder} from './billing-store.mjs';
-import {readSimulationPaymentRequest,verifySimulationPaymentEnvelope} from './billing-simulation.mjs';
+import {createSeatOrderWithinTransaction,readSeatOrder,readSeatOrderRequest,listSeatOrders,recordVerifiedSeatPayment,fulfilSeatOrder} from './seat-order-store.mjs';
+import {ANNUAL_PRODUCT,SEAT_PRODUCT,readSimulationPaymentRequest,verifySimulationPaymentEnvelope} from './billing-simulation.mjs';
 import {readSeatCapacity} from './seat-capacity-store.mjs';
 
 export const SIMULATION_NOTIFICATION_PATH='/api/billing/simulation/notifications';
@@ -16,14 +17,26 @@ function actor(db,request,options,teamId,before){
  if(before&&(current.userId!==before.userId||current.token!==before.token||current.stamp!==before.stamp||current.leaseId!==before.leaseId||current.deviceId!==before.deviceId||current.bindingRevision!==before.bindingRevision||current.keyFingerprint!==before.keyFingerprint))deviceConflict();
  if(!administratorTechnicalEligible(db,current.userId,teamId))deny();return current;
 }
-function settle(db,receipt,now){recordVerifiedAnnualPayment(db,receipt,{now});return fulfilAnnualOrder(db,receipt.orderId,{now});}
-export async function handleBillingSimulationNotification(request,{db,now=Date.now,billingSimulation}={}){
+function seatOrderingEnabled(options){
+ return options.seatCapacityEnforcement==='invitation-reservations-v1';
+}
+function settle(db,receipt,now,options){
+ if(receipt.product===SEAT_PRODUCT){
+  if(!seatOrderingEnabled(options))unavailable();
+  recordVerifiedSeatPayment(db,receipt,{now});
+  return fulfilSeatOrder(db,receipt.orderId,{now});
+ }
+ recordVerifiedAnnualPayment(db,receipt,{now});
+ return fulfilAnnualOrder(db,receipt.orderId,{now});
+}
+export async function handleBillingSimulationNotification(request,options={}){
+ const {db,now=Date.now,billingSimulation}=options;
  const url=new URL(request.url);if(url.pathname!==SIMULATION_NOTIFICATION_PATH)return null;
  if(url.search||url.hash||url.href.endsWith('?'))invalid();
  if(request.method!=='POST')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'POST'});
  if(!billingSimulation)unavailable();
  const receipt=await readSimulationPaymentRequest(request,billingSimulation);
- settle(db,receipt,now);return json({accepted:true,simulation:true});
+ settle(db,receipt,now,options);return json({accepted:true,simulation:true});
 }
 function page(url){
  for(const name of url.searchParams.keys())if(!['after','limit'].includes(name)||url.searchParams.getAll(name).length!==1)invalid();
@@ -40,45 +53,58 @@ async function lookup(configuration,order){
  ]);}catch{unavailable();}finally{clearTimeout(timer);}
 }
 export async function handleBillingRequest(request,options={}){
- const url=new URL(request.url),match=/^\/api\/teams\/([^/]+)\/billing\/(offers|orders|seats)(?:\/([^/]+)(\/reconcile)?)?$/.exec(url.pathname);
+ const url=new URL(request.url),match=/^\/api\/teams\/([^/]+)\/billing\/(offers|orders|seats|seat-offer|seat-orders)(?:\/([^/]+)(\/reconcile)?)?$/.exec(url.pathname);
  if(!match)return null;
  const [,teamId,kind,orderId,reconcile]=match;
- if(!matches(ID,teamId)||orderId&&(kind!=='orders'||!matches(UUID,orderId)))deny();
- if(url.hash||url.href.endsWith('?')||(kind!=='orders'||orderId)&&url.search)invalid();
+ const isSeatOrder=kind==='seat-orders',isOrder=kind==='orders'||isSeatOrder;
+ if(!matches(ID,teamId)||orderId&&(!isOrder||!matches(UUID,orderId)))deny();
+ if(url.hash||url.href.endsWith('?')||(!isOrder||orderId)&&url.search)invalid();
  const {db,billingSimulation,now=Date.now}=options,currentOptions={...options,now};
  const initial=actor(db,request,currentOptions,teamId);
- if(kind==='seats'?options.seatCapacityEnforcement!=='invitation-reservations-v1':!billingSimulation)unavailable();
- const allowed=reconcile?'POST':kind==='orders'&&!orderId?'GET, POST':'GET';
+ if(kind==='seats'||isSeatOrder||kind==='seat-offer'){
+  if(!seatOrderingEnabled(options))unavailable();
+ }
+ if(kind!=='seats'&&!billingSimulation)unavailable();
+ const allowed=reconcile?'POST':isOrder&&!orderId?'GET, POST':'GET';
  if(!allowed.split(', ').includes(request.method))return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:allowed});
  const scoped=action=>transaction(db,()=>{const current=actor(db,request,currentOptions,teamId,initial),result=action(current);actor(db,request,currentOptions,teamId,current);return result;});
  if(kind==='seats')return scoped(()=>json({seats:readSeatCapacity(db,teamId,time(now))}));
  if(kind==='offers')return scoped(()=>json({simulation:true,offers:billingSimulation.offers}));
+ if(kind==='seat-offer')return scoped(()=>{
+  if(!billingSimulation.seatOffer)unavailable();
+  return json({simulation:true,offer:{...billingSimulation.seatOffer,product:SEAT_PRODUCT}});
+ });
+ const readOrder=isSeatOrder?readSeatOrder:readAnnualOrder;
+ const readOrderRequest=isSeatOrder?readSeatOrderRequest:readAnnualOrderRequest;
+ const listOrders=isSeatOrder?listSeatOrders:listAnnualOrders;
  if(reconcile){
   await readJson(request,[]);
-  const order=scoped(()=>{const found=readAnnualOrder(db,teamId,orderId);if(!found)deny();return found;});
+  const order=scoped(()=>{const found=readOrder(db,teamId,orderId);if(!found)deny();return found;});
   const envelope=await lookup(billingSimulation,order);
   const receipt=envelope===null?null:verifySimulationPaymentEnvelope(envelope?.body,envelope?.signature,billingSimulation);
-  if(receipt&&receipt.orderId!==orderId)invalid();
-  scoped(()=>{if(!readAnnualOrder(db,teamId,orderId))deny();});
-  if(receipt)settle(db,receipt,now);
-  return scoped(()=>json({simulation:true,order:readAnnualOrder(db,teamId,orderId)}));
+  if(receipt&&(receipt.orderId!==orderId||receipt.product!==(isSeatOrder?SEAT_PRODUCT:ANNUAL_PRODUCT)))invalid();
+  scoped(()=>{if(!readOrder(db,teamId,orderId))deny();});
+  if(receipt)settle(db,receipt,now,options);
+  return scoped(()=>json({simulation:true,order:readOrder(db,teamId,orderId)}));
  }
- if(orderId)return scoped(()=>{const order=readAnnualOrder(db,teamId,orderId);if(!order)deny();return json({simulation:true,order});});
+ if(orderId)return scoped(()=>{const order=readOrder(db,teamId,orderId);if(!order)deny();return json({simulation:true,order});});
  if(request.method==='GET'){
-  const query=page(url);return scoped(()=>{const result=listAnnualOrders(db,teamId,query);return json({simulation:true,...result,nextCursor:result.hasMore?result.orders.at(-1).id:null});});
+  const query=page(url);return scoped(()=>{const result=listOrders(db,teamId,query);return json({simulation:true,...result,nextCursor:result.hasMore?result.orders.at(-1).id:null});});
  }
  if(url.search)invalid();
- const input=await readJson(request,['requestId','offerId','offerRevision']);
+ const input=await readJson(request,['requestId','offerId','offerRevision',...(isSeatOrder?['quantity']:[])]);
  if(!matches(UUID,input.requestId)||!matches(ID,input.offerId)||!Number.isSafeInteger(input.offerRevision)||input.offerRevision<1)invalid();
+ if(isSeatOrder&&(!Number.isSafeInteger(input.quantity)||input.quantity<1||input.quantity>1000))invalid();
  return scoped(current=>{
-  const existing=readAnnualOrderRequest(db,teamId,current.userId,input.requestId);
+  const existing=readOrderRequest(db,teamId,current.userId,input.requestId);
   if(existing){
-   if(existing.offer.id!==input.offerId||existing.offer.revision!==input.offerRevision)throw new ApiError(409,'BILLING_OFFER_CHANGED','模拟方案已改变，请重新核对。');
+   if(existing.offer.id!==input.offerId||existing.offer.revision!==input.offerRevision||isSeatOrder&&existing.quantity!==input.quantity)throw new ApiError(409,'BILLING_OFFER_CHANGED','模拟方案已改变，请重新核对。');
    return json({simulation:true,order:existing},201);
   }
-  const offer=billingSimulation.offers.find(x=>x.id===input.offerId&&x.revision===input.offerRevision);
-  if(!offer)throw new ApiError(409,'BILLING_OFFER_CHANGED','模拟方案已改变，请重新核对。');
-  const order=createAnnualOrderWithinTransaction(db,{teamId,actorId:current.userId,requestId:input.requestId,merchantId:billingSimulation.merchantId,offer},{now});
+  const offer=isSeatOrder?billingSimulation.seatOffer:billingSimulation.offers.find(x=>x.id===input.offerId&&x.revision===input.offerRevision);
+  if(!offer||offer.id!==input.offerId||offer.revision!==input.offerRevision)throw new ApiError(409,'BILLING_OFFER_CHANGED','模拟方案已改变，请重新核对。');
+  const orderInput={teamId,actorId:current.userId,requestId:input.requestId,merchantId:billingSimulation.merchantId,offer};
+  const order=isSeatOrder?createSeatOrderWithinTransaction(db,{...orderInput,quantity:input.quantity},{now}):createAnnualOrderWithinTransaction(db,orderInput,{now});
   return json({simulation:true,order},201);
  });
 }

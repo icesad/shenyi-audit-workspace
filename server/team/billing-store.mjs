@@ -3,7 +3,7 @@ import {isProxy} from 'node:util/types';
 import {ApiError,ID,deny,invalid} from './http-utils.mjs';
 import {appendSubscriptionTermWithinTransaction,readSubscriptionState} from './subscription-store.mjs';
 import {annualRenewalWindow} from './renewal-calendar.mjs';
-import {validateSimulationPaymentReceipt,simulationReceiptBytes} from './billing-simulation.mjs';
+import {ANNUAL_PRODUCT,validateSimulationPaymentReceipt,simulationReceiptBytes} from './billing-simulation.mjs';
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,SHA=/^[0-9a-f]{64}$/,MAX=Number.MAX_SAFE_INTEGER,DATE_MAX=8640000000000000;
 const CREATE=['teamId','actorId','requestId','merchantId','offer'],OFFER=['id','revision','product','amountMinor','currency'];
@@ -73,6 +73,7 @@ export function createAnnualOrderWithinTransaction(db,input,{now=Date.now}={}){
  const hash=digest(JSON.stringify(v)),prior=orderValue(one(db,'SELECT * FROM team_annual_orders WHERE team_id=? AND request_id=?',v.teamId,v.requestId));
  if(prior){if(prior.requestSha256!==hash)conflict();return view(db,prior);}
  const id=randomUUID(),operationId=randomUUID(),createdAt=at(now);
+ if(one(db,'SELECT 1 FROM team_seat_orders WHERE order_id=?',id))conflict();
  const inserted=db.prepare('INSERT INTO team_annual_orders(order_id,team_id,actor_id,request_id,term_operation_id,merchant_id,offer_id,offer_revision,product,amount_minor,currency,environment,created_at,request_sha256) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,v.teamId,v.actorId,v.requestId,operationId,v.merchantId,v.offer.id,v.offer.revision,v.offer.product,v.offer.amountMinor,v.offer.currency,'simulation-v1',createdAt,hash);if(inserted.changes!==1)conflict();
  const result=orderFact(db,id);if(!result||result.requestSha256!==hash||result.createdAt!==createdAt||result.termOperationId!==operationId)conflict();return view(db,result);
 }
@@ -88,9 +89,10 @@ export function listAnnualOrders(db,teamId,{limit=20,after=null}={}){
 // Called only after the server gateway verifies HMAC. Repeat passive validation
 // and locked-order matching here; never accept a browser's success assertion.
 export function recordVerifiedAnnualPayment(db,receipt,{now=Date.now}={}){
- const value=validateSimulationPaymentReceipt(receipt),bytes=simulationReceiptBytes(value),hash=digest(bytes);if(typeof now!=='function')invalid();
+ const value=validateSimulationPaymentReceipt(receipt),bytes=simulationReceiptBytes(value),hash=digest(bytes);if(value.product!==ANNUAL_PRODUCT||typeof now!=='function')invalid();
  return ownTransaction(db,()=>{
   const order=orderFact(db,value.orderId);if(!order)deny();matchesOrder(order,value);
+  if(one(db,'SELECT 1 FROM team_seat_verified_payments WHERE event_id=? OR transaction_id=?',value.eventId,value.transactionId))conflict();
   const collisions=all(db,'SELECT * FROM team_annual_verified_payments WHERE order_id=? OR event_id=? OR transaction_id=?',value.orderId,value.eventId,value.transactionId);
   if(collisions.length){if(collisions.length!==1)conflict();const old=paymentValue(collisions[0],order);if(old.receiptSha256!==hash)conflict();return old;}
   const paymentId=randomUUID(),confirmedAt=at(now);if(confirmedAt<order.createdAt)conflict();
