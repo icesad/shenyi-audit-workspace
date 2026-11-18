@@ -11,12 +11,42 @@ node scripts/build-macos-desktop-candidate.mjs --arch arm64 --electron-archive '
 node scripts/build-macos-desktop-candidate.mjs --arch x64 --electron-archive 'D:/deploy/electron-v45.3.2-darwin-x64.zip' --npm-cache 'D:/deploy/npm-cache' --output 'D:/deploy/shenyi-macos-x64'
 ```
 
-构建前校验锁定的官方 Electron ZIP。归档内保留框架、许可证、执行位及相对符号链接。在 ZIP 中替换默认 Electron 应用资源，按候选包名设置主程序和 helper 的可执行文件及 plist。输出包含 `Shenyi.app` 的 ZIP 和 `candidate-manifest.json`。清单记录目标架构、版本和两层归档的 SHA-256。交接时以可信来源的清单核对 ZIP 摘要。Windows 可生成归档，避免在 Windows 解包后重新压缩，以保留 Mac 框架的符号链接和权限。 [Electron v45.3.2 官方构件](https://github.com/electron/electron/releases/tag/v45.3.2) · [Electron 手工打包](https://www.electronjs.org/docs/latest/tutorial/application-distribution/)
+构建前校验锁定的官方 Electron ZIP。归档内保留框架、许可证、执行位及相对符号链接。在 ZIP 中替换默认 Electron 应用资源，按候选包名设置主程序和 helper 的可执行文件及 plist。输出包含 `Shenyi.app` 的 ZIP 和 `candidate-manifest.json`。清单记录目标架构、版本和两层归档的 SHA-256。交接先进行下文的离线签名与验签。Windows 可生成归档，请直接传输原 ZIP，以保留 Mac 框架的符号链接和权限。 [Electron v45.3.2 官方构件](https://github.com/electron/electron/releases/tag/v45.3.2) · [Electron 手工打包](https://www.electronjs.org/docs/latest/tutorial/application-distribution/)
+
+## 离线签名与交接
+
+签名和验签都在仓库根目录执行，使用前述 Node 与 Python 版本。Windows 的 `python` 或 macOS 的 `python3` 须可从命令行调用。发布人员用独立保管的 Ed25519 PKCS#8 PEM 私钥分别签署两种架构的候选。候选目录只放原 ZIP 和清单。私钥和独立签名使用候选目录与仓库之外的绝对路径，签名输出须尚未创建。
+
+```powershell
+foreach ($arch in 'arm64', 'x64') {
+  node scripts/macos-candidate-signature.mjs sign `
+    --bundle "D:/deploy/shenyi-macos-$arch" --arch $arch `
+    --signature "D:/deploy/shenyi-macos-$arch.sig" `
+    --private-key 'D:/publisher-private/update-ed25519.pem'
+  if ($LASTEXITCODE -ne 0) { throw "macOS $arch 候选签名失败" }
+}
+```
+
+发布方在传输前用 `verify` 和构建机的绝对路径复验候选，交付对应架构的原 ZIP、`candidate-manifest.json` 和独立 `.sig` 文件。接收方从可信渠道独立取得 SPKI PEM 发布公钥，在解包前再次验签。验签核对清单签名、架构、ZIP 的大小和 SHA-256，以及归档结构。`--installed-version` 使用本机已接受版本的可信记录。无既有版本时传 `0.0.0`，以下用 `0.60.0` 演示。候选版本必须更高。验签失败时停止传输或解包。
+
+```sh
+(
+  for arch in arm64 x64; do
+    node scripts/macos-candidate-signature.mjs verify \
+      --bundle "/Volumes/ShenyiRelease/shenyi-macos-$arch" --arch "$arch" \
+      --signature "/Volumes/ShenyiRelease/shenyi-macos-$arch.sig" \
+      --public-key '/Users/release/trusted-config/update-ed25519.pub.pem' \
+      --installed-version '0.60.0' || exit 1
+  done
+)
+```
+
+验签通过后，在对应架构的 Mac 解包。Ed25519 签名保护交接件的来源和完整性。候选尚需取得 Apple Developer ID 签名和公证，并按下节进行 Gatekeeper、Keychain 和运行架构的 Mac 实机验收。
 
 ## Mac 实机验收
 
-1. 在获准的 Mac 上核对 ZIP 摘要。使用 macOS 的归档工具或 `ditto -x -k` 解包到独立测试目录。
-2. 由有权限的人员按 Apple 的嵌套代码顺序签名，再核验 `codesign --verify --deep --strict --verbose=2 Shenyi.app`。发行版还须使用 Developer ID、Hardened Runtime 和公证票据，按最终分发构件核验。上游 Electron 保留的签名字段和候选 SHA-256 均不构成审易发行签名。候选产品 ID 为 `invalid.shenyi.audit.candidate`，正式产品 ID 和发行证书应在签名阶段确认。 [Apple 签名指南](https://developer.apple.com/documentation/xcode/creating-distribution-signed-code-for-the-mac) · [Apple 公证指南](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution/)
+1. 在获准的 Mac 上按上节验签。使用 macOS 的归档工具或 `ditto -x -k` 解包到独立测试目录。
+2. 由有权限的人员按 Apple 的嵌套代码顺序签名，再核验 `codesign --verify --deep --strict --verbose=2 Shenyi.app`。发行版还须使用 Developer ID、Hardened Runtime 和公证票据，并在 Mac 上用 Gatekeeper 检查最终分发构件。上游 Electron 保留的签名字段和候选 SHA-256 均不构成审易发行签名。候选产品 ID 为 `invalid.shenyi.audit.candidate`，正式产品 ID 和发行证书应在签名阶段确认。 [Apple 签名指南](https://developer.apple.com/documentation/xcode/creating-distribution-signed-code-for-the-mac) · [Apple 公证指南](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution/)
 3. 准备独立合成团队服务，将其 HTTPS origin 和实例 UUID 写入包外的[可信服务配置](TRUSTED_TEAM_HTTPS_CONTRACT.md)。使用受信任的 TLS 证书，随后用绝对路径启动已签名的主程序。包内不放服务配置、账号或密钥。
 
 ```sh

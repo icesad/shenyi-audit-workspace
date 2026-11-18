@@ -4,6 +4,7 @@
 import argparse
 from collections import deque
 from copy import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -29,6 +30,9 @@ REQUIRED_HELPERS = {'Electron Helper', 'Electron Helper (Renderer)'}
 VENDOR_NOTICES = {'LICENSE', 'LICENSES.chromium.html', 'version'}
 CPU_TYPES = {'arm64': 0x0100000C, 'x64': 0x01000007}
 CHUNK = 1024 * 1024
+VERIFY_MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
+VERIFY_MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
+VERIFY_MAX_ENTRIES = 20000
 
 
 def checked_parts(value, *, relative_link=False):
@@ -128,14 +132,14 @@ def require_file(entries, parts):
     return item[0]
 
 
-def assert_executable(archive, entries, parts, arch):
+def assert_executable(archive, entries, parts, arch, expected_type=2):
     info = require_file(entries, parts)
     with archive.open(info) as source:
         header = source.read(32)
     if len(header) != 32 or not (info.external_attr >> 16) & 0o111:
         raise ValueError('Electron executable is missing UNIX mode or Mach-O header')
     magic, cpu, _, file_type = struct.unpack_from('<IIII', header)
-    if magic != 0xFEEDFACF or cpu != CPU_TYPES[arch] or file_type != 2:
+    if magic != 0xFEEDFACF or cpu != CPU_TYPES[arch] or file_type != expected_type:
         raise ValueError('Electron executable has the wrong Mach-O architecture or type')
 
 
@@ -329,18 +333,183 @@ def build(electron_archive, payload_dir, output_zip, arch, version):
             'appFiles': sum(kind == 'file' for _, _, _, kind in payload), 'bundleIdentifier': BUNDLE_ID}
 
 
+def checked_version(version):
+    if not re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)', version):
+        raise ValueError('Expected a three-component release version')
+
+
+def verify_zip_envelope(handle, size):
+    """Bound central-directory allocation before ZipFile reads untrusted metadata."""
+    if not 22 <= size <= VERIFY_MAX_ARCHIVE_BYTES:
+        raise ValueError('Mac desktop archive exceeds the bounded ZIP size')
+    handle.seek(size - 22)
+    end = handle.read(22)
+    signature, disk, directory_disk, disk_count, count, directory_size, directory_offset, comment = struct.unpack('<4s4H2LH', end)
+    if (signature != b'PK\x05\x06' or disk or directory_disk or comment or disk_count != count or
+            not 1 <= count <= VERIFY_MAX_ENTRIES or directory_size > 16 * CHUNK or
+            directory_offset + directory_size != size - 22):
+        raise ValueError('Unsupported, trailing, split, ZIP64 or oversized ZIP metadata')
+    handle.seek(0)
+    return count
+
+
+def candidate_inventory(archive, expected_count, archive_size):
+    entries = {}
+    links = {}
+    total = 0
+    infos = archive.infolist()
+    if len(infos) != expected_count or archive.comment or min(info.header_offset for info in infos) != 0:
+        raise ValueError('Unexpected Mac ZIP envelope')
+    for info in infos:
+        name = info.orig_filename
+        parts = checked_parts(name[:-1] if info.is_dir() else name)
+        if (name != info.filename or len(name) > 4096 or info.create_system != 3 or info.flag_bits & 1 or
+                info.compress_type not in {ZIP_DEFLATED, ZIP_STORED} or
+                not 0 <= info.file_size <= VERIFY_MAX_ARCHIVE_BYTES or
+                not 0 <= info.compress_size <= archive_size or not 0 <= info.header_offset < archive_size):
+            raise ValueError('Unsupported Mac ZIP entry metadata')
+        total += info.file_size
+        if total > VERIFY_MAX_UNCOMPRESSED_BYTES:
+            raise ValueError('Mac ZIP expands beyond the bounded total size')
+        mode = stat.S_IFMT(info.external_attr >> 16)
+        kind = {stat.S_IFREG: 'file', stat.S_IFLNK: 'symlink', stat.S_IFDIR: 'directory'}.get(mode)
+        if kind is None or info.is_dir() != (kind == 'directory') or (kind == 'directory' and info.file_size):
+            raise ValueError('Invalid Mac ZIP UNIX metadata')
+        if parts[0] != APP and (len(parts) != 1 or parts[0] not in VENDOR_NOTICES or kind != 'file'):
+            raise ValueError('Unexpected Mac ZIP root entry')
+        if parts in entries:
+            raise ValueError('Duplicate Mac ZIP entry')
+        entries[parts] = (info, kind)
+    nodes = path_inventory((parts, kind) for parts, (_, kind) in entries.items())
+    if (nodes.get((APP,)) != 'directory' or any(nodes.get((name,)) != 'file' for name in VENDOR_NOTICES) or
+            nodes.get((APP, *RESOURCES, 'default_app.asar')) is not None or
+            nodes.get((APP, 'Contents', 'MacOS', 'Electron')) is not None):
+        raise ValueError('Incomplete or unbranded Mac desktop archive')
+    for parts, (info, kind) in entries.items():
+        if kind == 'symlink':
+            if not 0 < info.file_size <= 4096 or parts[:len(PAYLOAD)] == PAYLOAD:
+                raise ValueError('Invalid Mac ZIP symlink')
+            links[parts] = checked_parts(archive.read(info).decode('utf-8'), relative_link=True)
+    validate_links(APP, nodes, links)
+    return entries, nodes, links
+
+
+def unique_json(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('Duplicate application package JSON key')
+        result[key] = value
+    return result
+
+
+def verify_candidate_contents(archive, entries, nodes, arch, version):
+    main = (APP, 'Contents')
+    assert_executable(archive, entries, (*main, 'MacOS', 'Shenyi'), arch)
+    framework = (*main, 'Frameworks', 'Electron Framework.framework', 'Versions', 'A')
+    # Check the regular Mach-O target, not the outer framework symlink bytes.
+    assert_executable(archive, entries, (*framework, 'Electron Framework'), arch, expected_type=6)
+    for library in ('libffmpeg.dylib', 'libvk_swiftshader.dylib'):
+        assert_executable(archive, entries, (*framework, 'Libraries', library), arch, expected_type=6)
+    settings, _ = read_plist(archive, entries, (*main, 'Info.plist'))
+    if (settings.get('CFBundleIdentifier') != BUNDLE_ID or settings.get('CFBundleExecutable') != 'Shenyi' or
+            settings.get('CFBundleName') != 'Shenyi' or settings.get('CFBundlePackageType') != 'APPL' or
+            settings.get('CFBundleShortVersionString') != version or settings.get('CFBundleVersion') != version):
+        raise ValueError('Mac application plist does not match the candidate version or identity')
+    package_info = require_file(entries, (*PAYLOAD, 'package.json'))
+    if not 0 < package_info.file_size <= 16384:
+        raise ValueError('Invalid application package metadata size')
+    package = json.loads(archive.read(package_info).decode('utf-8'), object_pairs_hook=unique_json)
+    if (not isinstance(package, dict) or package.get('name') != 'shenyi-team-desktop' or
+            package.get('version') != version or package.get('private') is not True or
+            package.get('main') != 'desktop/main.cjs'):
+        raise ValueError('Application package does not match the candidate version or entry point')
+    for relative in (('desktop', 'main.cjs'), ('desktop', 'preload.cjs'), ('desktop', 'team-ui', 'index.html'),
+                     ('package-lock.json',), ('node_modules', 'jsdom', 'package.json')):
+        require_file(entries, (*PAYLOAD, *relative))
+    helpers = {}
+    for parts, kind in nodes.items():
+        if kind != 'directory':
+            continue
+        parent = parts[:-1]
+        if (parent == (APP, 'Contents', 'Frameworks') and
+                re.fullmatch(r'Shenyi Helper(?: \([A-Za-z0-9 -]+\))?\.app', parts[-1])) or (
+                parent == (APP, 'Contents', 'Library', 'LoginItems') and parts[-1] == 'Shenyi Login Helper.app'):
+            helpers[parts] = parts[-1][:-4]
+    required = {name.replace('Electron', 'Shenyi', 1) for name in REQUIRED_HELPERS}
+    if not required.issubset(helpers.values()) or len(helpers) > 16:
+        raise ValueError('Required branded Mac helpers are missing or excessive')
+    for root, name in helpers.items():
+        assert_executable(archive, entries, (*root, 'Contents', 'MacOS', name), arch)
+        helper, _ = read_plist(archive, entries, (*root, 'Contents', 'Info.plist'))
+        helper_id = helper.get('CFBundleIdentifier')
+        if (not isinstance(helper_id, str) or not helper_id.startswith(BUNDLE_ID + '.') or
+                not re.fullmatch(r'(?:\.[a-zA-Z0-9_-]+)+', helper_id[len(BUNDLE_ID):]) or
+                helper.get('CFBundleExecutable') != name or helper.get('CFBundleName') != name):
+            raise ValueError('Invalid branded Mac helper identity')
+
+
+def verify_archive(filename, arch, version):
+    """Read ZIP and hash the same held file; never extract or execute its contents."""
+    checked_version(version)
+    if not filename.is_absolute() or filename.resolve(strict=True) != filename:
+        raise ValueError('Expected a canonical absolute Mac archive path')
+    listed = filename.lstat()
+    if not stat.S_ISREG(listed.st_mode) or listed.st_nlink != 1 or not plain_entry(listed):
+        raise ValueError('Mac archive must be a regular, unlinked file')
+    fd = os.open(filename, os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(fd, 'rb') as handle:
+        initial = os.fstat(handle.fileno())
+        if not unchanged(listed, initial, compare_ctime=os.name != 'nt'):
+            raise ValueError('Mac archive changed before verification')
+        count = verify_zip_envelope(handle, initial.st_size)
+        with ZipFile(handle) as archive:
+            entries, nodes, links = candidate_inventory(archive, count, initial.st_size)
+            verify_candidate_contents(archive, entries, nodes, arch, version)
+            # Bounded streaming validates every local header, expansion length and CRC.
+            for info, _ in entries.values():
+                consumed = 0
+                with archive.open(info) as member:
+                    while data := member.read(CHUNK):
+                        consumed += len(data)
+                        if consumed > info.file_size:
+                            raise ValueError('Mac ZIP member exceeds its declared length')
+                if consumed != info.file_size:
+                    raise ValueError('Mac ZIP member length differs from its declaration')
+        handle.seek(0)
+        digest = hashlib.sha256()
+        size = 0
+        while data := handle.read(CHUNK):
+            size += len(data)
+            if size > initial.st_size:
+                raise ValueError('Mac archive grew during verification')
+            digest.update(data)
+        final = filename.lstat()
+        if (size != initial.st_size or not unchanged(initial, os.fstat(handle.fileno())) or
+                not plain_entry(final) or not unchanged(listed, final) or filename.resolve(strict=True) != filename):
+            raise ValueError('Mac archive changed during verification')
+    return {'archiveEntries': len(entries), 'symlinks': len(links),
+            'appFiles': sum(kind == 'file' and parts[:len(PAYLOAD)] == PAYLOAD for parts, (_, kind) in entries.items()),
+            'bundleIdentifier': BUNDLE_ID, 'archiveSha256': digest.hexdigest(), 'archiveBytes': size}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('electron_archive', type=Path)
-    parser.add_argument('payload_dir', type=Path)
-    parser.add_argument('output_zip', type=Path)
+    verify_only = len(sys.argv) > 1 and sys.argv[1] == '--verify'
+    if verify_only:
+        parser.add_argument('--verify', required=True, type=Path)
+    else:
+        parser.add_argument('electron_archive', type=Path)
+        parser.add_argument('payload_dir', type=Path)
+        parser.add_argument('output_zip', type=Path)
     parser.add_argument('arch', choices=CPU_TYPES)
     parser.add_argument('version')
     args = parser.parse_args()
     try:
-        result = build(args.electron_archive, args.payload_dir, args.output_zip, args.arch, args.version)
+        result = (verify_archive(args.verify, args.arch, args.version) if verify_only else
+                  build(args.electron_archive, args.payload_dir, args.output_zip, args.arch, args.version))
     except (OSError, ValueError, BadZipFile, plistlib.InvalidFileException) as error:
-        print(f'Mac desktop archive build failed: {error}', file=sys.stderr)
+        print(f'Mac desktop archive {"verification" if verify_only else "build"} failed: {error}', file=sys.stderr)
         return 1
     print(json.dumps(result, separators=(',', ':')))
     return 0

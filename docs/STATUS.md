@@ -1,4 +1,8 @@
-# 当前状态 · M7W Windows MSI 发布来源
+# 当前状态 · M7X macOS 双架构候选签名交接
+
+## 2026-11-18 M7X macOS 双架构候选签名交接
+
+新增 macOS 候选离线 Ed25519 签发与只读复验。接收方使用独立公钥、目标架构和可信已安装版本，核对归档摘要、目录、符号链接、归档成员 CRC、包标识和 Mach-O。签名绑定归档及清单，不使用 Windows 签名域，核验不解包或运行候选。从当前候选源码重建 arm64 和 x64 归档，均完成签发和接收方验签，每包 2,761 个条目、14 条链接。两份实际归档均验证主程序、Helper、Electron Framework 及动态库架构。独立运行 18 条命令，5 次成功、13 次按预期拒绝，原包保持不变；错误架构即使用有效 Ed25519 重签且 SHA-256 匹配仍拒绝，并发签名仅一个成功。另有 18 项 ZIP 结构场景通过。5 个关联文件 29/29 项通过，零跳过，1440 个候选文件前后哈希一致。在 Windows 本地用合成 Ed25519 私钥进行交接演练，Apple Developer ID、公证、Gatekeeper、Keychain 和 Mac 实机升级尚待验收。两处旧预览保留，本轮未启动一键入口。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-macos-handoff-20261118`。 [macOS 候选交接](MACOS_DESKTOP_CANDIDATE.md#离线签名与交接)
 
 ## 2026-11-18 M7W Windows MSI 发布来源
 
