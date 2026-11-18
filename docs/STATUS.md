@@ -1,4 +1,10 @@
-# 当前状态：M5C团队管理到期规则（M5进行中）
+# 当前状态：M5D年单与可信模拟收款（M5进行中）
+
+## 2026-11-18 最新：M5D实现与验收
+
+`codex/annual-order-simulation`从`d88e809`接续，本地M5D候选已验。实现本团队技术管理员服务端锁价年单、北京自然年、独立HMAC合成来源、先持久验真事实再同事务发布订阅及兑现回执、主动查单和重启幂等补偿；默认关闭，启用须严格device＋team-management-v1，不授审计资料。固定Node24的40完整相关文件1005/1005、0fail/skip/cancel/todo、exit0、799.344秒；fresh 1332候选覆盖全部selection，before/after字节同。作者日历/网关/store/API及schema项含于根门，不累加。独审首轮两个有界场景32真实TCP、23运行时设备验签及23真实KDF，实际末fulfil插入故障保留inbox/回滚term，close/reopen后confirmedAt保持；43B合成采集原件和原项目grant保持，不外推全部历史底稿/GUI/Mac/HTTPS/商户。原API夹具两FAIL、gateway Proxy两RED、schema原3FAIL均保留；未弱化测试或KDF。schema89表/355显式DDL，旧86/346与原11表peel合同保持。旧预览/共享库/vault保留；未push/进main/重验一键/上线。无生产价格、增席容量/折算、退款或购买UI，M4未全完，M5/Goal active。合同[年单模拟收款](ANNUAL_ORDER_SIMULATION_CONTRACT.md)，证据D:/codex-temp/shenyi-annual-order-simulation-20261118/。
+
+本轮另确认下一片：发出邀请即预留席位；年期内增席与团队原到期日对齐，按剩余期限折算。启用业务人数原计数规则保持，邀请预留另记；仅记录政策，本片不实现容量/增席，也未确定实际价、精确折算公式与舍入。
 
 ## 2026-11-18 最新：M5C现有团队管理到期规则候选
 

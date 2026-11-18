@@ -55,20 +55,25 @@ export function readSubscriptionState(db,teamId,at){
  return Object.freeze({teamId,revision:current?.revision??0,startsAt:current?.startsAt??null,endsAt:current?.endsAt??null,
   state:current===null?'unconfigured':at<current.startsAt?'scheduled':at<current.endsAt?'active':'expired',activeBusinessSeats:countActiveBusinessSeats(db,teamId)});
 }
-// Trusted service only. sourceRef is opaque provenance, not proof of payment.
+// Trusted synchronous primitive. Caller owns the write transaction and its rollback.
+// This is never an HTTP authority or an implicit transaction join by record().
+export function appendSubscriptionTermWithinTransaction(db,input,{now=Date.now}={}){
+ const v=passiveInput(input),requestSha256=digest(v);if(typeof now!=='function')invalid();if(db.isTransaction!==true)conflict();
+ const current=ledger(db,v.teamId),prior=query(db,'SELECT * FROM team_subscription_events WHERE operation_id=?',v.operationId);
+ if(prior){const receipt=eventValue(prior);if(receipt.teamId!==v.teamId||prior.request_sha256!==requestSha256)conflict();return receipt;}
+ if((current?.revision??0)!==v.expectedRevision)conflict();
+ const revision=v.expectedRevision+1,recordedAt=serverNow(now);
+ const inserted=db.prepare('INSERT INTO team_subscription_events(operation_id,team_id,revision,starts_at,ends_at,recorded_at,source_ref,request_sha256) VALUES (?,?,?,?,?,?,?,?)').run(v.operationId,v.teamId,revision,v.startsAt,v.endsAt,recordedAt,v.sourceRef,requestSha256);
+ if(inserted.changes!==1)conflict();
+ const head=current?db.prepare('UPDATE team_subscription_heads SET revision=? WHERE team_id=? AND revision=?').run(revision,v.teamId,v.expectedRevision):db.prepare('INSERT INTO team_subscription_heads(team_id,revision) VALUES (?,?)').run(v.teamId,revision);
+ if(head.changes!==1)conflict();const receipt=ledger(db,v.teamId);
+ if(!receipt||receipt.operationId!==v.operationId||receipt.revision!==revision||receipt.recordedAt!==recordedAt)conflict();return receipt;
+}
+// Trusted service only. Preserve the original independently owned transaction.
 export function recordSubscriptionTerm(db,input,{now=Date.now}={}){
- const v=passiveInput(input),requestSha256=digest(v);if(typeof now!=='function')invalid();let began=false;
+ const v=passiveInput(input);if(typeof now!=='function')invalid();let began=false;
  try{
-  db.exec('BEGIN IMMEDIATE');began=true;const current=ledger(db,v.teamId);
-  const prior=query(db,'SELECT * FROM team_subscription_events WHERE operation_id=?',v.operationId);
-  if(prior){const receipt=eventValue(prior);if(receipt.teamId!==v.teamId||prior.request_sha256!==requestSha256)conflict();db.exec('COMMIT');began=false;return receipt;}
-  if((current?.revision??0)!==v.expectedRevision)conflict();
-  const revision=v.expectedRevision+1,recordedAt=serverNow(now);
-  const inserted=db.prepare('INSERT INTO team_subscription_events(operation_id,team_id,revision,starts_at,ends_at,recorded_at,source_ref,request_sha256) VALUES (?,?,?,?,?,?,?,?)').run(v.operationId,v.teamId,revision,v.startsAt,v.endsAt,recordedAt,v.sourceRef,requestSha256);
-  if(inserted.changes!==1)conflict();
-  const head=current?db.prepare('UPDATE team_subscription_heads SET revision=? WHERE team_id=? AND revision=?').run(revision,v.teamId,v.expectedRevision):db.prepare('INSERT INTO team_subscription_heads(team_id,revision) VALUES (?,?)').run(v.teamId,revision);
-  if(head.changes!==1)conflict();const receipt=ledger(db,v.teamId);
-  if(!receipt||receipt.operationId!==v.operationId||receipt.revision!==revision||receipt.recordedAt!==recordedAt)conflict();
+  db.exec('BEGIN IMMEDIATE');began=true;const receipt=appendSubscriptionTermWithinTransaction(db,v,{now});
   db.exec('COMMIT');began=false;return receipt;
  }catch(error){
   if(began)try{db.exec('ROLLBACK');}catch{}
