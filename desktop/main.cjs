@@ -60,6 +60,8 @@ async function main() {
   if(isPackaged)app.setPath('sessionData',dataRoot);
   app.setPath('userData',dataRoot);
   if(!app.requestSingleInstanceLock()){app.quit();return;}
+  // Keep relative writes from native Windows dialogs outside the signed bundle.
+  if(isPackaged&&process.platform==='win32')process.chdir(dataRoot);
   await app.whenReady();
   const isolated=session.fromPartition('shenyi-team-preview');
   isolated.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
