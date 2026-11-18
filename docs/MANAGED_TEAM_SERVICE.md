@@ -4,7 +4,7 @@
 
 ## 准备配置
 
-使用 Node 24.15 或更新的 24.x 版本。在仓库之外准备一份独立的、已完成 schema 初始化的 SQLite 库，并核对数据库中的 `device-server-id`。服务启动会检查数据库身份和结构，拒绝演示库、未知身份或缺少数据库的配置。启动过程不会初始化、迁移或注入演示账号。
+使用 Node 24.15 或更新的 24.x 版本。在仓库之外准备一份独立的、已完成 schema 初始化的 SQLite 库，并核对数据库中的 `device-server-id`。新环境可按下节初始化首位产品负责人。服务启动会检查数据库身份和结构，拒绝演示库、未知身份或缺少数据库的配置。启动过程不会初始化、迁移或注入演示账号。
 
 另行准备与 `apiBase` 主机匹配的 PEM 证书链和私钥，保存在受控的本机目录。示例均为路径和 UUID 格式示意。
 
@@ -28,8 +28,34 @@ node scripts/start-team-service.mjs --config 'D:/shenyi-service/service.json'
 
 启动成功输出一行 `ready` JSON，包含实际监听地址、配置 origin 和服务实例 UUID。`GET /health` 提供进程存活状态，`GET /ready` 复核本地库可用性。常规停止信号为 `SIGINT`、`SIGTERM`，Windows 还支持 `SIGBREAK`。 [Node.js HTTPS 服务接口](https://nodejs.org/api/https.html#httpscreateserveroptions-requestlistener)
 
+## 首位产品负责人
+
+操作者先在线下核验负责人的身份及本人手机号。指定仓库之外尚未创建的本机子目录，通过 UTF-8 标准输入传入 `displayName`、`phone`、`password` 和 `verifiedOutOfBand`。核验完成后才将 `verifiedOutOfBand` 设为 `true`。
+
+在 PowerShell 7 中可用掩码输入，再通过管道传给 CLI。 [PowerShell 掩码输入说明](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/read-host?view=powershell-7.6#-maskinput)
+
+```powershell
+$ownerInput = @{
+  displayName = Read-Host '负责人姓名'
+  phone = Read-Host '已核验的本人手机号' -MaskInput
+  password = Read-Host '负责人初始密码' -MaskInput
+  verifiedOutOfBand = ((Read-Host '已核验身份和手机号时输入 已核验') -ceq '已核验')
+}
+try {
+  $ownerInput | ConvertTo-Json -Compress | node scripts/bootstrap-managed-team.mjs --output-dir 'D:/shenyi-service/new-instance'
+} finally {
+  $ownerInput.Clear()
+}
+```
+
+将回执中的 `databasePath` 和 `serverId` 填入上节配置。数据库记录手机号的线下核验来源，密码使用现有 scrypt 哈希，回执不含手机号、姓名或密码。
+
+初始负责人拥有团队开通、管理员恢复、停用、换机、业务职级兼任、旧项目迁入和退款受理七项独立审核权限。初始库无团队、业务成员、技术管理员或设备绑定。负责人用已核验手机号首次登录并登记电脑后，可处理团队申请。团队成立及首管理员激活仍需既有本人验证。初始化入口仅用于全新目录，已有账号维护和恢复采用原有流程。 [团队开通与首管理员流程](MANUAL_TEAM_ONBOARDING.md)
+
+当前受管服务还需要接入恢复审核服务和正式账务配置，才会启用对应入口。合成验收中，恢复审核与退款受理权限已入库，在线入口保持关闭。
+
 ## 客户端与权限
 
 桌面客户端使用单独配置的 HTTPS origin 和实例 UUID 连接。受管服务只接受已绑定手机号的账号通过密码登录，团队资料请求继续要求已绑定设备和当前权限。已配置的席位与订阅管理规则继续在服务端执行。演示账号登录和模拟付款处理关闭，短信验证、微信扫码、账号自助恢复和支付供应商留待实际接入。 [桌面连接配置](TRUSTED_TEAM_HTTPS.md)
 
-当前验收使用本机受控 TLS 证书和明确标记的合成业务夹具。后续仍需验证实际域名和证书、服务器进程托管、外部代理、防护与告警、首位负责人账号开通、真实供应商、数据库迁移及正式上线切换。
+当前验收使用本机受控 TLS 证书和合成账号。后续仍需验证实际域名和证书、服务器进程托管、外部代理、防护与告警、真实负责人身份与手机号核验、真实供应商、数据库迁移及正式上线切换。
