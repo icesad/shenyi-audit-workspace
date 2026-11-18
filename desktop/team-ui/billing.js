@@ -390,6 +390,19 @@
       node('orders-message').textContent = orders.length === 0 ? '暂无' + orderNames[kind] + '订单。' : previousCursors.length || nextCursor ? '第 ' + (previousCursors.length + 1) + ' 页' : '';
     }
 
+    function trackActionFocus(button) {
+      if (document.activeElement !== button) return null;
+      let moved = false;
+      const track = event => {
+        if (event.target !== button && event.target !== document.body) moved = true;
+      };
+      document.addEventListener('focusin', track, true);
+      return target => {
+        document.removeEventListener('focusin', track, true);
+        if (!moved && (document.activeElement === document.body || document.activeElement === button)) target()?.focus();
+      };
+    }
+
     async function loadOrders(move = 'reload') {
       if (!overview || ordersRead || move === 'next' && !nextCursor || move === 'previous' && !previousCursors.length) return;
       const read = capture();
@@ -489,11 +502,13 @@
       }
     }
 
-    async function reconcile(orderId) {
+    async function reconcile(button) {
+      const orderId = button.dataset.billingReconcile;
       const order = orders.find(item => item.id === orderId);
       if (mutation || ordersRead || !canReconcileOrder(order)) return;
       const at = capture();
       if (!currentView(at) || getContext().busy) return;
+      const restoreFocus = trackActionFocus(button);
       const operation = {};
       mutation = operation;
       clearConfirmation();
@@ -512,8 +527,14 @@
         if (!currentView(at) || handleSessionError(error)) return;
         message(errorMessage(error, '暂时无法核对订单结果，请刷新订单后重试。'), true);
       } finally {
-        if (mutation === operation) mutation = null;
+        const owned = mutation === operation;
+        if (owned) mutation = null;
         controls();
+        restoreFocus?.(() => {
+          if (!owned || !currentView(at) || !overview || getContext().busy) return null;
+          const buttons = node('order-list').querySelectorAll('[data-billing-reconcile]');
+          return Array.from(buttons).find(action => action.dataset.billingReconcile === orderId && !action.disabled) ?? node('orders-heading');
+        });
       }
     }
 
@@ -547,6 +568,7 @@
       if (button.hidden || button.disabled || !canReconcileBatch() || mutation || ordersRead || overviewRead || accessRead) return;
       const at = capture();
       if (!currentView(at) || getContext().busy) return;
+      const restoreFocus = trackActionFocus(button);
       const after = move === 'next' ? batchReport.nextCursor : move === 'retry' ? (failedBatch ?? batchReport).after : null;
       const operation = {};
       mutation = operation;
@@ -571,8 +593,14 @@
           batchMessage(errorMessage(error, '暂时无法完成本批核对，请重试本批。'), true);
         }
       } finally {
-        if (mutation === operation) mutation = null;
+        const owned = mutation === operation;
+        if (owned) mutation = null;
         controls();
+        restoreFocus?.(() => {
+          if (!owned || !currentView(at) || node('batch-section').hidden || getContext().busy) return null;
+          const action = failedBatch ? node('batch-retry') : button;
+          return !action.hidden && !action.disabled ? action : node('orders-heading');
+        });
       }
     }
 
@@ -612,7 +640,7 @@
     for (const move of ['start', 'next', 'retry']) node('batch-' + move).addEventListener('click', () => void reconcileBatch(move));
     node('order-list').addEventListener('click', event => {
       const button = event.target.closest('[data-billing-reconcile]');
-      if (button && !button.disabled) void reconcile(button.dataset.billingReconcile);
+      if (button && !button.disabled) void reconcile(button);
     });
 
     return { update, reset, destroy() { panelObserver.disconnect(); reset(); } };

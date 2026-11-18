@@ -1449,6 +1449,9 @@
         heading.textContent=managementOnly?'审易工作台':'我的采集任务';
         caption.textContent=managementOnly?'打开模块查看可办理的团队、审核或账务事项。':'选择一项任务，核对要求，再提交资料。';
         byId('refresh').textContent=managementOnly?'刷新':'刷新任务';
+        const label=managementOnly?'管理与审核':'资料采集';
+        byId('workspace-sidebar-label').textContent=label;
+        byId('workspace-breadcrumb-label').textContent=label;
       }
       if(keys===shown)return;
       shown=keys;

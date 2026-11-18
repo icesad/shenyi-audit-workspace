@@ -249,6 +249,66 @@ test('a late trusted exception response cannot populate a signed-out billing vie
   assert.equal(f.id('message').textContent, '');
 });
 
+test('reconciliation restores a replacement action for the same order or the order heading when the action ends', async t => {
+  const responses = [order('current'), order('current', 'paid')];
+  const f = fixture(t, {
+    listBillingOrders: () => ok({ orders: [order('current')], hasMore: false, nextCursor: null }),
+    reconcileBillingOrder: () => ok({ order: responses.shift() })
+  });
+  const document = f.panel.ownerDocument;
+  const action = () => f.id('order-list').querySelector('[data-billing-reconcile="current"]');
+  document.getElementById('workspace-view').hidden = false;
+  await f.open();
+  await until(() => action() && !action().disabled);
+  const before = action();
+  before.focus();
+  before.click();
+  await until(() => action() !== before && document.activeElement === action());
+  action().click();
+  await until(() => document.activeElement === f.id('orders-heading'));
+  assert.equal(action(), null);
+  assert.equal(f.calls.filter(call => call.name === 'reconcileBillingOrder').length, 2);
+});
+
+test('a reconciliation response leaves focus alone once the user has moved to another field', async t => {
+  const response = deferred();
+  const f = fixture(t, {
+    listBillingOrders: () => ok({ orders: [order('current')], hasMore: false, nextCursor: null }),
+    reconcileBillingOrder: () => response.promise
+  });
+  const document = f.panel.ownerDocument;
+  const action = () => f.id('order-list').querySelector('[data-billing-reconcile="current"]');
+  document.getElementById('workspace-view').hidden = false;
+  await f.open();
+  await until(() => action() && !action().disabled);
+  const before = action();
+  before.focus();
+  before.click();
+  const other = document.getElementById('username');
+  other.focus();
+  assert.equal(document.activeElement, other);
+  other.blur();
+  response.resolve(ok({ order: order('current') }));
+  await until(() => action() !== before && !action().disabled);
+  assert.equal(document.activeElement, document.body);
+});
+
+test('a failed first batch moves keyboard focus to the existing retry action without issuing another request', async t => {
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok({ ...snapshot(teamId), canReconcileBillingBatch: true }),
+    reconcileBillingPage: () => fail('UNAVAILABLE')
+  });
+  const document = f.panel.ownerDocument;
+  document.getElementById('workspace-view').hidden = false;
+  await f.open();
+  await until(() => !f.id('batch-start').disabled);
+  f.id('batch-start').focus();
+  f.id('batch-start').click();
+  await until(() => document.activeElement === f.id('batch-retry'));
+  assert.match(f.id('batch-message').textContent, /请重试本批/);
+  assert.equal(f.calls.filter(call => call.name === 'reconcileBillingPage').length, 1);
+});
+
 test('elapsed annual deadlines stay pending until closure evidence, and later verified receipts stay in review', async t => {
   const deadlineAt = termStart + 3000, closedAt = deadlineAt + 500, id = 'closure-order';
   const pending = { ...order(id), paymentDeadlineAt: deadlineAt };

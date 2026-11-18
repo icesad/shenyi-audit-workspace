@@ -30,18 +30,19 @@ main{margin-left:232px;padding:0 38px;min-height:100vh;display:flex;flex-directi
 .device-gate{margin:18px 0;padding:14px;background:var(--paper);border:1px solid var(--line);border-radius:6px}.device-gate h3{margin-bottom:8px}.device-gate .feedback{margin-bottom:0}.device-fingerprint{font-size:10px;line-height:1.8;color:var(--muted);overflow-wrap:anywhere;margin:8px 0}.login-panel .device-consent{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.8;color:var(--ink)}.device-consent input{width:auto;min-width:15px;height:18px;flex:none;margin-top:2px}.device-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.device-active #login-form>.wechat-option,.device-active #login-form>.demo-help{display:none}.device-active #activation-panel,.device-active #first-admin-panel,.device-active #recovery-panel{display:none}.device-active .login-panel{padding:24px}.device-active #identity-methods-message{display:none}.device-active #login-form-title{font-size:18px}.device-active .device-gate{margin-top:14px}.device-active .login-panel label{margin-top:16px}.device-active #device-bind-confirm{margin-top:20px;justify-content:center}.device-active #login-message:empty{margin:0;min-height:0}
 :where(.billing-panel) .billing-toolbar,.billing-actions{display:flex;flex-wrap:wrap;align-items:end;gap:8px 12px}
 .billing-panel .billing-toolbar>div{flex:1 1 156px;max-width:320px;min-width:0}
-.billing-panel select{width:100%;min-height:40px}
+.billing-panel .billing-toolbar :is(input,select){width:100%;min-width:0;max-width:100%;min-height:40px}
 .billing-notice,.billing-confirmation{margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--soft);font-size:12px;line-height:1.6}
 .billing-confirmation p{margin:0 0 8px;overflow-wrap:anywhere}
 .billing-panel .billing-term{margin:12px 0 8px;color:var(--ink);font-size:12px;font-weight:600}
-.billing-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:8px;margin:0 0 12px}
+.billing-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,108px),1fr));gap:8px;margin:0 0 12px}
 .billing-metrics div{padding:9px 11px;border:1px solid var(--line);border-radius:6px;background:var(--paper)}
 .billing-metrics dt{color:var(--muted);font-size:11px}
-.billing-metrics dd{margin:3px 0 0;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.billing-metrics dd{margin:3px 0 0;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .billing-section{margin:14px 0 0;padding:12px 0 0;border-top:1px solid var(--line)}
 .billing-section h4{margin:0 0 10px;font-size:13px;font-weight:600}
 .billing-orders-heading{justify-content:space-between;align-items:center}
 .billing-orders-heading h4{margin:0}
+.billing-orders-heading h4:focus{outline:3px solid var(--focus);outline-offset:3px}
 .billing-batch {
   margin: 10px 0 12px;
   padding: 10px 12px;
@@ -50,7 +51,8 @@ main{margin-left:232px;padding:0 38px;min-height:100vh;display:flex;flex-directi
   background: var(--paper);
 }
 .billing-batch .feedback { margin: 8px 0 0; min-height: 0; }
-.billing-batch .feedback:empty, .billing-batch-results:empty { display: none; }
+.billing-batch .feedback:empty { margin: 0; }
+.billing-batch-results:empty { display: none; }
 .billing-batch-results { margin: 8px 0 0; padding: 0; list-style: none; }
 .billing-batch-results li { display: grid; gap: 4px; padding: 7px 0; border-top: 1px solid var(--line); }
 .billing-batch-results strong { color: var(--ink); font-size: 12px; }
@@ -65,15 +67,14 @@ main{margin-left:232px;padding:0 38px;min-height:100vh;display:flex;flex-directi
 .billing-order .button{justify-self:start;margin-top:4px}
 .refund-intake-panel .refund-intake-lookup>div:first-child{flex:0 1 120px}
 .refund-intake-panel .refund-intake-lookup>div:nth-child(2){flex-grow:2;max-width:360px}
-.refund-intake-panel .billing-toolbar input{width:100%}
 .refund-intake-panel .refund-intake-entry>div{flex-basis:130px}
-.refund-intake-order{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--paper)}
+.refund-intake-order{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:8px;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--paper)}
 .refund-intake-order dt{font-size:11px;color:var(--muted)}
 .refund-intake-order dd{margin:3px 0 0;line-height:1.5;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .billing-order-state{color:var(--accent);font-size:12px}
 .billing-order-state[data-state="closed"]{color:var(--muted)}
 .billing-order-state[data-state="pending"],.billing-order-state[data-closure-review],.billing-order-exception{color:var(--amber);font-size:12px}
-.billing-order-amount{margin-left:auto;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.billing-order-amount{margin-left:auto;min-width:0;max-width:100%;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 
 /* The collection shell uses the existing palette with stronger contrast for small text. */
 .sidebar, #login-view, #workspace-view, .topbar {

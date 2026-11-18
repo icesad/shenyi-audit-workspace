@@ -23,12 +23,12 @@
   <aside class="sidebar">
     <div class="brand"><img src="brand-shenyi.png" alt="审易标识" width="64" height="52"><span>审易<small>AUDIT WORKSPACE</small></span></div>
     <div class="workspace-label">团队工作空间</div>
-    <div class="nav-active">资料采集</div>
+    <div class="nav-active" id="workspace-sidebar-label">资料采集</div>
     <div class="scope-note">你只能查看当前账号获授权的任务和业务记录。</div>
     <div class="sidebar-foot"><span class="status-dot" aria-hidden="true"></span> <span id="service-preview-label">本机合成演示</span></div>
   </aside>
   <main>
-    <header class="topbar"><span>工作台 <b>/</b> 资料采集</span><div id="session-actions" hidden><span id="account-name"></span><button id="logout" class="text-button" type="button">退出账号</button></div></header>
+    <header class="topbar"><span>工作台 <b>/</b> <span id="workspace-breadcrumb-label">资料采集</span></span><div id="session-actions" hidden><span id="account-name"></span><button id="logout" class="text-button" type="button">退出账号</button></div></header>
     <div class="mode-notice"><span id="service-mode-label">本机演示</span><p id="service-preview-notice">使用合成账号和资料验证团队流程。请勿导入真实客户资料；本机设备须在线核验，设备登记与换机审批仅限合成验证，正式商用服务尚未完成。</p></div>
     <section id="login-view" class="login-view" aria-labelledby="login-title">
       <div class="login-intro"><h1 id="login-title">资料采集工作台</h1><p>登录后查看指派给你的任务、采集要求和提交记录。</p></div>
@@ -137,7 +137,7 @@
             </div>
           </section>
           <section class="billing-section" aria-labelledby="billing-orders-heading">
-            <div class="billing-actions billing-orders-heading"><h4 id="billing-orders-heading">团队年费订单</h4><button id="billing-orders-refresh" class="button" type="button">刷新订单</button></div>
+            <div class="billing-actions billing-orders-heading"><h4 id="billing-orders-heading" tabindex="-1">团队年费订单</h4><button id="billing-orders-refresh" class="button" type="button">刷新订单</button></div>
             <div id="billing-batch-section" class="billing-batch" hidden>
               <div class="billing-actions">
                 <button id="billing-batch-start" class="button" type="button">批量核对订单</button>
