@@ -117,19 +117,23 @@ finally { $file.Dispose() }
 
 const windowsTrustExecutable = String.raw`\\?\GLOBALROOT\SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`;
 
+export async function resolveSystemPowerShell() {
+  const executable = await realpath(windowsTrustExecutable);
+  const cwd = path.dirname(executable);
+  const systemDirectory = path.resolve(cwd, '..', '..');
+  const windowsDirectory = path.dirname(systemDirectory);
+  return { executable, cwd, systemDirectory,
+    env: { SystemRoot: windowsDirectory, windir: windowsDirectory, Path: systemDirectory, PSModulePath: path.join(cwd, 'Modules') } };
+}
+
 async function verifyEmbeddedSignature(filename, publisherCertificateSha256, expected) {
   if (!expected || !sameFacts(await fileFacts(filename), expected)) fail('AUTHENTICODE_BUNDLE_INVALID');
   let result;
   try {
-    const powershell = await realpath(windowsTrustExecutable);
-    const shellDirectory = path.dirname(powershell);
-    const systemDirectory = path.resolve(shellDirectory, '..', '..');
-    const windowsDirectory = path.dirname(systemDirectory);
     // Resolve the OS binary through Windows itself and give the verifier only its OS and input paths.
-    const env = { SystemRoot: windowsDirectory, windir: windowsDirectory, Path: systemDirectory,
-      PSModulePath: path.join(shellDirectory, 'Modules'), SHENYI_RELEASE_EXE: filename };
-    const { stdout } = await run(powershell, ['-NoProfile', '-NonInteractive', '-Command', authenticodeProbe],
-      { env, cwd: shellDirectory, maxBuffer: 64 * 1024, timeout: 60_000, windowsHide: true });
+    const shell = await resolveSystemPowerShell();
+    const { stdout } = await run(shell.executable, ['-NoProfile', '-NonInteractive', '-Command', authenticodeProbe],
+      { env: { ...shell.env, SHENYI_RELEASE_EXE: filename }, cwd: shell.cwd, maxBuffer: 64 * 1024, timeout: 60_000, windowsHide: true });
     result = JSON.parse(stdout);
   } catch { fail('AUTHENTICODE_UNTRUSTED'); }
   if (result?.status !== 'Valid' || result.type !== 'Authenticode' || result.timestamp !== true ||

@@ -142,9 +142,45 @@ node $installTool apply `
 node $installTool rollback --root $installRoot --public-key $publisherKey --publisher-sha256 $publisherSha256
 ```
 
+### Windows MSI 发布来源
+
+在 Windows 用 `build-windows-release-msi.mjs` 将 `schemaVersion: 2` 双签名候选制作成 MSI。使用独立配置的 Ed25519 公钥与发布者叶证书 DER 字节的 SHA-256 指纹。输出使用仓库和输入候选目录之外的绝对 `.msi` 路径，父目录须已存在，输出文件须尚未创建。
+
+```powershell
+$publisherKey = 'D:\trusted-config\update-ed25519.pub.pem'
+$publisherSha256 = (Get-Content -Raw -LiteralPath 'D:\trusted-config\publisher-cert-sha256.txt').Trim()
+$releaseMsi = 'D:\release-lab\shenyi-0.61.0-win-x64.msi'
+node scripts/build-windows-release-msi.mjs `
+  --bundle 'D:\release-lab\windows-0.61.0-authenticode' `
+  --signature 'D:\release-metadata\shenyi-0.61.0-win-x64.sig' `
+  --public-key $publisherKey --publisher-sha256 $publisherSha256 `
+  --output $releaseMsi
+```
+
+构建器使用 Windows Installer COM 和 MakeCab，校验输入及暂存副本的双签名，再由 Windows Installer 以 `/a` 解出管理映像并核验发行内容。成功回执的 `workingDirectory` 指向构建记录与管理映像。MSI 按机器安装、按版本并存，默认目标是 64 位 Program Files 下的 `Shenyi\ReleaseSource\<version>\bundle`，`signature.ed25519` 与 `bundle` 同级。MSI 只携带发行副本。包内无密钥、团队服务配置或用户资料，也不会创建快捷方式或启动客户端。 [Windows Installer 管理安装](https://learn.microsoft.com/en-us/windows/win32/msi/administrative-installation)
+
+如需独立复核管理映像，用新目录作为 `TARGETDIR`。完成后，`bundle` 与 `signature.ed25519` 直接位于该目录下。`/a` 生成管理映像，本机产品注册使用 `/i`。本轮未执行 `/i`。 [TARGETDIR 说明](https://learn.microsoft.com/en-us/windows/win32/msi/targetdir)
+
+```powershell
+$releaseSource = 'D:\release-lab\shenyi-0.61.0-admin-image'
+$msiArgs = '/a "{0}" TARGETDIR="{1}" /qn /norestart' -f $releaseMsi, $releaseSource
+$extraction = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" `
+  -ArgumentList $msiArgs -WindowStyle Hidden -Wait -PassThru
+if ($extraction.ExitCode -ne 0) { throw "MSI 管理映像提取失败，退出码 $($extraction.ExitCode)" }
+```
+
+取得发行来源后，由操作员将它应用到独立受保护的活动安装目录。下例使用管理映像的根目录。将来正式安装时，`$releaseSource` 使用实际安装的 `Shenyi\ReleaseSource\<version>`。激活时仍核验签名和版本，启动、升级及回滚沿用[双签名便携安装](#双签名便携安装)。
+
+```powershell
+node scripts/manage-windows-candidate-install.mjs apply `
+  --root 'D:\shenyi-signed-install' --public-key $publisherKey --publisher-sha256 $publisherSha256 `
+  --bundle (Join-Path $releaseSource 'bundle') `
+  --signature (Join-Path $releaseSource 'signature.ed25519')
+```
+
 ### 后续发行验证
 
-当前交付覆盖便携目录、双签名发行核验和本地版本切换。正式发布者证书、原生系统安装器、真实正式版本升级与回滚，以及 macOS 实机安装、签名和公证，仍需各自验收。
+当前 MSI 候选本身尚未签名。正式分发前需为 `.msi` 添加经批准的 Authenticode 签名，在实际 Windows 终端验证安装注册、权限、升级和卸载。正式发布者证书、真实正式版本升级与回滚，以及 macOS 实机安装、签名和公证，仍需各自验收。
 
 ### 受管服务窗口验收
 
@@ -152,7 +188,7 @@ Windows x64 0.61.0 便携候选已通过临时发布密钥验签并安装到独�
 
 正式部署由管理员提供已核对的服务配置和受信证书。M7O 使用子进程单独信任的自建 CA，并验证缺少该 CA 时连接被拒绝。该轮将合成文件路径交给产品主进程的选件回调，同时记录了提交成功后误报权限不足的问题。原生选件与提示修复见下节。
 
-该轮用同一包实测重装被拒绝。双签名包使用[双签名便携安装](#双签名便携安装)中的门禁。原生系统安装器、实际新旧正式版本切换、macOS 实机安装和生产试点另行验收。
+该轮用同一包实测重装被拒绝。双签名包使用[双签名便携安装](#双签名便携安装)中的门禁。[Windows MSI 发布来源](#windows-msi-发布来源)覆盖独立管理映像。正式系统安装注册、实际新旧正式版本切换、macOS 实机安装和生产试点另行验收。
 
 ### 采集提交与原生选件
 
