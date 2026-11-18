@@ -9,6 +9,7 @@ import {initializeTeamDatabase,seedDemoTeamData} from './database.mjs';
 import {handleTeamApplicationRequest} from './application-api.mjs';
 import {json} from './http-utils.mjs';
 import {subscriptionEnforcementMode} from './subscription-configuration.mjs';
+import {seatCapacityMode} from './seat-capacity-policy.mjs';
 import {billingSimulationConfiguration} from './billing-simulation.mjs';
 
 // Finish bounded early-denied bodies without retaining or parsing their bytes.
@@ -29,9 +30,10 @@ async function discardBeforeResponse(incoming,request) {
 }
 
 /** Loopback-only demo listener. Tests may request port=0; no public host option. */
-export async function startTeamServer({db,port=8774,now=Date.now,identityProviders={},subscriptionEnforcement='disabled',billingSimulation=null} = {}) {
+export async function startTeamServer({db,port=8774,now=Date.now,identityProviders={},subscriptionEnforcement='disabled',billingSimulation=null,seatCapacityEnforcement='disabled'} = {}) {
   if (!db?.prepare || !Number.isInteger(port) || port<0 || port>65535) throw new Error('Invalid local server options');
   subscriptionEnforcementMode(subscriptionEnforcement,identityProviders);
+  seatCapacityMode(seatCapacityEnforcement,{subscriptionEnforcement,identityProviders});
   billingSimulation=billingSimulationConfiguration(billingSimulation,{subscriptionEnforcement,identityProviders});
   let origin;
   const server = http.createServer(async (incoming,outgoing) => {
@@ -47,7 +49,7 @@ export async function startTeamServer({db,port=8774,now=Date.now,identityProvide
           const options={method:incoming.method,headers:incoming.headers,signal:controller.signal};
           if (!['GET','HEAD'].includes(incoming.method)) { options.body=Readable.toWeb(incoming);options.duplex='half'; }
           request=new Request(new URL(incoming.url,origin),options);
-          response=await handleTeamApplicationRequest(request,{db,now,identityProviders,subscriptionEnforcement,billingSimulation});
+          response=await handleTeamApplicationRequest(request,{db,now,identityProviders,subscriptionEnforcement,billingSimulation,seatCapacityEnforcement});
         }
       } catch { response=json({error:{code:'SERVICE_UNAVAILABLE',message:'团队服务暂不可用。'}},503); }
       if(controller.signal.aborted||outgoing.destroyed){await response.body?.cancel();return;}

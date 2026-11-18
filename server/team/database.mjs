@@ -40,6 +40,7 @@ export function initializeTeamDatabase(db) {
       db.exec(readFileSync(fileURLToPath(new URL('./workpaper-data-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./subscription-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./billing-schema.sql', import.meta.url)), 'utf8'));
+      db.exec(readFileSync(fileURLToPath(new URL('./seat-capacity-schema.sql', import.meta.url)), 'utf8'));
       installMaterialQualificationTriggers(db);
       installWorkspaceSourceQualificationTriggers(db);
       installLedgerCheckQualificationTriggers(db);
@@ -79,6 +80,7 @@ export function initializeTeamDatabase(db) {
       db.exec(readFileSync(fileURLToPath(new URL('./workpaper-data-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./subscription-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./billing-schema.sql', import.meta.url)), 'utf8'));
+      db.exec(readFileSync(fileURLToPath(new URL('./seat-capacity-schema.sql', import.meta.url)), 'utf8'));
     installMaterialQualificationTriggers(db);
       installWorkspaceSourceQualificationTriggers(db);
       installLedgerCheckQualificationTriggers(db);

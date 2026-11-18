@@ -1,5 +1,6 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {captureManagementSubscriptionGuard} from './subscription-management-policy.mjs';
+import {captureSeatAdmission} from './seat-capacity-policy.mjs';
 import {consume,limitedPasswordWork} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
 import {currentDeviceLease} from './device-policy.mjs';
@@ -44,7 +45,7 @@ function publishRole(db,actor,target,role,at){
  db.prepare('INSERT INTO team_administrator_business_role_events(event_id,team_id,actor_id,target_user_id,before_role,after_role,before_revision,after_revision,created_at) VALUES (?,?,?,?,?,?,?,?,?)').run(randomUUID(),target.teamId,actor.userId,target.id,target.role,role,target.revision,fresh.revision,at);
  return {changed:true,role,revision:fresh.revision};
 }
-export async function handleAdministratorBusinessRoleRequest(request,{db,now=Date.now,identityProviders={},deviceContext,subscriptionEnforcement='disabled'}={}){
+export async function handleAdministratorBusinessRoleRequest(request,{db,now=Date.now,identityProviders={},deviceContext,subscriptionEnforcement='disabled',seatCapacityEnforcement='disabled'}={}){
  const url=new URL(request.url),access=url.pathname==='/api/auth/administrator-business-role/access',list=url.pathname==='/api/administrator-business-roles',change=/^\/api\/administrator-business-roles\/([^/]+)$/.exec(url.pathname);
  if(!access&&!list&&!change)return null;if((access||change)&&url.search)invalid();if(request.method!==(change?'POST':'GET'))return method(change?'POST':'GET');
  const options={now,identityProviders,deviceContext},actor=deviceActor(db,request,identityProviders,deviceContext,administratorBusinessTime(now()));
@@ -60,7 +61,17 @@ export async function handleAdministratorBusinessRoleRequest(request,{db,now=Dat
  consume(db,'administrator-business-role:'+digest(actor.userId),administratorBusinessTime(now()),15*60000,20);
  return limitedPasswordWork(db,async()=>{
   const valid=await verifyPassword(body.currentPassword,before.authority.credential.password_hash);fresh();if(!valid)throw new ApiError(403,'VERIFICATION_FAILED','当前密码验证未通过，请核对后重试。');
-  return transaction(db,()=>{const state=fresh(),result=publishRole(db,actor,state.target,body.role,administratorBusinessTime(now()));currentReviewer(db,request,actor,options,expected.authority);
-   const final=administratorBusinessTarget(db,actor.userId,userId);if(!final||final.revision!==result.revision||final.role!==body.role||final.approvalStatus!==(body.role===null?'withdrawn':'approved'))administratorBusinessConflict();subscriptionGuard?.assertCurrent();return json(result);});
+  return transaction(db,()=>{
+   const state=fresh();
+   const createsSeat=seatCapacityEnforcement!=='disabled'&&body.role!==null&&!approvedAdministratorBusiness(db,userId,state.target.teamId);
+   const seatGuard=createsSeat?captureSeatAdmission(db,state.target.teamId,{now,seatCapacityEnforcement}):null;
+   const result=publishRole(db,actor,state.target,body.role,administratorBusinessTime(now()));
+   currentReviewer(db,request,actor,options,expected.authority);
+   const final=administratorBusinessTarget(db,actor.userId,userId);
+   if(!final||final.revision!==result.revision||final.role!==body.role||final.approvalStatus!==(body.role===null?'withdrawn':'approved'))administratorBusinessConflict();
+   const publishedAt=subscriptionGuard?.assertCurrent();
+   seatGuard?.assertPublished(publishedAt);
+   return json(result);
+  });
  });
 }

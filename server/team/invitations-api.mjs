@@ -1,5 +1,6 @@
 import {createHash, randomBytes} from 'node:crypto';
 import {captureManagementSubscriptionGuard} from './subscription-management-policy.mjs';
+import {captureSeatAdmission} from './seat-capacity-policy.mjs';
 import {authenticated, normalizeUsername} from './auth-api.mjs';
 import {readTeamContext} from './repository.mjs';
 import {ID, deny, invalid, json, readJson, transaction, conflict} from './http-utils.mjs';
@@ -12,7 +13,7 @@ function canInvite(db, identity, teamId) {
     WHERE grant.team_id=? AND grant.user_id=? AND grant.permission='member.invite' AND grant.status='active'
       AND account.status='active'`).get(teamId, identity.userId);
 }
-export async function handleInvitationRequest(request, {db, now,identityProviders={},subscriptionEnforcement='disabled'}) {
+export async function handleInvitationRequest(request, {db, now,identityProviders={},subscriptionEnforcement='disabled',seatCapacityEnforcement='disabled'}) {
   const url = new URL(request.url), match = /^\/api\/teams\/([^/]+)\/invitations$/.exec(url.pathname);
   const accept = url.pathname === '/api/auth/invitations/accept';
   if (!match && !accept) return null;
@@ -31,9 +32,13 @@ export async function handleInvitationRequest(request, {db, now,identityProvider
       if (!inviter || !canInvite(db, {userId: invitation.invited_by}, invitation.team_id)) deny();
       if (hasAffiliation(db,identity.userId)) conflict();
       const subscriptionGuard=captureManagementSubscriptionGuard(db,invitation.team_id,{now,identityProviders,subscriptionEnforcement});
+      const seatAdmission = captureSeatAdmission(db, invitation.team_id, {now,seatCapacityEnforcement}, 0);
       db.prepare("INSERT INTO team_memberships VALUES (?,?,?,'active')").run(invitation.team_id, identity.userId, invitation.role);
-      db.prepare('UPDATE team_invitations SET accepted_at=? WHERE token_hash=?').run(now(), invitation.token_hash);
-      subscriptionGuard?.assertCurrent();return json({joined:true,teamId:invitation.team_id,role:invitation.role});
+      const accepted = db.prepare('UPDATE team_invitations SET accepted_at=? WHERE token_hash=? AND accepted_at IS NULL').run(now(), invitation.token_hash);
+      if (accepted.changes !== 1) conflict();
+      const publishedAt=subscriptionGuard?.assertCurrent();
+      if (seatAdmission && invitation.expires_at <= seatAdmission.assertPublished(publishedAt)) deny();
+      return json({joined:true,teamId:invitation.team_id,role:invitation.role});
     });
   }
   const teamId = match[1];
@@ -45,8 +50,11 @@ export async function handleInvitationRequest(request, {db, now,identityProvider
   return transaction(db, () => {
     if(authenticated(db, request, now()).userId!==identity.userId)deny();
     if (!canInvite(db, identity, teamId)) deny();subscriptionGuard?.assertCurrent();
+    const seatAdmission = captureSeatAdmission(db, teamId, {now,seatCapacityEnforcement});
     const invitationToken = randomBytes(32).toString('base64url'), expiresAt = now()+24*60*60_000;
     db.prepare('INSERT INTO team_invitations VALUES (?,?,?,?,?,?,NULL)').run(digest(invitationToken),teamId,body.username,body.role,identity.userId,expiresAt);
-    subscriptionGuard?.assertCurrent();return json({invitationToken,expiresAt},201);
+    const publishedAt=subscriptionGuard?.assertCurrent();
+    if (seatAdmission && expiresAt <= seatAdmission.assertPublished(publishedAt)) conflict();
+    return json({invitationToken,expiresAt},201);
   });
 }

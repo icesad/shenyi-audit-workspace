@@ -1,5 +1,6 @@
 import {administratorBusinessEligibilitySql} from './administrator-business-role-policy.mjs';
 import {captureManagementSubscriptionGuard} from './subscription-management-policy.mjs';
+import {captureSeatAdmission} from './seat-capacity-policy.mjs';
 /** Invite-only activation experiment. SMS adapters are explicit, server-side
  * injections; no real sending, public signup or team creation is bundled. */
 import {createHash,createHmac,randomBytes,randomInt,randomUUID,timingSafeEqual} from 'node:crypto';
@@ -97,7 +98,7 @@ function phoneOwner(db,phone){return db.prepare(`SELECT phone.user_id,phone.revi
 function hasMembership(db,userId){return hasAffiliation(db,userId);}
 function displayName(value){if(typeof value!=='string'||value!==value.toWellFormed())invalid();const name=value.normalize('NFKC').trim();if(!name||[...name].length>80||/[\p{Cc}\p{Cf}]/u.test(name))invalid();return name;}
 
-export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,identityProviders={},subscriptionEnforcement='disabled'}={}){
+export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,identityProviders={},subscriptionEnforcement='disabled',seatCapacityEnforcement='disabled'}={}){
   const url=new URL(request.url),path=url.pathname;
   const base=/^\/api\/teams\/([^/]+)\/employee-invitations(?:\/(access)|\/([^/]+)\/(revoke))?$/.exec(path);
   const action=path.startsWith('/api/auth/onboarding/')?path.slice('/api/auth/onboarding/'.length):null;
@@ -138,10 +139,13 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
     consume(db,'employee-invite:'+identity.userId,now(),15*60000,20);
     return transaction(db,()=>{
       sameActor(db,request,identity.userId,now());const source=SOURCES.find(value=>value.authorized(db,identity.userId,teamId));if(!source)deny();subscriptionGuard?.assertCurrent();
+      const seatAdmission = captureSeatAdmission(db, teamId, {now,seatCapacityEnforcement});
       const invitationCode=randomBytes(32).toString('base64url'),invitationId=randomUUID(),at=now(),expiresAt=at+24*60*60000;
       db.prepare(`INSERT INTO ${source.invitations}(invitation_id,token_hash,team_id,phone,role,invited_by,created_at,expires_at)
         VALUES (?,?,?,?,?,?,?,?)`).run(invitationId,digest(invitationCode),teamId,phone,body.role,identity.userId,at,expiresAt);
-      subscriptionGuard?.assertCurrent();return json({invitationCode,invitationId,expiresAt,teamId,role:body.role,phoneMasked:mask(phone)},201);
+      const publishedAt=subscriptionGuard?.assertCurrent();
+      if (seatAdmission && expiresAt <= seatAdmission.assertPublished(publishedAt)) changed();
+      return json({invitationCode,invitationId,expiresAt,teamId,role:body.role,phoneMasked:mask(phone)},201);
     });
   }
   if(!['preview','challenges','activate'].includes(action))deny();
@@ -196,6 +200,7 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
         if(!currentOwner||currentOwner.user_id!==owner.user_id||currentOwner.status!=='active'||currentOwner.phone_revision!==owner.phone_revision||currentOwner.verified_at!==owner.verified_at||currentOwner.credential_revision!==owner.credential_revision||currentOwner.password_hash!==owner.password_hash||hasMembership(db,owner.user_id))changed();
       }else if(currentOwner||db.prepare('SELECT 1 FROM team_phone_credentials WHERE phone=?').get(phone))changed();
       subscriptionGuard?.assertCurrent();
+      const seatAdmission = captureSeatAdmission(db, currentInvite.team_id, {now,seatCapacityEnforcement}, 0);
       const userId=owner?.user_id||randomUUID();
       if(!owner){
         db.prepare("INSERT INTO team_users VALUES (?,'active')").run(userId);
@@ -204,10 +209,13 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
       }
       db.prepare("INSERT INTO team_memberships VALUES (?,?,?,'active')").run(currentInvite.team_id,userId,currentInvite.role);
       const source=sourceOf(currentInvite);
-      db.prepare('UPDATE '+source.invitations+' SET accepted_at=?,accepted_by=? WHERE invitation_id=?').run(now(),userId,currentInvite.invitation_id);
+      const accepted = db.prepare('UPDATE '+source.invitations+' SET accepted_at=?,accepted_by=? WHERE invitation_id=? AND accepted_at IS NULL AND revoked_at IS NULL').run(now(),userId,currentInvite.invitation_id);
+      if (accepted.changes !== 1) changed();
       db.prepare('UPDATE '+source.challenges+' SET consumed_at=? WHERE invitation_id=? AND consumed_at IS NULL').run(now(),currentInvite.invitation_id);
       db.prepare('INSERT INTO team_activity VALUES (?,?,?,?,NULL,?)').run(randomUUID(),currentInvite.team_id,userId,'member.activate',now());
-      subscriptionGuard?.assertCurrent();return json({activated:true});
+      const publishedAt=subscriptionGuard?.assertCurrent();
+      if (seatAdmission && Math.min(currentInvite.expires_at,fresh.expires_at) <= seatAdmission.assertPublished(publishedAt)) deny();
+      return json({activated:true});
     });
   });
 }

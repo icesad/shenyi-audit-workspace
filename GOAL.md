@@ -1,5 +1,9 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-18 M5E 本地候选
+
+M5E 基于 `3d3d169` 实现三类员工邀请发出即预留、激活转换、撤回或到期释放。服务端在写事务内检查容量，技术管理员首次兼任占一席，且可查本团队席位汇总。20份完整相关测试 502/502，19份484项和单独补跑的1份18项均通过，无失败或跳过。首门502项测试退出0，绑定脚本因1份测试开跑后改动退出1。保留原始结果，补跑固定1341个候选文件，只替换该份证据。独立本机HTTP证据在 `D:/codex-temp/shenyi-seat-reservations-20261118/review/`。初版无 rowid 导致六条旧快照测试失败，保留 rowid 后通过。当前使用合成容量，增购折算、年单容量续转、桌面购买及生产支付待接。未进入 main、未推送、未重验一键、未上线。旧两预览保留，M5与完整Goal继续。 [席位预留合同](docs/INVITATION_SEAT_CAPACITY_CONTRACT.md)。
+
 ## 2026-11-18 最新：M5D实现与验收
 
 `codex/annual-order-simulation`从`d88e809`接续，本地M5D候选已验。实现本团队技术管理员服务端锁价年单、北京自然年、独立HMAC合成来源、先持久验真事实再同事务发布订阅及兑现回执、主动查单和重启幂等补偿；默认关闭，启用须严格device＋team-management-v1，不授审计资料。固定Node24的40完整相关文件1005/1005、0fail/skip/cancel/todo、exit0、799.344秒；fresh 1332候选覆盖全部selection，before/after字节同。作者日历/网关/store/API及schema项含于根门，不累加。独审首轮两个有界场景32真实TCP、23运行时设备验签及23真实KDF，实际末fulfil插入故障保留inbox/回滚term，close/reopen后confirmedAt保持；43B合成采集原件和原项目grant保持，不外推全部历史底稿/GUI/Mac/HTTPS/商户。原API夹具两FAIL、gateway Proxy两RED、schema原3FAIL均保留；未弱化测试或KDF。schema89表/355显式DDL，旧86/346与原11表peel合同保持。旧预览/共享库/vault保留；未push/进main/重验一键/上线。无生产价格、增席容量/折算、退款或购买UI，M4未全完，M5/Goal active。合同[年单模拟收款](docs/ANNUAL_ORDER_SIMULATION_CONTRACT.md)，证据D:/codex-temp/shenyi-annual-order-simulation-20261118/。

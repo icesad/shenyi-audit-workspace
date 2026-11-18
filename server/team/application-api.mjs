@@ -35,6 +35,7 @@ import {recoveryConfigured} from './recovery-review-policy.mjs';
 import {ApiError, json} from './http-utils.mjs';
 import {handleSubscriptionRequest} from './subscription-api.mjs';
 import {subscriptionEnforcementMode} from './subscription-configuration.mjs';
+import {seatCapacityMode} from './seat-capacity-policy.mjs';
 import {billingSimulationConfiguration} from './billing-simulation.mjs';
 import {handleBillingRequest,handleBillingSimulationNotification,SIMULATION_NOTIFICATION_PATH} from './billing-api.mjs';
 
@@ -53,12 +54,13 @@ export async function handleTeamApplicationRequest(request, options = {}) {
   // HEAD never carries a body, including metadata/origin/auth/clock errors.
   return new Response(request.method==='HEAD'?null:response.body,{status:response.status,statusText:response.statusText,headers});
 }
-async function applicationResponse(request, {db, now = Date.now,identityProviders={},subscriptionEnforcement='disabled',billingSimulation=null} = {}) {
+async function applicationResponse(request, {db, now = Date.now,identityProviders={},subscriptionEnforcement='disabled',billingSimulation=null,seatCapacityEnforcement='disabled'} = {}) {
   let releaseDeviceBody;
   try {
     const at = now();
     if (!Number.isSafeInteger(at) || at < 0) throw new Error('Invalid clock');
     const url=new URL(request.url),options={db,now,identityProviders,subscriptionEnforcement:subscriptionEnforcementMode(subscriptionEnforcement,identityProviders)};
+    options.seatCapacityEnforcement=seatCapacityMode(seatCapacityEnforcement,options);
     options.billingSimulation=billingSimulationConfiguration(billingSimulation,options);
     // A provider's top-level browser callback is cross-site by design. Only this
     // exact GET endpoint uses state/code checks instead of the data API origin gate.

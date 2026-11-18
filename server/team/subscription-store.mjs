@@ -90,5 +90,6 @@ export function captureSubscriptionWriteGuard(db,teamId,{now=Date.now}={}){
   const current=readSubscriptionState(db,teamId,nextAt);
   if(current.revision!==captured.revision||current.startsAt!==captured.startsAt||current.endsAt!==captured.endsAt)conflict();
   if(current.state!=='active')unavailable();
+  return nextAt;
  }});
 }

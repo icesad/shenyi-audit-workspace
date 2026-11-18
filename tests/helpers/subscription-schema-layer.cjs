@@ -1,6 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),{createHash}=require('node:crypto');
 const {withoutEmptyBillingDefinitions,withoutEmptyBillingLayer}=require('./billing-schema-layer.cjs');
+const {withoutEmptySeatCapacityDefinitions,withoutEmptySeatCapacityLayer}=require('./seat-capacity-schema-layer.cjs');
 // Test-only projection of the exact empty reviewed M5 layer. Never application code.
 const TABLES=Object.freeze(['team_subscription_events','team_subscription_heads']);
 const EXPECTED_DDL_SHA='aaef1ffc9ac9f763621477dc133084027d3c8404aeb8e8814e51df1c9ff19e5b';
@@ -15,9 +16,9 @@ function assertSubscriptionSchema(db,{empty=true,allowAbsent=false}={}){
  return rows;
 }
 function subscriptionSchemaLayer(db,{allowAbsent=false}={}){const rows=assertSubscriptionSchema(db,{allowAbsent});return{tables:rows.filter(x=>x.type==='table').length,objects:rows.length};}
-function withoutEmptySubscriptionDefinitions(db,rows){rows=withoutEmptyBillingDefinitions(db,rows);const layer=assertSubscriptionSchema(db,{allowAbsent:true}),names=new Set(layer.map(x=>x.name));return rows.filter(x=>!names.has(x.name));}
+function withoutEmptySubscriptionDefinitions(db,rows){rows=withoutEmptyBillingDefinitions(db,withoutEmptySeatCapacityDefinitions(db,rows));const layer=assertSubscriptionSchema(db,{allowAbsent:true}),names=new Set(layer.map(x=>x.name));return rows.filter(x=>!names.has(x.name));}
 function withoutEmptySubscriptionLayer(db,state){
- state=withoutEmptyBillingLayer(db,state);const layer=assertSubscriptionSchema(db,{allowAbsent:true});if(!layer.length)return state;const names=new Set(layer.map(x=>x.name));
+ state=withoutEmptyBillingLayer(db,withoutEmptySeatCapacityLayer(db,state));const layer=assertSubscriptionSchema(db,{allowAbsent:true});if(!layer.length)return state;const names=new Set(layer.map(x=>x.name));
  return{...state,...(state.definitions?{definitions:state.definitions.filter(x=>!names.has(x.name))}:{}),...(state.schema?{schema:state.schema.filter(x=>!names.has(x.name))}:{}),...(state.tables?{tables:state.tables.filter(x=>!TABLES.includes(typeof x==='string'?x:x.name))}:{})};
 }
 function peelSubscriptionSchema(db){

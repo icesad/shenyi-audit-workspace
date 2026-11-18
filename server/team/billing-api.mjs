@@ -3,6 +3,7 @@ import {UUID,currentDeviceLease,deviceServerId,deviceConflict,deviceRequired} fr
 import {administratorTechnicalEligible} from './administrator-business-role-policy.mjs';
 import {createAnnualOrderWithinTransaction,readAnnualOrder,readAnnualOrderRequest,listAnnualOrders,recordVerifiedAnnualPayment,fulfilAnnualOrder} from './billing-store.mjs';
 import {readSimulationPaymentRequest,verifySimulationPaymentEnvelope} from './billing-simulation.mjs';
+import {readSeatCapacity} from './seat-capacity-store.mjs';
 
 export const SIMULATION_NOTIFICATION_PATH='/api/billing/simulation/notifications';
 const unavailable=()=>{throw new ApiError(503,'BILLING_UNAVAILABLE','模拟账务尚未配置或暂不可用。');};
@@ -39,16 +40,18 @@ async function lookup(configuration,order){
  ]);}catch{unavailable();}finally{clearTimeout(timer);}
 }
 export async function handleBillingRequest(request,options={}){
- const url=new URL(request.url),match=/^\/api\/teams\/([^/]+)\/billing\/(offers|orders)(?:\/([^/]+)(\/reconcile)?)?$/.exec(url.pathname);
+ const url=new URL(request.url),match=/^\/api\/teams\/([^/]+)\/billing\/(offers|orders|seats)(?:\/([^/]+)(\/reconcile)?)?$/.exec(url.pathname);
  if(!match)return null;
  const [,teamId,kind,orderId,reconcile]=match;
- if(!matches(ID,teamId)||orderId&&!matches(UUID,orderId)||kind==='offers'&&orderId)deny();
- if(url.hash||url.href.endsWith('?')||(kind==='offers'||orderId)&&url.search)invalid();
+ if(!matches(ID,teamId)||orderId&&(kind!=='orders'||!matches(UUID,orderId)))deny();
+ if(url.hash||url.href.endsWith('?')||(kind!=='orders'||orderId)&&url.search)invalid();
  const {db,billingSimulation,now=Date.now}=options,currentOptions={...options,now};
- const initial=actor(db,request,currentOptions,teamId);if(!billingSimulation)unavailable();
+ const initial=actor(db,request,currentOptions,teamId);
+ if(kind==='seats'?options.seatCapacityEnforcement!=='invitation-reservations-v1':!billingSimulation)unavailable();
  const allowed=reconcile?'POST':kind==='orders'&&!orderId?'GET, POST':'GET';
  if(!allowed.split(', ').includes(request.method))return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:allowed});
  const scoped=action=>transaction(db,()=>{const current=actor(db,request,currentOptions,teamId,initial),result=action(current);actor(db,request,currentOptions,teamId,current);return result;});
+ if(kind==='seats')return scoped(()=>json({seats:readSeatCapacity(db,teamId,time(now))}));
  if(kind==='offers')return scoped(()=>json({simulation:true,offers:billingSimulation.offers}));
  if(reconcile){
   await readJson(request,[]);
