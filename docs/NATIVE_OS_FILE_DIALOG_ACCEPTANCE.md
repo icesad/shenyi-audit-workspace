@@ -39,3 +39,9 @@ root随后实查原记录5个自有PID均消失、4667无监听，才对已停�
 两份保留预览的4进程／2窗口／2公开server UUID前后核同；未升级实际共享库，原一键入口本轮未重验。未push／main／线上发布，M4与完整Goal active。报告权限仍待原答复；canonical原包、Mac、发行及后续商业化关卡仍分别未完成。原来源文件只是负责人业务确认，不是审计签发。
 
 证据根：`D:/codex-temp/shenyi-native-os-dialogs-20261118/`；根代理`root/stopped-snapshot.json`、`root/owned-cleanup-root.json`、`root/protected-audit.json`、`root/sky/observations.jsonl`、`root/sky/actions.jsonl`及`root/sky/issues.jsonl`；独立物理`physical/index.json`，整体独审收口报告另列于`independent/`。历史已通过的功能与本次未通过状态并存，不回滚前项交付。
+
+## 受管客户端采集选件
+
+M7P 用重新签名安装的 Windows 0.61.0 候选和独立 HTTPS 合成库验证采集。记录安装进程、父窗口和系统模态窗口的对应关系后，先取消选件，再通过真实文件名控件选定合成原件。出现控件缓存失效时，重新核对真实焦点、路径回读及窗口所有者后完成操作。取消时任务、附件和提交记录无变化。选件后真实提交请求返回 `201`，输入与 SQLite 原件为相同的 64 字节。重启后沿用原设备密钥并读取提交历史。 [候选包验收说明](WINDOWS_DESKTOP_CANDIDATE.md#采集提交与原生选件)
+
+使用后严格清单复核失败。另用一份新签名安装只打开同类原生窗口，以只读方式观察，确认无窗口操作和无提交请求时，包目录仍会出现清单之外的空 `log/`。证据根为 `D:/codex-temp/shenyi-m7-windows-native-collection-20261118`。本次结果覆盖采集选件；旧版完整底稿包 Open 与导出 Save 继续按原关卡核验。
