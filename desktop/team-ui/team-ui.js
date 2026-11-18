@@ -1320,11 +1320,25 @@
     }catch(error){if(sameTaskManagement(context)){taskManagementChosen='';taskManagementMembers=[];taskManagementHasMore=false;taskManagementNeedsRefresh=true;const uncertain=passwordChangeUncertain(error);const text=confirmed?'任务已更新，但刷新无法确认，请重新读取任务。':uncertain?'未能确认操作结果；请求可能已完成，请重新读取任务核对，避免重复操作。':error.code==='HTTP_409'?'资料或分工已更新，请重新读取后再操作。':error.message||'任务操作未通过，请重新读取当前授权。';taskManagementFeedback(text,true);if(error.code==='HTTP_404')taskManagementState=null;renderDetail();message('workspace-message',text,true);}}
     finally{if(taskManagementMutation===operation)taskManagementMutation=null;if(sameAccountSessionsActor(context.actor))renderDetail();updateTaskManagementControls();updateTaskSubmissionControls();if(sameAccountSessionsActor(context.actor)&&context.teamId===teamId&&context.taskId===selected?.id&&context.view!==viewEpoch)void loadTaskManagement();}
   }
-  function detailEmpty(){const wrap=el('div',undefined,'detail-empty');wrap.append(el('span','▤','empty-symbol'),el('h2','从左侧选择任务'),el('p','任务要求和你的提交记录将在这里显示。'));byId('task-detail').replaceChildren(wrap);}
+  function detailEmpty(){const wrap=el('div',undefined,'detail-empty');wrap.append(el('h2','选择一项任务'),el('p','任务要求和你的提交记录将在这里显示。'));byId('task-detail').replaceChildren(wrap);}
   function statusChip(status){return el('span',statuses[status]||'状态待核对','status-chip '+status);}
   function renderTasks(){const list=byId('task-list');list.replaceChildren();byId('task-count').textContent=tasks.length?tasks.length+' 项已加载':'';byId('load-more').hidden=!hasMore;
     if(!tasks.length){list.append(el('p','当前没有可见的采集任务。','list-empty'));return;}
-    for(const task of tasks){const button=el('button',undefined,'task-button'+(selected?.id===task.id?' selected':''));button.type='button';button.setAttribute('aria-pressed',String(selected?.id===task.id));button.append(statusChip(task.status),el('strong',task.title),el('small','查看任务要求与我的提交'));button.addEventListener('click',()=>selectTask(task.id));list.append(button);}}
+    for(const task of tasks){
+      const button=el('button',undefined,'task-button'+(selected?.id===task.id?' selected':''));
+      button.type='button';
+      button.setAttribute('aria-pressed',String(selected?.id===task.id));
+      button.append(el('strong',task.title),statusChip(task.status),el('small','查看任务要求与我的提交'));
+      button.addEventListener('click',async event=>{
+        const fromKeyboard=event.detail===0&&document.activeElement===button;
+        const context=await selectTask(task.id);
+        if(fromKeyboard&&context&&sameTaskView(context)&&(document.activeElement===document.body||document.activeElement===button)){
+          byId('task-detail').focus();
+        }
+      });
+      list.append(button);
+    }
+  }
   function renderDetail(){if(!selected){detailEmpty();return;}const heading=el('div',undefined,'detail-heading');heading.append(el('h2',selected.title),statusChip(selected.status));const label=el('p','采集要求','detail-label');const description=el('div',selected.instructions,'instructions');
     const upload=el('div',undefined,'upload-area'),words=el('div');words.append(el('strong','提交此任务所需资料'),el('p','每份不超过12 MiB；请选择合成演示文件。'));const uploadButton=el('button','选择文件并提交','button primary');uploadButton.id='task-upload';uploadButton.type='button';uploadButton.setAttribute('aria-describedby','task-submission-access-message');uploadButton.addEventListener('click',uploadSelected);const accessNote=el('p',taskSubmissionWords());accessNote.id='task-submission-access-message';accessNote.setAttribute('role','status');accessNote.setAttribute('aria-live','polite');words.append(accessNote);upload.append(words,uploadButton);
     const historyTitle=el('h3','我的提交记录'),list=el('ul',undefined,'submission-list');
