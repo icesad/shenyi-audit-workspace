@@ -5,6 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { randomUUID } = require('node:crypto');
+const { DatabaseSync } = require('node:sqlite');
 
 async function fixture() {
   const directory = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'shenyi-managed-config-'));
@@ -71,4 +72,50 @@ test('managed SMS is opt-in through a distinct absolute profile and fails before
   await fs.writeFile(smsProfile, ambiguous);
   await assert.rejects(openConfiguredTeamService(filename), sendError);
   await assert.rejects(fs.stat(configuration.database), { code: 'ENOENT' });
+});
+
+test('managed reviewed recovery requires an explicit boolean and a valid SMS profile to start', async () => {
+  const { loadManagedServiceConfiguration, openConfiguredTeamService } = await import('../scripts/start-team-service.mjs');
+  const { directory, filename, configuration } = await fixture();
+  const smsProfile = path.join(directory, 'sms-private.json');
+  const invalid = { code: 'MANAGED_SERVICE_CONFIGURATION_INVALID' };
+  const write = value => fs.writeFile(filename, JSON.stringify({ ...configuration, ...value }));
+
+  await write({});
+  assert.equal(Object.hasOwn(await loadManagedServiceConfiguration(filename), 'reviewedRecovery'), false);
+  await write({ reviewedRecovery: false });
+  assert.equal((await loadManagedServiceConfiguration(filename)).reviewedRecovery, false);
+  for (const reviewedRecovery of ['true', 1, null, {}, []]) {
+    await write({ reviewedRecovery, smsProfile });
+    await assert.rejects(loadManagedServiceConfiguration(filename), invalid);
+  }
+  await write({ reviewedRecovery: true });
+  await assert.rejects(openConfiguredTeamService(filename), invalid);
+  await write({ reviewedRecovery: true, smsProfile });
+  assert.equal((await loadManagedServiceConfiguration(filename)).reviewedRecovery, true);
+  await assert.rejects(openConfiguredTeamService(filename), { code: 'MANAGED_SMS_INVALID' });
+  await assert.rejects(fs.stat(configuration.database), { code: 'ENOENT' });
+});
+
+test('managed readiness requires recovery epoch triggers and challenge bindings only when reviewed recovery is enabled', async t => {
+  const { initializeTeamDatabase } = await import('../server/team/database.mjs');
+  const { deviceServerId } = await import('../server/team/device-policy.mjs');
+  const { assertManagedDatabaseReady } = await import('../server/team/managed-service.mjs');
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  initializeTeamDatabase(db);
+  const serverId = deviceServerId(db);
+  const enabled = { reviewedRecovery: true };
+  const notReady = { code: 'MANAGED_DATABASE_NOT_READY' };
+  assertManagedDatabaseReady(db, serverId, enabled);
+
+  db.exec('DROP TRIGGER recovery_epoch_team_recovery_reviewers_update;');
+  assertManagedDatabaseReady(db, serverId);
+  assert.throws(() => assertManagedDatabaseReady(db, serverId, enabled), notReady);
+
+  initializeTeamDatabase(db);
+  assertManagedDatabaseReady(db, serverId, enabled);
+  db.exec('DROP TABLE team_phone_challenge_bindings;');
+  assertManagedDatabaseReady(db, serverId);
+  assert.throws(() => assertManagedDatabaseReady(db, serverId, enabled), notReady);
 });

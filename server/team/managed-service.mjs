@@ -3,6 +3,7 @@ import {createServer} from 'node:https';
 import {isIP} from 'node:net';
 import {handleTeamApplicationRequest} from './application-api.mjs';
 import {json} from './http-utils.mjs';
+import {REVIEWER_TABLES} from './reviewer-policy.mjs';
 import {serviceUnavailable, startLoopbackTeamListener} from './team-http-listener.mjs';
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
@@ -47,6 +48,33 @@ const essentialColumns = {
   team_ledger_check_heads: 'team_id, project_id, revision',
   team_workpaper_data_heads: 'team_id, project_id, revision',
 };
+const reviewedRecoveryColumns = {
+  ...Object.fromEntries(REVIEWER_TABLES.map(table => [table, 'user_id'])),
+  team_credentials: 'user_id, username, display_name, password_hash, revision',
+  team_profiles: 'team_id, name',
+  team_administrator_business_roles: 'team_id, user_id, role, status, member_role',
+  team_phone_challenges: 'challenge_id, purpose, phone, user_id, session_hash, credential_revision, code_mac, expires_at, attempts, consumed_at, delivery_state',
+  team_phone_challenge_bindings: 'challenge_id, phone_revision, verified_at',
+  team_recovery_reviewers: 'user_id, permission, status, revision',
+  team_recovery_requests: 'request_id, challenge_id, target_user_id, team_id, target_kind, target_stamp, status, revision, created_at, expires_at, approved_by, approval_stamp, token_hash, consumed_at',
+  team_recovery_events: 'event_id, request_id, actor_id, action, revision, created_at',
+};
+// An approved recovery must lose authority after a revoke and same-value regrant.
+const reviewedRecoveryTriggers = {
+  recovery_epoch_account_update: 'team_users',
+  recovery_epoch_team_update: 'teams',
+  ...Object.fromEntries([
+    ...['team_credentials','team_phone_credentials','team_memberships','team_operators','team_platform_reviewers','team_recovery_reviewers']
+      .map(table => [table, `recovery_epoch_${table}`]),
+    ['team_administrator_business_roles', 'administrator_business_approval_epoch'],
+  ].flatMap(([table, prefix]) => ['insert','update','delete'].map(operation => [`${prefix}_${operation}`, table]))),
+};
+const recoveryRoutes = new Set([
+  '/api/auth/recovery-requests/capabilities', '/api/auth/recovery-requests',
+  '/api/auth/phone/challenges', '/api/auth/phone/reset',
+  '/api/account/recovery-reviews', '/api/account/recovery-reviews/access',
+]);
+const recoveryDecisionRoute = /^\/api\/account\/recovery-reviews\/[^/]+\/review$/;
 
 function fail(code) {
   throw Object.assign(new Error(messages[code]), {code});
@@ -62,15 +90,22 @@ function assertDatabaseIdentity(db, serverId) {
 }
 
 /** Check an already provisioned database without initializing or mutating it. */
-export function assertManagedDatabaseReady(db, serverId) {
+export function assertManagedDatabaseReady(db, serverId, {reviewedRecovery = false} = {}) {
   try {
-    if (typeof serverId !== 'string' || !uuid.test(serverId) || db.isTransaction ||
+    if (typeof reviewedRecovery !== 'boolean' || typeof serverId !== 'string' || !uuid.test(serverId) || db.isTransaction ||
         db.prepare('PRAGMA foreign_keys').get()?.foreign_keys !== 1) fail('MANAGED_DATABASE_NOT_READY');
     assertDatabaseIdentity(db, serverId);
     const tables = new Set(db.prepare("SELECT name FROM main.sqlite_schema WHERE type = 'table'").all().map(row => row.name));
-    for (const [table, columns] of Object.entries(essentialColumns)) {
+    const requiredColumns = reviewedRecovery ? {...essentialColumns, ...reviewedRecoveryColumns} : essentialColumns;
+    for (const [table, columns] of Object.entries(requiredColumns)) {
       if (!tables.has(table)) fail('MANAGED_DATABASE_NOT_READY');
       db.prepare(`SELECT ${columns} FROM main.${table} LIMIT 0`).get();
+    }
+    if (reviewedRecovery) {
+      const triggers = new Map(db.prepare("SELECT name, tbl_name FROM main.sqlite_schema WHERE type = 'trigger'").all().map(row => [row.name,row.tbl_name]));
+      for (const [name, table] of Object.entries(reviewedRecoveryTriggers)) {
+        if (triggers.get(name) !== table) fail('MANAGED_DATABASE_NOT_READY');
+      }
     }
   } catch { fail('MANAGED_DATABASE_NOT_READY'); }
 }
@@ -107,16 +142,18 @@ function resolveManagedTarget(incoming, origin) {
 }
 
 /** Loopback-only HTTPS listener for a separately provisioned non-demo database. */
-export async function startManagedTeamServer({db, apiBase, port = 0, serverId, key, cert, sms, phonePepper} = {}) {
+export async function startManagedTeamServer({db, apiBase, port = 0, serverId, key, cert, sms, phonePepper, reviewedRecovery = false} = {}) {
   const origin = managedOrigin(apiBase, port, serverId);
-  assertManagedDatabaseReady(db, serverId);
-  checkTlsConfiguration(origin, key, cert);
   const hasSms = sms !== undefined || phonePepper !== undefined;
-  if (hasSms && (typeof sms?.send !== 'function' || !Buffer.isBuffer(phonePepper) || phonePepper.length !== 32)) {
+  const validSms = typeof sms?.send === 'function' && Buffer.isBuffer(phonePepper) && phonePepper.length === 32;
+  if (typeof reviewedRecovery !== 'boolean' || ((hasSms || reviewedRecovery) && !validSms)) {
     fail('MANAGED_SERVICE_CONFIGURATION_INVALID');
   }
+  const readinessOptions = {reviewedRecovery};
+  assertManagedDatabaseReady(db, serverId, readinessOptions);
+  checkTlsConfiguration(origin, key, cert);
   const pepper = hasSms ? Buffer.from(phonePepper) : undefined;
-  const identityProviders = Object.freeze({deviceProofRequired:true,
+  const identityProviders = Object.freeze({deviceProofRequired:true, reviewedRecovery,
     ...(hasSms ? {sms:Object.freeze({send:sms.send.bind(sms)}), phonePepper:pepper} : {}),
   });
   const settings = Object.freeze({
@@ -135,11 +172,22 @@ export async function startManagedTeamServer({db, apiBase, port = 0, serverId, k
       async dispatch(request, incoming) {
         if (incoming.method === 'GET' && incoming.url === '/health') return json({status:'ok'});
         if (incoming.method === 'GET' && incoming.url === '/ready') {
-          try { assertManagedDatabaseReady(db, serverId); }
+          try { assertManagedDatabaseReady(db, serverId, readinessOptions); }
           catch { return json({status:'not-ready'}, 503); }
           return json({status:'ready'});
         }
         assertDatabaseIdentity(db, serverId);
+        if (reviewedRecovery) {
+          const pathname = new URL(request.url).pathname;
+          if (recoveryRoutes.has(pathname) || recoveryDecisionRoute.test(pathname)) {
+            try { assertManagedDatabaseReady(db, serverId, readinessOptions); }
+            catch {
+              const denied = serviceUnavailable();
+              denied.headers.set('X-Shenyi-Server-Id', serverId);
+              return denied;
+            }
+          }
+        }
         const response = await handleTeamApplicationRequest(request, settings);
         if (response.headers.get('X-Shenyi-Server-Id') === serverId) return response;
         await response.body?.cancel();

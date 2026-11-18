@@ -278,7 +278,7 @@ Windows 原生安装/更新和 macOS Intel/Apple Silicon 兼容范围、签名�
 
 ### 7.3 支付闭环验收
 
-服务端建单并锁定团队、商品/席位、金额/币种和年限；回调验签/解密、校验商户/订单/金额、唯一事件幂等、事务更新订单与权益；延迟通知靠主动查单/对账修复。防重复点击、重复/乱序/伪造通知、超时关闭、回调重放、退款与权益撤销不一致。支持退款申请、处理留痕、对账与异常补偿。[模拟异常候选](PAYMENT_EXCEPTION_CONTRACT.md)已接收可信全额退款和拒付并在桌面显示待复核。首版退款由产品负责人受理，团队暂不在客户端提交退款申请。[负责人受理留痕](BILLING_REFUND_INTAKE_CONTRACT.md)已通过独立验收。部分退款、退款执行和已生效权益处置仍待确认。[本团队批量核对](BILLING_BATCH_RECONCILIATION_CONTRACT.md)与[模拟超时关单](BILLING_ORDER_CLOSURE_CONTRACT.md)已验。
+服务端建单并锁定团队、商品/席位、金额/币种和年限；回调验签/解密、校验商户/订单/金额、唯一事件幂等、事务更新订单与权益；延迟通知靠主动查单/对账修复。防重复点击、重复/乱序/伪造通知、超时关闭、回调重放、退款与权益撤销不一致。首版退款由产品负责人受理并留痕，团队客户端保留本团队订单查阅和核对，暂不提供退款提交。[负责人受理留痕](BILLING_REFUND_INTAKE_CONTRACT.md)已通过独立验收。[模拟异常候选](PAYMENT_EXCEPTION_CONTRACT.md)已接收可信全额退款和拒付并在桌面显示待复核。部分退款、实际退款执行及已生效期限和席位的处置规则仍待确认。[本团队批量核对](BILLING_BATCH_RECONCILIATION_CONTRACT.md)与[模拟超时关单](BILLING_ORDER_CLOSURE_CONTRACT.md)已验。
 
 ## 8. 数据与服务端架构方向
 

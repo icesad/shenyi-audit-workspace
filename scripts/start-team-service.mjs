@@ -9,6 +9,7 @@ import { createAliyunSms } from '../server/team/aliyun-sms.mjs';
 
 const checkout = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fields = ['schemaVersion', 'database', 'apiBase', 'serverId', 'listenPort', 'tlsCertificate', 'tlsKey'];
+const optionalFields = ['smsProfile', 'reviewedRecovery'];
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const configCode = 'MANAGED_SERVICE_CONFIGURATION_INVALID';
 const messages = {
@@ -113,7 +114,7 @@ export async function loadManagedServiceConfiguration(filename) {
     if (inside(repository, configPath)) fail(configCode);
     const bytes = await readLocalFile(configPath, 16 * 1024, configCode);
     const value = parseProfile(bytes, configCode);
-    if (Object.keys(value).some(name => name !== 'smsProfile' && !fields.includes(name)) ||
+    if (Object.keys(value).some(name => !fields.includes(name) && !optionalFields.includes(name)) ||
       fields.some(name => !Object.hasOwn(value, name)) || value.schemaVersion !== 1 || typeof value.apiBase !== 'string' ||
       typeof value.serverId !== 'string' || !uuid.test(value.serverId) || !Number.isInteger(value.listenPort) || value.listenPort < 0 || value.listenPort > 65535) fail(configCode);
     const origin = new URL(value.apiBase);
@@ -121,6 +122,8 @@ export async function loadManagedServiceConfiguration(filename) {
     const { database, tlsCertificate, tlsKey } = Object.fromEntries(['database', 'tlsCertificate', 'tlsKey'].map(name => [name, localPath(value[name])]));
     const filenames = [configPath, database, tlsCertificate, tlsKey];
     const smsProfile = Object.hasOwn(value, 'smsProfile') ? localPath(value.smsProfile) : undefined;
+    if ((Object.hasOwn(value, 'reviewedRecovery') && typeof value.reviewedRecovery !== 'boolean') ||
+      (value.reviewedRecovery === true && !smsProfile)) fail(configCode);
     if (smsProfile) filenames.push(smsProfile);
     if (filenames.some((name, index) => inside(repository, name) || filenames.slice(0, index).some(previous => !path.relative(previous, name)))) fail(configCode);
     return Object.freeze({ ...value, database, tlsCertificate, tlsKey, ...(smsProfile ? { smsProfile } : {}) });
@@ -149,14 +152,14 @@ async function loadSmsProvider(filename) {
   }
 }
 
-async function openManagedDatabase(filename, serverId) {
+async function openManagedDatabase(filename, serverId, { reviewedRecovery }) {
   const code = 'MANAGED_DATABASE_NOT_READY';
   let readonly, writable;
   try {
     const entry = await existingFile(filename, code);
     const uri = pathToFileURL(filename).href;
     readonly = new DatabaseSync(uri + '?mode=ro', { readOnly: true });
-    assertManagedDatabaseReady(readonly, serverId);
+    assertManagedDatabaseReady(readonly, serverId, { reviewedRecovery });
     readonly.close();
     readonly = undefined;
     writable = new DatabaseSync(uri + '?mode=rw', { timeout: 5000 });
@@ -171,14 +174,14 @@ async function openManagedDatabase(filename, serverId) {
 
 export async function openConfiguredTeamService(filename) {
   const configuration = await loadManagedServiceConfiguration(filename);
-  const { database, serverId, apiBase, listenPort: port, tlsCertificate, tlsKey, smsProfile } = configuration;
+  const { database, serverId, apiBase, listenPort: port, tlsCertificate, tlsKey, smsProfile, reviewedRecovery = false } = configuration;
   let db, key, smsProvider;
   try {
     smsProvider = await loadSmsProvider(smsProfile);
     const cert = await readLocalFile(tlsCertificate, 128 * 1024, 'MANAGED_TLS_INVALID');
     key = await readLocalFile(tlsKey, 32 * 1024, 'MANAGED_TLS_INVALID');
-    db = await openManagedDatabase(database, serverId);
-    const service = await startManagedTeamServer({ db, apiBase, port, serverId, cert, key, ...smsProvider });
+    db = await openManagedDatabase(database, serverId, { reviewedRecovery });
+    const service = await startManagedTeamServer({ db, apiBase, port, serverId, cert, key, ...smsProvider, reviewedRecovery });
     let stopping;
     return { address: service.address, apiBase: service.apiBase, serverId,
       close: () => stopping ??= service.close().finally(() => db.close()) };
