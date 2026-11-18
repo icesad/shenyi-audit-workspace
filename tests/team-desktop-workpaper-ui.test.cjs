@@ -5,6 +5,56 @@ test('only ready seniors expose the panel and no metadata is prefetched',async t
 test('module owner without read sees grants only and never fetches data or forms',async t=>{const f=fixture(t,{read:false});await f.open();await f.select();assert.equal(f.id('owner').hidden,false);assert.equal(f.id('viewer').hidden,true);assert.equal(f.count('getWorkpaperData'),0);assert.equal(f.count('getWorkpaperForm'),0);assert.equal(f.count('chooseWorkpaperSource'),0);});
 test('current native sheet displays saved answers and only admitted fields can be edited',async t=>{const f=fixture(t);await f.open();await f.select();assert.equal(f.id('form').querySelector('.pw-original-sheet')!==null,true);assert.equal(f.id('form').querySelector('[data-cell=A1]').textContent,'已保存填写');assert.equal(f.id('form').querySelector('[data-cell=A1]').getAttribute('contenteditable'),'true');for(const field of ['B1','A2','B2'])assert.equal(f.id('form').querySelector('[data-cell='+field+']').getAttribute('contenteditable'),'false');assert.equal(f.id('form').querySelector('[data-cell=C3]'),null);f.edit('A1','=literal only');assert.equal(f.id('save').disabled,false);f.click('save');await until(()=>f.count('saveWorkpaperEntries')===1&&!f.id('refresh').disabled);const v=f.calls.find(c=>c.name==='saveWorkpaperEntries').input;assert.equal(v.headRevision,2);assert.equal(v.sha256,HASH);assert.deepEqual(v.changes,[{sheet:'Sheet1',field:'A1',value:'=literal only'}]);assert.equal(v.projectId,P);assert.equal(f.id('draft-status').textContent,'当前没有未保存填写。');});
 test('readonly and historical views retain saved answers without falsely calling them frozen',async t=>{const f=fixture(t,{write:false});await f.open();await f.select();assert.equal(f.id('form').querySelector('[data-cell=A1]').textContent,'已保存填写');assert.equal(f.id('form').querySelectorAll('[contenteditable=true]').length,0);assert.doesNotMatch(f.id('form-note').textContent,/既有冻结/);f.d.querySelectorAll('#workpaper-history button')[1].click();await until(()=>f.id('data-title').textContent.endsWith('1')&&!f.id('refresh').disabled);assert.equal(f.id('form').querySelectorAll('[contenteditable=true]').length,0);assert.match(f.id('version-note').textContent,/历史版本/);});
+
+test('an admitted reading area becomes a tab stop, and a sheet switch keeps focus and starts at the top left',async t=>{
+ const form=excel();
+ form.sheets.push({...form.sheets[0],name:'Sheet2'},{...form.sheets[0],name:'Hidden',visibility:1});
+ const f=fixture(t,{write:false,form}),viewport=f.id('form');
+ f.d.getElementById('workspace-view').hidden=false;
+ assert.equal(viewport.tabIndex,-1);
+ await f.open();await f.select();
+ assert.equal(viewport.tabIndex,0);
+ assert.equal(f.id('scroll-help').hidden,false);
+ assert.equal(viewport.getAttribute('aria-label'),'底稿阅读区');
+ const file=f.id('files').querySelector('button');
+ file.focus();file.click();
+ await until(()=>f.d.activeElement===viewport);
+ const buttons=()=>[...f.id('sheets').querySelectorAll('button')];
+ assert.deepEqual(buttons().map(button=>button.textContent),['Sheet1','Sheet2']);
+ viewport.scrollTop=120;viewport.scrollLeft=100;
+ const second=buttons()[1];
+ second.focus();second.click();
+ assert.equal(f.d.activeElement,buttons()[1]);
+ assert.equal(buttons()[1].getAttribute('aria-pressed'),'true');
+ assert.equal(viewport.scrollTop,0);assert.equal(viewport.scrollLeft,0);
+ assert.equal(viewport.querySelectorAll('[contenteditable=true]').length,0);
+ assert.equal(f.count('saveWorkpaperEntries'),0);
+});
+
+test('an explicit failed file read clears the old sheet and focuses the original permission refresh action',async t=>{
+ let reads=0;
+ const f=fixture(t,{write:false,overrides:{getWorkpaperForm:async (v,state)=>{
+  if(++reads===2)return fail('HTTP_404');
+  return ok({form:excel(),version:v.version,recordSha256:'c'.repeat(64),projectRevision:state.projectRevision,grantRevision:state.grantRevision});
+ }}});
+ f.d.getElementById('workspace-view').hidden=false;
+ await f.open();await f.select();
+ const file=f.id('files').querySelector('button');
+ file.focus();file.click();
+ await until(()=>f.id('viewer').hidden&&f.d.activeElement===f.id('refresh'));
+ assert.equal(f.id('form').children.length,0);
+ assert.equal(f.id('form').tabIndex,-1);
+ assert.equal(f.id('scroll-help').hidden,true);
+ assert.equal(f.id('import').hidden,true);
+ assert.match(f.id('message').textContent,/刷新权限与版本/);
+ assert.equal(reads,2);
+ f.click('refresh');
+ await until(()=>!f.id('viewer').hidden&&f.id('form').tabIndex===0&&!f.id('refresh').disabled);
+ assert.equal(reads,3);
+ assert.equal(f.count('getWorkpaperAccess'),2);
+ assert.equal(f.count('saveWorkpaperEntries'),0);
+ assert.equal(f.count('confirmWorkpaperImport'),0);
+});
 test('dirty draft blocks project, version and file switch until explicit discard',async t=>{const f=fixture(t);await f.open();await f.select();f.edit('A1','尚未保存');const n=f.count('openWorkpaperView');f.d.querySelectorAll('#workpaper-projects button')[1].click();assert.equal(f.count('openWorkpaperView'),n);f.d.querySelectorAll('#workpaper-history button')[1].click();assert.equal(f.id('data-title').textContent,'底稿保存版本 2');f.d.querySelectorAll('#workpaper-files button')[1].click();assert.equal(f.count('getWorkpaperForm'),1);f.click('draft-discard');f.d.querySelectorAll('#workpaper-projects button')[1].click();await until(()=>f.id('title').textContent==='第二个底稿项目'&&!f.id('refresh').disabled);const opens=f.calls.filter(c=>c.name==='openWorkpaperView');assert.equal(opens.at(-1).input.projectId,P2);assert.notEqual(f.calls.filter(c=>c.name==='getWorkpaperRecord').at(-1).input.viewId,f.calls.find(c=>c.name==='getWorkpaperRecord').input.viewId);});
 test('unknown save keeps one original request and 404 never permits a duplicate save',async t=>{const f=fixture(t,{overrides:{saveWorkpaperEntries:async v=>ok({status:'unknown',requestId:v.requestId}),getWorkpaperReceipt:async()=>fail('HTTP_404')}});await f.open();await f.select();f.edit('A1','一次提交');f.click('save');await until(()=>f.count('saveWorkpaperEntries')===1&&!f.id('refresh').disabled);const id=f.id('operation-id').value;assert.ok(id);assert.equal(f.id('save').disabled,true);f.click('receipt');await until(()=>f.count('getWorkpaperReceipt')===1&&!f.id('refresh').disabled);assert.match(f.id('message').textContent,/不证明取消或失败/);assert.equal(f.id('operation-id').value,id);assert.equal(f.id('save').disabled,true);f.click('save');assert.equal(f.count('saveWorkpaperEntries'),1);});
 test('permission polling immediately clears form, password and source, and stale form cannot return',async t=>{const gate=deferred(),entered=deferred();let hold=false;const f=fixture(t,{overrides:{getWorkpaperForm:async v=>{if(hold){entered.resolve();await gate.promise;}return ok({form:excel(),version:v.version,recordSha256:'c'.repeat(64),projectRevision:7,grantRevision:1});}}});await f.open();await f.select();f.field('grant-password','private');f.state.read=false;f.state.grantRevision++;f.poll();await until(()=>f.id('form').textContent==='');assert.equal(f.id('grant-password').value,'');assert.equal(f.id('viewer').hidden,true);f.state.read=true;f.state.grantRevision=1;hold=true;f.click('refresh');await entered.promise;f.state.ready=false;f.state.epoch++;f.view.sync();gate.resolve();await tick();await tick();assert.equal(f.id('form').textContent,'');assert.equal(f.id('panel').hidden,true);});
