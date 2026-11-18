@@ -56,6 +56,29 @@ try {
 
 ## 客户端与权限
 
-桌面客户端使用单独配置的 HTTPS origin 和实例 UUID 连接。受管服务只接受已绑定手机号的账号通过密码登录，团队资料请求继续要求已绑定设备和当前权限。已配置的席位与订阅管理规则继续在服务端执行。演示账号登录和模拟付款处理关闭，短信验证、微信扫码、账号自助恢复和支付供应商留待实际接入。 [桌面连接配置](TRUSTED_TEAM_HTTPS.md)
+桌面客户端使用单独配置的 HTTPS origin 和实例 UUID 连接。受管服务只接受已绑定手机号的账号通过密码登录，团队资料请求继续要求已绑定设备和当前权限。已配置的席位与订阅管理规则继续在服务端执行。演示账号登录和模拟付款处理关闭。微信扫码、账号恢复和支付仍待接入对应服务。 [桌面连接配置](TRUSTED_TEAM_HTTPS.md)
+
+## 可选阿里云短信配置
+
+服务配置新增可选的 `smsProfile`，指向仓库之外单独保管的 UTF-8 JSON 文件。省略此字段时短信能力关闭。启用前需取得实际可用的短信资质、签名、模板和授权凭据。该接入按阿里云短信中国站 `SendSms` 设计。 [申请与接入流程](https://help.aliyun.com/zh/sms/getting-started/use-sms-api) · [SendSms 接口](https://help.aliyun.com/zh/sms/developer-reference/api-dysmsapi-2017-05-25-sendsms)
+
+```json
+{
+  "schemaVersion": 1,
+  "provider": "aliyun",
+  "accessKeyId": "<短信调用凭据ID>",
+  "accessKeySecret": "<短信调用密钥>",
+  "phonePepper": "<由安全随机源生成的32字节，无填充base64url>",
+  "signName": "<已审批短信签名>",
+  "templates": {
+    "bind": "<手机号绑定模板ID>",
+    "reset": "<恢复验证码模板ID>",
+    "activate": "<员工激活模板ID>",
+    "first-admin": "<首管理员激活模板ID>"
+  }
+}
+```
+
+使用 STS 临时凭据时同时配置 `securityToken`。四种用途配置已审批的 `SMS_` 模板 ID，模板参数为六位验证码 `code`。挑战只在供应商接受后才能用于验证，拒绝或超时按既有流程记为发送失败。短信接入这一步不改变账号恢复的审核开关。 [阿里云 V3 请求签名](https://help.aliyun.com/zh/sdk/product-overview/v3-request-structure-and-signature)
 
 当前验收使用本机受控 TLS 证书和合成账号。后续仍需验证实际域名和证书、服务器进程托管、外部代理、防护与告警、真实负责人身份与手机号核验、真实供应商、数据库迁移及正式上线切换。

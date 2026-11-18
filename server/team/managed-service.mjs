@@ -107,12 +107,20 @@ function resolveManagedTarget(incoming, origin) {
 }
 
 /** Loopback-only HTTPS listener for a separately provisioned non-demo database. */
-export async function startManagedTeamServer({db, apiBase, port = 0, serverId, key, cert} = {}) {
+export async function startManagedTeamServer({db, apiBase, port = 0, serverId, key, cert, sms, phonePepper} = {}) {
   const origin = managedOrigin(apiBase, port, serverId);
   assertManagedDatabaseReady(db, serverId);
   checkTlsConfiguration(origin, key, cert);
+  const hasSms = sms !== undefined || phonePepper !== undefined;
+  if (hasSms && (typeof sms?.send !== 'function' || !Buffer.isBuffer(phonePepper) || phonePepper.length !== 32)) {
+    fail('MANAGED_SERVICE_CONFIGURATION_INVALID');
+  }
+  const pepper = hasSms ? Buffer.from(phonePepper) : undefined;
+  const identityProviders = Object.freeze({deviceProofRequired:true,
+    ...(hasSms ? {sms:Object.freeze({send:sms.send.bind(sms)}), phonePepper:pepper} : {}),
+  });
   const settings = Object.freeze({
-    db, serviceMode:'managed-service', identityProviders:Object.freeze({deviceProofRequired:true}),
+    db, serviceMode:'managed-service', identityProviders,
     subscriptionEnforcement:'team-management-v1', seatCapacityEnforcement:'invitation-reservations-v1',
     billingSimulation:null,
   });
@@ -141,9 +149,10 @@ export async function startManagedTeamServer({db, apiBase, port = 0, serverId, k
     let closing;
     return Object.freeze({
       ...service, address:Object.freeze(service.address), apiBase:origin.origin,
-      close:() => closing ??= service.close(),
+      close:() => closing ??= service.close().finally(() => pepper?.fill(0)),
     });
   } catch (error) {
+    pepper?.fill(0);
     if (error?.code === 'MANAGED_TLS_INVALID') throw error;
     fail('MANAGED_SERVICE_LISTEN_FAILED');
   }

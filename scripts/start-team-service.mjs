@@ -5,6 +5,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { assertManagedDatabaseReady, startManagedTeamServer } from '../server/team/managed-service.mjs';
+import { createAliyunSms } from '../server/team/aliyun-sms.mjs';
 
 const checkout = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fields = ['schemaVersion', 'database', 'apiBase', 'serverId', 'listenPort', 'tlsCertificate', 'tlsKey'];
@@ -14,6 +15,7 @@ const messages = {
   [configCode]: '服务配置无效。请检查配置格式、本机文件路径及监听地址。',
   MANAGED_DATABASE_NOT_READY: '指定数据库未通过服务启动检查。',
   MANAGED_TLS_INVALID: '证书和私钥无法用于配置的 HTTPS 地址。',
+  MANAGED_SMS_INVALID: '短信服务配置无效。请检查独立配置文件及模板。',
   MANAGED_SERVICE_LISTEN_FAILED: '团队服务未能监听配置的本机端口。',
   MANAGED_SERVICE_STOP_FAILED: '团队服务关闭未完成。',
 };
@@ -74,26 +76,35 @@ async function readLocalFile(filename, maxBytes, code) {
   }
 }
 
-function uniqueKeys(text) {
+function uniqueKeys(text, code) {
   // JSON.parse validates token syntax. This walk accounts for escaped key
-  // spellings and treats duplicate root keys as configuration errors.
-  const seen = new Set();
-  let depth = 0;
+  // spellings and rejects duplicates within each object.
+  const objects = [];
   for (let offset = 0; offset < text.length; offset++) {
     const current = text[offset];
-    if (current === '{' || current === '[') depth++;
-    if (current === '}' || current === ']') depth--;
+    if (current === '{' || current === '[') objects.push(current === '{' ? new Set() : null);
+    if (current === '}' || current === ']') objects.pop();
     if (current !== '"') continue;
     const start = offset;
     while (++offset < text.length) {
       if (text[offset] === '\\') offset++;
       else if (text[offset] === '"') break;
     }
-    if (depth !== 1 || !/^\s*:/.test(text.slice(offset + 1))) continue;
+    const seen = objects.at(-1);
+    if (!seen || !/^\s*:/.test(text.slice(offset + 1))) continue;
     const key = JSON.parse(text.slice(start, offset + 1));
-    if (seen.has(key)) fail(configCode);
+    if (seen.has(key)) fail(code);
     seen.add(key);
   }
+}
+
+function parseProfile(bytes, code) {
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) fail(code);
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  const value = JSON.parse(text);
+  uniqueKeys(text, code);
+  if (!value || Object.getPrototypeOf(value) !== Object.prototype) fail(code);
+  return value;
 }
 
 export async function loadManagedServiceConfiguration(filename) {
@@ -101,21 +112,40 @@ export async function loadManagedServiceConfiguration(filename) {
     const configPath = localPath(filename), repository = await fs.realpath(checkout);
     if (inside(repository, configPath)) fail(configCode);
     const bytes = await readLocalFile(configPath, 16 * 1024, configCode);
-    if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) fail(configCode);
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    const value = JSON.parse(text);
-    uniqueKeys(text);
-    if (!value || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).length !== fields.length ||
+    const value = parseProfile(bytes, configCode);
+    if (Object.keys(value).some(name => name !== 'smsProfile' && !fields.includes(name)) ||
       fields.some(name => !Object.hasOwn(value, name)) || value.schemaVersion !== 1 || typeof value.apiBase !== 'string' ||
       typeof value.serverId !== 'string' || !uuid.test(value.serverId) || !Number.isInteger(value.listenPort) || value.listenPort < 0 || value.listenPort > 65535) fail(configCode);
     const origin = new URL(value.apiBase);
     if (origin.protocol !== 'https:' || origin.origin !== value.apiBase) fail(configCode);
     const { database, tlsCertificate, tlsKey } = Object.fromEntries(['database', 'tlsCertificate', 'tlsKey'].map(name => [name, localPath(value[name])]));
     const filenames = [configPath, database, tlsCertificate, tlsKey];
+    const smsProfile = Object.hasOwn(value, 'smsProfile') ? localPath(value.smsProfile) : undefined;
+    if (smsProfile) filenames.push(smsProfile);
     if (filenames.some((name, index) => inside(repository, name) || filenames.slice(0, index).some(previous => !path.relative(previous, name)))) fail(configCode);
-    return Object.freeze({ ...value, database, tlsCertificate, tlsKey });
+    return Object.freeze({ ...value, database, tlsCertificate, tlsKey, ...(smsProfile ? { smsProfile } : {}) });
   } catch {
     fail(configCode);
+  }
+}
+
+async function loadSmsProvider(filename) {
+  if (filename === undefined) return;
+  const code = 'MANAGED_SMS_INVALID';
+  let bytes, pepper;
+  try {
+    if (Object.hasOwn(process.env, 'NODE_TLS_REJECT_UNAUTHORIZED') && process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '1') fail(code);
+    bytes = await readLocalFile(filename, 16 * 1024, code);
+    const { schemaVersion, provider, phonePepper, ...settings } = parseProfile(bytes, code);
+    if (schemaVersion !== 1 || provider !== 'aliyun' || typeof phonePepper !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(phonePepper)) fail(code);
+    pepper = Buffer.from(phonePepper, 'base64url');
+    if (pepper.length !== 32 || pepper.toString('base64url') !== phonePepper) fail(code);
+    return { sms: createAliyunSms(settings), phonePepper: pepper };
+  } catch {
+    pepper?.fill(0);
+    fail(code);
+  } finally {
+    bytes?.fill(0);
   }
 }
 
@@ -141,13 +171,14 @@ async function openManagedDatabase(filename, serverId) {
 
 export async function openConfiguredTeamService(filename) {
   const configuration = await loadManagedServiceConfiguration(filename);
-  const { database, serverId, apiBase, listenPort: port, tlsCertificate, tlsKey } = configuration;
-  let db, key;
+  const { database, serverId, apiBase, listenPort: port, tlsCertificate, tlsKey, smsProfile } = configuration;
+  let db, key, smsProvider;
   try {
+    smsProvider = await loadSmsProvider(smsProfile);
     const cert = await readLocalFile(tlsCertificate, 128 * 1024, 'MANAGED_TLS_INVALID');
     key = await readLocalFile(tlsKey, 32 * 1024, 'MANAGED_TLS_INVALID');
     db = await openManagedDatabase(database, serverId);
-    const service = await startManagedTeamServer({ db, apiBase, port, serverId, cert, key });
+    const service = await startManagedTeamServer({ db, apiBase, port, serverId, cert, key, ...smsProvider });
     let stopping;
     return { address: service.address, apiBase: service.apiBase, serverId,
       close: () => stopping ??= service.close().finally(() => db.close()) };
@@ -156,6 +187,7 @@ export async function openConfiguredTeamService(filename) {
     throw error;
   } finally {
     key?.fill(0);
+    smsProvider?.phonePepper.fill(0);
   }
 }
 
