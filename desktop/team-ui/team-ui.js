@@ -1428,6 +1428,64 @@
   }
   async function enter(value){resetLedgerChecks();resetWorkpapers();if(!deviceApiReady()||!validDeviceSnapshot(value?.device)||!deviceBusinessReady(value.device)){await acceptAuthenticatedSession(value);return;}accountIdentityEpoch++;resetMyDeviceOverview();resetProjectMigration();resetAdministratorBusinessRole();resetProjectAccess();resetBusinessRole();resetMemberManagement();taskUploadOperation=null;resetTaskSubmissionAccess();selected=null;submissions=[];revision=0;renderDetail();resetTaskManagement();resetRecovery(true,true);resetAccountSessions();resetPasswordChange();resetWechat(false);resetActivation(true,true);resetFirstAdmin(true,true);resetProvisioning();resetRecoveryReviews();resetInvitations();administrationTeams=[];session=value;viewEpoch++;clearPhoneProof();message('phone-bind-message','');byId('phone-bind-panel').open=false;byId('login-view').hidden=true;byId('workspace-view').hidden=false;byId('session-actions').hidden=false;byId('account-name').textContent=session.account.displayName;byId('password').value='';const select=byId('team-select');select.replaceChildren();for(const member of session.memberships){const option=el('option',member.teamId);option.value=member.teamId;select.append(option);}teamId=session.memberships[0]?.teamId||'';invitationTeamId=teamId;rebuildInvitationTeams();updateRole();void loadIdentityMethods();void loadOnboardingStatus();void loadInvitationAccess();void loadProvisioningAccess();void loadRecoveryReviewsAccess();void loadTeamAdministration();void loadMemberManagementAccess();void loadReplacementReviewAccess();void loadBusinessRoleAccess();void loadProjectAccess();void loadAdministratorBusinessRoleAccess();void loadProjectMigrationAccess();if(teamId)void loadTasks();else{tasks=[];renderTasks();detailEmpty();message('workspace-message','当前账号尚未获指派审计角色或资料权限。');}}
   function updateRole(){billing?.update();refundIntake?.update();ledgerChecks?.sync();workpapers?.sync();byId('role-label').textContent=labels[session?.memberships.find(member=>member.teamId===teamId)?.role]||'未指派角色';}
+  function watchWorkspaceNavigation(){
+    const workspace=byId('workspace-view'),navigation=byId('workspace-navigation'),groups=byId('workspace-navigation-groups');
+    if(!navigation||!groups)return;
+    const sections=[
+      ['项目业务',['project-access-panel','ledger-check-panel','workpaper-panel']],
+      ['团队管理',['employee-invitations-panel','business-role-panel','member-management-panel','device-replacement-reviews-panel','recovery-reviews-panel']],
+      ['独立审核',['team-provisioning-panel','administrator-business-role-panel','project-migration-panel']],
+      ['订阅与订单',['billing-panel','refund-intake-panel']],
+    ].map(([title,ids])=>({title,panels:ids.map(byId).filter(panel=>panel?.parentElement===workspace)}));
+    const available=panel=>!workspace.hidden&&!panel.hidden;
+    let shown='';
+    const update=()=>{
+      const visible=sections.map(({title,panels})=>({title,panels:panels.filter(available)})).filter(group=>group.panels.length);
+      const keys=visible.flatMap(group=>group.panels.map(panel=>panel.id)).join(',');
+      const managementOnly=!!keys&&!teamId;
+      const heading=byId('workspace-title'),caption=byId('workspace-caption');
+      if(workspace.classList.contains('management-workspace')!==managementOnly){
+        workspace.classList.toggle('management-workspace',managementOnly);
+        heading.textContent=managementOnly?'审易工作台':'我的采集任务';
+        caption.textContent=managementOnly?'打开模块查看可办理的团队、审核或账务事项。':'选择一项任务，核对要求，再提交资料。';
+        byId('refresh').textContent=managementOnly?'刷新':'刷新任务';
+      }
+      if(keys===shown)return;
+      shown=keys;
+      const focused=groups.contains(document.activeElement)?document.activeElement.getAttribute('aria-controls'):null;
+      const next=visible.map(({title,panels})=>{
+        const group=el('div',undefined,'workspace-navigation-group');
+        const links=el('ul');
+        group.append(el('h3',title),links);
+        for(const panel of panels){
+          const summary=panel.firstElementChild;
+          const button=el('button',summary.textContent.trim(),'button');
+          button.type='button';
+          button.disabled=busy;
+          button.setAttribute('aria-controls',panel.id);
+          button.addEventListener('click',()=>{
+            if(busy||!available(panel))return;
+            panel.open=true;
+            summary.focus();
+          });
+          const item=el('li');
+          item.append(button);
+          links.append(item);
+        }
+        return group;
+      });
+      groups.replaceChildren(...next);
+      navigation.hidden=!keys;
+      if(focused&&!workspace.hidden){
+        const replacement=Array.from(groups.querySelectorAll('button')).find(button=>button.getAttribute('aria-controls')===focused);
+        (replacement&&!replacement.disabled?replacement:heading).focus({preventScroll:true});
+      }
+    };
+    const observer=new MutationObserver(update);
+    const options={attributes:true,attributeFilter:['hidden']};
+    for(const element of [workspace,...sections.flatMap(group=>group.panels)])observer.observe(element,options);
+    update();
+  }
   byId('login-form').addEventListener('submit',async event=>{
     event.preventDefault();if(deviceGateActive()){if(deviceSnapshot?.state==='enrollment_required'&&!deviceLocalIssue)await enrollCurrentDevice();return;}if(busy||deviceAction)return;if(!deviceApiReady()){suspendDeviceView('当前客户端设备接口未更新，请更新客户端后重试。');return;}
     resetRecovery(true,true);resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);const phoneMode=byId('login-mode').value==='phone';if(phoneMode&&(!methodsReady||!methods.phonePassword)){message('login-message','手机号登录尚未开放。',true);return;}
@@ -1459,6 +1517,7 @@
     onUnauthorized:()=>{showLogin();message('login-message','当前账号登录已失效，请重新登录。',true);},
     onDeviceUnavailable:()=>suspendDeviceView('当前设备无法通过核验。重新连接后，请在原订单中核对受理记录。')
   });
+  watchWorkspaceNavigation();
   if(!api){message('login-message','此页面需要审易桌面客户端，请从桌面启动入口打开。',true);byId('login-submit').disabled=true;}
   updateIdentityControls();updateOnboardingControls();updateMemberManagementControls();if(api){void loadIdentityMethods();void loadOnboardingStatus();devicePollTimer=setInterval(()=>void pollDeviceStatus(),1000);void pollDeviceStatus();}
 })();

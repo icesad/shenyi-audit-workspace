@@ -23,3 +23,36 @@ test('task names and instructions are displayed as text rather than executable m
   const unsafe={...task,title:'<img id="untrusted-node" src="x" onerror="alert(1)">',instructions:'<script>window.injected=true</script>'};
   const window=create(t,{login:async()=>ok(session),listTasks:async()=>ok({tasks:[unsafe],hasMore:false}),getTask:async()=>ok({task:unsafe}),getSubmissions:async()=>ok({revision:0,submissions:[]})});signIn(window);await waitFor(()=>window.document.querySelector('.task-button')&&!window.document.getElementById('refresh').disabled);window.document.querySelector('.task-button').click();await waitFor(()=>window.document.getElementById('task-detail').textContent.includes(unsafe.instructions));assert.equal(window.document.getElementById('untrusted-node'),null);assert.equal(window.injected,undefined);assert.ok(window.document.getElementById('task-detail').textContent.includes(unsafe.title));
 });
+
+test('workspace shortcuts mirror existing top-level visibility and reject a stale shortcut before the next render',async t=>{
+  const window=create(t,{login:async()=>ok(session),listTasks:async()=>ok({tasks:[task],hasMore:false}),logout:async()=>ok({signedOut:true})});
+  const id=name=>window.document.getElementById(name);
+  const navigation=id('workspace-navigation');
+  const panel=id('ledger-check-panel');
+  const shortcut=()=>navigation.querySelector('[aria-controls="ledger-check-panel"]');
+  signIn(window);
+  await waitFor(()=>window.document.querySelector('.task-button')&&!id('refresh').disabled);
+  assert.equal(navigation.hidden,true);
+  assert.equal(navigation.querySelectorAll('button').length,0);
+
+  id('workspace-source-panel').hidden=false;
+  panel.hidden=false;
+  await waitFor(shortcut);
+  assert.deepEqual(Array.from(navigation.querySelectorAll('button'),button=>button.getAttribute('aria-controls')),['ledger-check-panel']);
+  assert.equal(panel.open,false);
+  const stale=shortcut();
+  stale.focus();
+  panel.hidden=true;
+  stale.click();
+  assert.equal(panel.open,false);
+  await waitFor(()=>navigation.hidden&&!shortcut());
+  assert.equal(window.document.activeElement,id('workspace-title'));
+
+  panel.hidden=false;
+  await waitFor(shortcut);
+  shortcut().click();
+  assert.equal(panel.open,true);
+  id('logout').click();
+  await waitFor(()=>id('workspace-view').hidden&&navigation.hidden&&!shortcut());
+  assert.equal(navigation.querySelectorAll('button').length,0);
+});

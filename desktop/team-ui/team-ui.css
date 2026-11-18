@@ -178,3 +178,20 @@ main{margin-left:232px;padding:0 38px;min-height:100vh;display:flex;flex-directi
   .login-column #login-mode { max-width: 100%; }
   .login-column .phone-entry { grid-template-columns: minmax(0, 1fr); }
 }
+
+.workspace-navigation {
+  margin: 14px 0 22px;
+  padding: 14px 16px;
+  border: 1px solid #dbe5dc;
+  border-radius: 8px;
+  background: var(--white);
+}
+.workspace-navigation > h2 { margin: 0 0 10px; font-size: 15px; }
+.workspace-navigation-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 12px 20px; }
+.workspace-navigation-group h3 { margin: 0 0 5px; color: var(--muted); font-size: 12px; }
+.workspace-navigation-group ul { display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 0; list-style: none; }
+.workspace-navigation-group li { min-width: 0; max-width: 100%; }
+.workspace-navigation-group .button { min-height: 40px; max-width: 100%; padding: 6px 10px; color: var(--accent); font-size: 13px; text-align: left; overflow-wrap: anywhere; }
+.workspace-navigation-group .button:hover:not(:disabled) { background: var(--soft); }
+.management-workspace .workspace-tools,
+.management-workspace .collection-layout { display: none; }
