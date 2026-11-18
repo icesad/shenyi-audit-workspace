@@ -30,6 +30,32 @@ test('private response-size capability only accepts exact ledger paths and snaps
  assert.equal(ledgerTransportValid(root+'/imports',{method:'POST',binary:false,body:{},snapshot:false}),true);assert.equal(ledgerTransportValid(root+'/imports?extra=1',{method:'POST',binary:false,body:{},snapshot:false}),false);
 });
 
+test('only snapshot import and download extend the signed transport deadline', async t => {
+ const f = await fixture(t, {grant:false});
+ const nativeTimeout = AbortSignal.timeout;
+ const timeoutBySignal = new WeakMap();
+ t.mock.method(AbortSignal, 'timeout', milliseconds => {
+  const signal = nativeTimeout(milliseconds);
+  timeoutBySignal.set(signal, milliseconds);
+  return signal;
+ });
+
+ await f.change(true);
+ const {input, receipt} = await f.importing();
+ await f.client.getLedgerCheckImportReceipt({...f.target, operationId:input.operationId});
+ await f.client.listLedgerCheckSnapshots(f.target);
+ await f.client.getLedgerCheckSnapshot(await f.readInput(receipt.snapshotId));
+
+ const calls = f.state.calls.filter(call => call.route.startsWith(f.root) && timeoutBySignal.has(call.settings.signal));
+ const bulk = calls.filter(call => call.route === f.root + '/imports' || call.route.startsWith(f.root + '/snapshots/'));
+ assert.deepEqual(bulk.map(call => [call.settings.method, timeoutBySignal.get(call.settings.signal)]), [['POST', 90000], ['GET', 90000]]);
+ const controls = calls.filter(call => !bulk.includes(call));
+ assert.ok(controls.some(call => call.route === f.root + '/access' && call.settings.method === 'POST'));
+ assert.ok(controls.some(call => call.route === f.root + '/imports/' + input.operationId));
+ assert.ok(controls.some(call => call.route === f.root && call.settings.method === 'GET'));
+ assert.ok(controls.every(call => timeoutBySignal.get(call.settings.signal) === 15000));
+});
+
 test('password failure preserves existing history and a second explicit import appends a new version',async t=>{
  const f=await fixture(t),input=await f.importInput();await assert.rejects(f.client.importLedgerCheckSnapshot({...input,currentPassword:'wrong'}),{code:'HTTP_403'});assert.equal(f.moduleRows()[3].rows.length,0);
  const first=await f.client.importLedgerCheckSnapshot(input),second=await f.importing();assert.equal(first.version,1);assert.equal(second.receipt.version,2);assert.equal((await f.client.listLedgerCheckSnapshots({...f.target,limit:1})).hasMore,true);

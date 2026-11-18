@@ -179,7 +179,13 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     const signed=linking?await wechatLinkProof(bytes):protectedRoute?await device.prepare(method,route,bytes):null;
     if(linking&&!signed)throw failure('DEVICE_NOT_READY','请先使用已经绑定的电脑确认微信关联。');
     if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();
-    const transportSignal=guardedHooks?AbortSignal.any([AbortSignal.timeout(workpaper?workpaperTimeoutMilliseconds(route,{kind:workpaper.kind,method}):materialPreservationExport?180000:15000),...(guardedHooks.signal?[guardedHooks.signal]:[])]):AbortSignal.timeout(15000);
+    // These two validated ledger routes can carry a full snapshot.
+    const ledgerSnapshotTransfer = ledgerCheck && (ledgerCheck.snapshot || method === 'POST' && route.endsWith('/imports'));
+    const timeoutMilliseconds = workpaper
+      ? workpaperTimeoutMilliseconds(route, {kind:workpaper.kind, method})
+      : materialPreservationExport ? 180000 : ledgerSnapshotTransfer ? 90000 : 15000;
+    const deadline = AbortSignal.timeout(timeoutMilliseconds);
+    const transportSignal = guardedHooks?.signal ? AbortSignal.any([deadline, guardedHooks.signal]) : deadline;
     const materialCheck=()=>{if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();guardedHooks?.assertCurrent?.();if(guardedHooks?.signal?.aborted)throw failure(workpaper?'WORKPAPER_CANCELED':ledgerCheck?'LEDGER_CHECK_CANCELED':sourceHooks?'WORKSPACE_SOURCE_EXPORT_CANCELED':'MATERIAL_EXPORT_CANCELED',workpaper?'本次底稿操作已停止；已发操作仍须按原编号核对。':ledgerCheck?'本次账表查阅已停止；已发导入仍须查询原操作。':sourceHooks?'本次立项来源保存已停止。':'本次资料保全导出已停止。');};
     materialCheck();
     if(trusted&&route!=='/api/auth/methods'){
