@@ -36,9 +36,29 @@ WAL 源也支持。仅在本次全新备份副本上，由 SQLite 正常切换�
 
 `rehearse` 先完整核验备份，排他复制到另一个全新目录，再核对恢复文件的原字节、schema 和全部表摘要，成功才发布 `rehearsal.json`。它不会自动删除源库，也不会将恢复目录注册为正常候选或启动在线服务。恢复核验可在原路径已不可用时完成；测试只把自己的合成源改名保留，未删除用户文件。
 
+## 加密封存与异地恢复演练
+
+使用 `seal` 封存已经通过核验的 `backup-UUID`。运维人员单独保管一个用安全随机源生成的 32 字节二进制密钥文件。`--key-file` 取该文件的本机绝对路径。密钥与工件使用独立保管位置，复制封存工件时只复制新的 `sealed-UUID` 目录。
+
+```powershell
+node scripts/team-database-backup.mjs seal `
+  --bundle 'D:/owned-backup/backup-<UUID>' `
+  --key-file 'D:/operator-keys/backup-key.bin' `
+  --output-root 'D:/sealed-artifacts'
+
+node scripts/team-database-backup.mjs rehearse-sealed `
+  --bundle 'D:/transferred-artifacts/sealed-<UUID>' `
+  --key-file 'D:/operator-keys/backup-key.bin' `
+  --output-root 'D:/offline-recovery'
+```
+
+`<UUID>` 用实际返回的目录名替换。封存目录中只有 `snapshot.sealed`。数据库和包含服务标识、表摘要的清单一起使用 AES-256-GCM 加密。包头包含格式、随机 nonce 与长度，并纳入认证。文件末尾含认证标签。密钥原始字节不写进工件或命令行输出。输出使用支持硬链接的文件系统（Windows 可选 NTFS）排他发布，之后可复制密文目录到其他介质。 [Node.js 加密与认证接口](https://github.com/nodejs/node/blob/v24.22.1/doc/api/crypto.md#deciphersetauthtagbuffer-encoding)
+
+恢复先认证密文，再逐块比对两次读取的原始密文，匹配后才写入新目录中的候选 SQLite。通过第二次认证、原始文件哈希、SQLite 完整性、外键和分类型表摘要核验，才发布恢复演练结果。损坏、截断、追加数据或不匹配的密钥会触发拒绝。恢复目录含有明文 SQLite，请留在受保护的离线运维位置。
+
 ## 安全与生产边界
 
-整个数据库含全部团队数据、密码哈希、会话、设备及恢复／邀请事实；备份文件不是加密容器。它是敏感的运维工件，不是员工可领取的项目导出包，也不经过普通业务 IPC 或 HTTP 下载接口。权限参数 `0700/0600` 不代表已经验收 Windows ACL、加密、异地保管、保留期限或合规策略。
+整个数据库含全部团队数据、密码哈希、会话、设备及恢复／邀请事实。`create` 生成的原始工件与恢复数据库使用明文 SQLite，`seal` 完成后原始文件仍由运维人员保管。备份和恢复都是敏感运维操作。权限参数 `0700/0600` 仍需结合实际操作系统权限配置，生产环境的 Windows ACL、密钥管理、异地保管、保留期限和合规流程待验。
 
 历史快照还会保留当时的密码、有效成员、旧角色／项目授权和设备状态。恢复它可能倒退备份后的改密、停用、撤权、换机和审批；清空会话无法解决旧密码重新登录或旧 grant 复活。因此本工具始终标记 `offlineOnly=true`、`onlineCutoverSupported=false`，没有自动“清理安全表后上线”。生产恢复点、可信撤销事实重放、身份策略、证书／密钥、迁移和正式切换须在 M7 单独设计、获授权并实证。
 

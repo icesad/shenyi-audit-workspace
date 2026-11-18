@@ -6,6 +6,7 @@ import {constants} from 'node:fs';
 import * as fs from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
 import {DatabaseSync,backup} from 'node:sqlite';
+import {SealedEnvelopeError,decryptBackupEnvelope,encryptBackupEnvelope,readBackupEnvelope,writeEnvelopeBytes} from './sealed-backup-envelope.mjs';
 
 const REPOSITORY=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
@@ -14,7 +15,9 @@ const IDENTIFIER=/^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const MANIFEST_MAX=1024*1024;
 const BACKUP_KIND='shenyi-offline-synthetic-backup';
 const REHEARSAL_KIND='shenyi-offline-synthetic-rehearsal';
-const MESSAGES={INVALID_INPUT:'离线备份参数无效。',RUNTIME_UNSUPPORTED:'请使用Node.js 24.15以上24.x。',SOURCE_INVALID:'仅支持结构完整、具有服务身份的合成团队数据库。',BUNDLE_INVALID:'离线备份工件不完整、已变化或不匹配。',BACKUP_FAILED:'离线备份未完成；已创建的本次目录保留。',RESTORE_FAILED:'离线恢复核验未完成；已创建的本次目录保留。'};
+const SEALED_KIND='shenyi-offline-synthetic-sealed-backup';
+const SEALED_ARCHIVE='snapshot.sealed';
+const MESSAGES={INVALID_INPUT:'离线备份参数无效。',RUNTIME_UNSUPPORTED:'请使用Node.js 24.15以上24.x。',SOURCE_INVALID:'仅支持结构完整、具有服务身份的合成团队数据库。',BUNDLE_INVALID:'离线备份工件不完整、已变化或不匹配。',BACKUP_FAILED:'离线备份未完成；已创建的本次目录保留。',RESTORE_FAILED:'离线恢复核验未完成；已创建的本次目录保留。',INVALID_BACKUP_KEY:'请使用独立保管的32字节原始备份密钥文件。',SEALED_BUNDLE_INVALID:'加密备份无法完成完整性及身份核验。'};
 export class OfflineBackupError extends Error{
  constructor(code){super(MESSAGES[code]??MESSAGES.BUNDLE_INVALID);this.name='OfflineBackupError';this.code=code;}
 }
@@ -269,4 +272,223 @@ export async function rehearseOfflineRestore(options){
   await publish(directory,'rehearsal.json',{schemaVersion:1,kind:REHEARSAL_KIND,rehearsalId:created.id,snapshotId:checked.manifest.snapshotId,verifiedAt:new Date().toISOString(),database:{filename:'snapshot.sqlite',byteLength:value.databaseBytes,sha256:value.databaseSha256},identity:value.identity,inventory:{schemaSha256:value.schemaSha256,totalRows:value.totalRows,tables:value.tables},offlineOnly:true,onlineCutoverSupported:false,containsCredentials:true},()=>assertInspectedFile(target,value));
   return summary(REHEARSAL_KIND,directory,checked.manifest.snapshotId,value);
  }catch(error){await failure(directory,error instanceof OfflineBackupError?error.code:'RESTORE_FAILED');if(error instanceof OfflineBackupError)throw error;fail('RESTORE_FAILED');}
+}
+
+function sealedPaths(bundleDirectory, keyFile, outputRoot, sealedInput) {
+ const code=sealedInput?'SEALED_BUNDLE_INVALID':'BUNDLE_INVALID';
+ const bundle=absolute(bundleDirectory,code);
+ if(inside(bundle,REPOSITORY))fail(code);
+ const keyPath=absolute(keyFile,'INVALID_BACKUP_KEY');
+ if(inside(keyPath,REPOSITORY)||inside(keyPath,bundle))fail('INVALID_BACKUP_KEY');
+ const root=absolute(outputRoot??defaultOfflineBackupRoot());
+ if(inside(root,REPOSITORY)||inside(root,bundle))fail('INVALID_INPUT');
+ return {bundle,keyPath,root};
+}
+
+async function openCheckedFile(filename,code) {
+ let handle;
+ try{
+  const expected=await regular(filename,code);
+  handle=await fs.open(filename,constants.O_RDONLY|(constants.O_NOFOLLOW||0));
+  const before=state(await handle.stat({bigint:true}));
+  if(!sameState(state(expected),before))fail(code);
+  return {handle,filename,before};
+ }catch{
+  await handle?.close().catch(()=>{});
+  fail(code);
+ }
+}
+
+async function recheckOpenFile(open,code) {
+ try{
+  if(!sameState(open.before,state(await open.handle.stat({bigint:true})))||
+      !sameState(open.before,state(await regular(open.filename,code))))fail(code);
+ }catch{fail(code);}
+}
+
+async function readKeyFile(filename) {
+ let open,key;
+ try{
+  open=await openCheckedFile(filename,'INVALID_BACKUP_KEY');
+  if(open.before.size!==32n)fail('INVALID_BACKUP_KEY');
+  key=Buffer.alloc(32);
+  for(let offset=0;offset<key.length;){
+   const {bytesRead}=await open.handle.read(key,offset,key.length-offset,offset);
+   if(!bytesRead)fail('INVALID_BACKUP_KEY');
+   offset+=bytesRead;
+  }
+  await recheckOpenFile(open,'INVALID_BACKUP_KEY');
+  return key;
+ }catch{
+  key?.fill(0);
+  fail('INVALID_BACKUP_KEY');
+ }finally{await open?.handle.close().catch(()=>{});}
+}
+
+async function openPendingFile(directory,kind) {
+ await noLinks(directory,{code:kind});
+ const filename=path.join(directory,'.snapshot.pending-'+randomUUID());
+ const handle=await fs.open(filename,'wx',0o600);
+ try{
+  const stat=await handle.stat({bigint:true});
+  return {directory,filename,handle,dev:stat.dev,ino:stat.ino};
+ }catch(error){await handle.close().catch(()=>{});throw error;}
+}
+
+function ownsFile(owned,stat) {
+ return stat.isFile()&&!stat.isSymbolicLink()&&stat.dev===owned.dev&&stat.ino===owned.ino;
+}
+
+async function closePendingFile(owned) {
+ if(!owned?.handle)return;
+ const handle=owned.handle;
+ owned.handle=null;
+ await handle.close();
+}
+
+async function discardOwnedFile(owned,filename=owned?.filename) {
+ if(!filename||!samePath(path.dirname(filename),owned.directory))return;
+ try{
+  await noLinks(owned.directory,{code:'BUNDLE_INVALID'});
+  const stat=await fs.lstat(filename,{bigint:true});
+  if(ownsFile(owned,stat))await fs.unlink(filename);
+ }catch{}
+}
+
+async function publishOwnedFile(owned,name,expected) {
+ const target=path.join(owned.directory,name);
+ const before=await regular(owned.filename,'BUNDLE_INVALID');
+ if(owned.handle||!ownsFile(owned,before)||!sameState(state(before),expected))fail('BUNDLE_INVALID');
+ let linked=false;
+ try{
+  await fs.link(owned.filename,target);
+  linked=true;
+  const a=await fs.lstat(owned.filename,{bigint:true}),b=await fs.lstat(target,{bigint:true});
+  if(!ownsFile(owned,a)||!ownsFile(owned,b)||a.nlink!==2n||b.nlink!==2n)fail('BUNDLE_INVALID');
+  await fs.unlink(owned.filename);
+  if(!ownsFile(owned,await regular(target,'BUNDLE_INVALID')))fail('BUNDLE_INVALID');
+  return target;
+ }catch(error){
+  if(linked)await discardOwnedFile(owned,target);
+  throw error;
+ }
+}
+
+async function publishSealedRehearsalReceipt(directory,receipt,assertReady) {
+ const bytes=Buffer.from(canonical(receipt),'utf8');
+ if(bytes.length>MANIFEST_MAX)fail('RESTORE_FAILED');
+ let owned;
+ try{
+  owned=await openPendingFile(directory,'RESTORE_FAILED');
+  await writeEnvelopeBytes(owned.handle,bytes);
+  await owned.handle.sync();
+  await closePendingFile(owned);
+  const facts=await hashFile(owned.filename);
+  if(facts.sha256!==sha(bytes)||facts.byteLength!==bytes.length)fail('RESTORE_FAILED');
+  await assertReady();
+  await publishOwnedFile(owned,'rehearsal.json',facts.state);
+ }catch(error){
+  await closePendingFile(owned).catch(()=>{});
+  await discardOwnedFile(owned);
+  throw error;
+ }
+}
+
+export async function sealOfflineBackup(options) {
+ assertOfflineBackupRuntime();
+ const {bundleDirectory,keyFile,outputRoot}=input(options,['bundleDirectory','keyFile'],['outputRoot']);
+ const locations=sealedPaths(bundleDirectory,keyFile,outputRoot,false);
+ let key,plaintext,open,owned,directory,published;
+ try{
+  key=await readKeyFile(locations.keyPath);
+  const checked=await verifyBundle(locations.bundle);
+  const snapshot=path.join(checked.directory,'snapshot.sqlite');
+  open=await openCheckedFile(snapshot,'BUNDLE_INVALID');
+  if(!sameState(open.before,checked.value._fileState))fail('BUNDLE_INVALID');
+  plaintext=Buffer.from(canonical(checked.manifest),'utf8');
+  directory=(await freshDirectory(locations.root,'sealed')).directory;
+  owned=await openPendingFile(directory,'BACKUP_FAILED');
+  await encryptBackupEnvelope({database:open.handle,manifest:plaintext,databaseBytes:checked.value.databaseBytes,databaseSha256:checked.value.databaseSha256,key,output:owned.handle});
+  await owned.handle.sync();
+  await closePendingFile(owned);
+  await recheckOpenFile(open,'BUNDLE_INVALID');
+  await standaloneSnapshot(snapshot);
+  if(canonical(await readManifest(path.join(checked.directory,'manifest.json')))!==canonical(checked.manifest))fail('BUNDLE_INVALID');
+  const facts=await hashFile(owned.filename);
+  published=await publishOwnedFile(owned,SEALED_ARCHIVE,facts.state);
+  const final=await hashFile(published);
+  if(final.sha256!==facts.sha256||final.byteLength!==facts.byteLength||final.state.dev!==owned.dev||final.state.ino!==owned.ino)fail('BUNDLE_INVALID');
+  return Object.freeze({kind:SEALED_KIND,directory,archivePath:published,archiveSha256:final.sha256,archiveBytes:final.byteLength,offlineOnly:true,onlineCutoverSupported:false,containsCredentials:true});
+ }catch(error){
+  await closePendingFile(owned).catch(()=>{});
+  await discardOwnedFile(owned);
+  if(published)await discardOwnedFile(owned,published);
+  const code=error instanceof OfflineBackupError?error.code:error instanceof SealedEnvelopeError?'BUNDLE_INVALID':'BACKUP_FAILED';
+  await failure(directory,code);
+  fail(code);
+ }finally{
+  key?.fill(0);plaintext?.fill(0);
+  await open?.handle.close().catch(()=>{});
+ }
+}
+
+function authenticatedManifest(bytes,databaseBytes) {
+ try{
+  const text=new TextDecoder('utf-8',{fatal:true}).decode(bytes),manifest=validateManifest(JSON.parse(text));
+  if(Buffer.byteLength(text)!==bytes.length||text!==canonical(manifest)||manifest.database.byteLength!==databaseBytes)fail('SEALED_BUNDLE_INVALID');
+  return manifest;
+ }catch{fail('SEALED_BUNDLE_INVALID');}
+}
+
+async function checkSealedDirectory(directory) {
+ await noLinks(directory,{code:'SEALED_BUNDLE_INVALID'});
+ if(!path.basename(directory).startsWith('sealed-')||!UUID.test(path.basename(directory).slice(7)))fail('SEALED_BUNDLE_INVALID');
+ try{
+  const entries=await fs.readdir(directory);
+  if(entries.length!==1||entries[0]!==SEALED_ARCHIVE)fail('SEALED_BUNDLE_INVALID');
+ }catch{fail('SEALED_BUNDLE_INVALID');}
+}
+
+export async function rehearseSealedOfflineRestore(options) {
+ assertOfflineBackupRuntime();
+ const {bundleDirectory,keyFile,outputRoot}=input(options,['bundleDirectory','keyFile'],['outputRoot']);
+ const locations=sealedPaths(bundleDirectory,keyFile,outputRoot,true);
+ let key,open,first,second,owned,directory,published;
+ try{
+  key=await readKeyFile(locations.keyPath);
+  await checkSealedDirectory(locations.bundle);
+  open=await openCheckedFile(path.join(locations.bundle,SEALED_ARCHIVE),'SEALED_BUNDLE_INVALID');
+  const envelope=await readBackupEnvelope(open.handle,Number(open.before.size));
+  first=await decryptBackupEnvelope(open.handle,envelope,key);
+  await recheckOpenFile(open,'SEALED_BUNDLE_INVALID');
+  const manifest=authenticatedManifest(first.manifest,envelope.databaseBytes);
+  const created=await freshDirectory(locations.root,'rehearsal');
+  directory=created.directory;
+  owned=await openPendingFile(directory,'RESTORE_FAILED');
+  second=await decryptBackupEnvelope(open.handle,envelope,key,{authenticatedFrames:first.frames,writeDatabase:bytes=>writeEnvelopeBytes(owned.handle,bytes)});
+  if(!first.manifest.equals(second.manifest))fail('SEALED_BUNDLE_INVALID');
+  await recheckOpenFile(open,'SEALED_BUNDLE_INVALID');
+  await checkSealedDirectory(locations.bundle);
+  await owned.handle.sync();
+  await closePendingFile(owned);
+  await standaloneSnapshot(owned.filename);
+  const value=await inspect(owned.filename);
+  if(!matches(value,manifest))fail('SEALED_BUNDLE_INVALID');
+  published=await publishOwnedFile(owned,'snapshot.sqlite',value._fileState);
+  const final=await hashFile(published);
+  if(final.sha256!==value.databaseSha256||final.byteLength!==value.databaseBytes)fail('BUNDLE_INVALID');
+  value._fileState=final.state;
+  await publishSealedRehearsalReceipt(directory,{schemaVersion:1,kind:REHEARSAL_KIND,rehearsalId:created.id,snapshotId:manifest.snapshotId,verifiedAt:new Date().toISOString(),database:{filename:'snapshot.sqlite',byteLength:value.databaseBytes,sha256:value.databaseSha256},identity:value.identity,inventory:{schemaSha256:value.schemaSha256,totalRows:value.totalRows,tables:value.tables},offlineOnly:true,onlineCutoverSupported:false,containsCredentials:true},()=>assertInspectedFile(published,value));
+  return summary(REHEARSAL_KIND,directory,manifest.snapshotId,value);
+ }catch(error){
+  await closePendingFile(owned).catch(()=>{});
+  await discardOwnedFile(owned);
+  if(published)await discardOwnedFile(owned,published);
+  const code=error instanceof OfflineBackupError?error.code==='BUNDLE_INVALID'?'SEALED_BUNDLE_INVALID':error.code:error instanceof SealedEnvelopeError?'SEALED_BUNDLE_INVALID':'RESTORE_FAILED';
+  await failure(directory,code);
+  fail(code);
+ }finally{
+  key?.fill(0);first?.manifest.fill(0);second?.manifest.fill(0);first?.frames.fill(0);
+  await open?.handle.close().catch(()=>{});
+ }
 }
