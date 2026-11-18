@@ -46,7 +46,7 @@ export async function handleCollectionWorkspaceCreationRequest(request,{db,now=D
    WHERE ${scope.sql} AND creation.team_id=? AND creation.request_id=? AND creation.created_by=?`).get(...scope.parameters,teamId,receiptId,actor.userId);
   const current=fresh();if(!row)deny();const context=projectContext(db,current,teamId,row.project_id,{owner:true});if(String(context.project.revision)!==row.current_project_revision)workspaceCreationConflict();return json({receipt:workspaceCreationReceipt(row)});
  }
- if(subscriptionEnforcement==='workspace-create-v1')subscriptionGuard=captureSubscriptionWriteGuard(db,teamId,{now});
+ if(subscriptionEnforcement!=='disabled')subscriptionGuard=captureSubscriptionWriteGuard(db,teamId,{now});
  const body=await readJson(request,FIELDS,8192);fresh();
  if(Object.keys(body).length!==FIELDS.length||!UUID.test(body.requestId??'')||!['read','manage','review'].every(key=>typeof body[key]==='boolean')||!body.read&&(body.manage||body.review)||typeof body.currentPassword!=='string'||!body.currentPassword||Buffer.byteLength(body.currentPassword)>512)invalid();
  const title=titleText(body.title),requestSha256=workspaceCreationDigest({teamId,createdBy:actor.userId,title,read:body.read,manage:body.manage,review:body.review});assertUnused(db,body.requestId);

@@ -1,3 +1,4 @@
+import {captureBusinessSubscriptionGuard} from './subscription-business-policy.mjs';
 import {administratorBusinessEligibilitySql} from './administrator-business-role-policy.mjs';
 import {randomUUID, createHash} from 'node:crypto';
 import {authenticated} from './auth-api.mjs';
@@ -69,7 +70,7 @@ function candidateMembers(db,teamId,{q,after,limit}){
     WHERE ${where}${search} AND member.user_id>? ORDER BY member.user_id COLLATE BINARY LIMIT ?`).all(...parameters,after,limit+1);
   return {members:rows.slice(0,limit).map(memberView),hasMore:rows.length>limit};
 }
-export async function handleCollectionWriteRequest(request, {db, now = Date.now}) {
+export async function handleCollectionWriteRequest(request, {db, now = Date.now,identityProviders={},subscriptionEnforcement='disabled'}) {
   const url = new URL(request.url);
   const match = /^\/api\/teams\/([^/]+)\/collection\/tasks\/([^/]+)\/(submissions|submission-access|assignment|return|management|assignees)$/.exec(url.pathname);
   if (!match) return null;
@@ -107,13 +108,14 @@ export async function handleCollectionWriteRequest(request, {db, now = Date.now}
   if (request.method !== 'POST') return json({error: {code: 'METHOD_NOT_ALLOWED', message: '不支持此操作。'}}, 405, {Allow: action === 'submissions' ? 'GET, POST' : 'POST'});
   if (action !== 'submissions') {
     assertManager(db, identity, teamId, state);
+    const subscriptionGuard=action==='return'?captureBusinessSubscriptionGuard(db,teamId,{now,identityProviders,subscriptionEnforcement}):null;
     const body = await readJson(request, action === 'assignment' ? ['userId','revision'] : ['revision']);
     if(!Number.isSafeInteger(body.revision)||body.revision<0||body.revision>=Number.MAX_SAFE_INTEGER)invalid();
     if (action === 'assignment' && (typeof body.userId !== 'string' || !ID.test(body.userId))) invalid();
-    sameActor(db,request,identity,now());
+    sameActor(db,request,identity,now());subscriptionGuard?.assertCurrent();
     return transaction(db, () => {
       const freshIdentity = sameActor(db, request,identity,now()), fresh = taskState(db, freshIdentity, teamId, taskId);
-      assertManager(db, freshIdentity, teamId, fresh);
+      assertManager(db, freshIdentity, teamId, fresh);subscriptionGuard?.assertCurrent();
       if (fresh.project_status !== 'active'||fresh.status==='closed'||fresh.revision!==body.revision) conflict();
       if (action === 'assignment') {
         const assignee=readTeamContext(db, {userId: body.userId}, teamId);
@@ -124,12 +126,13 @@ export async function handleCollectionWriteRequest(request, {db, now = Date.now}
       nextRevision(db, teamId, taskId);
       if (action === 'return') db.prepare("UPDATE team_collection_tasks SET status='returned' WHERE team_id=? AND task_id=?").run(teamId, taskId);
       audit(db, freshIdentity, teamId, taskId, action === 'return' ? 'task.returned' : 'task.assigned', now());
-      return json({revision: fresh.revision + 1});
+      subscriptionGuard?.assertCurrent();return json({revision: fresh.revision + 1});
     });
   }
   if (!db.prepare("SELECT 1 FROM team_task_assignments WHERE team_id=? AND task_id=? AND user_id=? AND status='active'").get(teamId, taskId, identity.userId)) deny();
   if (state.project_status !== 'active' || !['open', 'returned'].includes(state.status)) conflict();
-  const body = await readJson(request, ['filename', 'contentBase64', 'revision'], 17 * 1024 * 1024);
+  const subscriptionGuard=captureBusinessSubscriptionGuard(db,teamId,{now,identityProviders,subscriptionEnforcement});
+  const body = await readJson(request, ['filename', 'contentBase64', 'revision'], 17 * 1024 * 1024);subscriptionGuard?.assertCurrent();
   if (!Number.isSafeInteger(body.revision) || body.revision < 0 || typeof body.filename !== 'string' || !body.filename || [...body.filename].length > 180 || /[\x00-\x1f\x7f/\\]/.test(body.filename) || body.filename !== body.filename.toWellFormed()) invalid();
   if (typeof body.contentBase64 !== 'string' || body.contentBase64.length > Math.ceil(MAX_FILE_BYTES / 3) * 4) throw new ApiError(413, 'TOO_LARGE', '单份资料最多12MiB。');
   if (!body.contentBase64 || body.contentBase64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(body.contentBase64)) invalid();
@@ -141,13 +144,13 @@ export async function handleCollectionWriteRequest(request, {db, now = Date.now}
     const freshIdentity = sameActor(db, request,identity,now()), fresh = taskState(db, freshIdentity, teamId, taskId);
     if (!db.prepare("SELECT 1 FROM team_task_assignments WHERE team_id=? AND task_id=? AND user_id=? AND status='active'").get(teamId, taskId, freshIdentity.userId)) deny();
     if (fresh.project_status !== 'active' || !['open', 'returned'].includes(fresh.status) || fresh.revision !== body.revision||!Number.isSafeInteger(fresh.revision)||fresh.revision>=Number.MAX_SAFE_INTEGER) conflict();
-    const at = now();
+    subscriptionGuard?.assertCurrent();const at = now();
     db.prepare('INSERT INTO team_collection_attachments VALUES (?,?,?,?,?)').run(teamId, taskId, attachmentId, body.filename, bytes);
     db.prepare('INSERT INTO team_task_submissions VALUES (?,?,?,?,?,?,?,?)').run(teamId, id, taskId, attachmentId, freshIdentity.userId, sha256, bytes.length, at);
     db.prepare("INSERT INTO team_attachment_grants VALUES (?,?,?,'active')").run(teamId, attachmentId, freshIdentity.userId);
     db.prepare("UPDATE team_collection_tasks SET status='submitted' WHERE team_id=? AND task_id=?").run(teamId, taskId);
     nextRevision(db, teamId, taskId);
     audit(db, freshIdentity, teamId, taskId, 'task.submitted', at);
-    return json({revision: fresh.revision + 1, submission: {id, attachmentId, filename: body.filename, sha256, byteLength: bytes.length, createdAt: at}}, 201);
+    subscriptionGuard?.assertCurrent();return json({revision: fresh.revision + 1, submission: {id, attachmentId, filename: body.filename, sha256, byteLength: bytes.length, createdAt: at}}, 201);
   });
 }

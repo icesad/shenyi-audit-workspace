@@ -1,3 +1,4 @@
+import {captureBusinessSubscriptionGuard} from './subscription-business-policy.mjs';
 import sourceCodec from '../../dist/legacy-project-source.js';
 import {createHash,randomUUID} from 'node:crypto';
 import {consume,limitedPasswordWork} from './auth-api.mjs';
@@ -32,7 +33,7 @@ function publish(db,actor,body,source,sourceBytes,summary,at){
  const project=managedProject(db,body.teamId,summary.projectId);if(!project||project.createdBy!==body.ownerUserId)migrationConflict();migrationInteger(project.revision,1);
  return migrationReceipt(db.prepare(`SELECT ${RECEIPT_FIELDS} FROM team_project_migration_provenance WHERE request_id=?`).get(body.requestId));
 }
-export async function handleProjectMigrationRequest(request,{db,now=Date.now,identityProviders={},deviceContext}={}){
+export async function handleProjectMigrationRequest(request,{db,now=Date.now,identityProviders={},deviceContext,subscriptionEnforcement='disabled'}={}){
  const url=new URL(request.url),access=url.pathname==='/api/auth/project-migration/access',teams=url.pathname==='/api/project-migrations/teams',owners=/^\/api\/project-migrations\/teams\/([^/]+)\/owners$/.exec(url.pathname),receipt=/^\/api\/project-migrations\/receipts\/([^/]+)$/.exec(url.pathname),register=url.pathname==='/api/project-migrations';
  if(!access&&!teams&&!owners&&!receipt&&!register)return null;
  if((access||receipt||register)&&url.search)invalid();if(request.method!==(register?'POST':'GET'))return method(register?'POST':'GET');
@@ -45,11 +46,12 @@ export async function handleProjectMigrationRequest(request,{db,now=Date.now,ide
  if(Object.keys(body).length!==FIELDS.length||!UUID.test(body.requestId??'')||!ID.test(body.teamId??'')||!ID.test(body.ownerUserId??'')||!Number.isSafeInteger(body.ownerRevision)||body.ownerRevision<0||!['read','manage','review'].every(key=>typeof body[key]==='boolean')||!body.read&&(body.manage||body.review)||typeof body.sourceSha256!=='string'||!/^[a-f0-9]{64}$/.test(body.sourceSha256)||typeof body.currentPassword!=='string'||!body.currentPassword||Buffer.byteLength(body.currentPassword)>512)invalid();
  let source,sourceBytes,summary;try{source=sourceCodec.validate(body.source);sourceBytes=Buffer.from(sourceCodec.encode(source));summary=sourceCodec.summary(source);}catch{invalid();}
  if(digest(sourceBytes)!==body.sourceSha256)invalid();
- const owner=migrationOwner(db,body.teamId,body.ownerUserId);if(owner.identityRevision!==body.ownerRevision)migrationConflict();
- const current=()=>{const currentState=fresh(),target=migrationOwner(db,body.teamId,body.ownerUserId);if(target.identityRevision!==body.ownerRevision||target.stamp!==owner.stamp)migrationConflict();registrationConflict(db,body,source);return currentState;};current();
+ const owner=migrationOwner(db,body.teamId,body.ownerUserId); if(owner.identityRevision!==body.ownerRevision)migrationConflict();
+ const subscriptionGuard=captureBusinessSubscriptionGuard(db,body.teamId,{now,identityProviders,subscriptionEnforcement});
+ const current=()=>{const currentState=fresh(),target=migrationOwner(db,body.teamId,body.ownerUserId);if(target.identityRevision!==body.ownerRevision||target.stamp!==owner.stamp)migrationConflict();registrationConflict(db,body,source);subscriptionGuard?.assertCurrent();return currentState;};current();
  consume(db,'project-migration:'+digest(actor.userId),projectTime(now()),15*60000,20);
  return limitedPasswordWork(db,async()=>{
   const valid=await verifyPassword(body.currentPassword,authority.credential.password_hash);current();if(!valid)throw new ApiError(403,'VERIFICATION_FAILED','当前密码验证未通过，请核对后重试。');
-  return transaction(db,()=>{const final=current(),result=publish(db,final.actor,body,source,sourceBytes,summary,projectTime(now()));fresh();const target=migrationOwner(db,body.teamId,body.ownerUserId);if(target.identityRevision!==body.ownerRevision||target.stamp!==owner.stamp)migrationConflict();return json(result,201);});
+  return transaction(db,()=>{const final=current(),result=publish(db,final.actor,body,source,sourceBytes,summary,projectTime(now()));fresh();const target=migrationOwner(db,body.teamId,body.ownerUserId);if(target.identityRevision!==body.ownerRevision||target.stamp!==owner.stamp)migrationConflict();subscriptionGuard?.assertCurrent();return json(result,201);});
  });
 }

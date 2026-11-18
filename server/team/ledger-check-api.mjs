@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import snapshotCodec from '../../dist/ledger-check-snapshot.js';
+import {captureBusinessSubscriptionGuard} from './subscription-business-policy.mjs';
 import {consume,limitedPasswordWork} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
 import {ordinaryTeamContext,projectIncrement,projectRevision,projectTime,safeProjectTitle} from './project-access-policy.mjs';
@@ -34,7 +35,7 @@ function projects(db,actor,teamId,query){
  const result={projects:rows.slice(0,limit).map(row=>({teamId,id:row.project_id,title:safeProjectTitle(row.title,row.project_id),status:row.status,revision:projectRevision(row.revision)})),hasMore:rows.length>limit};
  if(ordinaryTeamContext(db,actor.userId,teamId)?.stamp!==member.stamp)ledgerConflict();return result;
 }
-export async function handleLedgerCheckRequest(request,{db,now=Date.now,identityProviders={},deviceContext}={}){
+export async function handleLedgerCheckRequest(request,{db,now=Date.now,identityProviders={},deviceContext,subscriptionEnforcement='disabled'}={}){
  const url=new URL(request.url),listing=/^\/api\/teams\/([^/]+)\/ledger-check-projects$/.exec(url.pathname),match=/^\/api\/teams\/([^/]+)\/projects\/([^/]+)\/ledger-checks(?:\/(access|members|imports|snapshots)(?:\/([^/]+))?)?$/.exec(url.pathname);
  if(!listing&&!match)return null;
  const teamId=(listing??match)[1];if(!ID.test(teamId)||url.hash||url.href.endsWith('?'))invalid();
@@ -48,7 +49,8 @@ export async function handleLedgerCheckRequest(request,{db,now=Date.now,identity
  const permissions={...(tail==='members'||changing||tail==='imports'?{owner:true}:{}),...(!tail||tail==='snapshots'||tail==='imports'?{read:true}:{}),...(changing||importing?{active:true}:{}),...(tail==='snapshots'||tail==='imports'?{source:true}:{})};
  const before=ledgerContext(db,actor,teamId,projectId,permissions);
  if(importing&&deviceContext.ledgerImportStamp!==ledgerContextStamp(before))ledgerConflict();
- const fresh=(grant=true)=>{const current=currentLedgerActor(db,request,actor,options,projectTime(now())),context=ledgerContext(db,current,teamId,projectId,permissions);sameContext(before,context,{grant});return context;};
+ const subscriptionGuard=importing?captureBusinessSubscriptionGuard(db,teamId,{now,identityProviders,subscriptionEnforcement}):null;
+ const fresh=(grant=true)=>{const current=currentLedgerActor(db,request,actor,options,projectTime(now())),context=ledgerContext(db,current,teamId,projectId,permissions);sameContext(before,context,{grant});subscriptionGuard?.assertCurrent();return context;};
  if(request.method==='GET'){
   if(tail==='access'){const head=before.grant.read?ledgerHead(db,teamId,projectId):null;fresh();return json({access:{teamId,projectId,projectRevision:before.project.revision,grantRevision:before.grant.revision,read:before.grant.read,canManageAccess:before.owner&&before.project.status==='active',canImport:before.owner&&before.grant.read&&before.project.status==='active'&&!!before.identity,sourceAvailable:!!before.identity,...(before.grant.read?{sourceProjectId:before.identity?.sourceProjectId??null,headRevision:head}:{})}});}
   if(tail==='members'){const result=ledgerMembers(db,teamId,projectId,ledgerListQuery(url.searchParams));fresh();return json(result);}
@@ -94,7 +96,7 @@ export async function handleLedgerCheckRequest(request,{db,now=Date.now,identity
    const row={snapshot_id:randomUUID(),team_id:teamId,project_id:projectId,version,operation_id:body.operationId,request_sha256:requestHash,source_json:body.sourceJson,source_sha256:sourceHash,source_project_id:source.sourceProjectId,identity_stamp:before.identity.stamp,workspace_revision:source.workspaceRevision,calculated_at:source.reconciliation.calculatedAt,imported_by:actor.userId,importer_name:safeMemberText(label,actor.userId),imported_at:projectTime(now())};
    const keys=Object.keys(row);if(db.prepare('INSERT INTO team_ledger_check_snapshots('+keys.join(',')+') VALUES ('+keys.map(()=>'?').join(',')+')').run(...keys.map(k=>row[k])).changes!==1)ledgerConflict();
    fresh();const actual=operation(db,teamId,projectId,body.operationId);if(!actual||keys.some(k=>actual[k]!==row[k])||ledgerHead(db,teamId,projectId)!==version||changes(db)-start!==2n)ledgerConflict();
-   return json({receipt:receipt(row)},previous?200:201);
+   fresh();return json({receipt:receipt(row)},previous?200:201);
   });
  });
 }

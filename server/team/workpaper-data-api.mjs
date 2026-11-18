@@ -1,4 +1,5 @@
 import codec from '../../dist/workpaper-package.js';
+import {captureBusinessSubscriptionGuard} from './subscription-business-policy.mjs';
 import {consume,limitedPasswordWork} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
 import {safeMemberText} from './member-access-policy.mjs';
@@ -11,7 +12,7 @@ const method=allow=>json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此
 const exact=(body,keys)=>{if(Object.keys(body).length!==keys.length||keys.some(k=>!Object.hasOwn(body,k)))invalid();};
 const int=(v,min=0)=>Number.isSafeInteger(v)&&v>=min;
 function versionQuery(params){const keys=['version','projectRevision','grantRevision'];if(params.size!==3||[...params.keys()].some(k=>!keys.includes(k)||params.getAll(k).length!==1))invalid();const out={};for(const k of keys){const raw=params.get(k);if(!/^[1-9][0-9]*$/.test(raw??'')||!int(Number(raw),1))invalid();out[k]=Number(raw);}return out;}
-export async function handleWorkpaperDataRequest(request,{db,now=Date.now,identityProviders={},deviceContext}={}){
+export async function handleWorkpaperDataRequest(request,{db,now=Date.now,identityProviders={},deviceContext,subscriptionEnforcement='disabled'}={}){
  const url=new URL(request.url),match=/^\/api\/teams\/([^/]+)\/projects\/([^/]+)\/workpapers(?:\/(import-capabilities|versions|record|originals\/([^/]+)|imports(?:\/([^/]+)(?:\/(commit|chunks\/([^/]+)))?)?|receipts\/([^/]+)))?$/.exec(url.pathname);
  if(!match)return null;const [,teamId,projectId,tail,originalId,requestId,stageTail,chunkIndex,receiptId]=match;if(!ID.test(teamId)||!ID.test(projectId)||url.hash||url.href.endsWith('?'))invalid();
  if(originalId&&!SHA.test(originalId)||requestId&&!UUID.test(requestId)||receiptId&&!UUID.test(receiptId))deny();
@@ -19,9 +20,11 @@ export async function handleWorkpaperDataRequest(request,{db,now=Date.now,identi
  const allow=creating?['POST']:chunk?['PUT']:committing?['POST']:isImports?['GET','DELETE']:['GET'];if(!allow.includes(request.method))return method(allow);
  if(url.search&&!['versions','record'].includes(tail)&&!originalId)invalid();
  const at=()=>projectTime(now()),options={identityProviders,deviceContext},actor=workpaperAccessActor(db,request,options,at()),permissions={read:true,...(isImports||capability?{owner:true}:{}),...((request.method!=='GET'&&!cancel)||capability?{write:true,active:true}:{})},before=dataContext(db,actor,teamId,projectId,permissions),stamp=dataContextStamp(before);
- const fresh=()=>{const current=currentWorkpaperAccessActor(db,request,actor,options,at()),context=dataContext(db,current,teamId,projectId,permissions);if(dataContextStamp(context)!==stamp)dataConflict();return context;};
+ let subscriptionGuard=null;
+ const fresh=()=>{const current=currentWorkpaperAccessActor(db,request,actor,options,at()),context=dataContext(db,current,teamId,projectId,permissions);if(dataContextStamp(context)!==stamp)dataConflict();subscriptionGuard?.assertCurrent();return context;};
  if(request.method!=='GET'&&deviceContext.workpaperDataStamp!==stamp)dataConflict();
  const currentStage=()=>{fresh();const row=dataStage(db,actor,before,requestId,at());if(deviceContext.workpaperStageStamp&&stageStamp(row)!==deviceContext.workpaperStageStamp)dataConflict();return row;};
+ if(request.method!=='GET'&&!cancel){if(!creating)currentStage();subscriptionGuard=captureBusinessSubscriptionGuard(db,teamId,{now,identityProviders,subscriptionEnforcement});}
  const readonly=work=>transaction(db,()=>{const start=changeCount(db);fresh();const result=work();fresh();if(changeCount(db)!==start)dataConflict();return result;});
  if(request.method==='GET')return readonly(()=>{
   if(capability){emptyData(db,teamId,projectId);return json({import:{teamId,projectId,sourceProjectId:before.identity.sourceProjectId,projectRevision:before.project.revision,grantRevision:before.grant.revision,chunkBytes:CHUNK_BYTES,maxPackageBytes:PACKAGE_BYTES}});}

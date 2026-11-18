@@ -1,3 +1,4 @@
+import {captureBusinessSubscriptionGuard} from './subscription-business-policy.mjs';
 import codec from '../../dist/legacy-project-source.js';
 import {consume,limitedPasswordWork} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
@@ -25,7 +26,7 @@ function conflicts(db,teamId,projectId,body,source){
  ||db.prepare('SELECT 1 FROM team_projects WHERE project_id=? AND (team_id<>? OR project_id<>?)').get(q,teamId,projectId))formalizationConflict();
 }
 const changes=db=>{const q=db.prepare('SELECT total_changes() n');q.setReadBigInts(true);return q.get().n;};
-export async function handleWorkspaceFormalizationRequest(request,{db,now=Date.now,identityProviders={},deviceContext}={}){
+export async function handleWorkspaceFormalizationRequest(request,{db,now=Date.now,identityProviders={},deviceContext,subscriptionEnforcement='disabled'}={}){
  const url=new URL(request.url),match=/^\/api\/teams\/([^/]+)\/projects\/([^/]+)\/formalization(?:\/receipts\/([^/]+))?$/.exec(url.pathname);if(!match)return null;
  const [,teamId,projectId,requestId]=match;if(!ID.test(teamId)||!ID.test(projectId)||requestId&&!UUID.test(requestId))deny();if(url.search)invalid();
  if(requestId?request.method!=='GET':!['GET','POST'].includes(request.method))return method(requestId?'GET':'GET, POST');
@@ -36,12 +37,13 @@ export async function handleWorkspaceFormalizationRequest(request,{db,now=Date.n
   const row=scopedRow(db,actor,teamId,projectId,requestId);fresh();if(workspaceSourceGrant(db,teamId,projectId,actor.userId).stamp!==grant.stamp)formalizationConflict();if(requestId&&!row)deny();
   return requestId?json({receipt:formalizationReceipt(row)}):json({context:{teamId,projectId,projectRevision:before.project.revision,canConfirm:before.project.status==='active'&&before.project.revision<Number.MAX_SAFE_INTEGER&&!row,confirmation:row&&grant.read?formalizationReceipt(row):null}});
  }
- const body=await readJson(request,FIELDS,132*1024);fresh();
+ const subscriptionGuard=captureBusinessSubscriptionGuard(db,teamId,{now,identityProviders,subscriptionEnforcement});
+ const body=await readJson(request,FIELDS,132*1024);fresh();subscriptionGuard?.assertCurrent();
  if(Object.keys(body).length!==FIELDS.length||!UUID.test(body.requestId??'')||typeof body.sourceSha256!=='string'||!/^[a-f0-9]{64}$/.test(body.sourceSha256)||!Number.isSafeInteger(body.projectRevision)||body.projectRevision<1||body.businessConfirmed!==true||typeof body.currentPassword!=='string'||!body.currentPassword||Buffer.byteLength(body.currentPassword)>512)invalid();
  if(before.project.status!=='active'||body.projectRevision!==before.project.revision)formalizationConflict();const afterRevision=projectIncrement(body.projectRevision);
  let source,sourceJson,summary;try{source=codec.validate(body.source);sourceJson=Buffer.from(codec.encode(source)).toString('utf8');summary=codec.summary(source);}catch{invalid();}
  if(formalizationDigest(sourceJson)!==body.sourceSha256)invalid();
- const check=()=>{const context=fresh();if(context.project.status!=='active')formalizationConflict();conflicts(db,teamId,projectId,body,source);return context;};check();
+ const check=()=>{const context=fresh();if(context.project.status!=='active')formalizationConflict();conflicts(db,teamId,projectId,body,source);subscriptionGuard?.assertCurrent();return context;};check();
  consume(db,'workspace-formalization:'+formalizationDigest(actor.userId),projectTime(now()),15*60000,20);
  return limitedPasswordWork(db,async()=>{
   const valid=await verifyPassword(body.currentPassword,before.member.credential.password_hash);check();if(!valid)throw new ApiError(403,'VERIFICATION_FAILED','当前密码验证未通过，请核对后重试。');
@@ -52,7 +54,7 @@ export async function handleWorkspaceFormalizationRequest(request,{db,now=Date.n
    fresh(afterRevision);const row=db.prepare('SELECT * FROM team_workspace_formalizations WHERE request_id=? AND team_id=? AND project_id=?').get(body.requestId,teamId,projectId);
    const expected={request_id:body.requestId,team_id:teamId,project_id:projectId,source_project_id:summary.projectId,source_title:summary.title,source_sha256:body.sourceSha256,source_json:sourceJson,business_number:summary.businessNumber,number_year:source.numbering.identity.year,number_sequence:source.numbering.identity.sequence,first_won_at:summary.firstWonAt,initiation_won_at:summary.initiationWonAt,latest_won_at:summary.latestWonAt,confirmed_by:actor.userId,confirmed_at:at,project_revision_before:body.projectRevision,project_revision_after:afterRevision,request_sha256:semantic,confirmation_mode:FORMALIZATION_MODE};
    if(!row||Object.keys(expected).some(key=>row[key]!==expected[key])||changes(db)-startChanges!==2n)formalizationConflict();
-   return json({receipt:formalizationReceipt(row)},201);
+   subscriptionGuard?.assertCurrent();return json({receipt:formalizationReceipt(row)},201);
   });
  });
 }

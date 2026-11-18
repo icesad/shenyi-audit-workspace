@@ -1,3 +1,4 @@
+import {captureBusinessSubscriptionGuard} from './subscription-business-policy.mjs';
 import {administratorBusinessEligibilitySql} from './administrator-business-role-policy.mjs';
 import {randomUUID,createHash} from 'node:crypto';
 import {consume,limitedPasswordWork} from './auth-api.mjs';
@@ -85,7 +86,7 @@ function changeAccess(db,actor,context,target,desired,at){
  const revision=managedProject(db,teamId,projectId)?.revision;if(revision===undefined||revision<=beforeRevision)projectConflict();
  projectAudit(db,{teamId,projectId,actorId:actor.userId,targetUserId:userId,action:'access.changed',beforeRevision,afterRevision:revision,at});return {changed:true,revision};
 }
-export async function handleProjectAccessRequest(request,{db,now=Date.now,identityProviders={},deviceContext}={}){
+export async function handleProjectAccessRequest(request,{db,now=Date.now,identityProviders={},deviceContext,subscriptionEnforcement='disabled'}={}){
  const url=new URL(request.url),access=url.pathname==='/api/auth/project-access',list=/^\/api\/teams\/([^/]+)\/projects$/.exec(url.pathname),detail=/^\/api\/teams\/([^/]+)\/projects\/([^/]+)(?:\/(members|access|tasks))?$/.exec(url.pathname);
  if(!access&&!list&&!detail)return null;
  // Creating projects has not been authorized. It is not an alias for task
@@ -106,12 +107,12 @@ export async function handleProjectAccessRequest(request,{db,now=Date.now,identi
   return json({tasks:rows.slice(0,query.limit).map(row=>({id:row.task_id,title:row.title,instructions:row.instructions,status:row.status,revision:projectRevision(row.revision,0)})),hasMore:rows.length>query.limit});
  }
  if(action==='tasks'){
-  if(url.search)invalid();const before=projectContext(db,actor,teamId,projectId,{read:true,manage:true,active:true}),body=await readJson(request,['revision','title','instructions']);if(!Number.isSafeInteger(body.revision)||body.revision<1)invalid();const title=taskText(body.title,160,true),instructions=taskText(body.instructions,4000,false,true);
+  if(url.search)invalid();const before=projectContext(db,actor,teamId,projectId,{read:true,manage:true,active:true}),subscriptionGuard=captureBusinessSubscriptionGuard(db,teamId,{now,identityProviders,subscriptionEnforcement}),body=await readJson(request,['revision','title','instructions']);subscriptionGuard?.assertCurrent();if(!Number.isSafeInteger(body.revision)||body.revision<1)invalid();const title=taskText(body.title,160,true),instructions=taskText(body.instructions,4000,false,true);
   sameProject(db,request,actor,options,teamId,projectId,before,body.revision,{read:true,manage:true,active:true});
   return transaction(db,()=>{const fresh=sameProject(db,request,actor,options,teamId,projectId,before,body.revision,{read:true,manage:true,active:true}),at=projectTime(now()),next=projectIncrement(fresh.project.revision),id=randomUUID();
-   if(db.prepare('UPDATE team_project_access_projects SET revision=? WHERE team_id=? AND project_id=? AND revision=?').run(next,teamId,projectId,fresh.project.revision).changes!==1)projectConflict();
+   subscriptionGuard?.assertCurrent();if(db.prepare('UPDATE team_project_access_projects SET revision=? WHERE team_id=? AND project_id=? AND revision=?').run(next,teamId,projectId,fresh.project.revision).changes!==1)projectConflict();
    db.prepare("INSERT INTO team_collection_tasks(team_id,task_id,project_id,title,instructions,status) VALUES (?,?,?,?,?,'open')").run(teamId,id,projectId,title,instructions);db.prepare('INSERT INTO team_task_versions(team_id,task_id,revision) VALUES (?,?,0)').run(teamId,id);
-   projectAudit(db,{teamId,projectId,actorId:actor.userId,taskId:id,action:'task.created',beforeRevision:fresh.project.revision,afterRevision:next,at});return json({task:{id,title,instructions,status:'open',revision:0},revision:next},201);
+   projectAudit(db,{teamId,projectId,actorId:actor.userId,taskId:id,action:'task.created',beforeRevision:fresh.project.revision,afterRevision:next,at});subscriptionGuard?.assertCurrent();return json({task:{id,title,instructions,status:'open',revision:0},revision:next},201);
   });
  }
  const before=projectContext(db,actor,teamId,projectId,{owner:true,active:true}),body=await readJson(request,['revision','userId','memberRevision','read','manage','review','currentPassword']);
