@@ -348,3 +348,171 @@ test('resolve-launch detects a real lock or canonical state replacement while na
     assert.deepEqual(await resolveWindowsLaunch(f.options),f.installed);
   }
 });
+
+async function withLaunchSpawn(spawn,action) {
+  const childProcess = require('node:child_process');
+  const {syncBuiltinESMExports} = require('node:module');
+  const previous = childProcess.spawn;
+  childProcess.spawn=spawn;
+  syncBuiltinESMExports();
+  try { return await action(); }
+  finally { childProcess.spawn=previous;syncBuiltinESMExports(); }
+}
+
+async function withLaunchEnvironment(values,action) {
+  const previous = Object.fromEntries(Object.keys(values).map(name=>[name,{present:Object.hasOwn(process.env,name),value:process.env[name]}]));
+  for (const [name,value] of Object.entries(values)) {
+    if (value===undefined) delete process.env[name];
+    else process.env[name]=value;
+  }
+  try { return await action(); }
+  finally {
+    for (const [name,old] of Object.entries(previous)) {
+      if (old.present) process.env[name]=old.value;
+      else delete process.env[name];
+    }
+  }
+}
+
+const launchArguments = (f,serviceConfig) => ['launch','--root',f.options.root,'--public-key',f.publicPath,'--service-config',serviceConfig];
+const windowsLaunchTest = {skip:process.platform!=='win32'};
+
+test('verified launch spawns only the installed executable with exact safe options and a pid receipt',windowsLaunchTest,async () => {
+  const f = await installedFixture();
+  const {runWindowsCandidateInstall} = await import('../scripts/manage-windows-candidate-install.mjs');
+  const {EventEmitter} = require('node:events');
+  const profile = {schemaVersion:1,apiBase:'https://team.synthetic.invalid',serverId:require('node:crypto').randomUUID()};
+  const serviceConfig = path.join(f.directory,'trusted-service.json'),caFile=path.join(f.directory,'synthetic-ca.pem');
+  await fs.writeFile(serviceConfig,json(profile),{flag:'wx'});
+  await fs.writeFile(caFile,'synthetic CA path policy fixture; no TLS or real process',{flag:'wx'});
+  const before=await installationFacts(f.options.root),calls=[];
+  let unrefs=0;
+  const fakeSpawn = (executable,args,options) => {
+    calls.push({executable,args,options});
+    const child=new EventEmitter();child.pid=42001;child.unref=()=>{unrefs++;};
+    queueMicrotask(()=>child.emit('spawn'));
+    return child;
+  };
+  const injection={NODE_TLS_REJECT_UNAUTHORIZED:'1',NODE_OPTIONS:'--require synthetic-injected-code',NODE_PATH:'synthetic-module-path',
+    NODE_EXTRA_CA_CERTS:caFile,ELECTRON_RUN_AS_NODE:'1',ELECTRON_ENABLE_LOGGING:'1',OPENSSL_CONF:'synthetic-ssl-config',
+    SSL_CERT_FILE:'synthetic-cert-file',SSL_CERT_DIR:'synthetic-cert-directory',HTTP_PROXY:'http://proxy.synthetic.invalid',
+    HTTPS_PROXY:'http://proxy.synthetic.invalid',ALL_PROXY:'socks://proxy.synthetic.invalid',NO_PROXY:'*',GLOBAL_AGENT_HTTP_PROXY:'http://proxy.synthetic.invalid',
+    SHENYI_TEAM_SERVICE_CONFIG:'synthetic-inherited-config',SHENYI_TEAM_API:'https://foreign.synthetic.invalid',
+    SHENYI_ISOLATED_PREVIEW_CONFIG:'synthetic-preview',SHENYI_DESKTOP_DATA_DIR:'synthetic-private-data',
+    SHENYI_WECHAT_APP_ID:'wx-synthetic-public-app',SHENYI_WECHAT_REDIRECT_URI:'https://team.synthetic.invalid/api/auth/wechat/callback'};
+  await withLaunchEnvironment(injection,()=>withLaunchSpawn(fakeSpawn,async()=>{
+    const result=await runWindowsCandidateInstall(launchArguments(f,serviceConfig));
+    assert.deepEqual(result,{ok:true,...f.installed,pid:42001,operation:'launch'});
+    assert.equal(calls.length,1);
+    const {executable,args,options}=calls[0];
+    assert.equal(executable,f.installed.executablePath);
+    assert.deepEqual(args,[]);
+    assert.deepEqual(options,{cwd:path.dirname(executable),env:options.env,detached:true,stdio:'ignore',shell:false});
+    assert.equal(options.env.SHENYI_TEAM_SERVICE_CONFIG,await fs.realpath(serviceConfig));
+    assert.equal(options.env.SHENYI_WECHAT_APP_ID,injection.SHENYI_WECHAT_APP_ID);
+    assert.equal(options.env.SHENYI_WECHAT_REDIRECT_URI,injection.SHENYI_WECHAT_REDIRECT_URI);
+    for (const name of Object.keys(injection).filter(name=>!['SHENYI_TEAM_SERVICE_CONFIG','SHENYI_WECHAT_APP_ID','SHENYI_WECHAT_REDIRECT_URI'].includes(name))) {
+      assert.equal(Object.hasOwn(options.env,name),false,name+' must not enter a public HTTPS child');
+    }
+    if (process.env.LOCALAPPDATA!==undefined) assert.equal(options.env.LOCALAPPDATA,process.env.LOCALAPPDATA);
+    assert.equal(unrefs,1);
+
+    await fs.writeFile(serviceConfig,json({...profile,apiBase:'https://127.0.0.1:9443'}));
+    await runWindowsCandidateInstall(launchArguments(f,serviceConfig));
+    assert.equal(calls[1].options.env.NODE_EXTRA_CA_CERTS,caFile,'explicit IPv4 loopback may use a local absolute synthetic CA');
+    await withLaunchEnvironment({NODE_EXTRA_CA_CERTS:'relative-ca.pem'},async()=>{
+      await runWindowsCandidateInstall(launchArguments(f,serviceConfig));
+      assert.equal(Object.hasOwn(calls[2].options.env,'NODE_EXTRA_CA_CERTS'),false);
+    });
+    assert.equal(unrefs,3);
+  }));
+  assert.deepEqual(await installationFacts(f.options.root),before);
+});
+
+test('verified launch never spawns for invalid service configuration, retained signature or a busy installation',windowsLaunchTest,async () => {
+  const f = await installedFixture();
+  const {runWindowsCandidateInstall} = await import('../scripts/manage-windows-candidate-install.mjs');
+  const profile={schemaVersion:1,apiBase:'https://team.synthetic.invalid',serverId:require('node:crypto').randomUUID()};
+  const serviceConfig=path.join(f.directory,'trusted-service.json');
+  await fs.writeFile(serviceConfig,json(profile),{flag:'wx'});
+  let spawns=0;
+  await withLaunchEnvironment({NODE_TLS_REJECT_UNAUTHORIZED:'1'},()=>withLaunchSpawn(()=>{spawns++;throw Error('unexpected synthetic spawn');},async()=>{
+    await assert.rejects(runWindowsCandidateInstall(['launch','--root',f.options.root,'--public-key',f.publicPath]),{code:'INVALID_ARGUMENTS'});
+    for (const filename of ['relative-service.json',path.join(f.directory,'missing-service.json')]) {
+      await assert.rejects(runWindowsCandidateInstall(launchArguments(f,filename)),{code:'TEAM_SERVICE_CONFIGURATION_INVALID'});
+    }
+    for (const invalid of [{...profile,apiBase:'http://127.0.0.1:9443'},{...profile,apiBase:'https://user:secret@team.synthetic.invalid'},
+      {...profile,serverId:'not-an-instance-uuid'},{...profile,allowInsecure:true}]) {
+      await fs.writeFile(serviceConfig,json(invalid));
+      await assert.rejects(runWindowsCandidateInstall(launchArguments(f,serviceConfig)),{code:'TEAM_SERVICE_CONFIGURATION_INVALID'});
+    }
+    await fs.writeFile(serviceConfig,json(profile));
+    const insideConfig=path.join(f.options.root,'untrusted-service.json');
+    await fs.writeFile(insideConfig,json(profile),{flag:'wx'});
+    try {
+      await assert.rejects(runWindowsCandidateInstall(launchArguments(f,insideConfig)),{code:'TEAM_SERVICE_CONFIGURATION_INVALID'});
+      assert.equal(await fs.readFile(insideConfig,'utf8'),json(profile));
+    } finally { await fs.unlink(insideConfig); }
+    await withLaunchEnvironment({NODE_TLS_REJECT_UNAUTHORIZED:'0'},async()=>{
+      await assert.rejects(runWindowsCandidateInstall(launchArguments(f,serviceConfig)),{code:'TEAM_SERVICE_CONFIGURATION_INVALID'});
+    });
+    const lock=path.join(f.options.root,'.install.lock'),lockBytes=Buffer.from('synthetic installer busy before verified launch');
+    await fs.writeFile(lock,lockBytes,{flag:'wx'});
+    try {
+      const before=await installationFacts(f.options.root);
+      await assert.rejects(runWindowsCandidateInstall(launchArguments(f,serviceConfig)),{code:'INSTALL_BUSY'});
+      assert.deepEqual(await installationFacts(f.options.root),before);
+      assert.deepEqual(await fs.readFile(lock),lockBytes);
+    } finally { await fs.unlink(lock); }
+    const signature=path.join(path.dirname(path.dirname(f.installed.executablePath)),'signature.ed25519');
+    const original=await fs.readFile(signature),altered=Buffer.from(original);altered[0]^=1;
+    await fs.writeFile(signature,altered);
+    const before=await installationFacts(f.options.root);
+    await assert.rejects(runWindowsCandidateInstall(launchArguments(f,serviceConfig)),{code:'CANDIDATE_SIGNATURE_INVALID'});
+    assert.deepEqual(await installationFacts(f.options.root),before);
+    assert.equal(spawns,0,'all failures must precede process creation');
+  }));
+});
+
+test('verified launch maps synchronous and asynchronous child errors to a failed launch without a success pid',windowsLaunchTest,async () => {
+  const f = await installedFixture();
+  const {runWindowsCandidateInstall} = await import('../scripts/manage-windows-candidate-install.mjs');
+  const {EventEmitter} = require('node:events');
+  const serviceConfig=path.join(f.directory,'trusted-service.json');
+  await fs.writeFile(serviceConfig,json({schemaVersion:1,apiBase:'https://team.synthetic.invalid',serverId:require('node:crypto').randomUUID()}),{flag:'wx'});
+  const before=await installationFacts(f.options.root),canary='synthetic private child failure detail';
+  for (const mode of ['synchronous','error-event']) {
+    let spawns=0,unrefs=0;
+    await withLaunchEnvironment({NODE_TLS_REJECT_UNAUTHORIZED:'1'},()=>withLaunchSpawn(()=>{
+      spawns++;
+      if(mode==='synchronous')throw Error(canary);
+      const child=new EventEmitter();child.unref=()=>{unrefs++;};
+      queueMicrotask(()=>child.emit('error',Error(canary)));
+      return child;
+    },async()=>{
+      await assert.rejects(runWindowsCandidateInstall(launchArguments(f,serviceConfig)),error=>{
+        assert.equal(error.code,'WINDOWS_LAUNCH_FAILED');
+        assert.equal(error.message.includes(canary),false);
+        assert.equal(Object.hasOwn(error,'pid'),false);
+        return true;
+      });
+    }));
+    assert.equal(spawns,1);
+    assert.equal(unrefs,0,'a child that failed before spawn must not be detached as success');
+    assert.deepEqual(await installationFacts(f.options.root),before);
+  }
+});
+
+test('verified launch refuses non-Windows before reading configuration or creating a process',async () => {
+  const {runWindowsCandidateInstall} = await import('../scripts/manage-windows-candidate-install.mjs');
+  const originalPlatform=Object.getOwnPropertyDescriptor(process,'platform');
+  let spawns=0;
+  try {
+    Object.defineProperty(process,'platform',{...originalPlatform,value:'linux'});
+    await withLaunchSpawn(()=>{spawns++;throw Error('must not spawn');},async()=>{
+      await assert.rejects(runWindowsCandidateInstall(['launch','--root','intentionally-invalid-root','--public-key','intentionally-invalid-key',
+        '--service-config','intentionally-invalid-config']),{code:'WINDOWS_LAUNCH_UNAVAILABLE'});
+    });
+    assert.equal(spawns,0);
+  } finally { Object.defineProperty(process,'platform',originalPlatform); }
+});
