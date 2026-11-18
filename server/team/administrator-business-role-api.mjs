@@ -1,4 +1,5 @@
 import {randomUUID,createHash} from 'node:crypto';
+import {captureManagementSubscriptionGuard} from './subscription-management-policy.mjs';
 import {consume,limitedPasswordWork} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
 import {currentDeviceLease} from './device-policy.mjs';
@@ -43,7 +44,7 @@ function publishRole(db,actor,target,role,at){
  db.prepare('INSERT INTO team_administrator_business_role_events(event_id,team_id,actor_id,target_user_id,before_role,after_role,before_revision,after_revision,created_at) VALUES (?,?,?,?,?,?,?,?,?)').run(randomUUID(),target.teamId,actor.userId,target.id,target.role,role,target.revision,fresh.revision,at);
  return {changed:true,role,revision:fresh.revision};
 }
-export async function handleAdministratorBusinessRoleRequest(request,{db,now=Date.now,identityProviders={},deviceContext}={}){
+export async function handleAdministratorBusinessRoleRequest(request,{db,now=Date.now,identityProviders={},deviceContext,subscriptionEnforcement='disabled'}={}){
  const url=new URL(request.url),access=url.pathname==='/api/auth/administrator-business-role/access',list=url.pathname==='/api/administrator-business-roles',change=/^\/api\/administrator-business-roles\/([^/]+)$/.exec(url.pathname);
  if(!access&&!list&&!change)return null;if((access||change)&&url.search)invalid();if(request.method!==(change?'POST':'GET'))return method(change?'POST':'GET');
  const options={now,identityProviders,deviceContext},actor=deviceActor(db,request,identityProviders,deviceContext,administratorBusinessTime(now()));
@@ -53,12 +54,13 @@ export async function handleAdministratorBusinessRoleRequest(request,{db,now=Dat
  const userId=change[1];if(!ID.test(userId))deny();const before=currentState(db,request,actor,options,userId);
  const body=await readJson(request,['revision','role','currentPassword']);
  if(!Number.isSafeInteger(body.revision)||body.revision<0||body.role!==null&&!administratorBusinessRoles.includes(body.role)||typeof body.currentPassword!=='string'||!body.currentPassword||Buffer.byteLength(body.currentPassword)>512)invalid();
- const expected={authority:before.authority.stamp,target:before.target.stamp,revision:body.revision},fresh=()=>currentState(db,request,actor,options,userId,expected);fresh();
+ let subscriptionGuard=null;const expected={authority:before.authority.stamp,target:before.target.stamp,revision:body.revision},fresh=()=>{const state=currentState(db,request,actor,options,userId,expected);subscriptionGuard?.assertCurrent();return state;};fresh();
  if(body.role===before.target.role&&['approved','withdrawn'].includes(before.target.approvalStatus)||body.role===null&&!before.target.member)administratorBusinessConflict();
+ if(body.role!==null)subscriptionGuard=captureManagementSubscriptionGuard(db,before.target.teamId,{now,identityProviders,subscriptionEnforcement});
  consume(db,'administrator-business-role:'+digest(actor.userId),administratorBusinessTime(now()),15*60000,20);
  return limitedPasswordWork(db,async()=>{
   const valid=await verifyPassword(body.currentPassword,before.authority.credential.password_hash);fresh();if(!valid)throw new ApiError(403,'VERIFICATION_FAILED','当前密码验证未通过，请核对后重试。');
   return transaction(db,()=>{const state=fresh(),result=publishRole(db,actor,state.target,body.role,administratorBusinessTime(now()));currentReviewer(db,request,actor,options,expected.authority);
-   const final=administratorBusinessTarget(db,actor.userId,userId);if(!final||final.revision!==result.revision||final.role!==body.role||final.approvalStatus!==(body.role===null?'withdrawn':'approved'))administratorBusinessConflict();return json(result);});
+   const final=administratorBusinessTarget(db,actor.userId,userId);if(!final||final.revision!==result.revision||final.role!==body.role||final.approvalStatus!==(body.role===null?'withdrawn':'approved'))administratorBusinessConflict();subscriptionGuard?.assertCurrent();return json(result);});
  });
 }

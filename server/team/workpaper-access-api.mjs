@@ -1,5 +1,6 @@
 import {consume,limitedPasswordWork} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
+import {captureManagementSubscriptionGuard,addsEffectiveAuthority} from './subscription-management-policy.mjs';
 import {projectTime} from './project-access-policy.mjs';
 import {workpaperAccessActor,currentWorkpaperAccessActor,workpaperAccessContext,workpaperAccessContextStamp,workpaperAccessGrant,workpaperAccessTarget,workpaperAccessMembers,workpaperAccessProjects,workpaperAccessQuery,workpaperAccessDigest,workpaperAccessConflict} from './workpaper-access-policy.mjs';
 import {writeWorkpaperAccessGrant,workpaperAccessAudit} from './workpaper-access-grant.mjs';
@@ -9,7 +10,7 @@ const FIELDS=['projectRevision','userId','memberRevision','grantRevision','read'
 const integer=(value,min=0)=>Number.isSafeInteger(value)&&value>=min;
 const changes=db=>{const q=db.prepare('SELECT total_changes() n');q.setReadBigInts(true);return q.get().n;};
 const method=allow=>json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:allow.join(', ')});
-export async function handleWorkpaperAccessRequest(request,{db,now=Date.now,identityProviders={},deviceContext}={}){
+export async function handleWorkpaperAccessRequest(request,{db,now=Date.now,identityProviders={},deviceContext,subscriptionEnforcement='disabled'}={}){
  const url=new URL(request.url),listing=/^\/api\/teams\/([^/]+)\/workpaper-projects$/.exec(url.pathname),match=/^\/api\/teams\/([^/]+)\/projects\/([^/]+)\/workpapers\/(access|members)$/.exec(url.pathname);
  if(!listing&&!match)return null;
  const teamId=(listing??match)[1];if(!ID.test(teamId)||url.hash||url.href.endsWith('?'))invalid();
@@ -28,7 +29,9 @@ export async function handleWorkpaperAccessRequest(request,{db,now=Date.now,iden
  if(body.projectRevision!==before.project.revision)workpaperAccessConflict();
  const target=workpaperAccessTarget(db,teamId,body.userId),grant=workpaperAccessGrant(db,teamId,projectId,body.userId),any=body.read||body.write||body.export;
  if(target.identityRevision!==body.memberRevision||grant.revision!==body.grantRevision||!grant.exists&&!any||grant.exists&&grant.rawRead===body.read&&grant.rawWrite===body.write&&grant.rawExport===body.export&&(grant.eligible||!any))workpaperAccessConflict();
- const check=()=>{fresh(false);if(workpaperAccessTarget(db,teamId,body.userId).stamp!==target.stamp||workpaperAccessGrant(db,teamId,projectId,body.userId).stamp!==grant.stamp)workpaperAccessConflict();};check();
+ let managementGuard=null;
+ const check=()=>{fresh(false);if(workpaperAccessTarget(db,teamId,body.userId).stamp!==target.stamp||workpaperAccessGrant(db,teamId,projectId,body.userId).stamp!==grant.stamp)workpaperAccessConflict();managementGuard?.assertCurrent();};check();
+ if(addsEffectiveAuthority(grant,body,['read','write','export']))managementGuard=captureManagementSubscriptionGuard(db,teamId,{now,identityProviders,subscriptionEnforcement});
  consume(db,'workpaper-access:'+workpaperAccessDigest(actor.userId),projectTime(now()),15*60000,20);
  return limitedPasswordWork(db,async()=>{
   const valid=await verifyPassword(body.currentPassword,before.member.credential.password_hash);check();if(!valid)throw new ApiError(403,'VERIFICATION_FAILED','当前密码验证未通过，请核对后重试。');
@@ -36,7 +39,7 @@ export async function handleWorkpaperAccessRequest(request,{db,now=Date.now,iden
    check();const start=changes(db),after=writeWorkpaperAccessGrant(db,{teamId,projectId,userId:body.userId,read:body.read,write:body.write,export:body.export,before:grant});
    workpaperAccessAudit(db,{teamId,projectId,actorId:actor.userId,userId:body.userId,action:'access.changed',before:grant,after,at:projectTime(now())});
    fresh(false);if(workpaperAccessTarget(db,teamId,body.userId).stamp!==target.stamp||workpaperAccessGrant(db,teamId,projectId,body.userId).stamp!==after.stamp||changes(db)-start!==2n)workpaperAccessConflict();
-   return json({changed:true,projectRevision:before.project.revision});
+   managementGuard?.assertCurrent();return json({changed:true,projectRevision:before.project.revision});
   });
  });
 }

@@ -1,4 +1,16 @@
-# 当前状态：M5B业务数据到期控制（M5进行中）
+# 当前状态：M5C团队管理到期规则（M5进行中）
+
+## 2026-11-18 最新：M5C现有团队管理到期规则候选
+
+`codex/subscription-management-expiry`从`4a5b1ff`接续。可信`team-management-v1`包含原17业务数据写检查及现有16管理写路线的分类：新增独立授权位、潜伏位、失效eligible／维护绑定恢复、普通非空职级赋予、邀请／激活和新任务收件人须active；纯权限子集撤回、管理员role=null、停用、邀请撤回及原安全流程保持。不能按位数净减少、职级名称或read前提掩盖新增raw授权；完整任务集合不使用UI前51名截断。
+
+原身份／目标／参数／no-op／CAS在先，真实KDF、发送等待和实际最后写SQL后重核，末端失效事务回滚。资料密码格式原400顺序的真实RED已用原password()前置修复，未弱化断言或KDF。作者首次source导出误用与authorizer关闭顺序的夹具失败均保留，最终作者A24／B84／根23含于统一门，不累加。没有新增schema或专业规则。
+
+固定Node24的32份完整相关文件1053/1053，0fail／skip／cancel／todo、exit0，827.813秒；fresh 1320候选覆盖全部actual selected，before／after同。独立仅首次两有界场景及物理核对另见review/final-review.json，不外推全16路实TCP、GUI、DPAPI、TLS或生产；原旧5005／676各为历史阶段证据。
+
+新团队审核／首纯技术管理员的原4写＋1preview保持，不设置购买先后、业务资料或财务特权。旧预览／sharedDB／vault保留，仅metadata／公开methods核对；没有push／main／一键重验／上线。M4仍待决策及验收，M5／完整Goal继续active。
+
+本轮用户另已确认下一片订单政策：本团队技术管理员可看金额、创建续费／增购席位订单，不授审计资料；未到期从原到期顺延、过期从可信收款确认起算，按北京时间自然年，2月29对应次年2月28同一时刻。只记录决定，本片未实现订单／自然年算法／支付／续费界面；价格、席位容量与折算、退款和购买入口位置仍未决定。下一片接桌面状态／订单续费与可信模拟支付。见[M5C合同](SUBSCRIPTION_MANAGEMENT_EXPIRY_CONTRACT.md)、[订阅决策](SUBSCRIPTION_SEAT_DECISION.md)和`D:/codex-temp/shenyi-subscription-management-expiry-20261118/`。以下保留历史范围。
 
 ## 2026-11-18 最新：M5B现有业务数据到期控制候选
 

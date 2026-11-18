@@ -1,4 +1,5 @@
 import {administratorBusinessEligibilitySql} from './administrator-business-role-policy.mjs';
+import {captureManagementSubscriptionGuard} from './subscription-management-policy.mjs';
 /** Invite-only activation experiment. SMS adapters are explicit, server-side
  * injections; no real sending, public signup or team creation is bundled. */
 import {createHash,createHmac,randomBytes,randomInt,randomUUID,timingSafeEqual} from 'node:crypto';
@@ -96,7 +97,7 @@ function phoneOwner(db,phone){return db.prepare(`SELECT phone.user_id,phone.revi
 function hasMembership(db,userId){return hasAffiliation(db,userId);}
 function displayName(value){if(typeof value!=='string'||value!==value.toWellFormed())invalid();const name=value.normalize('NFKC').trim();if(!name||[...name].length>80||/[\p{Cc}\p{Cf}]/u.test(name))invalid();return name;}
 
-export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,identityProviders={}}={}){
+export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,identityProviders={},subscriptionEnforcement='disabled'}={}){
   const url=new URL(request.url),path=url.pathname;
   const base=/^\/api\/teams\/([^/]+)\/employee-invitations(?:\/(access)|\/([^/]+)\/(revoke))?$/.exec(path);
   const action=path.startsWith('/api/auth/onboarding/')?path.slice('/api/auth/onboarding/'.length):null;
@@ -132,13 +133,15 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
     if(request.method!=='POST')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET, POST'});
     const body=await readJson(request,['phone','role']),phone=normalizePhone(body.phone);
     if(!['intern','assistant'].includes(body.role))invalid();
+    sameActor(db,request,identity.userId,now());if(!canInvite(db,identity.userId,teamId))deny();
+    const subscriptionGuard=captureManagementSubscriptionGuard(db,teamId,{now,identityProviders,subscriptionEnforcement});
     consume(db,'employee-invite:'+identity.userId,now(),15*60000,20);
     return transaction(db,()=>{
-      sameActor(db,request,identity.userId,now());const source=SOURCES.find(value=>value.authorized(db,identity.userId,teamId));if(!source)deny();
+      sameActor(db,request,identity.userId,now());const source=SOURCES.find(value=>value.authorized(db,identity.userId,teamId));if(!source)deny();subscriptionGuard?.assertCurrent();
       const invitationCode=randomBytes(32).toString('base64url'),invitationId=randomUUID(),at=now(),expiresAt=at+24*60*60000;
       db.prepare(`INSERT INTO ${source.invitations}(invitation_id,token_hash,team_id,phone,role,invited_by,created_at,expires_at)
         VALUES (?,?,?,?,?,?,?,?)`).run(invitationId,digest(invitationCode),teamId,phone,body.role,identity.userId,at,expiresAt);
-      return json({invitationCode,invitationId,expiresAt,teamId,role:body.role,phoneMasked:mask(phone)},201);
+      subscriptionGuard?.assertCurrent();return json({invitationCode,invitationId,expiresAt,teamId,role:body.role,phoneMasked:mask(phone)},201);
     });
   }
   if(!['preview','challenges','activate'].includes(action))deny();
@@ -150,18 +153,21 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
   if(action==='preview')return json(publicInvitation(invitation));
   const {sms,pepper}=smsProvider(identityProviders);
   if(action==='challenges'){
+    const subscriptionGuard=captureManagementSubscriptionGuard(db,invitation.team_id,{now,identityProviders,subscriptionEnforcement});
     consume(db,'sms:global',now(),60000,60);consume(db,'sms:phone:'+digest(phone),now(),10*60000,3);consume(db,'sms:invitation:'+invitation.invitation_id,now(),10*60000,3);
     const row={challenge_id:randomUUID(),invitation_id:invitation.invitation_id,invitation_hash:invitation.token_hash,purpose:'activate',phone,expires_at:Math.min(now()+5*60000,invitation.expires_at)};
     const code=String(randomInt(0,1000000)).padStart(6,'0');
     const source=sourceOf(invitation);
     db.prepare(`INSERT INTO ${source.challenges}(challenge_id,invitation_id,invitation_hash,purpose,phone,code_mac,expires_at,delivery_state)
       VALUES (?,?,?,?,?,?,?,'sending')`).run(row.challenge_id,row.invitation_id,row.invitation_hash,row.purpose,row.phone,codeMac(row,code,pepper),row.expires_at);
+    try{subscriptionGuard?.assertCurrent();}
+    catch(error){db.prepare('UPDATE '+source.challenges+" SET delivery_state='failed' WHERE challenge_id=? AND consumed_at IS NULL").run(row.challenge_id);throw error;}
     try{await sms.send({phone,code,purpose:'activate',challengeId:row.challenge_id});}
     catch{db.prepare('UPDATE '+source.challenges+" SET delivery_state='failed' WHERE challenge_id=? AND consumed_at IS NULL").run(row.challenge_id);throw new ApiError(503,'SMS_UNAVAILABLE','手机号验证服务暂不可用。');}
     try{
       transaction(db,()=>{
-        const fresh=liveInvitation(db,body.invitationCode,phone,now());if(!sameInvitation(invitation,fresh)||row.expires_at<=now())deny();
-        const changed=db.prepare('UPDATE '+source.challenges+" SET delivery_state='sent' WHERE challenge_id=? AND delivery_state='sending' AND consumed_at IS NULL").run(row.challenge_id);if(changed.changes!==1)deny();
+        const fresh=liveInvitation(db,body.invitationCode,phone,now());if(!sameInvitation(invitation,fresh)||row.expires_at<=now())deny();subscriptionGuard?.assertCurrent();
+        const changed=db.prepare('UPDATE '+source.challenges+" SET delivery_state='sent' WHERE challenge_id=? AND delivery_state='sending' AND consumed_at IS NULL").run(row.challenge_id);if(changed.changes!==1)deny();subscriptionGuard?.assertCurrent();
       });
     }catch(error){
       db.prepare('UPDATE '+source.challenges+" SET delivery_state='failed' WHERE challenge_id=? AND consumed_at IS NULL").run(row.challenge_id);
@@ -176,6 +182,7 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
   if(owner&&(owner.status!=='active'||owner.verified_at<=0||owner.verified_at>now()||hasMembership(db,owner.user_id)))changed();
   const name=owner?null:displayName(body.displayName);
   if(!owner&&!validPassword(body.password))invalid();
+  const subscriptionGuard=captureManagementSubscriptionGuard(db,invitation.team_id,{now,identityProviders,subscriptionEnforcement});
   return limitedPasswordWork(db,async()=>{
     let encoded;
     if(owner){if(!await verifyPassword(body.password,owner.password_hash))deny();}
@@ -188,6 +195,7 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
       if(owner){
         if(!currentOwner||currentOwner.user_id!==owner.user_id||currentOwner.status!=='active'||currentOwner.phone_revision!==owner.phone_revision||currentOwner.verified_at!==owner.verified_at||currentOwner.credential_revision!==owner.credential_revision||currentOwner.password_hash!==owner.password_hash||hasMembership(db,owner.user_id))changed();
       }else if(currentOwner||db.prepare('SELECT 1 FROM team_phone_credentials WHERE phone=?').get(phone))changed();
+      subscriptionGuard?.assertCurrent();
       const userId=owner?.user_id||randomUUID();
       if(!owner){
         db.prepare("INSERT INTO team_users VALUES (?,'active')").run(userId);
@@ -199,7 +207,7 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
       db.prepare('UPDATE '+source.invitations+' SET accepted_at=?,accepted_by=? WHERE invitation_id=?').run(now(),userId,currentInvite.invitation_id);
       db.prepare('UPDATE '+source.challenges+' SET consumed_at=? WHERE invitation_id=? AND consumed_at IS NULL').run(now(),currentInvite.invitation_id);
       db.prepare('INSERT INTO team_activity VALUES (?,?,?,?,NULL,?)').run(randomUUID(),currentInvite.team_id,userId,'member.activate',now());
-      return json({activated:true});
+      subscriptionGuard?.assertCurrent();return json({activated:true});
     });
   });
 }

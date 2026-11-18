@@ -5,5 +5,5 @@ import {captureSubscriptionWriteGuard} from './subscription-store.mjs';
 // Read/export and cancellation paths never capture a business write guard.
 export function captureBusinessSubscriptionGuard(db,teamId,{now=Date.now,identityProviders={},subscriptionEnforcement='disabled'}={}) {
   const mode=subscriptionEnforcementMode(subscriptionEnforcement,identityProviders);
-  return mode==='business-data-v1'?captureSubscriptionWriteGuard(db,teamId,{now}):null;
+  return (mode==='business-data-v1'||mode==='team-management-v1')?captureSubscriptionWriteGuard(db,teamId,{now}):null;
 }

@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import snapshotCodec from '../../dist/ledger-check-snapshot.js';
 import {captureBusinessSubscriptionGuard} from './subscription-business-policy.mjs';
+import {captureManagementSubscriptionGuard,addsEffectiveAuthority} from './subscription-management-policy.mjs';
 import {consume,limitedPasswordWork} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
 import {ordinaryTeamContext,projectIncrement,projectRevision,projectTime,safeProjectTitle} from './project-access-policy.mjs';
@@ -73,9 +74,11 @@ export async function handleLedgerCheckRequest(request,{db,now=Date.now,identity
   if(!exact(body,ACCESS)||!integer(body.projectRevision,1)||!ID.test(body.userId??'')||typeof body.userId!=='string'||!integer(body.memberRevision)||!integer(body.grantRevision)||typeof body.read!=='boolean'||!password(body.currentPassword))invalid();
   if(body.projectRevision!==before.project.revision)ledgerConflict();const target=ledgerTarget(db,teamId,body.userId),grant=ledgerGrant(db,teamId,projectId,body.userId);
   if(target.identityRevision!==body.memberRevision||grant.revision!==body.grantRevision||!grant.exists&&!body.read||grant.exists&&grant.rawRead===body.read&&(grant.eligible||!body.read))ledgerConflict();
-  const check=()=>{fresh(false);const current=ledgerTarget(db,teamId,body.userId);if(current.stamp!==target.stamp||ledgerGrant(db,teamId,projectId,body.userId).stamp!==grant.stamp)ledgerConflict();};check();
+  let managementGuard=null;
+  const check=()=>{fresh(false);const current=ledgerTarget(db,teamId,body.userId);if(current.stamp!==target.stamp||ledgerGrant(db,teamId,projectId,body.userId).stamp!==grant.stamp)ledgerConflict();managementGuard?.assertCurrent();};check();
+   if(addsEffectiveAuthority(grant,body,['read']))managementGuard=captureManagementSubscriptionGuard(db,teamId,{now,identityProviders,subscriptionEnforcement});
   consume(db,'ledger-access:'+ledgerDigest(actor.userId),projectTime(now()),15*60000,20);
-  return limitedPasswordWork(db,async()=>{const valid=await verifyPassword(body.currentPassword,before.member.credential.password_hash);check();if(!valid)throw new ApiError(403,'VERIFICATION_FAILED','当前密码验证未通过，请核对后重试。');return transaction(db,()=>{check();const start=changes(db),after=writeLedgerGrant(db,{teamId,projectId,userId:body.userId,read:body.read,before:grant});ledgerAudit(db,{teamId,projectId,actorId:actor.userId,userId:body.userId,action:'access.changed',before:grant,after,at:projectTime(now())});fresh(false);if(ledgerTarget(db,teamId,body.userId).stamp!==target.stamp||ledgerGrant(db,teamId,projectId,body.userId).stamp!==after.stamp||changes(db)-start!==2n)ledgerConflict();return json({changed:true,projectRevision:before.project.revision});});});
+  return limitedPasswordWork(db,async()=>{const valid=await verifyPassword(body.currentPassword,before.member.credential.password_hash);check();if(!valid)throw new ApiError(403,'VERIFICATION_FAILED','当前密码验证未通过，请核对后重试。');return transaction(db,()=>{check();const start=changes(db),after=writeLedgerGrant(db,{teamId,projectId,userId:body.userId,read:body.read,before:grant});ledgerAudit(db,{teamId,projectId,actorId:actor.userId,userId:body.userId,action:'access.changed',before:grant,after,at:projectTime(now())});fresh(false);if(ledgerTarget(db,teamId,body.userId).stamp!==target.stamp||ledgerGrant(db,teamId,projectId,body.userId).stamp!==after.stamp||changes(db)-start!==2n)ledgerConflict();managementGuard?.assertCurrent();return json({changed:true,projectRevision:before.project.revision});});});
  }
  const body=await readJson(request,IMPORT,LEDGER_IMPORT_MAX);fresh();
  if(!exact(body,IMPORT)||!UUID.test(body.operationId??'')||typeof body.operationId!=='string'||!integer(body.projectRevision,1)||!integer(body.grantRevision,1)||!integer(body.headRevision)||typeof body.sourceJson!=='string'||!password(body.currentPassword))invalid();

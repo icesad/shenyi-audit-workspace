@@ -1,3 +1,4 @@
+import {captureManagementSubscriptionGuard} from './subscription-management-policy.mjs';
 import {captureBusinessSubscriptionGuard} from './subscription-business-policy.mjs';
 import {administratorBusinessEligibilitySql} from './administrator-business-role-policy.mjs';
 import {randomUUID, createHash} from 'node:crypto';
@@ -108,7 +109,7 @@ export async function handleCollectionWriteRequest(request, {db, now = Date.now,
   if (request.method !== 'POST') return json({error: {code: 'METHOD_NOT_ALLOWED', message: '不支持此操作。'}}, 405, {Allow: action === 'submissions' ? 'GET, POST' : 'POST'});
   if (action !== 'submissions') {
     assertManager(db, identity, teamId, state);
-    const subscriptionGuard=action==='return'?captureBusinessSubscriptionGuard(db,teamId,{now,identityProviders,subscriptionEnforcement}):null;
+    let subscriptionGuard=action==='return'?captureBusinessSubscriptionGuard(db,teamId,{now,identityProviders,subscriptionEnforcement}):null;
     const body = await readJson(request, action === 'assignment' ? ['userId','revision'] : ['revision']);
     if(!Number.isSafeInteger(body.revision)||body.revision<0||body.revision>=Number.MAX_SAFE_INTEGER)invalid();
     if (action === 'assignment' && (typeof body.userId !== 'string' || !ID.test(body.userId))) invalid();
@@ -120,6 +121,9 @@ export async function handleCollectionWriteRequest(request, {db, now = Date.now,
       if (action === 'assignment') {
         const assignee=readTeamContext(db, {userId: body.userId}, teamId);
         if (!assignee || !ASSIGNEE_ROLES.includes(assignee.role) || !db.prepare("SELECT 1 FROM team_users WHERE user_id=? AND status='active'").get(body.userId)) deny();
+        // Retaining an already active assignee only removes other assignments.
+        // A new target receives authority even when the task is not yet writable.
+        if(!db.prepare("SELECT 1 FROM team_task_assignments WHERE team_id=? AND task_id=? AND user_id=? AND status='active'").get(teamId,taskId,body.userId))subscriptionGuard=captureManagementSubscriptionGuard(db,teamId,{now,identityProviders,subscriptionEnforcement});
         db.prepare("UPDATE team_task_assignments SET status='revoked' WHERE team_id=? AND task_id=?").run(teamId, taskId);
         db.prepare("INSERT INTO team_task_assignments VALUES (?,?,?,'active') ON CONFLICT(team_id,task_id,user_id) DO UPDATE SET status='active'").run(teamId, taskId, body.userId);
       } else if (fresh.status !== 'submitted') conflict();

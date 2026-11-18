@@ -1,4 +1,5 @@
 import {randomUUID,createHash} from 'node:crypto';
+import {captureManagementSubscriptionGuard} from './subscription-management-policy.mjs';
 import {consume,limitedPasswordWork} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
 import {currentDeviceLease} from './device-policy.mjs';
@@ -29,7 +30,7 @@ function changeRole(db,actorId,teamId,target,role,at){
  db.prepare('INSERT INTO team_business_role_events(event_id,team_id,actor_id,target_user_id,before_role,after_role,before_revision,after_revision,created_at) VALUES (?,?,?,?,?,?,?,?,?)').run(randomUUID(),teamId,actorId,target.id,target.role,role,target.revision,revision,at);
  return {changed:true,role,revision};
 }
-export async function handleBusinessRoleRequest(request,{db,now=Date.now,identityProviders={},deviceContext}={}){
+export async function handleBusinessRoleRequest(request,{db,now=Date.now,identityProviders={},deviceContext,subscriptionEnforcement='disabled'}={}){
  const url=new URL(request.url),access=url.pathname==='/api/auth/business-role-management/access',list=/^\/api\/teams\/([^/]+)\/business-role-members$/.exec(url.pathname),change=/^\/api\/teams\/([^/]+)\/business-role-members\/([^/]+)\/role$/.exec(url.pathname);
  if(!access&&!list&&!change)return null;if((access||change)&&url.search)invalid();if(request.method!==(change?'POST':'GET'))return method(change?'POST':'GET');
  const actor=deviceActor(db,request,identityProviders,deviceContext,businessRoleTime(now()));if(access)return json(businessRoleAccess(db,actor.userId));
@@ -38,9 +39,10 @@ export async function handleBusinessRoleRequest(request,{db,now=Date.now,identit
  const userId=change[2];if(!ID.test(userId))deny();const before=currentState(db,request,actor,identityProviders,deviceContext,teamId,userId,businessRoleTime(now()));
  const body=await readJson(request,['revision','role','currentPassword']);if(!Number.isSafeInteger(body.revision)||body.revision<0||!businessRoles.includes(body.role)||typeof body.currentPassword!=='string'||!body.currentPassword||Buffer.byteLength(body.currentPassword)>512)invalid();
  const expected={authority:before.authority.stamp,target:before.target.stamp,revision:body.revision,role:before.target.role};
- const fresh=()=>currentState(db,request,actor,identityProviders,deviceContext,teamId,userId,businessRoleTime(now()),expected);fresh();if(body.role===before.target.role)businessRoleConflict();
+ let subscriptionGuard=null;const fresh=()=>{const state=currentState(db,request,actor,identityProviders,deviceContext,teamId,userId,businessRoleTime(now()),expected);subscriptionGuard?.assertCurrent();return state;};fresh();if(body.role===before.target.role)businessRoleConflict();
+ subscriptionGuard=captureManagementSubscriptionGuard(db,teamId,{now,identityProviders,subscriptionEnforcement});
  consume(db,'business-role:'+digest(actor.userId),businessRoleTime(now()),15*60000,20);
  return limitedPasswordWork(db,async()=>{const valid=await verifyPassword(body.currentPassword,before.authority.credential.password_hash);fresh();if(!valid)throw new ApiError(403,'VERIFICATION_FAILED','当前密码验证未通过，请核对后重试。');
-  return transaction(db,()=>{const state=fresh();return json(changeRole(db,actor.userId,teamId,state.target,body.role,businessRoleTime(now())));});
+  return transaction(db,()=>{const state=fresh(),result=changeRole(db,actor.userId,teamId,state.target,body.role,businessRoleTime(now()));subscriptionGuard?.assertCurrent();return json(result);});
  });
 }
