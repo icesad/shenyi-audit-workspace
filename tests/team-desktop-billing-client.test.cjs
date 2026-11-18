@@ -153,6 +153,62 @@ test('both products project review evidence independently of fulfilment and keep
   }
 });
 
+test('trusted closure DTOs distinguish unpaid closed orders from late verified receipts',async()=>{
+  const {client,responses}=fixture();
+  const scope={teamId:TEAM,kind:'annual',orderId:ID};
+  const closure={deadlineAt:300,closedAt:301};
+  const pending={...ANNUAL_ORDER,status:'pending',confirmedAt:null,fulfilment:null,renewalSeatGrant:null,paymentDeadlineAt:300};
+  const closed={...pending,status:'closed',closure};
+  responses.push({simulation:true,order:pending});
+  const annualPending=(await client.reconcileBillingOrder(scope)).order;
+  assert.equal(annualPending.paymentDeadlineAt,300);
+  assert.equal(annualPending.status,'pending');
+  assert.equal(Object.hasOwn(annualPending,'closure'),false);
+  responses.push({simulation:true,order:closed});
+  const annualClosed=(await client.reconcileBillingOrder(scope)).order;
+  assert.equal(annualClosed.status,'closed');
+  assert.equal(annualClosed.confirmedAt,null);
+  assert.deepEqual(annualClosed.closure,closure);
+  assert.equal(annualClosed.fulfilment,null);
+  assert.equal(annualClosed.renewalSeatGrant,null);
+
+  const paymentException={kind:'refund',occurredAt:350,state:'review-required'};
+  const lateSeat={...SEAT_ORDER,status:'payment-verified',confirmedAt:400,grant:null,closure,paymentException};
+  responses.push({simulation:true,orders:[lateSeat],hasMore:false,nextCursor:null});
+  const {orders:[seat]}=await client.listBillingOrders({teamId:TEAM,kind:'seat'});
+  assert.equal(seat.status,'payment-verified');
+  assert.equal(seat.confirmedAt,400);
+  assert.equal(seat.grant,null);
+  assert.deepEqual(seat.closure,closure);
+  assert.deepEqual(seat.paymentException,paymentException);
+
+  for(const order of [
+    {...pending,paymentDeadlineAt:CREATED},
+    {...pending,paymentDeadlineAt:null},
+    {...pending,closure},
+    {...closed,confirmedAt:400},
+    {...closed,paymentDeadlineAt:undefined},
+    {...closed,closure:undefined},
+    {...closed,closure:{...closure,closeCode:'private'}},
+    {...closed,closure:{deadlineAt:300,closedAt:299}},
+    {...closed,closure:{deadlineAt:299,closedAt:301}},
+    {...closed,status:'payment-verified',confirmedAt:300},
+    {...closed,fulfilment:ANNUAL_ORDER.fulfilment},
+    {...ANNUAL_ORDER,paymentDeadlineAt:300,closure},
+  ]){
+    responses.push({simulation:true,order});
+    await assert.rejects(client.reconcileBillingOrder(scope),{code:'INVALID_RESPONSE'});
+  }
+  for(const order of [
+    {...lateSeat,closure:{...closure,deadlineAt:299}},
+    {...lateSeat,paymentDeadlineAt:300},
+    {...lateSeat,grant:SEAT_ORDER.grant},
+  ]){
+    responses.push({simulation:true,orders:[order],hasMore:false,nextCursor:null});
+    await assert.rejects(client.listBillingOrders({teamId:TEAM,kind:'seat'}),{code:'INVALID_RESPONSE'});
+  }
+});
+
 test('batch reconciliation projects bounded ordered pages from a fixed signed-request route',async()=>{
   const {client,calls,responses}=fixture();
   const overview={...OVERVIEW,canReconcileBillingBatch:true};
@@ -185,6 +241,21 @@ test('batch reconciliation projects bounded ordered pages from a fixed signed-re
     {route:RECONCILIATION_ROUTE,options:{method:'POST',body:{kind:'annual',after:nextCursor}}},
     {route:RECONCILIATION_ROUTE,options:{method:'POST',body:{kind:'seat'}}},
   ]);
+});
+
+test('batch reconciliation projects trusted closure and rejects a conflicting closure outcome',async()=>{
+  const {client,responses}=fixture();
+  const scope={teamId:TEAM,kind:'annual'};
+  const closed={...RECONCILIATION_ROW,outcome:'closed',status:'closed'};
+  const lookupFailed={...closed,orderId:REQUEST,outcome:'lookup-unavailable'};
+  const lateReceipt={...closed,orderId:OPERATION,outcome:'awaiting-review',status:'payment-verified'};
+  const results=[closed,lookupFailed,lateReceipt];
+  responses.push({...RECONCILIATION_PAGE,results});
+  assert.deepEqual(await client.reconcileBillingPage(scope),{results,nextCursor:null});
+  for(const status of ['pending','paid','payment-verified']){
+    responses.push({...RECONCILIATION_PAGE,results:[{...closed,status}]});
+    await assert.rejects(client.reconcileBillingPage(scope),{code:'INVALID_RESPONSE'});
+  }
 });
 
 test('batch selectors and result rows reject unexpected fields, stale cursors and contradictory order states',async()=>{
@@ -280,6 +351,31 @@ const INTAKE_ORDER={id:ID,kind:'annual',teamId:TEAM,teamName:'合成团队甲',a
   currency:'CNY',status:'paid',confirmedAt:CONFIRMED,paymentException:true};
 const INTAKE_ENTRY={revision:1,kind:'intake',reason:'duplicate-payment',reference:'case-23.A',recordedAt:CONFIRMED+1,recordedBy:'owner-demo'};
 const INTAKE_RESULT={order:INTAKE_ORDER,revision:1,entries:[INTAKE_ENTRY],nextBeforeRevision:null};
+
+test('refund intake projects closed and late verified orders under the existing role-scoped route',async()=>{
+  const {client,responses}=fixture();
+  const scope={kind:'annual',orderId:ID};
+  const closure={deadlineAt:180,closedAt:190};
+  const closed={...INTAKE_ORDER,status:'closed',confirmedAt:null,closure};
+  const late={...INTAKE_ORDER,status:'payment-verified',closure};
+  const closedResult={...INTAKE_RESULT,order:closed,revision:0,entries:[]};
+  const lateResult={...INTAKE_RESULT,order:late};
+  responses.push(closedResult,lateResult,lateResult);
+  assert.deepEqual(await client.getRefundIntake(scope),closedResult);
+  assert.deepEqual(await client.getRefundIntake(scope),lateResult);
+  assert.deepEqual(await client.recordRefundIntake(INTAKE_SELECTION),lateResult);
+  for(const value of [
+    {...closedResult,order:{...closed,closure:undefined}},
+    {...closedResult,order:{...closed,confirmedAt:CONFIRMED}},
+    {...lateResult,order:{...late,confirmationReceipt:'private'}},
+    {...lateResult,order:{...late,confirmedAt:189}},
+    {...lateResult,order:{...late,status:'paid'}},
+    {...lateResult,order:closed},
+  ]){
+    responses.push(value);
+    await assert.rejects(client.getRefundIntake(scope),{code:'INVALID_RESPONSE'});
+  }
+});
 
 test('refund intake transport uses exact held-device routes and returns only the bounded order and event fields',async()=>{
  const {client,calls,responses}=fixture();

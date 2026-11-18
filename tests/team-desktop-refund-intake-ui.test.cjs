@@ -146,6 +146,35 @@ test('pending payment can be inspected while its refund intake action stays unav
   assert.equal(f.calls.filter(row => row.method === 'recordRefundIntake').length, 0);
 });
 
+test('a closed order becomes eligible for intake only after a verified receipt', async t => {
+  const closure = { deadlineAt: instant - 1000, closedAt: instant - 500 };
+  const closed = { ...order, status: 'closed', confirmedAt: null, closure };
+  const late = { ...order, status: 'payment-verified', closure, paymentException: true };
+  let currentOrder = closed;
+  const f = fixture(t, {
+    getRefundIntake: () => ok({ ...initial, order: currentOrder }),
+    recordRefundIntake: () => ok({ ...initial, order: currentOrder, revision: 1, entries: [intake] })
+  });
+  f.view.update();
+  await f.open();
+  await f.lookup();
+  assert.match(f.id('order').textContent, /超时关闭/u);
+  assert.match(f.id('order').querySelector('[data-order-closure]').textContent, /超时关闭时间（北京时间）/u);
+  assert.equal(f.id('entry').hidden, true);
+  f.enter('duplicate-payment');
+  assert.equal(f.calls.filter(row => row.method === 'recordRefundIntake').length, 0);
+
+  currentOrder = late;
+  await f.lookup();
+  assert.match(f.id('order').textContent, /迟到收款待复核.*支付异常待复核/u);
+  assert.ok(f.id('order').querySelector('[data-order-closure]'));
+  assert.equal(f.id('entry').hidden, false);
+  f.enter('duplicate-payment');
+  await wait(() => f.id('history').querySelector('[data-revision="1"]'));
+  assert.equal(f.calls.filter(row => row.method === 'recordRefundIntake').length, 1);
+  assert.match(f.id('order').textContent, /迟到收款待复核/u);
+});
+
 test('permission removal clears order and password; stale replies from simultaneous closing and reopening cannot show a case', async t => {
   const held = deferred();
   let authorize = true, count = 0;

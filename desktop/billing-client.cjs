@@ -15,9 +15,9 @@ const RECONCILIATION_PAGE_SIZE=8;
 const MAX_BILLING_BYTES=128*1024;
 const PRODUCTS={annual:'team-annual-renewal',seat:'team-seat-addition'};
 const SUBSCRIPTION_STATES=new Set(['unconfigured','scheduled','active','expired']);
-const ORDER_STATES=new Set(['pending','payment-verified','paid']);
+const ORDER_STATES=new Set(['pending','closed','payment-verified','paid']);
 const PAYMENT_EXCEPTION_KINDS=new Set(['refund','chargeback']);
-const RECONCILIATION_OUTCOMES=new Set(['no-evidence','matched','awaiting-review','lookup-unavailable','evidence-rejected','local-failure']);
+const RECONCILIATION_OUTCOMES=new Set(['no-evidence','matched','closed','awaiting-review','lookup-unavailable','evidence-rejected','local-failure']);
 const OFFER_KEYS=['id','revision','product','amountMinor','currency'];
 const ORDER_KEYS=['id','teamId','actorId','requestId','merchantId','offer','simulation','createdAt','status','confirmedAt'];
 const BILLING_ERRORS=Object.freeze({
@@ -40,6 +40,7 @@ const BILLING_ERRORS=Object.freeze({
 const match=(pattern,value)=>typeof value==='string'&&pattern.exec(value)?.[0]===value;
 const integer=(value,min=0,max=Number.MAX_SAFE_INTEGER)=>Number.isSafeInteger(value)&&!Object.is(value,-0)&&value>=min&&value<=max;
 const timestamp=value=>integer(value,0,8640000000000000);
+const noConfirmedPayment=status=>status==='pending'||status==='closed';
 const boolean=value=>typeof value==='boolean';
 const teamName=value=>typeof value==='string'&&value.length<=160&&value.isWellFormed()&&value===value.trim()&&!!value&&[...value].length<=80&&!/[\p{Cc}\p{Cf}]/u.test(value);
 
@@ -133,16 +134,36 @@ function paymentExceptionView(value,createdAt,reject){
   return exception;
 }
 
+function orderClosureView(order,reject){
+  if(!Object.hasOwn(order,'closure')){
+    if(order.status==='closed')reject();
+    return undefined;
+  }
+  const closure=fields(order.closure,['closedAt','deadlineAt'],reject);
+  if(!timestamp(closure.closedAt)||!timestamp(closure.deadlineAt)||closure.closedAt<closure.deadlineAt||
+    !(order.status==='closed'||order.status==='payment-verified'&&order.confirmedAt>=closure.closedAt))reject();
+  return closure;
+}
+
 function orderView(value,{teamId,kind,orderId,selection},reject){
   const annual=kind==='annual';
-  const order=annual?fields(value,[...ORDER_KEYS,'fulfilment'],reject,['renewalSeats','renewalSeatGrant','paymentException']):
-    fields(value,[...ORDER_KEYS,'quantity','annualUnitAmountMinor','quoteExpiresAt','termStartsAt','termEndsAt','termRevision','grant'],reject,['paymentException']);
+  const order=annual?fields(value,[...ORDER_KEYS,'fulfilment'],reject,['renewalSeats','renewalSeatGrant','paymentException','paymentDeadlineAt','closure']):
+    fields(value,[...ORDER_KEYS,'quantity','annualUnitAmountMinor','quoteExpiresAt','termStartsAt','termEndsAt','termRevision','grant'],reject,['paymentException','closure']);
   const {id,actorId,requestId,merchantId,createdAt,status,confirmedAt}=order;
   if(!match(UUID,id)||order.teamId!==teamId||orderId!==undefined&&id!==orderId||!match(ID,actorId)||
     !match(UUID,requestId)||!match(ID,merchantId)||order.simulation!==true||!timestamp(createdAt)||!ORDER_STATES.has(status)||
-    (status==='pending'?confirmedAt!==null:!timestamp(confirmedAt)||confirmedAt<createdAt))reject();
+    (noConfirmedPayment(status)?confirmedAt!==null:!timestamp(confirmedAt)||confirmedAt<createdAt))reject();
   const offer=offerView(order.offer,kind,reject);
   const details=annual?annualOrderView(order,reject):seatOrderView(order,reject);
+  if(Object.hasOwn(order,'paymentDeadlineAt')){
+    if(!timestamp(order.paymentDeadlineAt)||order.paymentDeadlineAt<=createdAt)reject();
+    details.paymentDeadlineAt=order.paymentDeadlineAt;
+  }
+  const closure=orderClosureView(order,reject);
+  if(closure){
+    if(closure.deadlineAt!==(annual?order.paymentDeadlineAt:order.quoteExpiresAt))reject();
+    details.closure=closure;
+  }
   if(selection&&(requestId!==selection.requestId||offer.id!==selection.offerId||offer.revision!==selection.offerRevision||
     (annual?(selection.selectedSeats??details.renewalSeats?.defaultSeats)!==details.renewalSeats?.selectedSeats:selection.quantity!==details.quantity)))reject();
   if(Object.hasOwn(order,'paymentException'))details.paymentException=paymentExceptionView(order.paymentException,createdAt,reject);
@@ -193,6 +214,7 @@ function reconciliationPageView(value,{teamId,kind,after},reject){
     const {orderId,outcome,status,paymentException}=result;
     if(!match(UUID,orderId)||!RECONCILIATION_OUTCOMES.has(outcome)||!ORDER_STATES.has(status)||!boolean(paymentException)||
       outcome==='matched'&&(status!=='paid'||paymentException)||
+      outcome==='closed'&&status!=='closed'||
       outcome==='awaiting-review'&&status!=='payment-verified'&&!paymentException)reject();
     return result;
   });
@@ -204,10 +226,11 @@ function reconciliationPageView(value,{teamId,kind,after},reject){
 
 function refundIntakeView(value,{kind,orderId,beforeRevision},reject){
   const result=fields(value,['order','revision','entries','nextBeforeRevision'],reject);
-  const order=fields(result.order,['id','kind','teamId','teamName','amountMinor','currency','status','confirmedAt','paymentException'],reject);
+  const order=fields(result.order,['id','kind','teamId','teamName','amountMinor','currency','status','confirmedAt','paymentException'],reject,['closure']);
   if(order.id!==orderId||order.kind!==kind||!match(ID,order.teamId)||!teamName(order.teamName)||
     !integer(order.amountMinor,1)||order.currency!=='CNY'||!ORDER_STATES.has(order.status)||
-    (order.status==='pending'?order.confirmedAt!==null:!timestamp(order.confirmedAt))||!boolean(order.paymentException))reject();
+    (noConfirmedPayment(order.status)?order.confirmedAt!==null:!timestamp(order.confirmedAt))||!boolean(order.paymentException))reject();
+  if(Object.hasOwn(order,'closure')||order.status==='closed')order.closure=orderClosureView(order,reject);
   const {revision,nextBeforeRevision}=result;
   if(!integer(revision)||order.confirmedAt===null&&revision!==0)reject();
   const newest=beforeRevision===undefined?revision:Math.min(revision,beforeRevision-1);

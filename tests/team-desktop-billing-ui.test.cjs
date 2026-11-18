@@ -249,6 +249,43 @@ test('a late trusted exception response cannot populate a signed-out billing vie
   assert.equal(f.id('message').textContent, '');
 });
 
+test('elapsed annual deadlines stay pending until closure evidence, and later verified receipts stay in review', async t => {
+  const deadlineAt = termStart + 3000, closedAt = deadlineAt + 500, id = 'closure-order';
+  const pending = { ...order(id), paymentDeadlineAt: deadlineAt };
+  const closed = { ...pending, status: 'closed', closure: { deadlineAt, closedAt } };
+  const late = { ...closed, status: 'payment-verified', confirmedAt: closedAt + 500 };
+  const verified = [closed, late];
+  const f = fixture(t, {
+    listBillingOrders: () => ok({ orders: [pending], hasMore: false, nextCursor: null }),
+    reconcileBillingOrder: () => ok({ order: verified.shift() })
+  });
+  const row = () => f.id('order-list').querySelector(`[data-order-id="${id}"]`);
+  const state = () => row()?.querySelector('[data-state]');
+  const reconcile = () => row()?.querySelector('[data-billing-reconcile]');
+  await f.open();
+  await until(() => reconcile() && !reconcile().disabled);
+  assert.equal(state().dataset.state, 'pending');
+  assert.match(row().textContent, /支付期限至 .*北京时间/u);
+  assert.equal(row().querySelector('[data-order-closure]'), null);
+
+  reconcile().click();
+  await until(() => state()?.dataset.state === 'closed' && !reconcile().disabled);
+  assert.equal(state().textContent, '超时关闭');
+  assert.match(row().querySelector('[data-order-closure]').textContent, /超时关闭于 .*北京时间/u);
+  assert.match(f.id('message').textContent, /超时关闭/u);
+  assert.doesNotMatch(row().textContent, /收款确认|已到账/u);
+
+  reconcile().click();
+  await until(() => !!row()?.querySelector('[data-closure-review]'));
+  assert.equal(state().dataset.state, 'payment-verified');
+  assert.equal(state().textContent, '迟到收款待复核');
+  assert.match(row().textContent, /收款确认.*超时关闭于/u);
+  assert.doesNotMatch(row().textContent, /已到账|续费期限|席位适用期限/u);
+  assert.match(f.id('message').textContent, /迟到收款待复核/u);
+  assert.equal(f.calls.filter(call => call.name === 'getBillingOverview').length, 1);
+  assert.equal(f.calls.filter(call => call.name === 'reconcileBillingOrder').length, 2);
+});
+
 test('a coalesced close and reopen suppresses an ended billing read', async t => {
   const old = deferred();
   const fresh = deferred();
@@ -269,6 +306,26 @@ test('a coalesced close and reopen suppresses an ended billing read', async t =>
 const batchId = number => '00000000-0000-4000-8000-' + String(number).padStart(12, '0');
 const batchRow = (number, outcome, status = 'pending', paymentException = false) =>
   ({ orderId: batchId(number), outcome, status, paymentException });
+
+test('batch results show confirmed closure distinctly from an unconfirmed gateway response', async t => {
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok({ ...snapshot(teamId), canReconcileBillingBatch: true }),
+    reconcileBillingPage: () => ok({
+      results: [batchRow(1, 'closed', 'closed'), batchRow(2, 'no-evidence')],
+      nextCursor: null
+    })
+  });
+  await f.open();
+  await until(() => !f.id('batch-start').disabled);
+  f.id('batch-start').click();
+  await until(() => f.id('batch-results').childElementCount === 2);
+  const found = f.id('batch-results').querySelector('[data-outcome="closed"]');
+  assert.equal(found.dataset.batchOrderId, batchId(1));
+  assert.match(found.textContent, /超时关闭.*账本 · 超时关闭/u);
+  const unconfirmed = f.id('batch-results').querySelector('[data-outcome="no-evidence"]');
+  assert.match(unconfirmed.textContent, /未返回可信凭据.*账本 · 待支付/u);
+  assert.match(f.id('batch-message').textContent, /超时关闭 1 笔/u);
+});
 
 test('batch reports retain the independent order page while refreshing, and retry the attempted cursor', async t => {
   const first = deferred();

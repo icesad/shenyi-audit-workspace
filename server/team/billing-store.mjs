@@ -5,6 +5,8 @@ import {appendSubscriptionTermWithinTransaction,readSubscriptionState} from './s
 import {annualRenewalWindow} from './renewal-calendar.mjs';
 import {ANNUAL_PRODUCT,validateSimulationPaymentReceipt,simulationReceiptBytes} from './billing-simulation.mjs';
 import {assertBillingCaptureCompatible,assertBillingPaymentFulfillable,readBillingPaymentException} from './billing-payment-exception-store.mjs';
+import {recordAnnualCloseWindowWithinTransaction,readAnnualCloseDeadline,readBillingOrderClosure,
+ assertBillingClosureEventUnused,assertBillingOrderOpenForFulfilment} from './billing-order-closure-store.mjs';
 import {readSeatCapacity,recordSeatCapacityGrantWithinTransaction} from './seat-capacity-store.mjs';
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,SHA=/^[0-9a-f]{64}$/,MAX=Number.MAX_SAFE_INTEGER,DATE_MAX=8640000000000000;
@@ -138,11 +140,16 @@ function view(db,order){
  const payment=paymentFact(db,order),fulfilment=fulfilmentFact(db,order,payment),plan=seatPlanFact(db,order);
  const seats=plan?{renewalSeats:plan,renewalSeatGrant:annualSeatGrantFact(db,order,plan,payment,fulfilment)}:{};
  const paymentException=readBillingPaymentException(db,ANNUAL_PRODUCT,order.id);
- return Object.freeze({id:order.id,teamId:order.teamId,actorId:order.actorId,requestId:order.requestId,merchantId:order.merchantId,offer:Object.freeze({...order.offer}),simulation:true,createdAt:order.createdAt,status:fulfilment?'paid':payment?'payment-verified':'pending',confirmedAt:payment?.confirmedAt??null,fulfilment,...seats,...(paymentException?{paymentException}:{})});
+ const paymentDeadlineAt=readAnnualCloseDeadline(db,order.id);
+ const closure=readBillingOrderClosure(db,ANNUAL_PRODUCT,order.id);
+ if(closure&&(fulfilment||payment&&payment.confirmedAt<closure.closedAt))conflict();
+ return Object.freeze({id:order.id,teamId:order.teamId,actorId:order.actorId,requestId:order.requestId,merchantId:order.merchantId,offer:Object.freeze({...order.offer}),simulation:true,createdAt:order.createdAt,
+  status:fulfilment?'paid':payment?'payment-verified':closure?'closed':'pending',confirmedAt:payment?.confirmedAt??null,fulfilment,...seats,
+  ...(paymentException?{paymentException}:{}),...(paymentDeadlineAt!==null?{paymentDeadlineAt}:{}),...(closure?{closure}:{})});
 }
 
 // Trusted service primitive. HTTP caller owns its lease/technical-authority checks.
-export function createAnnualOrderWithinTransaction(db,input,{now=Date.now,renewalSeats}={}){
+export function createAnnualOrderWithinTransaction(db,input,{now=Date.now,renewalSeats,closeAfterMs}={}){
  const v=createInput(input),selection=renewalSeatOptions(renewalSeats);
  if(db.isTransaction!==true)conflict();
  if(typeof now!=='function')invalid();
@@ -173,6 +180,7 @@ export function createAnnualOrderWithinTransaction(db,input,{now=Date.now,renewa
  const hash=plan?plannedOrderHash(priced,plan):digest(JSON.stringify(v));
  const inserted=db.prepare('INSERT INTO team_annual_orders(order_id,team_id,actor_id,request_id,term_operation_id,merchant_id,offer_id,offer_revision,product,amount_minor,currency,environment,created_at,request_sha256) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,v.teamId,v.actorId,v.requestId,operationId,v.merchantId,v.offer.id,v.offer.revision,v.offer.product,priced.offer.amountMinor,v.offer.currency,'simulation-v1',createdAt,hash);
  if(inserted.changes!==1)conflict();
+ if(closeAfterMs!==undefined)recordAnnualCloseWindowWithinTransaction(db,id,closeAfterMs);
  if(plan){
   const order={...priced,id,termOperationId:operationId,createdAt,requestSha256:hash};
   const saved=db.prepare('INSERT INTO team_annual_order_seat_plans(order_id,team_id,default_seats,selected_seats,base_amount_minor,unit_amount_minor,basis_revision,basis_ends_at,request_sha256) VALUES (?,?,?,?,?,?,?,?,?)').run(
@@ -198,12 +206,15 @@ export function recordVerifiedAnnualPayment(db,receipt,{now=Date.now,authorize}=
   authorize?.();
   const order=orderFact(db,value.orderId);if(!order)deny();matchesOrder(order,value);
   const plan=seatPlanFact(db,order);
+  assertBillingClosureEventUnused(db,value.eventId);
   assertBillingCaptureCompatible(db,value);
   if(one(db,'SELECT 1 FROM team_seat_verified_payments WHERE event_id=? OR transaction_id=?',value.eventId,value.transactionId))conflict();
   const collisions=all(db,'SELECT * FROM team_annual_verified_payments WHERE order_id=? OR event_id=? OR transaction_id=?',value.orderId,value.eventId,value.transactionId);
   if(collisions.length){if(collisions.length!==1)conflict();const old=paymentValue(collisions[0],order);if(old.receiptSha256!==hash)conflict();return old;}
   if(plan&&one(db,'SELECT 1 FROM team_seat_capacity_grants WHERE grant_id=?',order.id))conflict();
-  const paymentId=randomUUID(),confirmedAt=at(now);if(confirmedAt<order.createdAt)conflict();
+  const closure=readBillingOrderClosure(db,ANNUAL_PRODUCT,order.id);
+  const paymentId=randomUUID(),confirmedAt=at(now);
+  if(confirmedAt<(closure?.closedAt??order.createdAt))conflict();
   if(db.prepare('INSERT INTO team_annual_verified_payments(payment_id,order_id,team_id,event_id,transaction_id,receipt_json,receipt_sha256,confirmed_at) VALUES (?,?,?,?,?,?,?,?)').run(paymentId,order.id,order.teamId,value.eventId,value.transactionId,bytes.toString('utf8'),hash,confirmedAt).changes!==1)conflict();
   const payment=paymentFact(db,order);if(!payment||payment.paymentId!==paymentId||payment.confirmedAt!==confirmedAt||payment.receiptSha256!==hash)conflict();
   if(plan&&one(db,'SELECT 1 FROM team_seat_capacity_grants WHERE grant_id=?',order.id))conflict();
@@ -219,11 +230,13 @@ function assertAnnualPaymentTurn(db,order,payment){
   ORDER BY payment.confirmed_at,payment.payment_id COLLATE BINARY`).iterate(order.teamId);
  for(const row of pending){
   if(row.payment_id===payment.paymentId)return;
-  if(row.event_id===null)conflict();
+  const closure=readBillingOrderClosure(db,ANNUAL_PRODUCT,row.order_id);
+  if(!closure&&row.event_id===null)conflict();
   const previous=orderFact(db,row.order_id);
   if(!previous||previous.teamId!==order.teamId)conflict();
   const captured=paymentFact(db,previous);
   if(!captured||captured.paymentId!==row.payment_id)conflict();
+  if(closure&&captured.confirmedAt<closure.closedAt)conflict();
   assertBillingCaptureCompatible(db,captured.receipt);
  }
  conflict();
@@ -236,6 +249,7 @@ export function fulfilAnnualOrder(db,orderId,{now=Date.now,authorize}={}){
   const plan=seatPlanFact(db,order);
   const current=readSubscriptionState(db,order.teamId,currentTime),prior=fulfilmentFact(db,order,payment);
   if(prior)return{order:view(db,order),fulfilment:prior,subscription:termReceipt(db,order.teamId,prior.subscriptionRevision)};
+  assertBillingOrderOpenForFulfilment(db,ANNUAL_PRODUCT,order.id);
   assertBillingPaymentFulfillable(db,payment.receipt);
   assertAnnualPaymentTurn(db,order,payment);
   const window=annualRenewalWindow(current.revision?{startsAt:current.startsAt,endsAt:current.endsAt}:null,payment.confirmedAt);

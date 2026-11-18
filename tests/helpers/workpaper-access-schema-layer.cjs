@@ -6,6 +6,7 @@ const {seatCapacitySchemaLayer}=require('./seat-capacity-schema-layer.cjs');
 const {seatOrderSchemaLayer}=require('./seat-order-schema-layer.cjs');
 const {annualSeatPlanSchemaLayer}=require('./annual-seat-plan-schema-layer.cjs');
 const {paymentExceptionSchemaLayer}=require('./billing-payment-exception-schema-layer.cjs');
+const {orderClosureSchemaLayer}=require('./billing-order-closure-schema-layer.cjs');
 const {refundIntakeSchemaLayer,withoutEmptyRefundIntakeDefinitions,peelRefundIntakeSchema,
  assertRefundIntakeSchemaRestored}=require('./billing-refund-intake-schema-layer.cjs');
 const {peelLedgerCheckSchema,assertLedgerCheckSchemaRestored}=require('./ledger-check-schema-peel.cjs');
@@ -17,7 +18,7 @@ function workpaperAccessSchemaLayer(db){
  assert.equal(createHash('sha256').update(JSON.stringify(rows)).digest('hex'),'81ed73be0c51aa3f92717cb7e1d9f8faf9437a6d50891eb8b8c17fead29f6e4d','Only the reviewed exact workpaper ACL schema may be projected');
  for(const name of TABLES)assert.equal(db.prepare('SELECT COUNT(*) n FROM '+name).get().n,0,'No default workpaper authorization or audit may be seeded');return{tables:2,objects:29};
 }
-function laterTeamSchemaLayers(db){const ledger=ledgerCheckSchemaLayer(db),workpaper=workpaperAccessSchemaLayer(db),data=workpaperDataSchemaLayer(db),subscription=subscriptionSchemaLayer(db,{allowAbsent:true}),billing=billingSchemaLayer(db,{allowAbsent:true}),seats=seatCapacitySchemaLayer(db,{allowAbsent:true}),orders=seatOrderSchemaLayer(db,{allowAbsent:true}),plans=annualSeatPlanSchemaLayer(db,{allowAbsent:true}),exceptions=paymentExceptionSchemaLayer(db,{allowAbsent:true}),refundIntake=refundIntakeSchemaLayer(db,{allowAbsent:true});return{tables:ledger.tables+workpaper.tables+data.tables+subscription.tables+billing.tables+seats.tables+orders.tables+plans.tables+exceptions.tables+refundIntake.tables,objects:ledger.objects+workpaper.objects+data.objects+subscription.objects+billing.objects+seats.objects+orders.objects+plans.objects+exceptions.objects+refundIntake.objects};}
+function laterTeamSchemaLayers(db){const ledger=ledgerCheckSchemaLayer(db),workpaper=workpaperAccessSchemaLayer(db),data=workpaperDataSchemaLayer(db),subscription=subscriptionSchemaLayer(db,{allowAbsent:true}),billing=billingSchemaLayer(db,{allowAbsent:true}),seats=seatCapacitySchemaLayer(db,{allowAbsent:true}),orders=seatOrderSchemaLayer(db,{allowAbsent:true}),plans=annualSeatPlanSchemaLayer(db,{allowAbsent:true}),exceptions=paymentExceptionSchemaLayer(db,{allowAbsent:true}),refundIntake=refundIntakeSchemaLayer(db,{allowAbsent:true}),orderClosure=orderClosureSchemaLayer(db,{allowAbsent:true});return{tables:ledger.tables+workpaper.tables+data.tables+subscription.tables+billing.tables+seats.tables+orders.tables+plans.tables+exceptions.tables+refundIntake.tables+orderClosure.tables,objects:ledger.objects+workpaper.objects+data.objects+subscription.objects+billing.objects+seats.objects+orders.objects+plans.objects+exceptions.objects+refundIntake.objects+orderClosure.objects};}
 function peelLedgerAndWorkpaperSchema(db){
  // Validate every complete empty later layer before the first DROP. Refuse active data.
  laterTeamSchemaLayers(db);const refundIntake=peelRefundIntakeSchema(db),data=peelWorkpaperDataSchema(db),workpaper=definitions(db);

@@ -19,7 +19,7 @@ function fields(value,required,optional=[]){
 export function billingSimulationConfiguration(value=null,{subscriptionEnforcement,identityProviders,seatCapacityEnforcement}={}){
  if(value===null)return null;
  try{
-  const v=fields(value,['mode','merchantId','signingKey','offers'],['lookupPayment','seatOffer','annualSeatUnitAmountMinor','paymentExceptions','batchReconciliation','refundIntake']);
+  const v=fields(value,['mode','merchantId','signingKey','offers'],['lookupPayment','seatOffer','annualSeatUnitAmountMinor','paymentExceptions','batchReconciliation','refundIntake','timeoutClosure']);
   if(v.mode!=='simulation-v1'||!matches(ID,v.merchantId)||types.isProxy(v.signingKey)||!Buffer.isBuffer(v.signingKey)||v.signingKey.length<32||v.signingKey.length>128||subscriptionEnforcement!=='team-management-v1'||identityProviders?.deviceProofRequired!==true)throw Error();
   if(!Array.isArray(v.offers)||types.isProxy(v.offers)||Object.getPrototypeOf(v.offers)!==Array.prototype||v.offers.length<1||v.offers.length>10)throw Error();
   const ds=Object.getOwnPropertyDescriptors(v.offers);
@@ -44,12 +44,19 @@ export function billingSimulationConfiguration(value=null,{subscriptionEnforceme
   if(v.batchReconciliation!==undefined&&typeof v.batchReconciliation!=='boolean')throw Error();
   if(v.batchReconciliation===true&&typeof v.lookupPayment!=='function')throw Error();
   if(v.refundIntake!==undefined&&typeof v.refundIntake!=='boolean')throw Error();
+  let timeoutClosure;
+  if(v.timeoutClosure!==undefined){
+   const policy=fields(v.timeoutClosure,['annualTimeoutMs']);
+   if(!integer(policy.annualTimeoutMs,1)||policy.annualTimeoutMs>8640000000000000)throw Error();
+   timeoutClosure=Object.freeze(policy);
+  }
   return Object.freeze({mode:v.mode,merchantId:v.merchantId,signingKey:Buffer.from(v.signingKey),offers:Object.freeze(offers),
     ...(v.lookupPayment===undefined?{}:{lookupPayment:v.lookupPayment}),
     ...(seatOffer===undefined?{}:{seatOffer}),
     ...(v.paymentExceptions===true?{paymentExceptions:true}:{}),
     ...(v.batchReconciliation===true?{batchReconciliation:true}:{}),
     ...(v.refundIntake===true?{refundIntake:true}:{}),
+    ...(timeoutClosure?{timeoutClosure}:{}),
     ...(annualSeatUnitAmountMinor===undefined?{}:{annualSeatUnitAmountMinor})});
  }catch{throw new TypeError('Invalid billing simulation configuration; strict management scope and synthetic offers required');}
 }

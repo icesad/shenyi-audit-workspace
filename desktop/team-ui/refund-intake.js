@@ -14,7 +14,7 @@
     }
   };
   const orderTypes = { annual: '团队年费', seat: '增购席位' };
-  const orderStates = { pending: '未确认收款', 'payment-verified': '已核验，待到账', paid: '已到账' };
+  const orderStates = { pending: '未确认收款', closed: '超时关闭', 'payment-verified': '已核验，待到账', paid: '已到账' };
   const deviceErrors = new Set(['DEVICE_PROOF_REQUIRED', 'DEVICE_NOT_READY', 'DEVICE_STATE_CHANGED', 'DEVICE_VAULT_UNAVAILABLE',
     'DEVICE_CAPABILITY_REQUIRED', 'DEVICE_SERVER_CHANGED']);
   const denyErrors = new Set(['HTTP_403', 'HTTP_404', 'FORBIDDEN', 'NOT_FOUND', 'BILLING_UNAVAILABLE', 'REFUND_INTAKE_UNAVAILABLE']);
@@ -38,6 +38,7 @@
   }
 
   function matches(pattern, value) { return pattern.exec(value)?.[0] === value; }
+  function recordingAllowed(order) { return order?.status !== 'closed' && order?.confirmedAt != null; }
 
   window.createRefundIntakeView = function ({ api, getContext, onUnauthorized, onDeviceUnavailable }) {
     const by = name => document.getElementById('refund-intake-' + name);
@@ -63,7 +64,7 @@
     function controls() {
       const locked = !canOpen() || !!access || !!action || getContext().busy;
       const orderId = by('order-id').value.trim();
-      const canRecord = review?.order.confirmedAt != null;
+      const canRecord = recordingAllowed(review?.order);
       by('kind').disabled = by('order-id').disabled = locked;
       by('lookup').disabled = locked || !matches(uuid, orderId);
       by('older').hidden = review?.nextBeforeRevision == null;
@@ -175,19 +176,28 @@
 
     function renderOrder() {
       const { order } = review;
+      const status = order.closure && order.status === 'payment-verified' ? '迟到收款待复核' : orderStates[order.status];
       const facts = [
         ['团队', order.teamName],
         ['原订单编号', order.id],
         ['订单类型', orderTypes[order.kind]],
         ['原订单金额', amount(order.amountMinor)],
-        ['收款状态', orderStates[order.status] + (order.paymentException ? ' · 支付异常待复核' : '')],
+        ['收款状态', status + (order.paymentException ? ' · 支付异常待复核' : '')],
         ['收款确认时间（北京时间）', order.confirmedAt === null ? '未确认' : dateFormat.format(order.confirmedAt)],
       ];
-      by('order').replaceChildren(...facts.map(([name, value]) => {
+      const rows = facts.map(([name, value]) => {
         const row = element('div');
         row.append(element('dt', name), element('dd', value));
         return row;
-      }));
+      });
+      if (order.closure) {
+        const deadline = element('div'), closed = element('div');
+        deadline.append(element('dt', '支付期限（北京时间）'), element('dd', dateFormat.format(order.closure.deadlineAt)));
+        closed.dataset.orderClosure = 'true';
+        closed.append(element('dt', '超时关闭时间（北京时间）'), element('dd', dateFormat.format(order.closure.closedAt)));
+        rows.push(deadline, closed);
+      }
+      by('order').replaceChildren(...rows);
     }
 
     function render() {
@@ -231,7 +241,8 @@
         review = data;
         rows = data.entries;
         render();
-        message(data.order.confirmedAt === null ? '原订单尚未确认收款。收款确认后可登记受理。' : '');
+        message(recordingAllowed(data.order) ? '' : data.order.status === 'closed'
+          ? '订单已超时关闭。核对到收款后可登记受理。' : '原订单尚未确认收款。收款确认后可登记受理。');
       } catch (error) {
         if (!current(pending) || handleSessionError(error)) return;
         if (denyErrors.has(error?.code)) void checkAccess();
@@ -274,7 +285,7 @@
     }
 
     async function record() {
-      if (by('record').disabled || !canOpen() || review?.order.confirmedAt == null) return;
+      if (by('record').disabled || !canOpen() || !recordingAllowed(review?.order)) return;
       const selection = selected(), reason = by('reason').value, reference = by('reference').value.trim();
       const currentPassword = by('password').value;
       by('password').value = '';

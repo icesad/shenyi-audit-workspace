@@ -7,11 +7,14 @@ import {createSeatOrderWithinTransaction,readSeatOrder,readSeatOrderRequest,list
 import {ANNUAL_PRODUCT,SEAT_PRODUCT,readSimulationPaymentRequest,verifySimulationPaymentEnvelope} from './billing-simulation.mjs';
 import {readSimulationPaymentExceptionRequest,verifySimulationPaymentExceptionEnvelope} from './billing-payment-exception.mjs';
 import {recordVerifiedBillingPaymentException,recordVerifiedBillingPaymentExceptionWithinTransaction} from './billing-payment-exception-store.mjs';
+import {readSimulationOrderClosureRequest,verifySimulationOrderClosureEnvelope} from './billing-order-closure.mjs';
+import {recordVerifiedBillingOrderClosure,recordVerifiedBillingOrderClosureWithinTransaction} from './billing-order-closure-store.mjs';
 import {readSeatCapacity} from './seat-capacity-store.mjs';
 import {readSubscriptionState} from './subscription-store.mjs';
 
 export const SIMULATION_NOTIFICATION_PATH='/api/billing/simulation/notifications';
 export const SIMULATION_PAYMENT_EXCEPTION_PATH='/api/billing/simulation/payment-exceptions';
+export const SIMULATION_ORDER_CLOSURE_PATH='/api/billing/simulation/order-closures';
 const RECONCILIATION_PAGE_SIZE=8;
 const reconcilingTeams=new WeakMap();
 const unavailable=()=>{throw new ApiError(503,'BILLING_UNAVAILABLE','模拟账务尚未配置或暂不可用。');};
@@ -79,9 +82,9 @@ function fulfilCapture(db,receipt,now,authorize){
  try{
   fulfil(db,receipt.orderId,{now,authorize});
  }catch(error){
-  // A complete reversal is already durable. Keep the matched late capture for
-  // reconciliation and acknowledge it without publishing new entitlements.
-  if(!(error instanceof ApiError&&error.code==='BILLING_PAYMENT_EXCEPTION_REVIEW_REQUIRED'))throw error;
+  // These conflicts are backed by durable evidence. Acknowledge the matched
+  // late capture and leave entitlement fulfilment for review.
+  if(!(error instanceof ApiError&&['BILLING_PAYMENT_EXCEPTION_REVIEW_REQUIRED','BILLING_ORDER_CLOSED_REVIEW_REQUIRED'].includes(error.code)))throw error;
  }
 }
 function settle(db,receipt,now,options,authorize){
@@ -90,12 +93,16 @@ function settle(db,receipt,now,options,authorize){
 }
 export async function handleBillingSimulationNotification(request,options={}){
  const {db,now=Date.now,billingSimulation}=options;
- const url=new URL(request.url),exception=url.pathname===SIMULATION_PAYMENT_EXCEPTION_PATH;
- if(!exception&&url.pathname!==SIMULATION_NOTIFICATION_PATH)return null;
+ const url=new URL(request.url),exception=url.pathname===SIMULATION_PAYMENT_EXCEPTION_PATH,closure=url.pathname===SIMULATION_ORDER_CLOSURE_PATH;
+ if(!exception&&!closure&&url.pathname!==SIMULATION_NOTIFICATION_PATH)return null;
  if(url.search||url.hash||url.href.endsWith('?'))invalid();
  if(request.method!=='POST')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'POST'});
- if(!billingSimulation||exception&&billingSimulation.paymentExceptions!==true)unavailable();
- if(exception){
+ if(!billingSimulation||exception&&billingSimulation.paymentExceptions!==true||closure&&!billingSimulation.timeoutClosure)unavailable();
+ if(closure){
+  const receipt=await readSimulationOrderClosureRequest(request,billingSimulation);
+  if(receipt.product===SEAT_PRODUCT&&!seatOrderingEnabled(options))unavailable();
+  recordVerifiedBillingOrderClosure(db,receipt,{now});
+ }else if(exception){
   const receipt=await readSimulationPaymentExceptionRequest(request,billingSimulation);
   if(receipt.product===SEAT_PRODUCT&&!seatOrderingEnabled(options))unavailable();
   recordVerifiedBillingPaymentException(db,receipt,{now});
@@ -122,11 +129,14 @@ async function lookup(configuration,order){
 function lookupEvidence(configuration,envelope,orderId,product){
  if(envelope===null)return null;
  const exception=envelope?.kind==='payment-exception';
+ const closure=envelope?.kind==='order-closure';
  if(exception&&configuration.paymentExceptions!==true)unavailable();
- const verify=exception?verifySimulationPaymentExceptionEnvelope:verifySimulationPaymentEnvelope;
+ if(closure&&!configuration.timeoutClosure)unavailable();
+ const verify=closure?verifySimulationOrderClosureEnvelope:exception?verifySimulationPaymentExceptionEnvelope:verifySimulationPaymentEnvelope;
  const receipt=verify(envelope?.body,envelope?.signature,configuration);
  if(receipt.orderId!==orderId||receipt.product!==product)invalid();
- return {exception,receipt};
+ const record=closure?recordVerifiedBillingOrderClosureWithinTransaction:exception?recordVerifiedBillingPaymentExceptionWithinTransaction:null;
+ return {record,closure,receipt};
 }
 const rejectedWrite=error=>error instanceof ApiError&&error.status<500?'evidence-rejected':'local-failure';
 
@@ -137,10 +147,10 @@ function applyBatchLookup(result,order,context){
  try{evidence=lookupEvidence(options.billingSimulation,result.value,order.id,product);}
  catch{return 'evidence-rejected';}
  if(!evidence)return 'no-evidence';
- if(evidence.exception){
-  try{scoped(()=>recordVerifiedBillingPaymentExceptionWithinTransaction(db,evidence.receipt,{now}));}
+ if(evidence.record){
+  try{scoped(()=>evidence.record(db,evidence.receipt,{now}));}
   catch(error){return rejectedWrite(error);}
-  return 'awaiting-review';
+  return evidence.closure?'inspect-closure':'awaiting-review';
  }
  try{recordCapture(db,evidence.receipt,now,options,authorize);}
  catch(error){return rejectedWrite(error);}
@@ -179,6 +189,10 @@ async function reconcileBatch(request,{db,teamId,options,now,scoped,authorize}){
    if(outcome==='inspect-capture'){
     if(paymentException||current.status==='payment-verified')outcome='awaiting-review';
     else outcome=current.status==='paid'?'matched':'local-failure';
+   }
+   if(outcome==='inspect-closure'){
+    if(current.status==='closed')outcome='closed';
+    else outcome=current.status==='payment-verified'?'awaiting-review':'local-failure';
    }
    results.push({orderId:order.id,outcome,status:current.status,paymentException});
   }
@@ -229,10 +243,10 @@ export async function handleBillingRequest(request,options={}){
   await readJson(request,[]);
   const order=scoped(()=>{const found=readOrder(db,teamId,orderId);if(!found)deny();return found;});
   const evidence=lookupEvidence(billingSimulation,await lookup(billingSimulation,order),orderId,isSeatOrder?SEAT_PRODUCT:ANNUAL_PRODUCT);
-  if(evidence?.exception){
+  if(evidence?.record){
    return scoped(()=>{
     if(!readOrder(db,teamId,orderId))deny();
-    recordVerifiedBillingPaymentExceptionWithinTransaction(db,evidence.receipt,{now});
+    evidence.record(db,evidence.receipt,{now});
     return json({simulation:true,order:readOrder(db,teamId,orderId)});
    });
   }
@@ -268,7 +282,8 @@ export async function handleBillingRequest(request,options={}){
   if(input.selectedSeats!==undefined&&unitAmountMinor===undefined)unavailable();
   const renewalSeats=unitAmountMinor===undefined?undefined:{unitAmountMinor,
    ...(input.selectedSeats===undefined?{}:{selectedSeats:input.selectedSeats})};
-  const order=createAnnualOrderWithinTransaction(db,orderInput,{now,renewalSeats});
+  const order=createAnnualOrderWithinTransaction(db,orderInput,{now,renewalSeats,
+   closeAfterMs:billingSimulation.timeoutClosure?.annualTimeoutMs});
   return json({simulation:true,order},201);
  });
 }

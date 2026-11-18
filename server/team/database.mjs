@@ -45,6 +45,7 @@ export function initializeTeamDatabase(db) {
       db.exec(readFileSync(fileURLToPath(new URL('./annual-seat-plan-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./billing-payment-exception-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./billing-refund-intake-schema.sql', import.meta.url)), 'utf8'));
+      db.exec(readFileSync(fileURLToPath(new URL('./billing-order-closure-schema.sql', import.meta.url)), 'utf8'));
       installMaterialQualificationTriggers(db);
       installWorkspaceSourceQualificationTriggers(db);
       installLedgerCheckQualificationTriggers(db);
@@ -89,6 +90,7 @@ export function initializeTeamDatabase(db) {
       db.exec(readFileSync(fileURLToPath(new URL('./annual-seat-plan-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./billing-payment-exception-schema.sql', import.meta.url)), 'utf8'));
       db.exec(readFileSync(fileURLToPath(new URL('./billing-refund-intake-schema.sql', import.meta.url)), 'utf8'));
+      db.exec(readFileSync(fileURLToPath(new URL('./billing-order-closure-schema.sql', import.meta.url)), 'utf8'));
     installMaterialQualificationTriggers(db);
       installWorkspaceSourceQualificationTriggers(db);
       installLedgerCheckQualificationTriggers(db);

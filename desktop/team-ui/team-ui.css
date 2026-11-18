@@ -55,6 +55,7 @@ main{margin-left:232px;padding:0 38px;min-height:100vh;display:flex;flex-directi
 .billing-batch-results li { display: grid; gap: 4px; padding: 7px 0; border-top: 1px solid var(--line); }
 .billing-batch-results strong { color: var(--ink); font-size: 12px; }
 .billing-batch-results [data-outcome="matched"] strong { color: var(--accent); }
+.billing-batch-results [data-outcome="closed"] strong { color: var(--muted); }
 .billing-batch-results [data-outcome="awaiting-review"] strong { color: var(--amber); }
 .billing-batch-results span { color: var(--muted); font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
 .billing-order-list{display:grid;gap:8px;margin:10px 0;padding:0;list-style:none}
@@ -70,5 +71,6 @@ main{margin-left:232px;padding:0 38px;min-height:100vh;display:flex;flex-directi
 .refund-intake-order dt{font-size:11px;color:var(--muted)}
 .refund-intake-order dd{margin:3px 0 0;line-height:1.5;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .billing-order-state{color:var(--accent);font-size:12px}
-.billing-order-state[data-state="pending"],.billing-order-exception{color:var(--amber);font-size:12px}
+.billing-order-state[data-state="closed"]{color:var(--muted)}
+.billing-order-state[data-state="pending"],.billing-order-state[data-closure-review],.billing-order-exception{color:var(--amber);font-size:12px}
 .billing-order-amount{margin-left:auto;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}

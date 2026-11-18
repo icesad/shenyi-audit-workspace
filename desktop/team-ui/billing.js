@@ -2,10 +2,11 @@
   'use strict';
 
   const orderNames = { annual: '团队年费', seat: '增购席位' };
-  const orderStates = { pending: '待支付', 'payment-verified': '已核验，待到账', paid: '已到账' };
+  const orderStates = { pending: '待支付', closed: '超时关闭', 'payment-verified': '已核验，待到账', paid: '已到账' };
   const paymentExceptionStates = { refund: '退款待复核', chargeback: '拒付待复核' };
   const batchOutcomes = {
     matched: '已核实',
+    closed: '超时关闭',
     'awaiting-review': '待复核',
     'no-evidence': '未返回可信凭据',
     'lookup-unavailable': '暂无法查询渠道',
@@ -54,7 +55,8 @@
     return node;
   }
 
-  function orderStateText(status, hasException) {
+  function orderStateText(status, hasException, hasClosure) {
+    if (hasClosure && status === 'payment-verified') return '迟到收款待复核';
     if (hasException && status === 'pending') return '未确认收款';
     if (hasException && status === 'payment-verified') return '已核验收款';
     return orderStates[status];
@@ -345,9 +347,10 @@
       const row = element('li', undefined, 'billing-order');
       const header = element('div');
       const exception = order.paymentException;
-      const state = element('strong', orderStateText(order.status, exception), 'billing-order-state');
+      const state = element('strong', orderStateText(order.status, exception, order.closure), 'billing-order-state');
       row.dataset.orderId = order.id;
       state.dataset.state = order.status;
+      if (order.closure && order.status === 'payment-verified') state.dataset.closureReview = 'true';
       header.append(state);
       if (exception) {
         const exceptionState = element('strong', paymentExceptionStates[exception.kind], 'billing-order-exception');
@@ -358,6 +361,13 @@
       row.append(header, element('p', '订单 ' + order.id), element('p', '创建于 ' + date(order.createdAt) + '（北京时间）'));
       if (order.confirmedAt != null) row.append(element('p', '收款确认 ' + date(order.confirmedAt) + '（北京时间，模拟）'));
       if (exception) row.append(element('p', '异常发生于 ' + date(exception.occurredAt) + '（北京时间，模拟）'));
+      if (order.closure) {
+        const closed = element('p', '超时关闭于 ' + date(order.closure.closedAt) + '（北京时间，模拟）');
+        closed.dataset.orderClosure = 'true';
+        row.append(element('p', '支付期限至 ' + date(order.closure.deadlineAt) + '（北京时间）'), closed);
+      } else if (kind === 'annual' && order.status === 'pending' && !exception && order.paymentDeadlineAt !== undefined) {
+        row.append(element('p', '支付期限至 ' + date(order.paymentDeadlineAt) + '（北京时间）'));
+      }
       if (kind === 'seat') {
         row.append(element('p', '增购 ' + order.quantity + ' 席，到期 ' + date(order.termEndsAt) + '（北京时间）'));
         if (order.status === 'pending' && !exception) row.append(element('p', '报价有效至 ' + date(order.quoteExpiresAt) + '（北京时间）'));
@@ -494,7 +504,8 @@
         if (!currentView(at)) return;
         if (result?.order?.id !== orderId || result.order.teamId !== team) throw new Error('Unexpected billing order');
         upsertOrder(result.order);
-        if (result.order.paymentException) message('模拟订单 · ' + paymentExceptionStates[result.order.paymentException.kind] + '。');
+        if (result.order.closure) message('模拟订单 · ' + orderStateText(result.order.status, result.order.paymentException, true) + '。');
+        else if (result.order.paymentException) message('模拟订单 · ' + paymentExceptionStates[result.order.paymentException.kind] + '。');
         else if (order.status !== 'paid' && result.order.status === 'paid') await loadOverview({ success: '模拟订单已到账。', keepOrders: true });
         else message('模拟订单 · ' + orderStates[result.order.status] + '。');
       } catch (error) {

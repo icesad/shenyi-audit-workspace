@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {ApiError,ID,deny,invalid,transaction} from './http-utils.mjs';
 import {ANNUAL_PRODUCT,SEAT_PRODUCT,validateSimulationPaymentReceipt} from './billing-simulation.mjs';
 import {validateSimulationPaymentException} from './billing-payment-exception.mjs';
+import {assertBillingClosureEventUnused} from './billing-order-closure-store.mjs';
 
 const MAX_TIME=8640000000000000;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -96,6 +97,7 @@ export function assertBillingPaymentFulfillable(db,receipt){
 export function recordVerifiedBillingPaymentExceptionWithinTransaction(db,receipt,{now=Date.now}={}){
   inTransaction(db);
   const value=validateSimulationPaymentException(receipt);
+  assertBillingClosureEventUnused(db,value.eventId);
   if(typeof now!=='function')invalid();
   const order=orderFor(db,value.product,value.orderId);
   if(!order)deny();

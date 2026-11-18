@@ -36,6 +36,7 @@ function originalFacts(db,kind,orderId){
     target:Object.freeze({
       id:order.id,kind,teamId:order.teamId,amountMinor:order.offer.amountMinor,currency:order.offer.currency,
       status:order.status,confirmedAt:order.confirmedAt,paymentException:!!order.paymentException,
+      ...(order.closure?{closure:order.closure}:{}),
     }),
   };
 }

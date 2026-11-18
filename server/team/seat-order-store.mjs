@@ -6,6 +6,7 @@ import {addBeijingCalendarYear} from './renewal-calendar.mjs';
 import {recordSeatCapacityGrantWithinTransaction,readSeatCapacity} from './seat-capacity-store.mjs';
 import {validateSimulationPaymentReceipt,simulationReceiptBytes} from './billing-simulation.mjs';
 import {assertBillingCaptureCompatible,assertBillingPaymentFulfillable,readBillingPaymentException} from './billing-payment-exception-store.mjs';
+import {readBillingOrderClosure,assertBillingClosureEventUnused,assertBillingOrderOpenForFulfilment} from './billing-order-closure-store.mjs';
 
 const MAX=Number.MAX_SAFE_INTEGER,DATE_MAX=8640000000000000,PRODUCT='team-seat-addition',TTL=15*60*1000;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,SHA=/^[0-9a-f]{64}$/;
@@ -132,13 +133,15 @@ function grantFact(db,order,payment){
 function view(db,order){
  const payment=paymentFact(db,order),grant=grantFact(db,order,payment);
  const paymentException=readBillingPaymentException(db,PRODUCT,order.id);
+ const closure=readBillingOrderClosure(db,PRODUCT,order.id);
+ if(closure&&(grant||payment&&payment.confirmedAt<closure.closedAt))conflict();
  return Object.freeze({
   id:order.id,teamId:order.teamId,actorId:order.actorId,requestId:order.requestId,merchantId:order.merchantId,
   offer:Object.freeze({id:order.offer.id,revision:order.offer.revision,product:PRODUCT,amountMinor:order.amountMinor,currency:order.offer.currency}),
   quantity:order.quantity,annualUnitAmountMinor:order.offer.annualUnitAmountMinor,
   quoteExpiresAt:order.quoteExpiresAt,termStartsAt:order.termStartsAt,termEndsAt:order.termEndsAt,termRevision:order.termRevision,
-  simulation:true,createdAt:order.createdAt,status:grant?'paid':payment?'payment-verified':'pending',
-  confirmedAt:payment?.confirmedAt??null,grant,...(paymentException?{paymentException}:{}),
+  simulation:true,createdAt:order.createdAt,status:grant?'paid':payment?'payment-verified':closure?'closed':'pending',
+  confirmedAt:payment?.confirmedAt??null,grant,...(paymentException?{paymentException}:{}),...(closure?{closure}:{}),
  });
 }
 
@@ -185,6 +188,7 @@ export function recordVerifiedSeatPayment(db,receipt,{now=Date.now,authorize}={}
   const order=orderFact(db,value.orderId);
   if(!order)deny();
   matchesOrder(order,value);
+  assertBillingClosureEventUnused(db,value.eventId);
   assertBillingCaptureCompatible(db,value);
   noAnnualCollision(db,value);
   const collisions=all(db,'SELECT * FROM team_seat_verified_payments WHERE order_id=? OR event_id=? OR transaction_id=?',value.orderId,value.eventId,value.transactionId);
@@ -195,8 +199,9 @@ export function recordVerifiedSeatPayment(db,receipt,{now=Date.now,authorize}={}
    return prior;
   }
   if(one(db,'SELECT 1 FROM team_seat_capacity_grants WHERE grant_id=?',order.id))conflict();
+  const closure=readBillingOrderClosure(db,PRODUCT,order.id);
   const confirmedAt=at(now);
-  if(value.paidAt<order.createdAt||value.paidAt>confirmedAt)conflict();
+  if(value.paidAt<order.createdAt||value.paidAt>confirmedAt||closure&&confirmedAt<closure.closedAt)conflict();
   const id=randomUUID();
   const inserted=db.prepare('INSERT INTO team_seat_verified_payments(payment_id,order_id,team_id,event_id,transaction_id,receipt_json,receipt_sha256,confirmed_at) VALUES (?,?,?,?,?,?,?,?)').run(
    id,order.id,order.teamId,value.eventId,value.transactionId,bytes.toString('utf8'),hash,confirmedAt,
@@ -219,6 +224,7 @@ export function fulfilSeatOrder(db,id,{now=Date.now,authorize}={}){
   if(!payment)conflict();
   const prior=grantFact(db,order,payment);
   if(prior)return{order:view(db,order),grant:prior};
+  assertBillingOrderOpenForFulfilment(db,PRODUCT,order.id);
   assertBillingPaymentFulfillable(db,payment.receipt);
   let latest=payment.confirmedAt;
   const fresh=()=>{
