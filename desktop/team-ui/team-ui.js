@@ -1297,7 +1297,10 @@
     if(submissionAccessStatus==='unavailable')return '当前桌面提交权限接口未更新，暂不能提交；请更新客户端并刷新任务。';
     if(submissionAccessStatus==='error')return '无法核验提交权限，请刷新任务后重试。';
     if(submissionAccessStatus==='stale'||(submissionAccessStatus==='ready'&&submissionAccess?.revision!==revision))return '任务版本已变化，请刷新任务后再提交。';
-    if(submissionAccessStatus==='ready'&&submissionAccess?.canSubmit===false)return '当前账号无本任务提交权限；请联系负责人核对分工或刷新任务。';
+    if(submissionAccessStatus==='ready'&&submissionAccess?.canSubmit===false){
+      if(selected?.status==='submitted')return '本任务已提交，等待负责人核对。';
+      return '当前账号无本任务提交权限；请联系负责人核对分工或刷新任务。';
+    }
     return canSubmitSelected()?'已核验本次提交权限；选择文件时仍会重新核验。':'提交权限需要重新核验，请刷新任务。';
   }
   function updateTaskSubmissionControls(){

@@ -60,8 +60,42 @@ test('late old-account capability errors cannot sign out a new login',async t=>{
 test('current capability 401 clears task data and leaves a usable sign-in form',async t=>{
  const f=fixture(t,{getTaskSubmissionAccess:async()=>failure('SIGN_IN_REQUIRED','当前登录失效')});await login(f);f.d.querySelector('.task-button').click();await until(()=>!f.id('login-view').hidden);assert.equal(f.id('task-upload'),null);assert.equal(f.id('task-detail').textContent,'');assert.equal(f.id('login-submit').disabled,false);
 });
-test('successful upload rereads task, history and capability before another upload',async t=>{
- const pending=deferred();let caps=0;const f=fixture(t,{getTaskSubmissionAccess:async(_input,{tasks})=>++caps===1?safe({canSubmit:true,revision:3}):pending.promise,chooseAndUpload:async(_input,{tasks})=>{tasks['task-a'].revision=4;tasks['task-a'].status='submitted';tasks['task-a'].canSubmit=false;return safe({revision:4});}});await ready(f);f.click('task-upload');await until(()=>caps===2);assert.equal(f.id('task-upload').disabled,true);assert.equal(count(f,'getTask'),2);assert.equal(count(f,'getSubmissions'),2);pending.resolve(safe({canSubmit:false,revision:4}));await until(()=>f.id('task-submission-access-message').textContent.includes('无本任务提交权限'));assert.equal(f.id('task-upload').disabled,true);assert.match(f.id('workspace-message').textContent,/资料已提交/);f.fire('task-upload');assert.equal(count(f,'chooseAndUpload'),1);
+test('submitted tasks wait for review and a returned task can submit again after capability refresh',async t=>{
+ const pending=deferred();
+ let capabilities=0;
+ const f=fixture(t,{
+  getTaskSubmissionAccess:async({taskId},{tasks})=>{
+   if(++capabilities===2)return pending.promise;
+   const {canSubmit,revision}=tasks[taskId];
+   return safe({canSubmit,revision});
+  },
+  chooseAndUpload:async({taskId},{tasks})=>{
+   Object.assign(tasks[taskId],{status:'submitted',revision:4,canSubmit:false});
+   return safe({revision:4});
+  }
+ });
+ const hint=()=>f.id('task-submission-access-message').textContent;
+ await ready(f);
+ f.click('task-upload');
+ await until(()=>capabilities===2);
+ assert.equal(f.id('task-upload').disabled,true);
+ assert.match(hint(),/正在核验/);
+ assert.equal(count(f,'getTask'),2);
+ assert.equal(count(f,'getSubmissions'),2);
+ pending.resolve(safe({canSubmit:false,revision:4}));
+ await until(()=>hint()==='本任务已提交，等待负责人核对。');
+ assert.equal(f.id('task-upload').disabled,true);
+ assert.match(f.id('workspace-message').textContent,/资料已提交/);
+ f.fire('task-upload');
+ assert.equal(count(f,'chooseAndUpload'),1);
+
+ Object.assign(f.tasks['task-a'],{status:'returned',revision:5,canSubmit:true});
+ f.click('refresh');
+ await until(()=>count(f,'listTasks')===2&&!f.id('refresh').disabled);
+ await select(f);
+ await until(()=>!f.id('task-upload').disabled);
+ assert.match(f.id('task-detail').textContent,/已退回/);
+ assert.match(hint(),/已核验本次提交权限/);
 });
 test('cancel refreshes permission and preserves the cancellation message if access was revoked',async t=>{
  let caps=0;const f=fixture(t,{getTaskSubmissionAccess:async()=>safe({canSubmit:++caps===1,revision:3})});await ready(f);f.click('task-upload');await until(()=>caps===2&&!f.id('refresh').disabled);assert.match(f.id('workspace-message').textContent,/已取消，未提交/);assert.equal(f.id('task-upload').disabled,true);assert.match(f.id('task-submission-access-message').textContent,/无本任务提交权限/);
