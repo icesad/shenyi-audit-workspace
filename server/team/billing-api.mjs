@@ -1,24 +1,59 @@
 import {ApiError,ID,deny,invalid,json,readJson,transaction} from './http-utils.mjs';
 import {UUID,currentDeviceLease,deviceServerId,deviceConflict,deviceRequired} from './device-policy.mjs';
-import {administratorTechnicalEligible} from './administrator-business-role-policy.mjs';
+import {administratorTechnicalEligible,administratorTechnicalEligibilitySql} from './administrator-business-role-policy.mjs';
+import {safeMemberText} from './member-access-policy.mjs';
 import {createAnnualOrderWithinTransaction,readAnnualOrder,readAnnualOrderRequest,listAnnualOrders,recordVerifiedAnnualPayment,fulfilAnnualOrder,readAnnualSeatRenewalDefaults} from './billing-store.mjs';
 import {createSeatOrderWithinTransaction,readSeatOrder,readSeatOrderRequest,listSeatOrders,recordVerifiedSeatPayment,fulfilSeatOrder} from './seat-order-store.mjs';
 import {ANNUAL_PRODUCT,SEAT_PRODUCT,readSimulationPaymentRequest,verifySimulationPaymentEnvelope} from './billing-simulation.mjs';
 import {readSeatCapacity} from './seat-capacity-store.mjs';
+import {readSubscriptionState} from './subscription-store.mjs';
 
 export const SIMULATION_NOTIFICATION_PATH='/api/billing/simulation/notifications';
 const unavailable=()=>{throw new ApiError(503,'BILLING_UNAVAILABLE','模拟账务尚未配置或暂不可用。');};
 const matches=(re,value)=>typeof value==='string'&&re.exec(value)?.[0]===value;
 function time(now){const at=now();if(!Number.isSafeInteger(at)||Object.is(at,-0)||at<0)unavailable();return at;}
-function actor(db,request,options,teamId,before){
+function heldActor(db,request,options,before){
  const context=options.deviceContext;if(options.identityProviders?.deviceProofRequired!==true||!context)deviceRequired();
  const current=currentDeviceLease(db,request,time(options.now));
  if(current.userId!==context.userId||current.deviceId!==context.deviceId||current.bindingRevision!==context.bindingRevision||current.leaseId!==context.leaseId||current.stamp!==context.stamp||deviceServerId(db)!==context.serverId)deviceConflict();
  if(before&&(current.userId!==before.userId||current.token!==before.token||current.stamp!==before.stamp||current.leaseId!==before.leaseId||current.deviceId!==before.deviceId||current.bindingRevision!==before.bindingRevision||current.keyFingerprint!==before.keyFingerprint))deviceConflict();
- if(!administratorTechnicalEligible(db,current.userId,teamId))deny();return current;
+ return current;
+}
+function actor(db,request,options,teamId,before){
+ const current=heldActor(db,request,options,before);
+ if(!administratorTechnicalEligible(db,current.userId,teamId))deny();
+ return current;
 }
 function seatOrderingEnabled(options){
  return options.seatCapacityEnforcement==='invitation-reservations-v1';
+}
+function billingAccess(request,options){
+ const {db,billingSimulation}=options;
+ return transaction(db,()=>{
+  const current=heldActor(db,request,options);
+  const rows=billingSimulation&&seatOrderingEnabled(options)?db.prepare(`
+   SELECT operator.team_id,profile.name FROM team_operators operator
+   LEFT JOIN team_profiles profile ON profile.team_id=operator.team_id
+   WHERE operator.user_id=? AND ${administratorTechnicalEligibilitySql()}
+   ORDER BY operator.team_id COLLATE BINARY LIMIT 50`).all(current.userId):[];
+  const teams=rows.filter(row=>matches(ID,row.team_id)).map(row=>({id:row.team_id,name:safeMemberText(row.name,row.team_id)}));
+  heldActor(db,request,options,current);
+  return json({teams});
+ });
+}
+function billingOverview(db,teamId,at,billingSimulation){
+ const {state,revision,startsAt,endsAt}=readSubscriptionState(db,teamId,at);
+ const unitAmountMinor=billingSimulation.annualSeatUnitAmountMinor;
+ const renewalSeats=unitAmountMinor===undefined?null:{
+  ...readAnnualSeatRenewalDefaults(db,teamId,at),unitAmountMinor,currency:'CNY',
+ };
+ const seatOffer=billingSimulation.seatOffer?{...billingSimulation.seatOffer,product:SEAT_PRODUCT}:null;
+ return json({
+  teamId,simulation:true,subscription:{state,revision,startsAt,endsAt},
+  seats:readSeatCapacity(db,teamId,at),
+  annualOffers:renewalSeats?billingSimulation.offers:[],renewalSeats,seatOffer,
+  canReconcile:typeof billingSimulation.lookupPayment==='function',
+ });
 }
 function renewalSeatSelectionMatches(order,selectedSeats){
  const plan=order.renewalSeats;
@@ -58,7 +93,13 @@ async function lookup(configuration,order){
  ]);}catch{unavailable();}finally{clearTimeout(timer);}
 }
 export async function handleBillingRequest(request,options={}){
- const url=new URL(request.url),match=/^\/api\/teams\/([^/]+)\/billing\/(offers|orders|seats|seat-offer|seat-orders|renewal-seats)(?:\/([^/]+)(\/reconcile)?)?$/.exec(url.pathname);
+ const url=new URL(request.url);
+ if(url.pathname==='/api/auth/billing/access'){
+  if(url.search||url.hash||url.href.endsWith('?'))invalid();
+  if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
+  return billingAccess(request,{...options,now:options.now??Date.now});
+ }
+ const match=/^\/api\/teams\/([^/]+)\/billing\/(offers|orders|seats|seat-offer|seat-orders|renewal-seats|overview)(?:\/([^/]+)(\/reconcile)?)?$/.exec(url.pathname);
  if(!match)return null;
  const [,teamId,kind,orderId,reconcile]=match;
  const isSeatOrder=kind==='seat-orders',isOrder=kind==='orders'||isSeatOrder;
@@ -66,7 +107,7 @@ export async function handleBillingRequest(request,options={}){
  if(url.hash||url.href.endsWith('?')||(!isOrder||orderId)&&url.search)invalid();
  const {db,billingSimulation,now=Date.now}=options,currentOptions={...options,now};
  const initial=actor(db,request,currentOptions,teamId);
- if(kind==='seats'||isSeatOrder||kind==='seat-offer'||kind==='renewal-seats'){
+ if(kind==='seats'||isSeatOrder||kind==='seat-offer'||kind==='renewal-seats'||kind==='overview'){
   if(!seatOrderingEnabled(options))unavailable();
  }
  if(kind!=='seats'&&!billingSimulation)unavailable();
@@ -74,6 +115,7 @@ export async function handleBillingRequest(request,options={}){
  if(!allowed.split(', ').includes(request.method))return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:allowed});
  const scoped=action=>transaction(db,()=>{const current=actor(db,request,currentOptions,teamId,initial),result=action(current);actor(db,request,currentOptions,teamId,current);return result;});
  if(kind==='seats')return scoped(()=>json({seats:readSeatCapacity(db,teamId,time(now))}));
+ if(kind==='overview')return scoped(()=>billingOverview(db,teamId,time(now),billingSimulation));
  if(kind==='offers')return scoped(()=>json({simulation:true,offers:billingSimulation.offers}));
  if(kind==='renewal-seats')return scoped(()=>{
   const unitAmountMinor=billingSimulation.annualSeatUnitAmountMinor;

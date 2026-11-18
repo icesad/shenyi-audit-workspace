@@ -158,4 +158,9 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   discardWorkpaperSource:input=>invoke('workpaper-source-discard',input),
   exportWorkpapers:input=>invoke('workpaper-export',input),
   cancelWorkpaperExport:input=>invoke('workpaper-export-cancel',input),
+  getBillingAccess:()=>invoke('billing-access'),
+  getBillingOverview:input=>invoke('billing-overview',input),
+  listBillingOrders:input=>invoke('billing-orders',input),
+  createBillingOrder:input=>invoke('billing-order-create',input),
+  reconcileBillingOrder:input=>invoke('billing-order-reconcile',input),
 }));

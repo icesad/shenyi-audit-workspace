@@ -14,6 +14,7 @@
   <script src="workpaper-original-sheet.js" defer></script>
   <script src="workpaper-original-word.js" defer></script>
   <script src="workpapers.js" defer></script>
+  <script src="billing.js" defer></script>
   <link rel="stylesheet" href="workpapers.css">
   <script src="team-ui.js" defer></script>
 </head>
@@ -104,6 +105,40 @@
           <section id="project-tasks-section" class="project-task-section"><div class="invitation-list-heading"><h4>本项目采集任务</h4><button id="project-tasks-refresh" class="button" type="button">刷新项目任务</button></div><div class="member-management-tools"><input id="project-tasks-search" type="search" maxlength="100" autocomplete="off" placeholder="按任务标题或说明查找" aria-label="查找本项目采集任务"><button id="project-tasks-search-button" class="button" type="button">查找任务</button></div><ul id="project-tasks-list" class="member-management-list"></ul><button id="project-tasks-more" class="button" type="button" hidden>继续加载任务</button><p id="project-tasks-message" class="feedback" role="status" aria-live="polite"></p></section>
           <section id="project-review-section" hidden><div class="invitation-list-heading"><h4 id="project-review-title">采集资料核对</h4><button id="project-review-refresh" class="button" type="button">刷新核对记录</button></div><p class="identity-note">仅查看当前任务的采集提交与原件，不代表审计通过。保存副本时仍会重新核验当前权限。</p><div class="originals-export-toolbar"><p class="identity-note">仅导出本任务已显示且明确选中的原件副本；不代表全部历史、备份或审计通过。</p><span id="project-originals-selection"></span><button id="project-originals-export" class="button" type="button" disabled>导出所选原件包</button><button id="project-submission-preview-close" class="button" type="button" hidden>关闭本次提交预览</button></div><ul id="project-review-list" class="member-management-list"></ul><button id="project-review-more" class="button" type="button" hidden>继续加载提交</button><p id="project-review-message" class="feedback" role="status" aria-live="polite"></p></section>
         </section>
+      </details>
+      <details id="billing-panel" class="identity-panel billing-panel" hidden>
+        <summary>订阅与席位</summary>
+        <p class="billing-notice">本机模拟账务。创建订单和核对状态均不收款。</p>
+        <div class="billing-toolbar">
+          <div><label for="billing-team">账务团队</label><select id="billing-team"></select></div>
+          <button id="billing-refresh" class="button" type="button">刷新订阅与席位</button>
+        </div>
+        <p id="billing-message" class="feedback" role="status" aria-live="polite"></p>
+        <div id="billing-overview" hidden>
+          <p id="billing-term" class="billing-term"></p>
+          <dl id="billing-seats" class="billing-metrics"></dl>
+          <section class="billing-section" aria-labelledby="billing-checkout-heading">
+            <h4 id="billing-checkout-heading">创建订单</h4>
+            <div class="billing-toolbar">
+              <div><label for="billing-order-kind">订单类型</label><select id="billing-order-kind"><option value="annual">团队年费</option><option value="seat">增购席位</option></select></div>
+              <div id="billing-annual-fields"><label for="billing-annual-offer">年费选项</label><select id="billing-annual-offer"></select></div>
+              <div id="billing-renewal-fields" hidden><label for="billing-selected-seats">续费后的席位数</label><input id="billing-selected-seats" type="number" inputmode="numeric" min="0" step="1" required></div>
+              <div id="billing-seat-fields" hidden><label for="billing-seat-quantity">增购席位数</label><input id="billing-seat-quantity" type="number" inputmode="numeric" min="1" max="1000" step="1" required></div>
+              <button id="billing-review" class="button" type="button">核对订单</button>
+            </div>
+            <p id="billing-order-hint" class="identity-note"></p>
+            <div id="billing-confirmation" class="billing-confirmation" hidden>
+              <p id="billing-confirm-text"></p>
+              <div class="billing-actions"><button id="billing-confirm" class="button primary" type="button">确认创建模拟订单</button><button id="billing-cancel" class="button" type="button">返回修改</button></div>
+            </div>
+          </section>
+          <section class="billing-section" aria-labelledby="billing-orders-heading">
+            <div class="billing-actions billing-orders-heading"><h4 id="billing-orders-heading">团队年费订单</h4><button id="billing-orders-refresh" class="button" type="button">刷新订单</button></div>
+            <p id="billing-orders-message" class="identity-note" role="status" aria-live="polite"></p>
+            <ul id="billing-order-list" class="billing-order-list"></ul>
+            <div class="billing-actions"><button id="billing-orders-previous" class="button" type="button" hidden>上一页</button><button id="billing-orders-more" class="button" type="button" hidden>下一页</button></div>
+          </section>
+        </div>
       </details>
       <details id="member-management-panel" class="identity-panel member-management-panel" hidden>
         <summary>成员账号停用</summary>
