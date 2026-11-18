@@ -30,7 +30,7 @@ sha256sum "shenyi-team-${release}.tar"
 
 1. 建立无交互登录的系统账号和同名组 `shenyi-team`。已有受管库按获准的迁移或备份恢复流程单独准备。新环境按受管初始化说明，以 `shenyi-team` 运行离线初始化 CLI，经标准输入传入核验后的数据。使用实际数据库回执中的 `serverId`，将库放到示例指定的文件路径。 [首位产品负责人](MANAGED_TEAM_SERVICE.md#首位产品负责人)
 2. 复制 [服务配置示例](../deploy/linux/service.json.example)到 `/etc/shenyi-team/service.json`，替换示例域名和 UUID。将后端证书链和私钥放在示例指定的实际文件。后端叶子证书的 DNS SAN 必须匹配公共域名，Nginx 配置中的后端 CA 必须能验证该链。边缘证书与后端证书使用各自的私钥。短信与恢复按已批准范围另行配置。 [TLS 与短信配置](MANAGED_TEAM_SERVICE.md)
-3. 将 [systemd 单元](../deploy/linux/shenyi-team.service)装到 `/etc/systemd/system/shenyi-team.service`。在目标主机先运行 `systemd-analyze verify /etc/systemd/system/shenyi-team.service`，再运行 `systemctl daemon-reload` 和 `systemctl start shenyi-team`。就绪核对通过后再设置开机启动。 [systemd 服务与停止](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html) · [systemd 私有状态目录](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)
+3. 将 [systemd 单元](../deploy/linux/shenyi-team.service)装到 `/etc/systemd/system/shenyi-team.service`。在目标主机先运行 `systemd-analyze verify /etc/systemd/system/shenyi-team.service`，再运行 `systemctl daemon-reload` 和 `systemctl start shenyi-team`。就绪核对通过后，用 `systemctl enable shenyi-team.service` 设置开机启动。下次开机后先观察自动启动状态，再核对 HTTPS 和实例标识。 [systemd 服务与停止](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html) · [systemd 私有状态目录](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)
 4. 使用支持 `ssl_reject_handshake` 和 TLS 1.3 的受支持 Nginx 构建。将 [Nginx 配置](../deploy/linux/nginx-shenyi-team.conf)纳入目标主机的 `http` 配置，统一替换保留示例域名和证书路径。已有默认 443 虚拟主机时，先核对并合并其未知域名拒绝行为，确保同一监听地址只有一个默认虚拟主机。运行 `nginx -t`，通过后按已授权的环境流程加载。安全组及主机防火墙仅开放所需边缘端口，管理入口限授权来源，`9443` 保持仅回环。 [Nginx TLS](https://nginx.org/en/docs/http/ngx_http_ssl_module.html) · [阿里云安全组](https://help.aliyun.com/en/ecs/user-guide/security-groups-for-different-use-cases)
 
 ## 端到端验收
@@ -85,6 +85,8 @@ curl --fail-with-body --silent --show-error --include "https://${api_host}/api/a
 原桌面客户端使用 15 秒全程期限时，Linux 合成大件演练在收到导入响应前结束连接。Nginx 记为 499，关机后只读检查确认该操作未入库。候选客户端为已验证的账表导入及快照下载使用 90 秒，身份探针、授权、分页和回执等仍用 15 秒。在独立 Ubuntu 副本使用原 systemd 与 Nginx 配置复验，合成账表包含 20,000 行序时账，达到该表行数上限，原文 30,973,981 字节，请求 JSON 32,976,190 字节。两次显式导入均返回 201，其中大件在 Nginx 记录 30.834 秒。分页、原始下载字节、回执和重启后 SQLite 摘要核对一致。
 
 在独立 Ubuntu 副本沿用原 systemd 和 Nginx 配置。用原包校验器审核合成完整包，并在该副本的 SQLite 内准备已保存底稿版本。项目负责人经 HTTPS 持钥验证密码，获得明确查阅和导出权。首次导出在临时文件写入 8,398,028 字节后取消，代理侧也记录到不完整响应。取消未产生最终文件或遗留临时文件。同账号随后正常导出，保存 50,364,569 字节的 ZIP，含 7 件原件。完整请求在该虚拟机约 73.4 秒收到响应头。正常客户端和独立 ZIP 读取器分别核对最终文件大小、SHA-256、成员 CRC 及原件摘要。重启后只读核对底稿业务表保持一致。
+
+在独立 Ubuntu 副本沿用原 systemd 和 Nginx 配置。合成账号正常登录、绑机并提交一件 2 KiB 原件。在首次开机的已就绪实例中，核实服务主进程身份后仅向其发送一次 SIGKILL。systemd 日志记录异常退出和计划自动重启，重启计数增加一次，主进程和调用 ID 更换。从同一磁盘正常关机后冷启动，得到不同的开机 ID，受管服务和 Nginx 由开机流程启动。故障前后及冷启动后的双路 HTTPS 自检均通过。两次恢复后使用原已绑定密钥重新登录并读取提交和原件，服务实例、设备绑定、21 张业务表和原件摘要保持。
 
 在目标云主机上仍需实测防火墙和对外访问、正式证书及 DNS、持钥业务操作、大文件与并发、开机自启及崩溃重启、定时监控。
 

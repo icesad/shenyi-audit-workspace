@@ -7,7 +7,7 @@ const path=require('node:path'),{pathToFileURL}=require('node:url');
 const {createTeamClient,API_BASE,MAX_FILE_BYTES}=require('../desktop/team-client.cjs'),proof=require('../shared/device-proof.cjs');
 const source=name=>import(pathToFileURL(path.resolve(__dirname,'../server/team/'+name)).href);
 const NOW=Date.parse('2026-11-17T02:00:00Z'),PASSWORD='ShenyiDemo!2026',ORIGIN='https://team.example.invalid';
-const POLICY={appId:'wx0123456789abcdef',redirectUri:'https://login.shenyi.invalid/api/auth/wechat/callback'};
+const POLICY={appId:'wx0123456789abcdef',redirectUri:ORIGIN+'/api/auth/wechat/callback'};
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
 function identity(){const pair=generateKeyPairSync('ed25519'),publicKey=pair.publicKey.export({format:'der',type:'spki'}).toString('base64url');return {platform:'win32',vault:{async getPublicIdentity(){return {publicKey,fingerprint:proof.parsePublicKey(publicKey).fingerprint};},async signChallenge(fields){return sign(null,proof.challengeBytes(fields),pair.privateKey).toString('base64url');},async signRequest(fields){return sign(null,proof.requestProofBytes(fields),pair.privateKey).toString('base64url');}}};}
 function metadata(response,url,patch={}){Object.defineProperties(response,{url:{value:patch.url??url,configurable:true},redirected:{value:patch.redirected??false,configurable:true}});return response;}
