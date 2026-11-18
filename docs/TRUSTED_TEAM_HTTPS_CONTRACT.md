@@ -12,7 +12,7 @@
 
 ## 固定客户端配置
 
-仅主进程读取可选 `SHENYI_TEAM_SERVICE_CONFIG` **本机绝对路径**，拒UNC/设备命名空间、相对和无盘Windows路径，不自动连接文件共享。打开普通文件后有界读取最多16KiB+1，超过16KiB即拒绝，不只依赖先前stat大小。文件为严格UTF8 JSON，拒绝包括转义同名键在内的重复键，精确三个键：
+仅主进程读取受信配置。使用环境变量显式指定时，`SHENYI_TEAM_SERVICE_CONFIG` 必须是**本机绝对路径**，拒绝 UNC、设备命名空间、相对和无盘 Windows 路径。打开普通文件后有界读取最多 16 KiB + 1，超过 16 KiB 即拒绝。文件为严格 UTF-8 JSON，拒绝包括转义同名键在内的重复键，精确三个键如下。
 
 ```json
 {"schemaVersion":1,"apiBase":"https://team.example.invalid","serverId":"11111111-1111-4111-8111-111111111111"}
@@ -22,9 +22,17 @@
 
 无该配置且未打包时保留原local-preview。`SHENYI_TEAM_API`仅作兼容一致性检查：无profile仅允许原API_BASE；有profile如提供该变量须与profile origin相同，冲突/显式空值拒绝，不静默回退。打包运行必须有remote profile；不存在或无效在创建profile/vault/窗口和发送网络前失败关闭。加载一次后冻结，本进程不热切换服务。
 
-远程拒绝禁用TLS校验的环境（NODE_TLS_REJECT_UNAUTHORIZED仅未设置或1）；不引入生产CA覆盖、checkServerIdentity替代或ignore-certificate-errors。测试CA只通过自有Node/Electron子进程的NODE_EXTRA_CA_CERTS使用，不改变父环境和系统roots。
+远程拒绝禁用 TLS 校验的环境，`NODE_TLS_REJECT_UNAUTHORIZED` 只允许未设置或为 `1`。显式配置的独立演练可在自有 Node 或 Electron 子进程使用测试 CA。macOS 系统配置采用下节的信任规则。
 
 新helper `desktop/team-service-config.cjs` 公开内部函数：`validateTrustedTeamService(value)` 返回冻结的精确三键remote profile；`loadTeamServiceConfiguration({env,isPackaged})`异步返回冻结 `{mode:'local-preview',profile:null}` 或 `{mode:'remote-https',profile}`。profile来自可信部署配置不是网络JSON。`createTeamClient`新增私有参数 `trustedService`；未提供时原baseUrl限制保持，有profile时baseUrl不得另指目标、必须有有效deviceIdentity。API_BASE原导出和值保持，不把构造器选项透传preload。
+
+### 已打包 macOS 客户端的系统配置
+
+M7Y 为 Finder 启动固定使用 `/Library/Application Support/ShenyiTeamDesktop/team-service.json`。管理员按[macOS 部署步骤](MACOS_DESKTOP_CANDIDATE.md#从-finder-启动已配置客户端)部署同一份三键配置。专用目录和文件应由 `root:wheel` 持有，分别设置为 `0755` 和 `0644`。启动使用普通账号。系统父目录、专用目录和配置文件须对该账号无实际写权限，包含 ACL 权限。
+
+专用目录存在时，程序只使用固定文件，忽略环境变量 `SHENYI_TEAM_SERVICE_CONFIG` 指定的路径。若 `SHENYI_TEAM_API` 已设置，须与系统配置中的源地址一致。专用目录、配置文件或权限校验失败会显示原生错误并在发起网络连接前退出。只有专用目录完全不存在且系统父目录通过安全检查时，才可在独立测试 Mac 以原有环境变量显式提供测试配置。
+
+系统模式使用客户端默认 TLS 验证，`NODE_TLS_REJECT_UNAUTHORIZED` 只允许未设置或为 `1`。系统模式拒绝 `NODE_EXTRA_CA_CERTS`、`NODE_OPTIONS`、`SSL_CERT_FILE`、`SSL_CERT_DIR`、`OPENSSL_CONF` 和 `OPENSSL_MODULES`。当前用户的浏览器配置和设备密钥存放于 `~/Library/Application Support/ShenyiTeamDesktop/profile` 与 `~/Library/Application Support/ShenyiTeamDesktop/device-vault`。本轮在 Windows 验证配置加载逻辑，真实 macOS 文件权限、Finder 启动、Gatekeeper 和 Keychain 需实机验证。
 
 ## 可信连接与服务身份
 

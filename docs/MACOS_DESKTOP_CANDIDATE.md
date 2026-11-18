@@ -43,16 +43,47 @@ foreach ($arch in 'arm64', 'x64') {
 
 验签通过后，在对应架构的 Mac 解包。Ed25519 签名保护交接件的来源和完整性。候选尚需取得 Apple Developer ID 签名和公证，并按下节进行 Gatekeeper、Keychain 和运行架构的 Mac 实机验收。
 
-## Mac 实机验收
+## 从 Finder 启动已配置客户端
 
-1. 在获准的 Mac 上按上节验签。使用 macOS 的归档工具或 `ditto -x -k` 解包到独立测试目录。
-2. 由有权限的人员按 Apple 的嵌套代码顺序签名，再核验 `codesign --verify --deep --strict --verbose=2 Shenyi.app`。发行版还须使用 Developer ID、Hardened Runtime 和公证票据，并在 Mac 上用 Gatekeeper 检查最终分发构件。上游 Electron 保留的签名字段和候选 SHA-256 均不构成审易发行签名。候选产品 ID 为 `invalid.shenyi.audit.candidate`，正式产品 ID 和发行证书应在签名阶段确认。 [Apple 签名指南](https://developer.apple.com/documentation/xcode/creating-distribution-signed-code-for-the-mac) · [Apple 公证指南](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution/)
-3. 准备独立合成团队服务，将其 HTTPS origin 和实例 UUID 写入包外的[可信服务配置](TRUSTED_TEAM_HTTPS_CONTRACT.md)。使用受信任的 TLS 证书，随后用绝对路径启动已签名的主程序。包内不放服务配置、账号或密钥。
+已打包的 macOS 客户端从 `/Library/Application Support/ShenyiTeamDesktop/team-service.json` 读取由管理员部署的团队服务配置。内容沿用[受信 HTTPS 配置契约](TRUSTED_TEAM_HTTPS_CONTRACT.md#固定客户端配置)，只有配置版本、HTTPS 源地址和实例 UUID。部署人员先核对源地址和实例，使用受控、不含凭据的 JSON 文件。系统配置目录由 `root:wheel` 持有，权限为 `0755`，配置文件同属 `root:wheel`，权限为 `0644`。 [Apple 应用支持文件位置说明](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPFileSystem/Articles/WhereToPutFiles.html)
+
+首次部署时，由管理员替换示例中的源路径后运行。示例只创建审易专用目录及其配置文件。Apple 系统父目录沿用机器原有权限。普通运行账号对系统父目录、审易专用目录和配置文件均须无实际写权限，包括通过 ACL 获得的权限。
 
 ```sh
-SHENYI_TEAM_SERVICE_CONFIG="/absolute/path/team-service.json" \
-  "/absolute/path/Shenyi.app/Contents/MacOS/Shenyi"
+(
+  set -eu
+  source='/Users/release/approved/team-service.json'
+  support='/Library/Application Support'
+  target="$support/ShenyiTeamDesktop"
+  if [ ! -f "$source" ] || [ -L "$source" ] || [ ! -d "$support" ] || [ -L "$support" ]; then
+    printf '%s\n' '请检查配置源文件和系统支持目录。' >&2
+    exit 1
+  fi
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    printf '%s\n' '审易系统配置目录已存在，请由管理员核对。' >&2
+    exit 1
+  fi
+  sudo /usr/bin/install -d -o root -g wheel -m 0755 "$target"
+  sudo /usr/bin/install -o root -g wheel -m 0644 "$source" "$target/team-service.json"
+  /usr/bin/stat -f '%Su:%Sg %Sp %N' "$target" "$target/team-service.json"
+)
 ```
 
-4. 核验缺少配置、错误实例或不可信证书时拒绝进入团队业务。使用测试账号登录并绑定设备，退出重开后核对公钥指纹和登录流程。核验 Keychain 访问失败时的界面，检查浏览器会话和设备密钥分别写入 `~/Library/Application Support/ShenyiTeamDesktop` 下的 `profile` 和 `device-vault`，旧预览目录无新写入。测试时使用独立 macOS 用户。 [Electron safeStorage](https://github.com/electron/electron/blob/v45.3.2/docs/api/safe-storage.md)
-5. 验收一条资料采集流程，核对原件哈希、设备撤销、安装升级和退出。Apple 芯片及 Intel 要分别记录运行架构、签名、Keychain、系统文件选择和持久状态。Finder 启动与正式升级路径待安装包确定后实测。
+部署后，普通用户直接在 Finder 双击 `Shenyi.app`。已存在专用目录时，客户端只接受该目录中的合格配置。若目录或文件权限不安全、配置损坏或文件缺失，客户端会显示原生提示并在连接服务前退出。系统模式使用正常 TLS 校验，拒绝禁用校验或从环境变量覆盖证书信任。调整既有配置时，由管理员核对服务身份、权限和文件内容。
+
+仅在可信系统父目录下尚未创建审易专用目录的测试 Mac，可通过终端显式指定合成服务配置。该入口用于独立本机测试。
+
+```sh
+SHENYI_TEAM_SERVICE_CONFIG='/Users/release/test/team-service.json' \
+  '/Users/release/test/Shenyi.app/Contents/MacOS/Shenyi'
+```
+
+配置加载逻辑已在 Windows 测试。Finder、Gatekeeper 与 Keychain 仍须在 Mac 上验收。
+
+## Mac 实机验收
+
+1. 在获准的 Mac 上按[离线签名与交接](#离线签名与交接)验签。使用 macOS 的归档工具或 `ditto -x -k` 解包到独立测试目录。
+2. 由有权限的人员按 Apple 的嵌套代码顺序签名，再核验 `codesign --verify --deep --strict --verbose=2 Shenyi.app`。发行版还须使用 Developer ID、Hardened Runtime 和公证票据，并在 Mac 上用 Gatekeeper 检查最终分发构件。上游 Electron 保留的签名字段和候选 SHA-256 均不构成审易发行签名。候选产品 ID 为 `invalid.shenyi.audit.candidate`，正式产品 ID 和发行证书应在签名阶段确认。 [Apple 签名指南](https://developer.apple.com/documentation/xcode/creating-distribution-signed-code-for-the-mac) · [Apple 公证指南](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution/)
+3. 管理员按上节配置独立合成团队服务，使用能通过客户端默认 TLS 验证的证书。用普通 macOS 测试账号在 Finder 打开已签名的应用，核对有效配置下可连接。另在独立测试环境核对缺少配置、路径权限不安全或文件损坏时的原生提示，以及错误实例或不可信证书时拒绝进入团队业务。
+4. 使用测试账号登录并绑定设备，退出重开后核对公钥指纹和登录流程。核验 Keychain 访问失败时的界面，检查浏览器会话和设备密钥分别写入 `~/Library/Application Support/ShenyiTeamDesktop` 下的 `profile` 和 `device-vault`，旧预览目录无新写入。 [Electron safeStorage](https://github.com/electron/electron/blob/v45.3.2/docs/api/safe-storage.md)
+5. 验收一条资料采集流程，核对原件哈希、设备撤销、安装升级和退出。Apple 芯片及 Intel 要分别记录 Finder 启动、运行架构、签名、Keychain、系统文件选择和持久状态。正式升级路径待安装包确定后实测。

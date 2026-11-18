@@ -8,15 +8,15 @@ const ROOT=path.resolve(__dirname,'../desktop'),HTML=fs.readFileSync(path.join(R
 const PROFILE={schemaVersion:1,apiBase:'https://team.example.invalid:9443',serverId:'11111111-1111-4111-8111-111111111111'},ok=value=>({ok:true,value});
 async function until(check){for(let i=0;i<180;i++){if(check())return;await new Promise(resolve=>setTimeout(resolve,0));}assert.ok(check(),'expected startup or renderer state');}
 async function remoteFile(t,profile=PROFILE){const directory=await asyncFs.mkdtemp(path.join(os.tmpdir(),'shenyi-desktop-service-')),filename=path.join(directory,'trusted-team.json');t.after(()=>asyncFs.rm(directory,{recursive:true,force:true}));await asyncFs.writeFile(filename,JSON.stringify(profile));return filename;}
-async function start(t,{env={},isPackaged=false,commandLineProfile=false,readIndex=HTML}={}){
+async function start(t,{env={},isPackaged=false,commandLineProfile=false,readIndex=HTML,platform='win32',loadConfiguration=config.loadTeamServiceConfiguration}={}){
   const seen={events:[],errors:[]},app=new EventEmitter(),power=new EventEmitter(),isolated=new EventEmitter();
   Object.assign(app,{isPackaged,commandLine:{hasSwitch:name=>name==='user-data-dir'&&commandLineProfile},enableSandbox(){seen.sandbox=true;},requestSingleInstanceLock(){seen.events.push('lock');return true;},whenReady:async()=>{seen.events.push('ready');},setPath(name,value){seen.events.push(name);(seen.paths??={})[name]=value;},quit(){seen.quit=true;},exit(code){seen.exit=code;},getPath(){throw Error('unexpected profile fallback');}});
   Object.assign(isolated,{setPermissionRequestHandler(handler){seen.permission=handler;},setPermissionCheckHandler(handler){seen.permissionCheck=handler;},webRequest:{onBeforeRequest(handler){seen.networkGate=handler;}},protocol:{handle(scheme,handler){seen.handler=handler;seen.scheme=scheme;}}});
   class Window extends EventEmitter{constructor(options){super();seen.events.push('window');seen.window=this;seen.options=options;this.webContents=new EventEmitter();this.webContents.setWindowOpenHandler=handler=>{seen.openHandler=handler;};}async loadURL(value){seen.url=value;}show(){seen.shown=true;}}
   const vault={dispose(){seen.disposed=true;}},client={checkDeviceConnection:async()=>{},pauseDeviceConnection(){}};
-  const deps={'electron':{app,BrowserWindow:Window,session:{fromPartition:()=>isolated},protocol:{registerSchemesAsPrivileged(values){seen.schemes=values;}},ipcMain:{},dialog:{},Menu:{setApplicationMenu(){}},shell:{openExternal(){}},safeStorage:{},powerMonitor:power},'node:fs/promises':{async mkdir(){seen.events.push('mkdir');},async readFile(filename){return filename===path.join(ROOT,'team-ui/index.html')?Buffer.from(readIndex):asyncFs.readFile(filename);}},'node:path':path,'./team-service-config.cjs':{async loadTeamServiceConfiguration(options){seen.events.push('config');seen.configArgs=options;const value=await config.loadTeamServiceConfiguration(options);seen.events.push('configured');seen.configuration=value;return value;}},'./team-client.cjs':{API_BASE:config.API_BASE,createTeamClient(options){seen.events.push('client');seen.clientOptions=options;return client;}},'./bridge.cjs':{APP_URL:'shenyi://app/index.html',registerDesktopBridge(){return ()=>{};}},'./device-key-vault.cjs':{createDeviceKeyVault(){seen.events.push('vault');return vault;}},'./device-key-directory.cjs':{resolveDeviceVaultDirectory(){seen.events.push('vault-directory');return 'D:/synthetic-isolated-vault';}},'./material-preview-window.cjs':{PREVIEW_SCHEME:'shenyi-preview'}};
+  const deps={'electron':{app,BrowserWindow:Window,session:{fromPartition:()=>isolated},protocol:{registerSchemesAsPrivileged(values){seen.schemes=values;}},ipcMain:{},dialog:{showErrorBox(title,content){seen.events.push('startup-alert');seen.alert={title,content};}},Menu:{setApplicationMenu(){}},shell:{openExternal(){}},safeStorage:{},powerMonitor:power},'node:fs/promises':{async mkdir(){seen.events.push('mkdir');},async readFile(filename){return filename===path.join(ROOT,'team-ui/index.html')?Buffer.from(readIndex):asyncFs.readFile(filename);}},'node:path':path,'./team-service-config.cjs':{async loadTeamServiceConfiguration(options){seen.events.push('config');seen.configArgs=options;const value=await loadConfiguration(options);seen.events.push('configured');seen.configuration=value;return value;}},'./team-client.cjs':{API_BASE:config.API_BASE,createTeamClient(options){seen.events.push('client');seen.clientOptions=options;return client;}},'./bridge.cjs':{APP_URL:'shenyi://app/index.html',registerDesktopBridge(){return ()=>{};}},'./device-key-vault.cjs':{createDeviceKeyVault(){seen.events.push('vault');return vault;}},'./device-key-directory.cjs':{resolveDeviceVaultDirectory(){seen.events.push('vault-directory');return 'D:/synthetic-isolated-vault';}},'./material-preview-window.cjs':{PREVIEW_SCHEME:'shenyi-preview'}};
   deps['./isolated-preview-config.cjs']=require('../desktop/isolated-preview-config.cjs');
-  const context={require:name=>{assert.ok(Object.hasOwn(deps,name),name);return deps[name];},__dirname:ROOT,process:{env:{...(!isPackaged&&{SHENYI_DESKTOP_DATA_DIR:'D:/synthetic-isolated-profile'}),...env},platform:'win32'},URL,Response,console:{error(value){seen.errors.push(value);}},setInterval(){return {unref(){}};},clearInterval(){}};
+  const context={require:name=>{assert.ok(Object.hasOwn(deps,name),name);return deps[name];},__dirname:ROOT,process:{env:{...(!isPackaged&&{SHENYI_DESKTOP_DATA_DIR:'D:/synthetic-isolated-profile'}),...env},platform},URL,Response,console:{error(value){seen.errors.push(value);}},setInterval(){return {unref(){}};},clearInterval(){}};
   vm.runInNewContext(MAIN,context);await until(()=>seen.quit||seen.exit!==undefined||seen.shown);t.after(()=>{seen.window?.emit('closed');});return {...seen,context};
 }
 function renderer(t,html=HTML,overrides={}){
@@ -39,6 +39,15 @@ test('packaged startup rejects alternate preview data roots before config or pro
     const seen=await start(t,{isPackaged:true,...options,env:{SHENYI_TEAM_SERVICE_CONFIG:filename,...options.env}});
     assert.equal(seen.exit,1);assert.deepEqual(seen.events,[]);assert.equal(seen.paths,undefined);
   }
+});
+
+test('packaged Mac reports bad service configuration before creating a client or profile',async t=>{
+  const loadConfiguration=async()=>{throw Object.assign(new Error('internal deployment details'),{code:'TEAM_SERVICE_CONFIGURATION_INVALID'});};
+  const seen=await start(t,{isPackaged:true,platform:'darwin',loadConfiguration});
+  assert.deepEqual(seen.events,['config','startup-alert']);
+  assert.equal(seen.exit,1);
+  assert.match(seen.alert.content,/联系管理员/);
+  assert.ok(!JSON.stringify(seen.alert).includes('internal deployment details'));
 });
 
 test('normal main loads frozen profile before mutable startup and passes it only to private client',async t=>{

@@ -93,5 +93,11 @@ async function main() {
   app.on('second-instance',()=>{if(win.isMinimized())win.restore();win.show();win.focus();});
   await win.loadURL(APP_URL);if(isolatedPreview)win.setTitle('审易 · 独立合成候选预览 · '+isolatedPreview.candidateId.slice(0,8));win.show();
 }
-main().catch(()=>{console.error('审易团队客户端启动失败。请检查本机环境与配置。');if(app.isPackaged===true||Object.hasOwn(process.env,'SHENYI_ISOLATED_PREVIEW_CONFIG'))app.exit(1);else app.quit();});
+main().catch(error=>{
+  console.error('审易团队客户端启动失败。请检查本机环境与配置。');
+  if(app.isPackaged===true&&process.platform==='darwin'&&error?.code==='TEAM_SERVICE_CONFIGURATION_INVALID'){
+    try{dialog.showErrorBox('审易无法启动','请联系管理员检查此电脑的团队服务配置。');}catch{}
+  }
+  if(app.isPackaged===true||Object.hasOwn(process.env,'SHENYI_ISOLATED_PREVIEW_CONFIG'))app.exit(1);else app.quit();
+});
 app.on('window-all-closed',()=>app.quit());
