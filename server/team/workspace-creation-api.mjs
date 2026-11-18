@@ -5,6 +5,8 @@ import {projectActor,currentActor,ordinaryTeamContext,projectContext,projectScop
 import {COLLECTION_WORKSPACE_KIND,workspaceCreationConflict,workspaceCreationDigest,workspaceCreationRequestUsed,workspaceCreationReceipt} from './workspace-creation-policy.mjs';
 import {UUID} from './device-policy.mjs';
 import {ApiError,ID,deny,invalid,json,readJson,transaction} from './http-utils.mjs';
+import {captureSubscriptionWriteGuard} from './subscription-store.mjs';
+import {subscriptionEnforcementMode} from './subscription-configuration.mjs';
 
 const FIELDS=['requestId','title','read','manage','review','currentPassword'];
 const receiptFields='creation.request_id,creation.team_id,creation.project_id,creation.kind,creation.title,creation.created_by,creation.can_read,creation.can_manage,creation.can_review,CAST(creation.created_project_revision AS TEXT) created_project_revision,CAST(creation.created_at AS TEXT) created_at';
@@ -30,12 +32,13 @@ function assertResource(db,{teamId,projectId,actorId,title,requestId,requestSha2
  }
  return project;
 }
-export async function handleCollectionWorkspaceCreationRequest(request,{db,now=Date.now,identityProviders={},deviceContext}={}){
+export async function handleCollectionWorkspaceCreationRequest(request,{db,now=Date.now,identityProviders={},deviceContext,subscriptionEnforcement='disabled'}={}){
  const url=new URL(request.url),match=/^\/api\/teams\/([^/]+)\/collection-workspaces(?:\/receipts\/([^/]+))?$/.exec(url.pathname);if(!match)return null;
  const [,teamId,receiptId]=match;if(!ID.test(teamId)||receiptId&&!UUID.test(receiptId))deny();if(url.search)invalid();
  if(request.method!==(receiptId?'GET':'POST'))return method(receiptId?'GET':'POST');
  const options={now,identityProviders,deviceContext},actor=projectActor(db,request,options,projectTime(now())),member=ordinaryTeamContext(db,actor.userId,teamId);if(!member)deny();
- const fresh=()=>{const current=currentActor(db,request,actor,options,projectTime(now())),context=ordinaryTeamContext(db,current.userId,teamId);if(!context)deny();if(context.stamp!==member.stamp)workspaceCreationConflict();return current;};
+ subscriptionEnforcementMode(subscriptionEnforcement,identityProviders);let subscriptionGuard=null;
+ const fresh=()=>{const current=currentActor(db,request,actor,options,projectTime(now())),context=ordinaryTeamContext(db,current.userId,teamId);if(!context)deny();if(context.stamp!==member.stamp)workspaceCreationConflict();subscriptionGuard?.assertCurrent();return current;};
  if(receiptId){
   const scope=projectScope(actor,{owner:true}),row=db.prepare(`SELECT ${receiptFields},CAST(metadata.revision AS TEXT) current_project_revision
    FROM team_collection_workspace_creations creation JOIN team_projects project ON project.team_id=creation.team_id AND project.project_id=creation.project_id
@@ -43,6 +46,7 @@ export async function handleCollectionWorkspaceCreationRequest(request,{db,now=D
    WHERE ${scope.sql} AND creation.team_id=? AND creation.request_id=? AND creation.created_by=?`).get(...scope.parameters,teamId,receiptId,actor.userId);
   const current=fresh();if(!row)deny();const context=projectContext(db,current,teamId,row.project_id,{owner:true});if(String(context.project.revision)!==row.current_project_revision)workspaceCreationConflict();return json({receipt:workspaceCreationReceipt(row)});
  }
+ if(subscriptionEnforcement==='workspace-create-v1')subscriptionGuard=captureSubscriptionWriteGuard(db,teamId,{now});
  const body=await readJson(request,FIELDS,8192);fresh();
  if(Object.keys(body).length!==FIELDS.length||!UUID.test(body.requestId??'')||!['read','manage','review'].every(key=>typeof body[key]==='boolean')||!body.read&&(body.manage||body.review)||typeof body.currentPassword!=='string'||!body.currentPassword||Buffer.byteLength(body.currentPassword)>512)invalid();
  const title=titleText(body.title),requestSha256=workspaceCreationDigest({teamId,createdBy:actor.userId,title,read:body.read,manage:body.manage,review:body.review});assertUnused(db,body.requestId);

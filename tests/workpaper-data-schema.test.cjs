@@ -1,7 +1,8 @@
 const {test,after}=require('node:test'),assert=require('node:assert/strict'),{DatabaseSync}=require('node:sqlite');
 const {createWorkpaperDataFixture:fixture,good,source,restorePasswordWork}=require('./helpers/workpaper-data-fixture.cjs');
 after(restorePasswordWork);
-const defs=db=>db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().map(x=>({...x}));
+const {withoutEmptySubscriptionDefinitions}=require('./helpers/subscription-schema-layer.cjs');
+const defs=db=>withoutEmptySubscriptionDefinitions(db,db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().map(x=>({...x})));
 const typed=(db,names)=>names.map(name=>{const q=db.prepare('SELECT * FROM "'+name+'"');q.setReadBigInts(true);return{name,rows:q.all().map(row=>JSON.stringify(Object.keys(row).sort().map(k=>[k,typeof row[k]==='bigint'?['integer',String(row[k])]:row[k] instanceof Uint8Array?['blob',Buffer.from(row[k]).toString('base64')]:row[k]]))).sort()};});
 test('data initialization adds exactly five empty tables/23 definitions while all79 old typed tables and319 definitions remain',async t=>{
  const f=await fixture(t),{initializeTeamDatabase}=await source('database.mjs'),all=defs(f.db),layer=all.filter(x=>x.name.startsWith('workpaper_data_')||x.name.startsWith('team_workpaper_data_'));assert.equal(layer.length,23);assert.equal(layer.filter(x=>x.type==='trigger').length,17);assert.equal(layer.filter(x=>x.type==='index').length,1);

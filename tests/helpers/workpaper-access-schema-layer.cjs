@@ -1,5 +1,6 @@
 const assert=require('node:assert/strict'),{createHash}=require('node:crypto');
 const {ledgerCheckSchemaLayer}=require('./ledger-check-schema-layer.cjs');
+const {subscriptionSchemaLayer,withoutEmptySubscriptionLayer}=require('./subscription-schema-layer.cjs');
 const {peelLedgerCheckSchema,assertLedgerCheckSchemaRestored}=require('./ledger-check-schema-peel.cjs');
 const {workpaperDataSchemaLayer,peelWorkpaperDataSchema,dataDefinitions,DATA_TABLES}=require('./workpaper-data-schema-layer.cjs');
 const TABLES=Object.freeze(['team_workpaper_access_events','team_workpaper_access_grants']);
@@ -9,7 +10,7 @@ function workpaperAccessSchemaLayer(db){
  assert.equal(createHash('sha256').update(JSON.stringify(rows)).digest('hex'),'81ed73be0c51aa3f92717cb7e1d9f8faf9437a6d50891eb8b8c17fead29f6e4d','Only the reviewed exact workpaper ACL schema may be projected');
  for(const name of TABLES)assert.equal(db.prepare('SELECT COUNT(*) n FROM '+name).get().n,0,'No default workpaper authorization or audit may be seeded');return{tables:2,objects:29};
 }
-function laterTeamSchemaLayers(db){const ledger=ledgerCheckSchemaLayer(db),workpaper=workpaperAccessSchemaLayer(db),data=workpaperDataSchemaLayer(db);return{tables:ledger.tables+workpaper.tables+data.tables,objects:ledger.objects+workpaper.objects+data.objects};}
+function laterTeamSchemaLayers(db){const ledger=ledgerCheckSchemaLayer(db),workpaper=workpaperAccessSchemaLayer(db),data=workpaperDataSchemaLayer(db),subscription=subscriptionSchemaLayer(db,{allowAbsent:true});return{tables:ledger.tables+workpaper.tables+data.tables+subscription.tables,objects:ledger.objects+workpaper.objects+data.objects+subscription.objects};}
 function peelLedgerAndWorkpaperSchema(db){
  // Validate every complete empty later layer before the first DROP. Refuse active data.
  laterTeamSchemaLayers(db);const data=peelWorkpaperDataSchema(db),workpaper=definitions(db);
@@ -18,6 +19,7 @@ function peelLedgerAndWorkpaperSchema(db){
 }
 function assertLedgerAndWorkpaperSchemaRestored(db,layer){assertLedgerCheckSchemaRestored(db,layer);assert.deepEqual(definitions(db),layer.workpaper);workpaperAccessSchemaLayer(db);assert.deepEqual(dataDefinitions(db),layer.data);workpaperDataSchemaLayer(db);}
 function withoutEmptyWorkpaperLayer(db,state){
+ state=withoutEmptySubscriptionLayer(db,state);
  const rows=definitions(db),data=dataDefinitions(db);if(!rows.length&&!data.length)return state;workpaperAccessSchemaLayer(db);workpaperDataSchemaLayer(db);const names=new Set([...rows,...data].map(x=>x.name));return{...state,definitions:state.definitions.filter(x=>!names.has(x.name)),tables:state.tables.filter(x=>![...TABLES,...DATA_TABLES].includes(x.name))};
 }
 module.exports={withoutEmptyWorkpaperLayer,workpaperAccessSchemaLayer,laterTeamSchemaLayers,peelLedgerAndWorkpaperSchema,assertLedgerAndWorkpaperSchemaRestored};

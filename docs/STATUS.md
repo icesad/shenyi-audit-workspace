@@ -1,4 +1,12 @@
-# 当前状态：M4团队模块接入（进行中）
+# 当前状态：M5A订阅与席位底座（进行中，M4验收保留）
+
+## 2026-11-18 最新：M5A订阅与席位底座候选
+
+`codex/subscription-foundation`从`c21c957`实现可信显式区间事件／head两表、有效业务成员计席及本人状态。纯技术0／获批兼任1，状态不授资料权；严格配置只先接新建采集工作区，body／KDF后和发布事务末重核到期／版本。到期原权历史继续读／导出，其他写出口、年历／价格／容量／退款、续费／支付／桌面界面仍未完成，不能称全局执行。
+
+固定Node24相关12完整文件161/161、0fail／skip／cancel，fresh1308候选覆盖所有selected且before／after同。独立新3完整文件39/39；首真实TCP64请求／28签名通过，第二时序harness修装载顺序后只复验未完成部分，原FAIL保留，不重跑绿场景。首run无before.sqlite，不冒称物理双库；schema86／346保旧84非空typed行／UUID／原件／freeze。此前5005仅旧代码基线，本片未重跑完整unit／browser／原生。
+
+M4转待决策与验收，尚未完成，不开放未确认模块；当前唯一实现M5A，M5整体继续。旧预览／共享库保留，未push／main／一键重验／收款／上线，Goal active。见[范围合同](SUBSCRIPTION_FOUNDATION_CONTRACT.md)、[已确认政策](SUBSCRIPTION_SEAT_DECISION.md)和`D:/codex-temp/shenyi-subscription-foundation-20261118/`。以下保留历史范围。
 
 ## 2026-11-18 最新：完整可移植单元严格门通过，订阅政策已确认
 

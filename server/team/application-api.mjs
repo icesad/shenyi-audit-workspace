@@ -33,6 +33,8 @@ import {deviceServerId} from './device-policy.mjs';
 import {handleMyDeviceRequest} from './my-device-api.mjs';
 import {recoveryConfigured} from './recovery-review-policy.mjs';
 import {ApiError, json} from './http-utils.mjs';
+import {handleSubscriptionRequest} from './subscription-api.mjs';
+import {subscriptionEnforcementMode} from './subscription-configuration.mjs';
 
 /** Local M2 application boundary. No fake registration/phone verification. */
 export async function handleTeamApplicationRequest(request, options = {}) {
@@ -49,12 +51,12 @@ export async function handleTeamApplicationRequest(request, options = {}) {
   // HEAD never carries a body, including metadata/origin/auth/clock errors.
   return new Response(request.method==='HEAD'?null:response.body,{status:response.status,statusText:response.statusText,headers});
 }
-async function applicationResponse(request, {db, now = Date.now,identityProviders={}} = {}) {
+async function applicationResponse(request, {db, now = Date.now,identityProviders={},subscriptionEnforcement='disabled'} = {}) {
   let releaseDeviceBody;
   try {
     const at = now();
     if (!Number.isSafeInteger(at) || at < 0) throw new Error('Invalid clock');
-    const url=new URL(request.url),options={db,now,identityProviders};
+    const url=new URL(request.url),options={db,now,identityProviders,subscriptionEnforcement:subscriptionEnforcementMode(subscriptionEnforcement,identityProviders)};
     // A provider's top-level browser callback is cross-site by design. Only this
     // exact GET endpoint uses state/code checks instead of the data API origin gate.
     if(url.pathname==='/api/auth/wechat/callback'&&request.method==='GET')return await handleWechatRequest(request,options);
@@ -72,7 +74,8 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
     const deviceAuthorization=await authorizeDeviceRequest(request,options);
     releaseDeviceBody=deviceAuthorization.release;
     request=deviceAuthorization.request;options.deviceContext=deviceAuthorization.context;
-    return await handleMyDeviceRequest(request,options)
+    return await handleSubscriptionRequest(request,options)
+      || await handleMyDeviceRequest(request,options)
       || await handleDeviceReplacementRequest(request,options)
       || await handleDeviceIdentityRequest(request,options)
       || await handleAccountSessionsRequest(request,options)

@@ -3,7 +3,8 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),path=requ
 const {peelLedgerAndWorkpaperSchema,assertLedgerAndWorkpaperSchemaRestored}=require('./helpers/workpaper-access-schema-layer.cjs');
 const ROOT=path.resolve(__dirname,'..'),source=name=>import(pathToFileURL(path.join(ROOT,'server/team',name)).href);
 const EXPECTED=Object.freeze(['team_ledger_check_events','team_ledger_check_grants','team_ledger_check_heads','team_ledger_check_snapshots','team_workpaper_access_events','team_workpaper_access_grants','team_workpaper_data_chunks','team_workpaper_data_heads','team_workpaper_data_imports','team_workpaper_data_originals','team_workpaper_data_versions']);
-const schema=db=>db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().map(x=>({...x}));
+const {withoutEmptySubscriptionDefinitions}=require('./helpers/subscription-schema-layer.cjs');
+const schema=db=>withoutEmptySubscriptionDefinitions(db,db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().map(x=>({...x})));
 const value=v=>v instanceof Uint8Array?['blob',Buffer.from(v).toString('hex')]:[typeof v,String(v)];
 function rows(db){return Object.fromEntries(schema(db).filter(x=>x.type==='table').map(x=>[x.name,db.prepare('SELECT * FROM "'+x.name+'"').all().map(row=>JSON.stringify(Object.entries(row).map(([k,v])=>[k,value(v)]))).sort()]));}
 const snapshot=db=>({schema:schema(db),rows:rows(db),schemaVersion:db.prepare('PRAGMA schema_version').get().schema_version,totalChanges:db.prepare('SELECT total_changes() n').get().n});

@@ -3,7 +3,8 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),{Database
 const {peelLedgerAndWorkpaperSchema:peelLedgerCheckSchema,assertLedgerAndWorkpaperSchemaRestored:assertLedgerCheckSchemaRestored}=require('./helpers/workpaper-access-schema-layer.cjs');
 const {source}=require('./helpers/project-access-fixture.cjs');
 const {createLedgerFixture,good}=require('./helpers/ledger-check-fixture.cjs');
-const schema=db=>db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().map(row=>({...row}));
+const {withoutEmptySubscriptionDefinitions}=require('./helpers/subscription-schema-layer.cjs');
+const schema=db=>withoutEmptySubscriptionDefinitions(db,db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().map(row=>({...row})));
 test('historical reconstruction removes only four empty ledger tables and restores their exact DDL',async t=>{
  const {initializeTeamDatabase,seedDemoTeamData}=await source('database.mjs'),db=new DatabaseSync(':memory:');t.after(()=>db.close());initializeTeamDatabase(db);await seedDemoTeamData(db);const before=schema(db),layer=peelLedgerCheckSchema(db),old=schema(db);
  assert.equal(old.length,252);assert.equal(old.filter(x=>x.type==='table').length,73);assert.deepEqual(old,before.filter(x=>!layer.names.includes(x.name)));
