@@ -9,13 +9,6 @@
     try{const url=new URL(serviceOrigin);remoteService=url.protocol==='https:'&&serviceOrigin===url.origin;}catch{}
   }
   const serviceCaption=remoteService?'当前配置的HTTPS团队服务：'+serviceOrigin:'当前连接本机团队服务';
-  if(remoteService){
-    byId('service-preview-label').textContent='HTTPS连接 · 合成预览';
-    byId('service-mode-label').textContent='HTTPS预览';
-    byId('service-demo-help-title').textContent='合成演示账号说明';
-    byId('service-demo-help-description').textContent='仅用于当前明确启用的合成演示服务，不是正式用户账号。';
-    byId('service-preview-notice').textContent='使用配置的HTTPS服务验证合成账号和资料流程。请勿导入真实客户资料；本机设备须在线核验，设备登记与换机审批仅限合成验证，正式商用服务尚未完成。';
-  }
   const labels={intern:'实习生',assistant:'助理',manager:'项目经理',partner:'合伙人'};
   const statuses={open:'待提交',submitted:'已提交',returned:'已退回',closed:'已关闭'};
   let session=null,teamId='',tasks=[],selected=null,revision=0,submissions=[],hasMore=false,busy=false,viewEpoch=0,busyEpoch=0;
@@ -23,7 +16,9 @@
   const taskOriginalSelection=new Set(),projectOriginalSelection=new Set();
   let originalsExportOperation=null,taskSubmissionPreview=null;
   let projectMaterials=null,workspaceSource=null,ledgerChecks=null,workpapers=null,billing=null,refundIntake=null;
-  let methods={demoUsername:true,phonePassword:false,phoneVerification:false,wechat:false,recovery:false},challengeId='',challengeExpiresAt=0,challengePhone='',methodsReady=false,methodsEpoch=0;
+  let identityServiceMode=remoteService?'pending':'local-preview';
+  const unavailableIdentityMethods=()=>({demoUsername:identityServiceMode==='local-preview',phonePassword:false,phoneVerification:false,wechat:false,recovery:false});
+  let methods=unavailableIdentityMethods(),challengeId='',challengeExpiresAt=0,challengePhone='',methodsReady=false,methodsEpoch=0;
   let desktopWechatReady=false,wechatState='idle',wechatEpoch=0,wechatExpiresAt=0,wechatTimer=null,wechatWorking=false;
   let onboardingAvailable=false,onboardingReady=false,onboardingStatusEpoch=0,activationEpoch=0,activationWorking=false,activationPreview=null,activationChallenge=null;
   let invitationEpoch=0,invitationWorking=false,invitationAllowed=false,invitationPageRows=[],invitationCursors=[null],invitationNextCursor=null,invitationPageLoaded=false,invitationPanelOpen=false,invitationMutation=null;
@@ -190,6 +185,35 @@
     byId('device-retry').hidden=!deviceLocalIssue&&!['paused','vault_unavailable'].includes(deviceSnapshot?.state);byId('device-retry').disabled=working;byId('device-exit').disabled=deviceAction?.kind==='exit';
     updateReplacementControls();
   }
+
+  function updateLoginIdentityField(){
+    const phone=byId('login-mode').value==='phone';
+    document.querySelector('label[for="username"]').textContent=phone?'手机号':'账号';
+    byId('username').placeholder=phone?'输入已验证绑定的手机号':'输入团队账号';
+    byId('username').inputMode=phone?'tel':'text';
+  }
+
+  function renderIdentityService(){
+    const preview=identityServiceMode==='local-preview',managed=identityServiceMode==='managed-service';
+    const mode=byId('login-mode'),demo=mode.querySelector('option[value="demo"]');
+    const helpTitle=byId('service-demo-help-title'),help=helpTitle.closest('details');
+    demo.hidden=!preview;
+    help.hidden=!preview;
+    if(!preview)help.open=false;
+    if(managed){mode.value='phone';updateLoginIdentityField();}
+    if(!remoteService&&!managed)return;
+    if(preview){
+      byId('service-preview-label').textContent='HTTPS连接 · 合成预览';
+      byId('service-mode-label').textContent='HTTPS预览';
+      helpTitle.textContent='合成演示账号说明';
+      byId('service-demo-help-description').textContent='仅用于当前明确启用的合成演示服务，不是正式用户账号。';
+      byId('service-preview-notice').textContent='使用配置的HTTPS服务验证合成账号和资料流程。请勿导入真实客户资料；本机设备须在线核验，设备登记与换机审批仅限合成验证，正式商用服务尚未完成。';
+      return;
+    }
+    byId('service-preview-label').textContent=managed&&remoteService?'受信 HTTPS 团队服务':remoteService?'HTTPS 团队服务':'团队服务';
+    byId('service-mode-label').textContent=managed?'团队服务 · 合成验收':'HTTPS 团队服务';
+    byId('service-preview-notice').textContent=managed?'使用已验证手机号和账号密码登录。当前电脑须在线核验。此环境用于合成验收，请勿导入真实客户资料。':'使用当前配置的 HTTPS 团队服务。此环境用于合成验收，请勿导入真实客户资料。';
+  }
   function deviceAccountView(value){return value?.account&&typeof value.account.id==='string'&&typeof value.account.displayName==='string'?{id:value.account.id,displayName:value.account.displayName}:null;}
   function suspendDeviceView(text=''){
     resetReplacementReviews();
@@ -251,7 +275,11 @@
     catch(error){if(currentDeviceAction(operation)){showLogin();message('login-message',error.message||'本窗口已退出，请重新登录核对。',true);}}
   }
   function wechatActive(){return ['starting','pending','binding_required','linking'].includes(wechatState);}
-  function updateIdentityControls(){updateMyDeviceControls();billing?.update();refundIntake?.update();const active=wechatActive(),ready=methodsReady&&methods.wechat&&desktopWechatReady;byId('ordinary-login-fields').hidden=active;byId('login-view').classList.toggle('wechat-active',active);for(const id of ['username','password','login-submit'])byId(id).disabled=busy||active;byId('wechat-login').disabled=busy||!ready||wechatActive();byId('wechat-login').textContent=!methods.wechat?'微信扫码登录 · 未开通':!desktopWechatReady?'微信扫码登录 · 桌面配置未就绪':'微信扫码登录';byId('wechat-message').textContent=!methods.wechat?'尚未配置微信登录，当前不能扫码授权。':!desktopWechatReady?'服务端已配置微信能力，桌面授权配置未就绪，当前不能发起授权。':'将在系统浏览器中授权；完成后请返回此窗口。首次关联需确认本人现有员工账号。';byId('wechat-progress').hidden=wechatState==='idle';byId('wechat-link-fields').hidden=!['binding_required','linking'].includes(wechatState);byId('wechat-link-fields').disabled=busy||wechatWorking||wechatState!=='binding_required';byId('wechat-link-submit').disabled=busy||wechatWorking||wechatState!=='binding_required';byId('wechat-cancel').hidden=!wechatActive();byId('wechat-cancel').disabled=!wechatActive();for(const option of byId('login-mode').options)option.disabled=option.value==='phone'?!methods.phonePassword:!methods.demoUsername;byId('phone-bind-fields').disabled=busy||!methods.phoneVerification;byId('send-bind-code').disabled=busy||!methods.phoneVerification;byId('bind-phone-submit').disabled=busy||!methods.phoneVerification||!challengeId||challengeExpiresAt<=Date.now();byId('bind-code').disabled=busy||!methods.phoneVerification||!challengeId;byId('bind-current-password').disabled=busy||!methods.phoneVerification||!challengeId;byId('phone-service-status').textContent=methods.phoneVerification?'短信服务已配置；仍需完成本次验证码和当前账号密码验证。':'短信验证尚未开通，当前不能绑定手机号。';updateDeviceControls();}
+  function updateIdentityControls(){updateMyDeviceControls();billing?.update();refundIntake?.update();const active=wechatActive(),ready=methodsReady&&methods.wechat&&desktopWechatReady;
+    const loginUnavailable=!api||(!methods.demoUsername&&!methods.phonePassword);
+    byId('ordinary-login-fields').hidden=active;byId('login-view').classList.toggle('wechat-active',active);for(const id of ['username','password','login-submit'])byId(id).disabled=busy||active||loginUnavailable;
+    byId('login-mode').disabled=busy||loginUnavailable;
+    byId('wechat-login').disabled=busy||!ready||wechatActive();byId('wechat-login').textContent=!methods.wechat?'微信扫码登录 · 未开通':!desktopWechatReady?'微信扫码登录 · 桌面配置未就绪':'微信扫码登录';byId('wechat-message').textContent=!methods.wechat?'尚未配置微信登录，当前不能扫码授权。':!desktopWechatReady?'服务端已配置微信能力，桌面授权配置未就绪，当前不能发起授权。':'将在系统浏览器中授权；完成后请返回此窗口。首次关联需确认本人现有员工账号。';byId('wechat-progress').hidden=wechatState==='idle';byId('wechat-link-fields').hidden=!['binding_required','linking'].includes(wechatState);byId('wechat-link-fields').disabled=busy||wechatWorking||wechatState!=='binding_required';byId('wechat-link-submit').disabled=busy||wechatWorking||wechatState!=='binding_required';byId('wechat-cancel').hidden=!wechatActive();byId('wechat-cancel').disabled=!wechatActive();for(const option of byId('login-mode').options)option.disabled=option.value==='phone'?!methods.phonePassword:!methods.demoUsername;byId('phone-bind-fields').disabled=busy||!methods.phoneVerification;byId('send-bind-code').disabled=busy||!methods.phoneVerification;byId('bind-phone-submit').disabled=busy||!methods.phoneVerification||!challengeId||challengeExpiresAt<=Date.now();byId('bind-code').disabled=busy||!methods.phoneVerification||!challengeId;byId('bind-current-password').disabled=busy||!methods.phoneVerification||!challengeId;byId('phone-service-status').textContent=methods.phoneVerification?'短信服务已配置；仍需完成本次验证码和当前账号密码验证。':'短信验证尚未开通，当前不能绑定手机号。';updateDeviceControls();}
   function setBusy(value){busyEpoch++;busy=value;for(const node of document.querySelectorAll('button,input,select'))node.disabled=value;updateIdentityControls();updateOnboardingControls();updateAccountSessionsControls();updatePasswordChangeControls();updateFirstAdminControls();updateProvisioningControls();updateRecoveryControls();updateRecoveryReviewsControls();updateTaskManagementControls();updateTaskSubmissionControls();updateMemberManagementControls();updateReplacementReviewControls();updateBusinessRoleControls();updateProjectAccessControls();updateAdministratorBusinessRoleControls();updateDeviceControls();updateOriginalsExportControls();updateProjectMigrationControls();projectMaterials?.controls();updateTaskSubmissionPreviewControls();ledgerChecks?.update();workpapers?.update();}
   function clearPhoneProof(clearPhone=true){challengeId='';challengeExpiresAt=0;challengePhone='';byId('bind-code').value='';byId('bind-current-password').value='';if(clearPhone)byId('bind-phone').value='';updateIdentityControls();}
   function resetWechat(notify=true){const active=wechatActive();wechatEpoch++;clearTimeout(wechatTimer);wechatTimer=null;wechatState='idle';wechatWorking=false;wechatExpiresAt=0;byId('wechat-link-phone').value='';byId('wechat-link-password').value='';message('wechat-status','');if(notify&&active&&typeof api?.cancelWechatLogin==='function')void Promise.resolve().then(()=>api.cancelWechatLogin()).catch(()=>{});updateIdentityControls();}
@@ -260,7 +288,38 @@
   function clearRefundIntakePassword(){const input=byId('refund-intake-password');if(input)input.value='';}
   function showLogin({keepDevice=false}={}){resetLedgerChecks();resetWorkpapers();stopTaskSubmissionPreview();if(keepDevice)clearRefundIntakePassword();else resetDevicePresentation();accountIdentityEpoch++;resetMyDeviceOverview();resetProjectMigration();resetAdministratorBusinessRole();resetProjectAccess();resetBusinessRole();resetMemberManagement();taskUploadOperation=null;resetTaskSubmissionAccess();resetTaskManagement();resetRecovery(true,true);resetAccountSessions();resetPasswordChange();resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);resetProvisioning();resetRecoveryReviews();resetInvitations();administrationTeams=[];invitationTeamId='';byId('invitation-team').replaceChildren();session=null;if(!keepDevice){billing?.reset();refundIntake?.reset();}teamId='';tasks=[];selected=null;submissions=[];revision=0;hasMore=false;viewEpoch++;byId('workspace-view').hidden=true;byId('session-actions').hidden=true;byId('login-view').hidden=false;for(const id of ['username','password','search'])byId(id).value='';for(const id of ['account-name','role-label','task-count','workspace-message','phone-bind-message'])byId(id).textContent='';clearPhoneProof();byId('phone-bind-panel').open=false;byId('task-list').replaceChildren();byId('team-select').replaceChildren();byId('task-detail').replaceChildren();setBusy(false);}
   async function call(name,arg){if(!api)throw {code:'DESKTOP_REQUIRED',message:'请使用审易桌面客户端打开此页面。'};const actorAt=accountIdentityEpoch,deviceAt=deviceUiEpoch,result=await api[name](arg);if(actorAt!==accountIdentityEpoch||deviceAt!==deviceUiEpoch)throw {code:'STALE_RESPONSE'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED')showLogin();throw result?.error||{message:'操作未完成，请重试。'};}return result.value;}
-  async function loadIdentityMethods(){const at=++methodsEpoch;if(typeof api?.getAuthMethods!=='function'){methodsReady=false;desktopWechatReady=false;message('identity-methods-message','当前桌面身份接口未更新；仍可使用明确标注的合成演示账号。');updateIdentityControls();updateRecoveryControls();return;}try{const value=await call('getAuthMethods');if(at!==methodsEpoch)return;methods=value.methods;methodsReady=true;desktopWechatReady=value.desktopWechatReady===true&&['startWechatLogin','pollWechatLogin','cancelWechatLogin','linkWechatAccount'].every(name=>typeof api[name]==='function');message('identity-methods-message',methods.phonePassword?'正式方向：手机号＋密码。需先完成手机号验证绑定；合成演示账号保持独立。':'手机号登录尚未开放；合成演示账号不代表正式身份已验证。');}catch{if(at!==methodsEpoch)return;methodsReady=false;desktopWechatReady=false;message('identity-methods-message','身份服务状态暂不可读取，未启用手机号验证或微信扫码。',true);methods={demoUsername:true,phonePassword:false,phoneVerification:false,wechat:false,recovery:false};}if(!methodsReady||!methods.recovery)resetRecovery(false);updateIdentityControls();updateRecoveryControls();}
+  async function loadIdentityMethods(){
+    const at=++methodsEpoch;
+    try{
+      if(typeof api?.getAuthMethods!=='function')throw {code:'IDENTITY_INTERFACE_MISSING'};
+      const value=await call('getAuthMethods');
+      if(at!==methodsEpoch)return;
+      if(value.mode==='managed-service'){
+        if(value.methods?.demoUsername!==false||value.methods?.phonePassword!==true)throw {code:'INVALID_RESPONSE'};
+        identityServiceMode='managed-service';
+      }else{
+        const legacyLocal=!remoteService&&identityServiceMode==='local-preview'&&value.mode===undefined;
+        if((!legacyLocal&&value.mode!=='local-preview')||identityServiceMode==='managed-service')throw {code:'INVALID_RESPONSE'};
+        identityServiceMode='local-preview';
+      }
+      methods=value.methods;
+      methodsReady=true;
+      desktopWechatReady=value.desktopWechatReady===true&&['startWechatLogin','pollWechatLogin','cancelWechatLogin','linkWechatAccount'].every(name=>typeof api[name]==='function');
+      message('identity-methods-message',identityServiceMode==='managed-service'?'使用已验证绑定的手机号及账号密码。':methods.phonePassword?'正式方向：手机号＋密码。需先完成手机号验证绑定；合成演示账号保持独立。':'手机号登录尚未开放；合成演示账号不代表正式身份已验证。');
+    }catch(error){
+      if(at!==methodsEpoch)return;
+      methodsReady=false;
+      desktopWechatReady=false;
+      methods=unavailableIdentityMethods();
+      const missing=error?.code==='IDENTITY_INTERFACE_MISSING';
+      const status=missing?'当前桌面身份接口未更新。':'身份服务状态暂不可读取。';
+      const next=identityServiceMode==='local-preview'?(missing?'仍可使用明确标注的合成演示账号。':'未启用手机号验证或微信扫码。'):'请重新打开客户端后再试。';
+      message('identity-methods-message',status+next,!missing);
+    }
+    renderIdentityService();
+    if(!methodsReady||!methods.recovery)resetRecovery(false);
+    updateIdentityControls();updateRecoveryControls();
+  }
   async function wechatCall(name,arg,at){const result=await api[name](arg);if(at!==wechatEpoch)throw {code:'STALE_WECHAT'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message',result.error.message||'登录已失效，请重新登录。',true);}throw result?.error||{message:'微信授权暂时无法完成，请重新开始。'};}return result.value;}
   function terminalWechat(state,text,error=false){clearTimeout(wechatTimer);wechatTimer=null;wechatState=state;wechatWorking=false;byId('wechat-link-phone').value='';byId('wechat-link-password').value='';message('wechat-status',text,error);updateIdentityControls();}
   async function applyWechatResult(result,at){if(at!==wechatEpoch)return;if(result.status==='signed_in'){resetWechat(false);message('login-message','');await acceptAuthenticatedSession(result.session);return;}if(Number.isSafeInteger(result.expiresAt))wechatExpiresAt=result.expiresAt;if(wechatExpiresAt&&wechatExpiresAt<=Date.now()){terminalWechat('expired','本次微信授权已过期，请重新开始。',true);return;}if(result.status==='binding_required'){wechatState='binding_required';wechatWorking=false;message('wechat-status','微信授权已收到。请核对并确认关联本人现有员工账号。');updateIdentityControls();byId('wechat-link-phone').focus();return;}if(result.status==='pending'){wechatState='pending';wechatWorking=false;message('wechat-status','等待浏览器中的微信授权。可随时取消本次操作。');updateIdentityControls();wechatTimer=setTimeout(()=>void pollWechat(at),2000);return;}const words={expired:'本次微信授权已过期，请重新开始。',canceled:'本次微信授权已取消，可重新开始。',failed:'微信授权未完成，请重新开始。',idle:'当前没有待完成的微信授权，请重新开始。'};terminalWechat(Object.hasOwn(words,result.status)?result.status:'failed',words[result.status]||'微信授权状态无效，请重新开始。',result.status!=='canceled');}
@@ -505,7 +564,7 @@
     const at=recoveryEpoch,actorEpoch=accountIdentityEpoch,operation={at,actorEpoch};recoveryMutation=operation;updateRecoveryControls();message('recovery-message','正在验证本人身份和独立授权并重设密码…');
     let outcome='',uncertain=false;
     try{const result=await api.recoverPassword({challengeId:recoveryChallenge.challengeId,code,newPassword,recoveryProof});if(!sameRecoveryActor(actorEpoch))return;if(!result?.ok)throw result?.error||{code:'INVALID_RESPONSE'};if(result.value?.signedOut!==true)throw {code:'INVALID_RESPONSE'};
-      outcome='密码已重设，全部旧登录已退出，请使用新密码重新登录。';resetRecovery(true);if(methods.phonePassword){byId('login-mode').value='phone';byId('username').placeholder='输入已验证绑定的手机号';byId('username').inputMode='tel';}message('login-message',outcome);if(byId('recovery-panel').open)message('recovery-message',outcome);
+      outcome='密码已重设，全部旧登录已退出，请使用新密码重新登录。';resetRecovery(true);if(methods.phonePassword){byId('login-mode').value='phone';updateLoginIdentityField();}message('login-message',outcome);if(byId('recovery-panel').open)message('recovery-message',outcome);
     }catch(error){if(!sameRecoveryActor(actorEpoch))return;uncertain=passwordChangeUncertain(error);outcome=uncertain?'未能确认重设结果；已提交的请求可能已完成，请用新密码登录核对。':error.message||'恢复验证未通过，请重新核对验证码和独立授权。';if(currentRecoveryView(at,actorEpoch))message('recovery-message',outcome,true);else if(byId('recovery-panel').open)message('recovery-message',outcome,true);else message('login-message',outcome,true);}
     finally{if(recoveryMutation===operation)recoveryMutation=null;if(sameRecoveryActor(actorEpoch))clearRecoverySecrets();updateRecoveryControls();}
   }
@@ -583,7 +642,7 @@
     if(!password||password!==confirmation){byId('first-admin-password').value='';byId('first-admin-confirm').value='';message('first-admin-message',password?'两次密码不一致，请重新填写。':'请填写账号密码和确认密码。',true);return;}
     const at=firstAdminEpoch,actorEpoch=accountIdentityEpoch,operation={at},proof={...firstAdminIdentity(),challengeId:firstAdminChallenge.challengeId,code:byId('first-admin-code').value,password,displayName:byId('first-admin-display-name').value,accept:true};
     firstAdminMutation=operation;updateFirstAdminControls();message('first-admin-message','正在验证本人并开通团队管理…');
-    try{const value=await firstAdminCall('activateFirstAdministrator',proof,at,actorEpoch);if(value?.activated!==true)throw {code:'INVALID_RESPONSE'};resetFirstAdmin();if(methods.phonePassword){byId('login-mode').value='phone';byId('username').placeholder='输入已验证绑定的手机号';byId('username').inputMode='tel';}message('first-admin-message','团队管理已开通，请返回使用手机号＋密码登录。审计资料权限须另行指派。');}
+    try{const value=await firstAdminCall('activateFirstAdministrator',proof,at,actorEpoch);if(value?.activated!==true)throw {code:'INVALID_RESPONSE'};resetFirstAdmin();if(methods.phonePassword){byId('login-mode').value='phone';updateLoginIdentityField();}message('first-admin-message','团队管理已开通，请返回使用手机号＋密码登录。审计资料权限须另行指派。');}
     catch(error){if(at===firstAdminEpoch&&actorEpoch===accountIdentityEpoch&&!session)message('first-admin-message',passwordChangeUncertain(error)?'未能确认团队激活结果；请求可能已完成，请用手机号登录核对。':error.message||'验证未通过，请核对资料后重试。',true);}
     finally{if(firstAdminMutation===operation)firstAdminMutation=null;if(actorEpoch===accountIdentityEpoch){for(const id of ['first-admin-code','first-admin-password','first-admin-confirm'])byId(id).value='';byId('first-admin-accept').checked=false;updateFirstAdminControls();}}
   }
@@ -1202,7 +1261,7 @@
     if(!byId('activation-accept').checked){message('activation-message','请先核对并确认加入指定团队与岗位。',true);return;}
     const at=activationEpoch,proof={...activationIdentity(),challengeId:activationChallenge.challengeId,code:byId('activation-code').value,password:byId('activation-password').value,displayName:byId('activation-display-name').value,accept:true};
     activationWorking=true;updateOnboardingControls();message('activation-message','正在验证本人账号并确认加入…');
-    try{await call('activateEmployee',proof);if(at!==activationEpoch)return;resetActivation();if(methods.phonePassword){byId('login-mode').value='phone';byId('username').placeholder='输入已验证绑定的手机号';byId('username').inputMode='tel';}message('activation-message','账号已激活，请返回使用手机号＋密码登录。');}
+    try{await call('activateEmployee',proof);if(at!==activationEpoch)return;resetActivation();if(methods.phonePassword){byId('login-mode').value='phone';updateLoginIdentityField();}message('activation-message','账号已激活，请返回使用手机号＋密码登录。');}
     catch(error){if(at===activationEpoch)message('activation-message',error.message||'激活未完成，请核对资料或联系管理员。',true);}
     finally{if(at===activationEpoch){byId('activation-password').value='';byId('activation-code').value='';byId('activation-accept').checked=false;activationWorking=false;updateOnboardingControls();}}
   });
@@ -1491,13 +1550,16 @@
   }
   byId('login-form').addEventListener('submit',async event=>{
     event.preventDefault();if(deviceGateActive()){if(deviceSnapshot?.state==='enrollment_required'&&!deviceLocalIssue)await enrollCurrentDevice();return;}if(busy||deviceAction)return;if(!deviceApiReady()){suspendDeviceView('当前客户端设备接口未更新，请更新客户端后重试。');return;}
-    resetRecovery(true,true);resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);const phoneMode=byId('login-mode').value==='phone';if(phoneMode&&(!methodsReady||!methods.phonePassword)){message('login-message','手机号登录尚未开放。',true);return;}
+    const phoneMode=identityServiceMode==='managed-service'||byId('login-mode').value==='phone';
+    if(phoneMode&&(!methodsReady||!methods.phonePassword)){message('login-message','手机号登录暂不可用。',true);return;}
+    if(!phoneMode&&!methods.demoUsername){message('login-message','身份服务状态暂不可读取，请稍候重试。',true);return;}
+    resetRecovery(true,true);resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);
     const operation=beginDeviceAction('login'),input=phoneMode?{phone:byId('username').value,password:byId('password').value}:{username:byId('username').value,password:byId('password').value};setBusy(true);const owner=busyEpoch;message('login-message','正在登录并核验当前电脑…');
     try{const result=await api[phoneMode?'loginPhone':'login'](input);if(!currentDeviceAction(operation))return;byId('password').value='';if(!result?.ok)throw result?.error||{code:'INVALID_RESPONSE'};message('login-message','');await acceptAuthenticatedSession(result.value);}
     catch(error){if(currentDeviceAction(operation)){byId('password').value='';message('login-message',error.message||'登录或设备核验未完成，请重试。',true);}}
     finally{if(currentDeviceAction(operation)){deviceAction=null;if(busyEpoch===owner)setBusy(false);updateIdentityControls();void pollDeviceStatus();}}
   });
-  byId('login-mode').addEventListener('change',()=>{resetTaskSubmissionAccess();resetRecovery(true,true);resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);byId('username').value='';byId('password').value='';clearPhoneProof();message('login-message','');byId('username').placeholder=byId('login-mode').value==='phone'?'输入已验证绑定的手机号':'输入团队账号';byId('username').inputMode=byId('login-mode').value==='phone'?'tel':'text';});
+  byId('login-mode').addEventListener('change',()=>{resetTaskSubmissionAccess();resetRecovery(true,true);resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);byId('username').value='';byId('password').value='';clearPhoneProof();message('login-message','');if(identityServiceMode==='managed-service')byId('login-mode').value='phone';updateLoginIdentityField();});
   byId('bind-phone').addEventListener('input',()=>{clearPhoneProof(false);message('phone-bind-message','手机号已改变，请重新获取验证码。');});
   byId('send-bind-code').addEventListener('click',async()=>{if(busy||!session)return;if(!methodsReady||!methods.phoneVerification){message('phone-bind-message','短信验证服务尚未开通，未发送验证码。',true);return;}const at=viewEpoch,phone=byId('bind-phone').value;clearPhoneProof(false);setBusy(true);message('phone-bind-message','正在请求短信验证…');try{const result=await call('requestPhoneBind',{phone});if(at!==viewEpoch||byId('bind-phone').value!==phone)return;challengeId=result.challengeId;challengeExpiresAt=result.expiresAt;challengePhone=phone;message('phone-bind-message','验证码发送请求已完成，请填写收到的验证码及当前账号密码。');}catch(error){if(at===viewEpoch)message('phone-bind-message',error.message,true);}finally{if(at===viewEpoch)setBusy(false);}});
   byId('phone-bind-form').addEventListener('submit',async event=>{event.preventDefault();if(busy||!session)return;if(!challengeId||challengeExpiresAt<=Date.now()||byId('bind-phone').value!==challengePhone){clearPhoneProof(false);message('phone-bind-message','本次验证码已失效，请重新获取。',true);return;}const at=viewEpoch,proof={challengeId,code:byId('bind-code').value,currentPassword:byId('bind-current-password').value};let completed=false;setBusy(true);try{const result=await call('bindPhone',proof);if(at!==viewEpoch)return;completed=true;message('phone-bind-message','手机号已验证并绑定：'+result.phoneMasked);}catch(error){if(at===viewEpoch)message('phone-bind-message',error.message,true);}finally{if(at===viewEpoch){if(completed)clearPhoneProof();else{byId('bind-code').value='';byId('bind-current-password').value='';}setBusy(false);}}});
@@ -1522,5 +1584,5 @@
   });
   watchWorkspaceNavigation();
   if(!api){message('login-message','此页面需要审易桌面客户端，请从桌面启动入口打开。',true);byId('login-submit').disabled=true;}
-  updateIdentityControls();updateOnboardingControls();updateMemberManagementControls();if(api){void loadIdentityMethods();void loadOnboardingStatus();devicePollTimer=setInterval(()=>void pollDeviceStatus(),1000);void pollDeviceStatus();}
+  renderIdentityService();updateIdentityControls();updateOnboardingControls();updateMemberManagementControls();if(api){void loadIdentityMethods();void loadOnboardingStatus();devicePollTimer=setInterval(()=>void pollDeviceStatus(),1000);void pollDeviceStatus();}
 })();

@@ -1,5 +1,7 @@
 # 团队采集授权原型（M1/M2/M3/M4A/M4B/M4C）
 
+独立 HTTPS 服务部署候选的配置与本地运行方式见[团队 HTTPS 服务说明](../../docs/MANAGED_TEAM_SERVICE.md)。
+
 M2新增独立账号、本机HTTP、定向邀请、原件提交与版本控制，以及手机号/微信的合成身份适配边界；最新运行说明见[本机桌面预览](../../docs/M2_LOCAL_TEAM_PREVIEW.md)和[正式身份方案](../../docs/PHONE_WECHAT_AUTH_PLAN.md)。下文读取范围描述M1模块，不能误读为M2没有写入接口；正式身份供应商、生产部署和订阅支付仍未完成。
 
 M4A新增[普通员工业务职级管理](../../docs/BUSINESS_ROLE_MANAGEMENT.md)：`business-role-schema.sql`、`business-role-policy.mjs`、`business-role-api.mjs`提供独立strict设备/技术管理员鉴权、SQL最小成员范围、当前密码与CAS/ABA、同事务改role并撤旧session/lease/grants及未完成票、逐task版本更新和专用audit；原件/身份映射/binding保持，不赠项目或邀请权。该阶段新增一审计表/一索引，达到51表/89对象，原50表/87定义与所有旧行启动时保持；普通9/review14，无新增账号或自动职级变化。后文M3C的50/87等亦为该阶段历史，不代表当前schema。正式身份/远程配置、Mac/真实跨电脑/安装更新和生产仍未完成。

@@ -3,6 +3,7 @@ const {ledgerLegacyFormCount,ledgerLegacySecretCount}=require('./helpers/ledger-
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),asyncFs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),vm=require('node:vm');
 const {EventEmitter}=require('node:events'),{JSDOM}=require('jsdom');
 const config=require('../desktop/team-service-config.cjs'),{withDeviceDiagnostic}=require('./helpers/desktop-device-diagnostic.cjs');
+const {createTeamClient}=require('../desktop/team-client.cjs');
 const ROOT=path.resolve(__dirname,'../desktop'),HTML=fs.readFileSync(path.join(ROOT,'team-ui/index.html'),'utf8'),UI=fs.readFileSync(path.join(ROOT,'team-ui/team-ui.js'),'utf8'),MAIN=fs.readFileSync(path.join(ROOT,'main.cjs'),'utf8');
 const PROFILE={schemaVersion:1,apiBase:'https://team.example.invalid:9443',serverId:'11111111-1111-4111-8111-111111111111'},ok=value=>({ok:true,value});
 async function until(check){for(let i=0;i<180;i++){if(check())return;await new Promise(resolve=>setTimeout(resolve,0));}assert.ok(check(),'expected startup or renderer state');}
@@ -69,6 +70,65 @@ test('remote UI displays fixed HTTPS origin but retains synthetic identity and u
   assert.equal(f.d.getElementById('service-demo-help-title').textContent,'合成演示账号说明');assert.equal(f.d.getElementById('service-demo-help-description').textContent,'仅用于当前明确启用的合成演示服务，不是正式用户账号。');assert.equal(f.d.getElementById('service-preview-label').textContent,'HTTPS连接 · 合成预览');assert.equal(f.d.getElementById('service-mode-label').textContent,'HTTPS预览');assert.match(f.d.getElementById('service-preview-notice').textContent,/合成账号/);assert.match(f.d.getElementById('service-preview-notice').textContent,/正式商用服务尚未完成/);assert.match(f.d.getElementById('identity-methods-message').textContent,/合成演示账号/);assert.equal(ledgerLegacyFormCount(f.d),22);assert.equal(ledgerLegacySecretCount(f.d),27);
   assert.equal(f.window.require,undefined);assert.equal(f.window.process,undefined);assert.equal(f.d.documentElement.outerHTML.includes(PROFILE.serverId),false);assert.equal(f.calls.some(call=>call.args.some(arg=>JSON.stringify(arg)?.includes(PROFILE.apiBase))),false);
   f.d.querySelector('meta[name="shenyi-team-service-origin"]').content='https://changed.invalid';f.d.getElementById('login-mode').dispatchEvent(new f.window.Event('change'));assert.match(f.d.getElementById('login-form-caption').textContent,/team\.example\.invalid:9443/);
+});
+
+test('desktop capability validation requires phone and disallows demo for managed service',async()=>{
+  const methods={demoUsername:false,phonePassword:true,phoneVerification:false,wechat:false,recovery:false};
+  let response={mode:'managed-service',methods};
+  const client=createTeamClient({fetchImpl:async url=>{
+    assert.equal(url,config.API_BASE+'/api/auth/methods');
+    return Response.json(response);
+  }});
+  assert.deepEqual(await client.getAuthMethods(),{mode:'managed-service',methods,desktopWechatReady:false});
+  for(const invalid of [{...methods,demoUsername:true},{...methods,phonePassword:false},{...methods,wechat:'false'}]){
+    response={mode:'managed-service',methods:invalid};
+    await assert.rejects(client.getAuthMethods(),{code:'INVALID_RESPONSE'});
+  }
+  response={mode:'local-preview',methods:{...methods,demoUsername:true,phonePassword:false}};
+  assert.deepEqual((await client.getAuthMethods()).methods,response.methods);
+});
+
+test('managed HTTPS login hides demo before and after discovery and uses only the phone path',async t=>{
+  const filename=await remoteFile(t),main=await start(t,{env:{SHENYI_TEAM_SERVICE_CONFIG:filename}});
+  const html=await(await main.handler({url:'shenyi://app/index.html',method:'GET'})).text();
+  let deliverDiscovery;
+  const discovery=new Promise(resolve=>{deliverDiscovery=resolve;});
+  const methods={demoUsername:false,phonePassword:true,phoneVerification:false,wechat:false,recovery:false};
+  let next=discovery;
+  const f=renderer(t,html,{
+    getAuthMethods:async()=>next,
+    login:async()=>assert.fail('managed renderer dispatched demo login'),
+    loginPhone:async()=>({ok:false,error:{code:'INVALID_CREDENTIALS',message:'请核对手机号和密码。'}})
+  });
+  const element=id=>f.d.getElementById(id);
+  const demo=element('service-demo-help-title').closest('details');
+  const demoOption=element('login-mode').querySelector('option[value="demo"]');
+  const submit=()=>element('login-form').dispatchEvent(new f.window.Event('submit',{bubbles:true,cancelable:true}));
+  assert.ok(demo.hidden&&demoOption.hidden&&element('login-submit').disabled);
+  submit();
+  assert.equal(f.calls.some(call=>['login','loginPhone'].includes(call.name)),false);
+  deliverDiscovery(ok({mode:'managed-service',methods,desktopWechatReady:false}));
+  await until(()=>!element('login-submit').disabled);
+  assert.equal(element('login-mode').value,'phone');
+  assert.equal(f.d.querySelector('label[for="username"]').textContent,'手机号');
+  assert.equal(element('username').inputMode,'tel');
+  assert.equal(element('service-preview-label').textContent,'受信 HTTPS 团队服务');
+  assert.ok(demo.hidden&&demoOption.hidden&&demoOption.disabled);
+  assert.ok(element('wechat-login').disabled&&element('send-bind-code').disabled);
+  assert.match(element('service-preview-notice').textContent,/合成验收.*请勿导入真实客户资料/);
+  element('login-mode').value='demo';
+  element('username').value='13800000000';
+  element('password').value='Synthetic-only-secret!';
+  submit();
+  await until(()=>element('login-message').textContent==='请核对手机号和密码。');
+  assert.deepEqual({...f.calls.find(call=>call.name==='loginPhone').args[0]},{phone:'13800000000',password:'Synthetic-only-secret!'});
+  assert.equal(f.calls.some(call=>call.name==='login'),false);
+  assert.equal(element('password').value,'');
+  next=ok({mode:'local-preview',methods:{...methods,demoUsername:true},desktopWechatReady:false});
+  element('recovery-panel').open=true;
+  await until(()=>element('identity-methods-message').textContent.includes('暂不可读取'));
+  assert.ok(demo.hidden&&demoOption.hidden&&element('login-submit').disabled);
+  assert.equal(element('login-mode').value,'phone');
 });
 
 test('static and malformed presentation metadata retain local preview without creating a service authority',async t=>{

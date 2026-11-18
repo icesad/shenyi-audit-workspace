@@ -513,7 +513,10 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     async getAuthMethods() {
       const data = await request('/api/auth/methods', {authenticated:false});
       const keys=['demoUsername','phonePassword','phoneVerification','wechat','recovery'];
-      if(data?.mode!=='local-preview'||!data.methods||!keys.every(key=>typeof data.methods[key]==='boolean')) throw failure('INVALID_RESPONSE','身份服务状态格式无效。');
+      if(!['local-preview','managed-service'].includes(data?.mode)||!data.methods||!keys.every(key=>typeof data.methods[key]==='boolean')||
+        (data.mode==='managed-service'&&(data.methods.demoUsername||!data.methods.phonePassword))){
+        throw failure('INVALID_RESPONSE','身份服务状态格式无效。');
+      }
       return {mode:data.mode,methods:Object.fromEntries(keys.map(key=>[key,data.methods[key]])),desktopWechatReady:wechat.configured};
     },
     startWechatLogin:()=>wechat.start(),

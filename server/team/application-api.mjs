@@ -40,7 +40,7 @@ import {billingSimulationConfiguration} from './billing-simulation.mjs';
 import {handleBillingRequest,handleBillingSimulationNotification,SIMULATION_NOTIFICATION_PATH,SIMULATION_PAYMENT_EXCEPTION_PATH,SIMULATION_ORDER_CLOSURE_PATH} from './billing-api.mjs';
 import {handleBillingRefundIntakeRequest} from './billing-refund-intake-api.mjs';
 
-/** Local M2 application boundary. No fake registration/phone verification. */
+/** Team application boundary shared by the local preview and managed service. */
 export async function handleTeamApplicationRequest(request, options = {}) {
   // Read existing metadata before dispatch, never initialize identity here.
   // Even early errors share this public identity boundary in strict mode.
@@ -55,9 +55,13 @@ export async function handleTeamApplicationRequest(request, options = {}) {
   // HEAD never carries a body, including metadata/origin/auth/clock errors.
   return new Response(request.method==='HEAD'?null:response.body,{status:response.status,statusText:response.statusText,headers});
 }
-async function applicationResponse(request, {db, now = Date.now,identityProviders={},subscriptionEnforcement='disabled',billingSimulation=null,seatCapacityEnforcement='disabled'} = {}) {
+async function applicationResponse(request, {db, now = Date.now,identityProviders={},subscriptionEnforcement='disabled',billingSimulation=null,seatCapacityEnforcement='disabled',serviceMode='local-preview'} = {}) {
   let releaseDeviceBody;
   try {
+    const managedService=serviceMode==='managed-service';
+    if((!managedService&&serviceMode!=='local-preview')||(managedService&&(identityProviders.deviceProofRequired!==true||billingSimulation!==null))){
+      throw new Error('Invalid team service mode configuration');
+    }
     const at = now();
     if (!Number.isSafeInteger(at) || at < 0) throw new Error('Invalid clock');
     const url=new URL(request.url),options={db,now,identityProviders,subscriptionEnforcement:subscriptionEnforcementMode(subscriptionEnforcement,identityProviders)};
@@ -74,8 +78,11 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       if(url.search)return json({error:{code:'INVALID_QUERY',message:'查询参数无效。'}},400);
       if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
       const sms=typeof identityProviders.sms?.send==='function'&&Buffer.isBuffer(identityProviders.phonePepper)&&identityProviders.phonePepper.length>=32;
-      return json({mode:'local-preview',methods:{demoUsername:true,phonePassword:true,phoneVerification:sms,wechat:isWechatConfigured(identityProviders),recovery:sms&&recoveryConfigured(identityProviders)},
+      return json({mode:serviceMode,methods:{demoUsername:!managedService,phonePassword:true,phoneVerification:sms,wechat:isWechatConfigured(identityProviders),recovery:sms&&recoveryConfigured(identityProviders)},
         ...(identityProviders.deviceProofRequired===true?{deviceBinding:{required:true,serverId:deviceServerId(db),protocolVersion:1}}:{})});
+    }
+    if(managedService&&url.pathname==='/api/auth/login'){
+      return json({error:{code:'DEMO_LOGIN_DISABLED',message:'此团队服务仅支持手机号登录。'}},403);
     }
     if([SIMULATION_NOTIFICATION_PATH,SIMULATION_PAYMENT_EXCEPTION_PATH,SIMULATION_ORDER_CLOSURE_PATH].includes(url.pathname))return await handleBillingSimulationNotification(request,options);
     const deviceAuthorization=await authorizeDeviceRequest(request,options);
