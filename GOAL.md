@@ -1,5 +1,15 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-18 最新：完整可移植单元严格门通过，订阅政策已确认
+
+`codex/m4-portable-regression`从`5e2e4d1`执行原固定Node24 `scripts/test.mjs --unit --strict`单轮，281完整文件全部5005/5005，0fail／skip／cancel／todo、exit0，2475.797秒。1155运行／测试源门前／门后／current同；原runner、旧测试、工作因子和product无改。独立复核原TAP各层plan／总footer、原进程终态与源绑定，不重跑全量或叠加历史计数。63浏览器整文件按原规则排除，本结果不代表完整browser／原生／生产验收。
+
+即时1155源映射只覆盖279／281所选测试；另外2份quota测试遗漏已披露，以更早独立rawSHA＋Git基点／当前逐byte核同，另有开跑后11秒325项哈希旁证；不补造原1157即时before。见`source-binding-supplement.json`，后续采集须先断言选择集合完备。
+
+用户已确认席位只计启用业务成员、纯技术admin不占席、兼任只一席；到期暂停新增／修改，已授权历史按原权查阅／导出，保留主动续费。[订阅决策](docs/SUBSCRIPTION_SEAT_DECISION.md)及需求7.1已更新，M5仍planned、未实现收费；其他商业细则仍分别确认，不阻断不依赖它们的合成原型。报告原问题待答。
+
+旧预览和共享库保留，仅元数据／公开methods核同；原OS门前提未变不重试，canonical ZIP缺口及共享／一键、Mac、发行／TLS／商户／国内上线仍未通过。未push／main／一键重验／上线，M4／Goal active。证据`D:/codex-temp/shenyi-m4-portable-regression-20261118/`；以下保留历史范围。
+
 ## 2026-11-18 最新：账表快照被动数组边界修复
 
 `codex/ledger-passive-arrays`从`63d19d2`修复已记录P3：直接对象create／serialize现在拒绝自定义／null数组原型与Array子类，继承toJSON／getter不得执行；仅1个判断变化，不改格式、算法、限额、权限或正常输入／映射SHA。正常JSON／IndexedDB利用可达性仍未证，不称远程高危。
