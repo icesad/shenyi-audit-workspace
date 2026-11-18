@@ -14,6 +14,7 @@ export function ensureDeviceServerId(db){
   for(const table of ['team_ledger_check_grants','team_ledger_check_events','team_ledger_check_heads','team_ledger_check_snapshots'])if(db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get())throw Error('Device history has no server identity');
   for(const table of ['team_workpaper_access_grants','team_workpaper_access_events'])if(db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get())throw Error('Device history has no server identity');
   for(const table of ['team_workpaper_data_heads','team_workpaper_data_versions','team_workpaper_data_originals','team_workpaper_data_imports','team_workpaper_data_chunks'])if(db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get())throw Error('Device history has no server identity');
+  for(const table of ['team_billing_refund_intake_reviewers','team_billing_refund_intake_events'])if(db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get())throw Error('Device history has no server identity');
   const value=randomUUID();db.prepare('INSERT INTO team_database_metadata(name,value) VALUES (?,?) ON CONFLICT(name) DO NOTHING').run(DEVICE_SERVER_METADATA,value);
   return deviceServerId(db);
 }

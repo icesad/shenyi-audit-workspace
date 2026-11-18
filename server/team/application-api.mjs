@@ -38,6 +38,7 @@ import {subscriptionEnforcementMode} from './subscription-configuration.mjs';
 import {seatCapacityMode} from './seat-capacity-policy.mjs';
 import {billingSimulationConfiguration} from './billing-simulation.mjs';
 import {handleBillingRequest,handleBillingSimulationNotification,SIMULATION_NOTIFICATION_PATH,SIMULATION_PAYMENT_EXCEPTION_PATH} from './billing-api.mjs';
+import {handleBillingRefundIntakeRequest} from './billing-refund-intake-api.mjs';
 
 /** Local M2 application boundary. No fake registration/phone verification. */
 export async function handleTeamApplicationRequest(request, options = {}) {
@@ -80,7 +81,8 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
     const deviceAuthorization=await authorizeDeviceRequest(request,options);
     releaseDeviceBody=deviceAuthorization.release;
     request=deviceAuthorization.request;options.deviceContext=deviceAuthorization.context;
-    return await handleBillingRequest(request,options)
+    return await handleBillingRefundIntakeRequest(request,options)
+      || await handleBillingRequest(request,options)
       || await handleSubscriptionRequest(request,options)
       || await handleMyDeviceRequest(request,options)
       || await handleDeviceReplacementRequest(request,options)

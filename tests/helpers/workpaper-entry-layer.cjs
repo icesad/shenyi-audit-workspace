@@ -8,6 +8,9 @@ const BILLING_RPC=Object.freeze([
  ['createBillingOrder','billing-order-create'],['reconcileBillingOrder','billing-order-reconcile']
 ]);
 const BILLING_BATCH_RPC=Object.freeze([['reconcileBillingPage','billing-page-reconcile']]);
+const REFUND_INTAKE_RPC=Object.freeze([['getRefundIntakeAccess','refund-intake-access'],['getRefundIntake','refund-intake-read'],
+ ['recordRefundIntake','refund-intake-record']]);
+const added=[...RPC,...BILLING_RPC,...BILLING_BATCH_RPC,...REFUND_INTAKE_RPC];
 const digest=names=>createHash('sha256').update(names.join('\n')).digest('hex');
 function oldNames(names,suffix,baseline,{allowHistorical=false}={}){
  assert.equal(names.length,allowHistorical&&names.length===135?135:135+suffix.length);
@@ -15,9 +18,9 @@ function oldNames(names,suffix,baseline,{allowHistorical=false}={}){
  assert.deepEqual(names.slice(135),names.length===135?[]:suffix);
  return names.slice(0,135);
 }
-function workpaperOldApiNames(api,options){return oldNames(Object.keys(api),[...RPC,...BILLING_RPC,...BILLING_BATCH_RPC].map(x=>x[0]),'bf32a639b6956ae133c8879f774d2fe40c9ffcf5a30216c7b56c0c75c01a5fd9',options);}
+function workpaperOldApiNames(api,options){return oldNames(Object.keys(api),added.map(x=>x[0]),'bf32a639b6956ae133c8879f774d2fe40c9ffcf5a30216c7b56c0c75c01a5fd9',options);}
 function workpaperOldApi(api){return Object.freeze(Object.fromEntries(workpaperOldApiNames(api).map(name=>[name,api[name]])));}
-function workpaperOldChannelNames(handlers,options){return oldNames([...handlers.keys()],[...RPC,...BILLING_RPC,...BILLING_BATCH_RPC].map(x=>'shenyi:'+x[1]),'5ea6cae22b7b5ef71d3c844dd3851a20a1638fccbca566d42bc91c71300eff38',options);}
+function workpaperOldChannelNames(handlers,options){return oldNames([...handlers.keys()],added.map(x=>'shenyi:'+x[1]),'5ea6cae22b7b5ef71d3c844dd3851a20a1638fccbca566d42bc91c71300eff38',options);}
 function workpaperDomLayer(doc,{allowAbsent=false}={}){
  const assets=['workpaper-sheets.js','workpaper-original-sheet.js','workpaper-original-word.js','workpapers.js'];
  const signatures=doc.querySelectorAll('[id^="workpaper-"],script[src^="workpaper"],link[href="workpapers.css"]');
@@ -34,4 +37,16 @@ function workpaperDomLayer(doc,{allowAbsent=false}={}){
  assert.equal(doc.querySelectorAll('link[rel=stylesheet][href="workpapers.css"]').length,1);
  return {forms:2,passwords:2};
 }
-module.exports={RPC,BILLING_RPC,BILLING_BATCH_RPC,workpaperOldApiNames,workpaperOldApi,workpaperOldChannelNames,workpaperDomLayer};
+function refundIntakeDomLayer(doc,{allowAbsent=false}={}){
+ const required=doc.querySelectorAll('[id^="refund-intake-"],script[src="refund-intake.js"]');
+ if(allowAbsent&&!required.length)return 0;
+ const panel=doc.getElementById('refund-intake-panel');assert.ok(panel);
+ assert.equal(doc.querySelectorAll('script[src="refund-intake.js"]').length,1);
+ assert.equal(new Set([...doc.querySelectorAll('[id^="refund-intake-"]')].map(node=>node.id)).size,required.length-1);
+ const passwords=[...panel.querySelectorAll('input[type=password]')];
+ assert.deepEqual(passwords.map(node=>node.id),['refund-intake-password']);
+ assert.equal(passwords[0].autocomplete,'current-password');assert.equal(passwords[0].maxLength,512);
+ assert.equal(panel.querySelectorAll('form').length,0);
+ return 1;
+}
+module.exports={RPC,BILLING_RPC,BILLING_BATCH_RPC,REFUND_INTAKE_RPC,workpaperOldApiNames,workpaperOldApi,workpaperOldChannelNames,workpaperDomLayer,refundIntakeDomLayer};

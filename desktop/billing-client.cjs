@@ -5,6 +5,11 @@ const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const BILLING_ROOT='/api/auth/billing/access';
 const BILLING_PATH=/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/billing\/(?:overview|reconciliation|(?:orders|seat-orders)(?:\?limit=20(?:&after=([0-9a-f-]{36}))?|\/([0-9a-f-]{36})\/reconcile)?)$/;
+const REFUND_ACCESS='/api/auth/refund-intake/access';
+const REFUND_PATH=/^\/api\/platform\/billing\/refund-intakes\/(?:annual|seat)\/([0-9a-f-]{36})(?:\?beforeRevision=([1-9][0-9]{0,15}))?$/;
+const REFUND_REFERENCE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+const INTAKE_REASONS=new Set(['duplicate-payment','purchase-change','service-issue','other']);
+const FOLLOW_UP_REASONS=new Set(['payment-checked','details-requested','customer-contacted','other']);
 const PAGE_SIZE=20;
 const RECONCILIATION_PAGE_SIZE=8;
 const MAX_BILLING_BYTES=128*1024;
@@ -17,6 +22,7 @@ const OFFER_KEYS=['id','revision','product','amountMinor','currency'];
 const ORDER_KEYS=['id','teamId','actorId','requestId','merchantId','offer','simulation','createdAt','status','confirmedAt'];
 const BILLING_ERRORS=Object.freeze({
   402:{SUBSCRIPTION_WRITE_UNAVAILABLE:'当前订阅期限不支持增购席位。'},
+  403:{VERIFICATION_FAILED:'当前密码未通过核验，请重新输入。'},
   409:{
     BILLING_OFFER_CHANGED:'模拟账务方案已改变，请刷新后重新核对。',
     BILLING_RENEWAL_SEATS_RECONCILIATION_REQUIRED:'模拟续费席位无法确认，请核对已使用席位、预留邀请及待处理订单。',
@@ -25,6 +31,8 @@ const BILLING_ERRORS=Object.freeze({
     SEAT_ORDER_RECONCILIATION_REQUIRED:'模拟收款已记录，当前报价或期限需核对后处理席位。',
     SEAT_CAPACITY_EXHAUSTED:'可用席位不足，请核对已使用席位和预留邀请。',
     SEAT_CAPACITY_CHANGED:'席位状态已改变，请刷新后核对。',
+    BILLING_REFUND_INTAKE_CONFLICT:'退款受理记录已更新，请重新核对原订单。',
+    BILLING_REFUND_INTAKE_PAYMENT_REQUIRED:'原订单尚未确认收款，请重新核对原订单。',
   },
   503:{BILLING_UNAVAILABLE:'模拟账务暂不可用，请稍后核对。'},
 });
@@ -36,8 +44,10 @@ const boolean=value=>typeof value==='boolean';
 const teamName=value=>typeof value==='string'&&value.length<=160&&value.isWellFormed()&&value===value.trim()&&!!value&&[...value].length<=80&&!/[\p{Cc}\p{Cf}]/u.test(value);
 
 function isBillingRoute(route){
-  if(route===BILLING_ROOT)return true;
+  if(route===BILLING_ROOT||route===REFUND_ACCESS)return true;
   if(typeof route!=='string')return false;
+  const refund=REFUND_PATH.exec(route);
+  if(refund)return refund[0]===route&&match(UUID,refund[1])&&(!refund[2]||integer(Number(refund[2]),1));
   const parts=BILLING_PATH.exec(route);
   return parts!==null&&parts[0]===route&&(!parts[1]||match(UUID,parts[1]))&&(!parts[2]||match(UUID,parts[2]));
 }
@@ -192,12 +202,40 @@ function reconciliationPageView(value,{teamId,kind,after},reject){
   return {results,nextCursor};
 }
 
+function refundIntakeView(value,{kind,orderId,beforeRevision},reject){
+  const result=fields(value,['order','revision','entries','nextBeforeRevision'],reject);
+  const order=fields(result.order,['id','kind','teamId','teamName','amountMinor','currency','status','confirmedAt','paymentException'],reject);
+  if(order.id!==orderId||order.kind!==kind||!match(ID,order.teamId)||!teamName(order.teamName)||
+    !integer(order.amountMinor,1)||order.currency!=='CNY'||!ORDER_STATES.has(order.status)||
+    (order.status==='pending'?order.confirmedAt!==null:!timestamp(order.confirmedAt))||!boolean(order.paymentException))reject();
+  const {revision,nextBeforeRevision}=result;
+  if(!integer(revision)||order.confirmedAt===null&&revision!==0)reject();
+  const newest=beforeRevision===undefined?revision:Math.min(revision,beforeRevision-1);
+  const entries=array(result.entries,PAGE_SIZE,reject);
+  if(entries.length!==Math.min(newest,PAGE_SIZE)||nextBeforeRevision!==(newest>PAGE_SIZE?newest-PAGE_SIZE+1:null))reject();
+  return {
+    order,revision,nextBeforeRevision,
+    entries:entries.map((value,index)=>{
+      const entry=fields(value,['revision','kind','reason','reference','recordedAt','recordedBy'],reject);
+      const expected=newest-index,first=expected===1,reasons=first?INTAKE_REASONS:FOLLOW_UP_REASONS;
+      if(entry.revision!==expected||entry.kind!==(first?'intake':'follow-up')||!reasons.has(entry.reason)||
+        entry.reference!==null&&!match(REFUND_REFERENCE,entry.reference)||!timestamp(entry.recordedAt)||
+        entry.recordedAt<order.confirmedAt||!match(ID,entry.recordedBy))reject();
+      return entry;
+    }),
+  };
+}
+
 function createBillingClient({request,failure}){
   const badInput=()=>{throw failure('INVALID_INPUT','模拟账务操作参数无效。');};
   const badResponse=()=>{throw failure('INVALID_RESPONSE','模拟账务响应无法确认，请按原操作核对。');};
   const scoped=(teamId,kind)=>{
     if(!match(ID,teamId)||kind!==undefined&&kind!=='annual'&&kind!=='seat')badInput();
     return '/api/teams/'+teamId+'/billing/'+(kind===undefined?'overview':kind==='annual'?'orders':'seat-orders');
+  };
+  const refundRoute=({kind,orderId})=>{
+    if((kind!=='annual'&&kind!=='seat')||!match(UUID,orderId))badInput();
+    return '/api/platform/billing/refund-intakes/'+kind+'/'+orderId;
   };
   const orderResponse=(data,scope)=>{
     const response=fields(data,['simulation','order'],badResponse);
@@ -260,6 +298,32 @@ function createBillingClient({request,failure}){
       const body=after===undefined?{kind}:{kind,after};
       const route='/api/teams/'+teamId+'/billing/reconciliation';
       return reconciliationPageView(await request(route,{method:'POST',body}),scope,badResponse);
+    },
+    async getRefundIntakeAccess(input){
+      if(input!==undefined)badInput();
+      const value=fields(await request(REFUND_ACCESS),['canReview'],badResponse);
+      if(!boolean(value.canReview))badResponse();
+      return value;
+    },
+    async getRefundIntake(input){
+      const scope=fields(input,['kind','orderId'],badInput,['beforeRevision']);
+      if(Object.hasOwn(scope,'beforeRevision')&&!integer(scope.beforeRevision,1))badInput();
+      const route=refundRoute(scope)+(scope.beforeRevision===undefined?'':'?beforeRevision='+scope.beforeRevision);
+      return refundIntakeView(await request(route),scope,badResponse);
+    },
+    async recordRefundIntake(input){
+      const selection=fields(input,['kind','orderId','requestId','expectedRevision','reason','currentPassword'],badInput,['reference']);
+      const {kind,orderId,requestId,expectedRevision,reason,reference,currentPassword}=selection;
+      const route=refundRoute(selection),reasons=expectedRevision===0?INTAKE_REASONS:FOLLOW_UP_REASONS;
+      if(!match(UUID,requestId)||!integer(expectedRevision,0,Number.MAX_SAFE_INTEGER-1)||!reasons.has(reason)||
+        Object.hasOwn(selection,'reference')&&!match(REFUND_REFERENCE,reference)||
+        typeof currentPassword!=='string'||!currentPassword||Buffer.byteLength(currentPassword)>512)badInput();
+      const body={requestId,expectedRevision,reason,...(reference===undefined?{}:{reference}),currentPassword};
+      const data=refundIntakeView(await request(route,{method:'POST',body}),{kind,orderId},badResponse);
+      if(data.revision<=expectedRevision||data.order.confirmedAt===null)badResponse();
+      const saved=data.entries.find(entry=>entry.revision===expectedRevision+1);
+      if(saved&&(saved.reason!==reason||saved.reference!==(reference??null)))badResponse();
+      return data;
     },
   };
 }

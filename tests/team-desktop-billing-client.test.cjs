@@ -7,7 +7,7 @@ const {test}=require('node:test');
 const {APP_URL,registerDesktopBridge}=require('../desktop/bridge.cjs');
 const {createBillingClient,isBillingRoute,billingErrorMessage}=require('../desktop/billing-client.cjs');
 const {ClientError,createTeamClient}=require('../desktop/team-client.cjs');
-const {BILLING_RPC,BILLING_BATCH_RPC,workpaperOldApiNames,workpaperOldChannelNames}=require('./helpers/workpaper-entry-layer.cjs');
+const {BILLING_RPC,BILLING_BATCH_RPC,REFUND_INTAKE_RPC,workpaperOldApiNames,workpaperOldChannelNames}=require('./helpers/workpaper-entry-layer.cjs');
 
 const TEAM='team-a',CREATED=100,CONFIRMED=200,RENEWAL_START=1000,END=2000;
 const ID='01000000-0000-4000-8000-000000000000';
@@ -235,7 +235,7 @@ test('billing preload actions and guarded bridge channels are exact and have no 
   }});
   try{
     assert.equal(workpaperOldApiNames(api).length,135);assert.equal(workpaperOldChannelNames(handlers).length,135);
-    const operations=[...BILLING_RPC,...BILLING_BATCH_RPC];
+    const operations=[...BILLING_RPC,...BILLING_BATCH_RPC,...REFUND_INTAKE_RPC];
     assert.deepEqual(Object.keys(api).slice(-operations.length),operations.map(([name])=>name));
     assert.deepEqual([...handlers.keys()].slice(-operations.length),operations.map(([,channel])=>'shenyi:'+channel));
     for(const [,operation] of operations){
@@ -264,9 +264,61 @@ test('billing signed transport requires login and only forwards locally fixed er
   const client=createTeamClient({fetchImpl:async()=>{count++;throw Error('Unexpected transport');}});
   await assert.rejects(client.getBillingAccess(),{code:'SIGN_IN_REQUIRED'});
   await assert.rejects(client.reconcileBillingPage({teamId:TEAM,kind:'annual'}),{code:'SIGN_IN_REQUIRED'});
+  await assert.rejects(client.getRefundIntakeAccess(),{code:'SIGN_IN_REQUIRED'});
+  await assert.rejects(client.getRefundIntake({kind:'annual',orderId:ID}),{code:'SIGN_IN_REQUIRED'});
   assert.equal(count,0);
   assert.equal(billingErrorMessage(409,'BILLING_CONFLICT'),'模拟订单或收款状态需要核对，请保留原订单。');
   assert.equal(billingErrorMessage(403,'BILLING_CONFLICT'),undefined);
   assert.equal(billingErrorMessage(409,'toString'),undefined);
   assert.equal(billingErrorMessage(409,'arbitrary gateway error'),undefined);
+});
+
+const INTAKE_ROUTE='/api/platform/billing/refund-intakes/annual/'+ID;
+const INTAKE_SELECTION={kind:'annual',orderId:ID,requestId:REQUEST,expectedRevision:0,reason:'duplicate-payment',
+  reference:'case-23.A',currentPassword:'synthetic-current-password'};
+const INTAKE_ORDER={id:ID,kind:'annual',teamId:TEAM,teamName:'合成团队甲',amountMinor:9000,
+  currency:'CNY',status:'paid',confirmedAt:CONFIRMED,paymentException:true};
+const INTAKE_ENTRY={revision:1,kind:'intake',reason:'duplicate-payment',reference:'case-23.A',recordedAt:CONFIRMED+1,recordedBy:'owner-demo'};
+const INTAKE_RESULT={order:INTAKE_ORDER,revision:1,entries:[INTAKE_ENTRY],nextBeforeRevision:null};
+
+test('refund intake transport uses exact held-device routes and returns only the bounded order and event fields',async()=>{
+ const {client,calls,responses}=fixture();
+ responses.push({canReview:true},{...INTAKE_RESULT,revision:0,entries:[]},INTAKE_RESULT,INTAKE_RESULT);
+ assert.deepEqual(await client.getRefundIntakeAccess(),{canReview:true});
+ assert.deepEqual(await client.getRefundIntake({kind:'annual',orderId:ID}),{...INTAKE_RESULT,revision:0,entries:[]});
+ assert.deepEqual(await client.getRefundIntake({kind:'annual',orderId:ID,beforeRevision:2}),INTAKE_RESULT);
+ assert.deepEqual(await client.recordRefundIntake(INTAKE_SELECTION),INTAKE_RESULT);
+ assert.deepEqual(calls,[
+  {route:'/api/auth/refund-intake/access',options:undefined},
+  {route:INTAKE_ROUTE,options:undefined},
+  {route:INTAKE_ROUTE+'?beforeRevision=2',options:undefined},
+  {route:INTAKE_ROUTE,options:{method:'POST',body:{requestId:REQUEST,expectedRevision:0,
+   reason:'duplicate-payment',reference:'case-23.A',currentPassword:INTAKE_SELECTION.currentPassword}}},
+ ]);
+ assert.ok(!JSON.stringify(INTAKE_RESULT).includes('synthetic-current-password'));
+ for(const route of ['/api/auth/refund-intake/access?other=1',INTAKE_ROUTE+'?beforeRevision=01',
+  INTAKE_ROUTE+'?beforeRevision=9007199254740992',INTAKE_ROUTE+'?beforeRevision=2&more=true',
+  INTAKE_ROUTE+'/payments',INTAKE_ROUTE+'\n',INTAKE_ROUTE.replace('annual','all')])assert.equal(isBillingRoute(route),false,route);
+});
+
+test('refund intake transport rejects arbitrary order, refund amount, bad reason and private response fields',async()=>{
+ const {client,calls,responses}=fixture();
+ for(const selection of [
+  {...INTAKE_SELECTION,kind:'other'}, {...INTAKE_SELECTION,orderId:'team-a'}, {...INTAKE_SELECTION,amountMinor:10},
+  {...INTAKE_SELECTION,reason:'customer-contacted'}, {...INTAKE_SELECTION,reference:'contains spaces'},
+  {...INTAKE_SELECTION,reference:'x\n'}, {...INTAKE_SELECTION,currentPassword:''},
+  {...INTAKE_SELECTION,currentPassword:'核'.repeat(180)}, {...INTAKE_SELECTION,expectedRevision:1},
+ ])await assert.rejects(client.recordRefundIntake(selection),{code:'INVALID_INPUT'});
+ assert.equal(calls.length,0);
+ for(const value of [
+  {...INTAKE_RESULT,order:{...INTAKE_ORDER,teamId:'other',secret:'token'}},
+  {...INTAKE_RESULT,order:{...INTAKE_ORDER,id:REQUEST}},
+  {...INTAKE_RESULT,entries:[{...INTAKE_ENTRY,privateNote:'internal'}]}, {...INTAKE_RESULT,entries:[{...INTAKE_ENTRY,recordedAt:CREATED}]},
+  {...INTAKE_RESULT,nextBeforeRevision:1}, {...INTAKE_RESULT,revision:2}, {...INTAKE_RESULT,currentPassword:'leak'},
+ ]) {
+  responses.push(value);
+  await assert.rejects(client.getRefundIntake({kind:'annual',orderId:ID}),{code:'INVALID_RESPONSE'});
+ }
+ responses.push({...INTAKE_RESULT,entries:[{...INTAKE_ENTRY,reason:'other'}]});
+ await assert.rejects(client.recordRefundIntake(INTAKE_SELECTION),{code:'INVALID_RESPONSE'});
 });

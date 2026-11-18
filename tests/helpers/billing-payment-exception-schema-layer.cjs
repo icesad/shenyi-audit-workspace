@@ -2,6 +2,8 @@
 
 const assert=require('node:assert/strict');
 const {createHash}=require('node:crypto');
+const {withoutEmptyRefundIntakeDefinitions,withoutEmptyRefundIntakeLayer,peelRefundIntakeSchema,
+  assertRefundIntakeSchemaRestored}=require('./billing-refund-intake-schema-layer.cjs');
 
 const TABLE='team_billing_payment_exceptions';
 const DDL_SHA='98142fd98f9b700ad61a984fffc045eaef182b95fb9f3d3b2f9ac61d4f1ad719';
@@ -41,11 +43,12 @@ function paymentExceptionSchemaLayer(db,options){
 
 function withoutEmptyPaymentExceptionDefinitions(db,rows){
   const names=new Set(assertPaymentExceptionSchema(db,{allowAbsent:true}).map(row=>row.name));
-  return rows.filter(row=>!names.has(row.name));
+  return withoutEmptyRefundIntakeDefinitions(db,rows).filter(row=>!names.has(row.name));
 }
 
 function withoutEmptyPaymentExceptionLayer(db,state){
   const names=new Set(assertPaymentExceptionSchema(db,{allowAbsent:true}).map(row=>row.name));
+  state=withoutEmptyRefundIntakeLayer(db,state);
   if(!names.size)return state;
   const withoutLayer=rows=>rows.filter(row=>!names.has(typeof row==='string'?row:row.name));
   return {...state,...(state.definitions?{definitions:withoutLayer(state.definitions)}:{}),
@@ -54,13 +57,15 @@ function withoutEmptyPaymentExceptionLayer(db,state){
 
 function peelPaymentExceptionSchema(db){
   const definitions=assertPaymentExceptionSchema(db);
+  const refundIntake=peelRefundIntakeSchema(db);
   db.exec('DROP TABLE main.team_billing_payment_exceptions');
   assert.deepEqual(paymentExceptionDefinitions(db),[]);
-  return {definitions,tables:[TABLE]};
+  return {definitions,tables:[TABLE,...refundIntake.tables],refundIntake};
 }
 
 function assertPaymentExceptionSchemaRestored(db,layer){
   assert.deepEqual(assertPaymentExceptionSchema(db),layer.definitions);
+  assertRefundIntakeSchemaRestored(db,layer.refundIntake);
 }
 
 module.exports={TABLE,paymentExceptionDefinitions,assertPaymentExceptionSchema,paymentExceptionSchemaLayer,

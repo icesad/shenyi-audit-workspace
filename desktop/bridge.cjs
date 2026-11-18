@@ -299,6 +299,9 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('billing-order-create',arg=>client.createBillingOrder(arg));
   handle('billing-order-reconcile',arg=>client.reconcileBillingOrder(arg));
   handle('billing-page-reconcile',arg=>client.reconcileBillingPage(arg));
+  handle('refund-intake-access',arg=>client.getRefundIntakeAccess(arg));
+  handle('refund-intake-read',arg=>client.getRefundIntake(arg));
+  handle('refund-intake-record',arg=>client.recordRefundIntake(arg));
   return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',clearRendererResources);workpaperBridge?.dispose();ledgerCheckBridge?.dispose();materialPreview?.dispose();submissionPreview?.dispose();materialMaintenance?.dispose();workspaceCreation?.dispose();workspaceFormalization?.dispose();materialPreservationExport?.dispose();workspaceSourceExport?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
 }
 module.exports={APP_URL,registerDesktopBridge,readChosenFile,safeDownloadName};

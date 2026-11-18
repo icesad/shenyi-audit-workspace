@@ -2,6 +2,7 @@
 const {test,after}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),fsp=require('node:fs/promises'),path=require('node:path'),vm=require('node:vm'),{EventEmitter}=require('node:events'),{randomUUID,createHash}=require('node:crypto');
 const {registerDesktopBridge,APP_URL}=require('../desktop/bridge.cjs'),{ClientError}=require('../desktop/team-client.cjs'),{createWorkpaperBridge}=require('../desktop/workpaper-bridge.cjs'),{createWorkpaperExporter}=require('../desktop/workpaper-export.cjs');
 const {fixture,PASSWORD,restorePasswordWork}=require('./helpers/workpaper-desktop-root-fixture.cjs');
+const {workpaperOldApiNames,workpaperOldChannelNames}=require('./helpers/workpaper-entry-layer.cjs');
 after(restorePasswordWork);
 const RPC=[['openWorkpaperView','workpaper-view-open'],['closeWorkpaperView','workpaper-view-close'],['listWorkpaperProjects','workpaper-projects'],['getWorkpaperAccess','workpaper-access'],['listWorkpaperMembers','workpaper-members'],['changeWorkpaperAccess','workpaper-access-change'],['getWorkpaperData','workpaper-data'],['listWorkpaperVersions','workpaper-versions'],['getWorkpaperRecord','workpaper-record'],['getWorkpaperForm','workpaper-form'],['saveWorkpaperEntries','workpaper-entries-save'],['getWorkpaperReceipt','workpaper-receipt'],['chooseWorkpaperSource','workpaper-source-open'],['confirmWorkpaperImport','workpaper-source-confirm'],['resumeWorkpaperImport','workpaper-source-resume'],['queryWorkpaperImport','workpaper-import-query'],['cancelWorkpaperSourceImport','workpaper-import-cancel'],['discardWorkpaperSource','workpaper-source-discard'],['exportWorkpapers','workpaper-export'],['cancelWorkpaperExport','workpaper-export-cancel']];
 const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
@@ -13,10 +14,10 @@ function safeDTO(value){const text=JSON.stringify(value);assert.doesNotMatch(tex
 
 test('exactly twenty typed workpaper RPCs follow the byte-stable original135 protocol',async()=>{
  let api;const calls=[];vm.runInNewContext(fs.readFileSync('desktop/preload.cjs','utf8'),{require:()=>({contextBridge:{exposeInMainWorld:(_n,v)=>{api=v;}},ipcRenderer:{invoke:(channel,input)=>calls.push({channel,input})}})});
- assert.equal(Object.isFrozen(api),true);assert.equal(Object.keys(api).length,155);assert.equal(hash(Object.keys(api).slice(0,135)),'d8aa1c98cbbe64ea3697bf9b5272240acdf1056514cb31743e9f1b3499e19b83');assert.deepEqual(Object.keys(api).slice(135),RPC.map(([n])=>n));
+ assert.equal(Object.isFrozen(api),true);assert.equal(hash(workpaperOldApiNames(api)),'d8aa1c98cbbe64ea3697bf9b5272240acdf1056514cb31743e9f1b3499e19b83');assert.deepEqual(Object.keys(api).slice(135,155),RPC.map(([n])=>n));
  for(const [method,channel]of RPC){const input={synthetic:true};api[method](input);assert.deepEqual(calls.at(-1),{channel:'shenyi:'+channel,input});}
  for(const forbidden of ['getWorkpaperOriginal','downloadWorkpaperExport','beginWorkpaperImport','commitWorkpaperImport','putWorkpaperImportChunk','fetch','request','readFile','guardSession','retireWorkpaperReads'])assert.equal(api[forbidden],undefined);
- const f=bridge({clearSession(){}});assert.equal(f.handlers.size,155);assert.equal(hash([...f.handlers.keys()].slice(0,135)),'99f488d4e592e2c34c996166dd6606ed90c1914ee2c7a9a0a73efc5f11907ace');assert.deepEqual([...f.handlers.keys()].slice(135),RPC.map(([,c])=>'shenyi:'+c));f.dispose();assert.equal(f.handlers.size,0);
+ const f=bridge({clearSession(){}});try{assert.equal(hash(workpaperOldChannelNames(f.handlers)),'99f488d4e592e2c34c996166dd6606ed90c1914ee2c7a9a0a73efc5f11907ace');assert.deepEqual([...f.handlers.keys()].slice(135,155),RPC.map(([,c])=>'shenyi:'+c));}finally{f.dispose();}assert.equal(f.handlers.size,0);
 });
 test('every workpaper handler rejects wrong sender, frame identity or origin before reading hostile input',async()=>{
  const f=bridge({clearSession(){}}),hostile={};let touched=0;Object.defineProperty(hostile,'viewId',{enumerable:true,get(){touched++;throw Error('must not run');}});

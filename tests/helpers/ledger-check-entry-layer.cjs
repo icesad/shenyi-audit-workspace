@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict'),{createHash}=require('node:crypto');
-const {workpaperOldApiNames,workpaperOldChannelNames,workpaperDomLayer}=require('./workpaper-entry-layer.cjs');
+const {workpaperOldApiNames,workpaperOldChannelNames,workpaperDomLayer,refundIntakeDomLayer}=require('./workpaper-entry-layer.cjs');
 const RPC=Object.freeze([
  ['openLedgerCheckView','ledger-check-view-open'],['closeLedgerCheckView','ledger-check-view-close'],['listLedgerCheckProjects','ledger-check-projects'],['getLedgerCheckAccess','ledger-check-access'],['listLedgerCheckMembers','ledger-check-members'],['changeLedgerCheckAccess','ledger-check-access-change'],['listLedgerCheckSnapshots','ledger-check-history'],['getLedgerCheckSnapshot','ledger-check-snapshot'],['getLedgerCheckImportReceipt','ledger-check-import-receipt'],['chooseLedgerCheckSource','ledger-check-source-open'],['confirmLedgerCheckImport','ledger-check-source-confirm'],['discardLedgerCheckSource','ledger-check-source-discard']
 ]);
@@ -18,7 +18,7 @@ function ledgerDomLayer(doc){
 }
 function ledgerHtmlLayer(html){const {JSDOM}=require('jsdom'),dom=new JSDOM(html);try{return ledgerDomLayer(dom.window.document);}finally{dom.window.close();}}
 function ledgerLegacyFormCount(doc){return doc.querySelectorAll('form').length-ledgerDomLayer(doc).forms-workpaperDomLayer(doc,{allowAbsent:true}).forms;}
-function ledgerLegacySecretCount(doc){return doc.querySelectorAll('input[type=password]').length-ledgerDomLayer(doc).passwords-workpaperDomLayer(doc,{allowAbsent:true}).passwords;}
+function ledgerLegacySecretCount(doc){return doc.querySelectorAll('input[type=password]').length-ledgerDomLayer(doc).passwords-workpaperDomLayer(doc,{allowAbsent:true}).passwords-refundIntakeDomLayer(doc,{allowAbsent:true});}
 function ledgerLegacyHtmlFormCount(html){const {JSDOM}=require('jsdom'),dom=new JSDOM(html);try{return ledgerLegacyFormCount(dom.window.document);}finally{dom.window.close();}}
 function ledgerLegacyHtmlSecretCount(html){const {JSDOM}=require('jsdom'),dom=new JSDOM(html);try{return ledgerLegacySecretCount(dom.window.document);}finally{dom.window.close();}}
 module.exports={RPC,ledgerOldApiNames,ledgerRpcLayer,ledgerOldChannelNames,ledgerChannelLayer,ledgerDomLayer,ledgerHtmlLayer,ledgerLegacyFormCount,ledgerLegacySecretCount,ledgerLegacyHtmlFormCount,ledgerLegacyHtmlSecretCount};

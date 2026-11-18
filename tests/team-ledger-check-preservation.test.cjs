@@ -2,15 +2,16 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),{DatabaseSync}=require('node:sqlite'),{createHash}=require('node:crypto');
 const {source}=require('./helpers/project-access-fixture.cjs');
 const {withoutEmptyWorkpaperLayer}=require('./helpers/workpaper-access-schema-layer.cjs');
+const {peelRefundIntakeSchema,assertRefundIntakeSchemaRestored}=require('./helpers/billing-refund-intake-schema-layer.cjs');
 function state(db){
  const definitions=db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all();
  const tables=definitions.filter(x=>x.type==='table').map(({name})=>{const q=db.prepare('SELECT * FROM "'+name+'" ORDER BY rowid');q.setReadBigInts(true);const rows=q.all().map(row=>Object.fromEntries(Object.entries(row).map(([k,v])=>[k,typeof v==='bigint'?['integer',v.toString()]:v instanceof Uint8Array?['blob',v.byteLength,createHash('sha256').update(v).digest('hex')]:[v===null?'null':typeof v,v]])));return{name,rows};});return withoutEmptyWorkpaperLayer(db,{definitions,tables});
 }
 test('new ledger schema adds only its four empty tables and 38 definitions; old typed data and DDL survive upgrade',async t=>{
  const {initializeTeamDatabase,seedDemoTeamData}=await source('database.mjs'),db=new DatabaseSync(':memory:');t.after(()=>db.close());initializeTeamDatabase(db);await seedDemoTeamData(db);
- const all=db.prepare("SELECT type,name FROM sqlite_schema WHERE name LIKE 'ledger_check_%'").all();for(const x of all)if(x.type==='trigger')db.exec('DROP TRIGGER "'+x.name+'"');for(const x of all)if(x.type==='index')db.exec('DROP INDEX "'+x.name+'"');
+ const refundIntake=peelRefundIntakeSchema(db),all=db.prepare("SELECT type,name FROM sqlite_schema WHERE name LIKE 'ledger_check_%'").all();for(const x of all)if(x.type==='trigger')db.exec('DROP TRIGGER "'+x.name+'"');for(const x of all)if(x.type==='index')db.exec('DROP INDEX "'+x.name+'"');
  for(const name of ['team_ledger_check_snapshots','team_ledger_check_heads','team_ledger_check_events','team_ledger_check_grants'])db.exec('DROP TABLE '+name);
- const before=state(db);assert.equal(before.tables.length,73);assert.equal(before.definitions.length,252);initializeTeamDatabase(db);const after=state(db);
+ const before=state(db);assert.equal(before.tables.length,73);assert.equal(before.definitions.length,252);initializeTeamDatabase(db);assertRefundIntakeSchemaRestored(db,refundIntake);const after=state(db);
  assert.equal(after.tables.length,77);assert.equal(after.definitions.length,290);assert.deepEqual(after.tables.filter(x=>!x.name.startsWith('team_ledger_check_')),before.tables);assert.deepEqual(after.definitions.filter(x=>!x.name.startsWith('team_ledger_check_')&&!x.name.startsWith('ledger_check_')),before.definitions);
  assert.ok(after.tables.filter(x=>x.name.startsWith('team_ledger_check_')).every(x=>x.rows.length===0));assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
  const once=state(db);initializeTeamDatabase(db);assert.deepEqual(state(db),once);

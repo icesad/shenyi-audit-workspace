@@ -21,6 +21,7 @@ const ASSETS=Object.freeze({
   '/ledger-checks.js':{file:path.join(__dirname,'team-ui/ledger-checks.js'),mime:'text/javascript; charset=utf-8'},
   '/workpapers.js':{file:path.join(__dirname,'team-ui/workpapers.js'),mime:'text/javascript; charset=utf-8'},
   '/billing.js':{file:path.join(__dirname,'team-ui/billing.js'),mime:'text/javascript; charset=utf-8'},
+  '/refund-intake.js':{file:path.join(__dirname,'team-ui/refund-intake.js'),mime:'text/javascript; charset=utf-8'},
   '/workpapers.css':{file:path.join(__dirname,'team-ui/workpapers.css'),mime:'text/css; charset=utf-8'},
   '/workpaper-sheets.js':{file:path.join(__dirname,'../dist/workpaper-sheets.js'),mime:'text/javascript; charset=utf-8'},
   '/workpaper-original-sheet.js':{file:path.join(__dirname,'../dist/workpaper-original-sheet.js'),mime:'text/javascript; charset=utf-8'},

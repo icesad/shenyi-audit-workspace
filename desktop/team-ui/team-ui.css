@@ -62,6 +62,13 @@ main{margin-left:232px;padding:0 38px;min-height:100vh;display:flex;flex-directi
 .billing-order div{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center}
 .billing-order p{margin:0;color:var(--muted);font-size:11px;line-height:1.65;overflow-wrap:anywhere}
 .billing-order .button{justify-self:start;margin-top:4px}
+.refund-intake-panel .refund-intake-lookup>div:first-child{flex:0 1 120px}
+.refund-intake-panel .refund-intake-lookup>div:nth-child(2){flex-grow:2;max-width:360px}
+.refund-intake-panel .billing-toolbar input{width:100%}
+.refund-intake-panel .refund-intake-entry>div{flex-basis:130px}
+.refund-intake-order{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--paper)}
+.refund-intake-order dt{font-size:11px;color:var(--muted)}
+.refund-intake-order dd{margin:3px 0 0;line-height:1.5;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .billing-order-state{color:var(--accent);font-size:12px}
 .billing-order-state[data-state="pending"],.billing-order-exception{color:var(--amber);font-size:12px}
 .billing-order-amount{margin-left:auto;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}

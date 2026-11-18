@@ -15,6 +15,7 @@
   <script src="workpaper-original-word.js" defer></script>
   <script src="workpapers.js" defer></script>
   <script src="billing.js" defer></script>
+  <script src="refund-intake.js" defer></script>
   <link rel="stylesheet" href="workpapers.css">
   <script src="team-ui.js" defer></script>
 </head>
@@ -146,6 +147,35 @@
             <p id="billing-orders-message" class="identity-note" role="status" aria-live="polite"></p>
             <ul id="billing-order-list" class="billing-order-list"></ul>
             <div class="billing-actions"><button id="billing-orders-previous" class="button" type="button" hidden>上一页</button><button id="billing-orders-more" class="button" type="button" hidden>下一页</button></div>
+          </section>
+        </div>
+      </details>
+      <details id="refund-intake-panel" class="identity-panel billing-panel refund-intake-panel" hidden>
+        <summary>退款受理留痕</summary>
+        <p class="billing-notice">本机合成演示。负责人可核对原订单、登记受理和跟进。</p>
+        <div class="refund-intake-lookup billing-toolbar">
+          <div><label for="refund-intake-kind">订单类型</label><select id="refund-intake-kind"><option value="annual">团队年费</option><option value="seat">增购席位</option></select></div>
+          <div><label for="refund-intake-order-id">原订单编号</label><input id="refund-intake-order-id" type="text" maxlength="36" autocomplete="off" spellcheck="false"></div>
+          <button id="refund-intake-lookup" class="button" type="button" disabled>核对原订单</button>
+        </div>
+        <p id="refund-intake-message" class="feedback" role="status" aria-live="polite"></p>
+        <div id="refund-intake-details" hidden>
+          <dl id="refund-intake-order" class="refund-intake-order" aria-label="原订单"></dl>
+          <section id="refund-intake-entry" class="billing-section" aria-labelledby="refund-intake-entry-heading">
+            <h4 id="refund-intake-entry-heading">登记受理</h4>
+            <div class="billing-toolbar refund-intake-entry">
+              <div><label for="refund-intake-reason">记录事项</label><select id="refund-intake-reason"></select></div>
+              <div><label for="refund-intake-reference">关联编号（可选）</label><input id="refund-intake-reference" type="text" maxlength="80" autocomplete="off" spellcheck="false" aria-describedby="refund-intake-reference-guide"></div>
+              <div><label for="refund-intake-password">当前账号密码</label><input id="refund-intake-password" type="password" name="current-password" autocomplete="current-password" maxlength="512"></div>
+              <button id="refund-intake-record" class="button primary" type="button" disabled>登记受理</button>
+            </div>
+            <p id="refund-intake-reference-guide" class="identity-note">关联编号可填工单号。首位用字母或数字，其余可用字母、数字、点、下划线和连字符。</p>
+          </section>
+          <section class="billing-section" aria-labelledby="refund-intake-history-heading">
+            <h4 id="refund-intake-history-heading">受理记录</h4>
+            <p id="refund-intake-empty" class="identity-note">暂无受理记录。</p>
+            <ul id="refund-intake-history" class="billing-order-list"></ul>
+            <button id="refund-intake-older" class="button" type="button" hidden>查看更早记录</button>
           </section>
         </div>
       </details>
