@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseCandidateVersion, readWindowsCandidateManifest } from './verify-windows-candidate-inventory.mjs';
 import { verifyWindowsCandidate } from './windows-candidate-signature.mjs';
+import { verifyWindowsCandidateRelease } from './windows-candidate-authenticode.mjs';
 
 const checkout = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const stateKind = 'shenyi-windows-portable-installation';
@@ -29,6 +30,9 @@ const messages = {
   ROLLBACK_UNAVAILABLE: '当前没有可回退的上一版记录。',
   INSTALL_PUBLISH_FAILED: '本次安装演练未完成，未切换活动版本。',
   INSTALL_KEY_MISMATCH: '所提供的公钥与此安装演练目录绑定的发布者不一致。',
+  INSTALL_PUBLISHER_INVALID: '发布者证书指纹须为 DER 证书的 64 位十六进制 SHA-256。',
+  INSTALL_PUBLISHER_REQUIRED: '此候选或安装目录要求提供独立配置的发布者证书指纹。',
+  INSTALL_PUBLISHER_MISMATCH: '提供的发布者证书指纹与安装目录的签名策略不符。',
   CANDIDATE_INVENTORY_INVALID: '候选文件在复制时与已核验清单不一致。',
 };
 
@@ -141,7 +145,7 @@ async function locked(input, exclusions, create, action) {
     await checkLock(context);
     return await action(context);
   } catch (error) {
-    if (Object.hasOwn(messages, error?.code) || error?.code === 'VERIFICATION_KEY_INVALID' || /^CANDIDATE_[A-Z_]+$/.test(error?.code ?? '')) throw error;
+    if (Object.hasOwn(messages, error?.code) || error?.code === 'VERIFICATION_KEY_INVALID' || /^(?:CANDIDATE|AUTHENTICODE)_[A-Z_]+$/.test(error?.code ?? '')) throw error;
     fail('INSTALL_PUBLISH_FAILED');
   } finally {
     await lock.close().catch(() => {});
@@ -168,7 +172,10 @@ function validRelease(release) {
 
 function parseState(bytes) {
   const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-  if (!exact(value, stateKeys) || !canonical(value).equals(bytes) || value.schemaVersion !== 1 || value.kind !== stateKind || !hash(value.publicKeySha256)) fail('INSTALL_STATE_INVALID');
+  const pinned = value?.schemaVersion === 2;
+  const keys = pinned ? [...stateKeys, 'publisherCertificateSha256'] : stateKeys;
+  if (!exact(value, keys) || !canonical(value).equals(bytes) || (!pinned && value.schemaVersion !== 1) ||
+      value.kind !== stateKind || !hash(value.publicKeySha256) || (pinned && !hash(value.publisherCertificateSha256))) fail('INSTALL_STATE_INVALID');
   parseCandidateVersion(value.highestVersion);
   if (value.active === null) {
     if (value.highestVersion !== '0.0.0' || value.previous !== null) fail('INSTALL_STATE_INVALID');
@@ -238,8 +245,25 @@ async function publishState(context, previous, state) {
   }
 }
 
-function verifyBundle(bundle, signature, publicKey, version) {
-  return verifyWindowsCandidate({ '--bundle': bundle, '--signature': signature, '--public-key': publicKey, '--installed-version': version });
+function publisherPin(value) {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !hash(value.toLowerCase())) fail('INSTALL_PUBLISHER_INVALID');
+  return value.toLowerCase();
+}
+
+function requirePublisher(state, publisher) {
+  if (state.publisherCertificateSha256 && !publisher) fail('INSTALL_PUBLISHER_REQUIRED');
+  if (state.publisherCertificateSha256 !== publisher) fail('INSTALL_PUBLISHER_MISMATCH');
+}
+
+async function verifyBundle(bundle, signature, publicKey, version, publisher) {
+  const options = { '--bundle': bundle, '--signature': signature, '--public-key': publicKey, '--installed-version': version };
+  if (publisher) return verifyWindowsCandidateRelease({ ...options, '--publisher-sha256': publisher });
+  const candidate = await readWindowsCandidateManifest(bundle);
+  if (candidate.manifest.schemaVersion !== 1) fail('INSTALL_PUBLISHER_REQUIRED');
+  const verified = await verifyWindowsCandidate(options);
+  if (candidate.manifestSha256 !== verified.manifestSha256) fail('CANDIDATE_INVENTORY_INVALID');
+  return verified;
 }
 
 function releaseLocation(root, id) {
@@ -260,7 +284,7 @@ async function verifyRetained(context, state, release, publicKey) {
     const names = (await fs.readdir(location.directory)).sort();
     if (names.length !== 2 || names[0] !== 'bundle' || names[1] !== signatureName) fail('INSTALL_STATE_INVALID');
   } catch { fail('INSTALL_STATE_INVALID'); }
-  requireEvidence(await verifyBundle(location.bundle, location.signature, publicKey, '0.0.0'), state, release);
+  requireEvidence(await verifyBundle(location.bundle, location.signature, publicKey, '0.0.0', state.publisherCertificateSha256), state, release);
   return location;
 }
 
@@ -323,32 +347,38 @@ async function stageRelease(context, state, candidate, verified, signature, publ
   }
   await copyPinned(path.join(candidate.directory, 'candidate-manifest.json'), path.join(location.bundle, 'candidate-manifest.json'), candidate.bytes.length, verified.manifestSha256, location.bundle);
   await copyPinned(signature, location.signature, 64, verified.signatureSha256, location.directory);
-  requireEvidence(await verifyBundle(location.bundle, location.signature, publicKey, state.highestVersion), state, release);
+  requireEvidence(await verifyBundle(location.bundle, location.signature, publicKey, state.highestVersion, state.publisherCertificateSha256), state, release);
   return { release, location };
 }
 
 function result(state, location) {
+  const publisher = state.publisherCertificateSha256;
   return Object.freeze({ version: state.active.version, highestVersion: state.highestVersion,
     previousVersion: state.previous?.version ?? null, executablePath: location.executable, manifestSha256: state.active.manifestSha256,
-    publicKeySha256: state.publicKeySha256, osSignatureVerified: false });
+    publicKeySha256: state.publicKeySha256, osSignatureVerified: !!publisher,
+    ...(publisher ? { publisherCertificateSha256: publisher } : {}) });
 }
 
-export async function applyWindowsCandidate({ root, bundle, signature, publicKey }) {
+export async function applyWindowsCandidate({ root, bundle, signature, publicKey, publisherSha256 }) {
+  const publisher = publisherPin(publisherSha256);
   const source = localPath(bundle);
   const signed = localPath(signature);
   const key = localPath(publicKey);
   return locked(root, [source, signed, key], true, async context => {
     let previous = await readInstallation(context, true);
+    if (previous) requirePublisher(previous.state, publisher);
     // Verify the supplied source before claiming an otherwise empty root.
-    const verified = await verifyBundle(source, signed, key, previous?.state.highestVersion ?? '0.0.0');
+    const verified = await verifyBundle(source, signed, key, previous?.state.highestVersion ?? '0.0.0', publisher);
     const candidate = await readWindowsCandidateManifest(source);
     if (candidate.manifestSha256 !== verified.manifestSha256 || candidate.manifest.version !== verified.version) fail('CANDIDATE_INVENTORY_INVALID');
     if (!previous) {
-      const prepared = { schemaVersion: 1, kind: stateKind, highestVersion: '0.0.0', publicKeySha256: verified.publicKeySha256, active: null, previous: null };
+      const prepared = { schemaVersion: publisher ? 2 : 1, kind: stateKind, highestVersion: '0.0.0', publicKeySha256: verified.publicKeySha256,
+        active: null, previous: null, ...(publisher ? { publisherCertificateSha256: publisher } : {}) };
       await publishState(context, null, prepared);
       previous = await readInstallation(context, false);
     }
     const state = previous.state;
+    requirePublisher(state, publisher);
     if (state.publicKeySha256 !== verified.publicKeySha256) fail('INSTALL_KEY_MISMATCH');
     if (state.active) await verifyRetained(context, state, state.active, key);
     const { release, location } = await stageRelease(context, state, candidate, verified, signed, key);
@@ -358,11 +388,13 @@ export async function applyWindowsCandidate({ root, bundle, signature, publicKey
   });
 }
 
-export async function inspectWindowsInstallation({ root, publicKey }) {
+export async function inspectWindowsInstallation({ root, publicKey, publisherSha256 }) {
+  const publisher = publisherPin(publisherSha256);
   const key = localPath(publicKey);
   return locked(root, [key], false, async context => {
     const previous = await readInstallation(context, false);
     const { state } = previous;
+    requirePublisher(state, publisher);
     if (!state.active) fail('INSTALL_STATE_INVALID');
     const location = await verifyRetained(context, state, state.active, key);
     await checkLock(context);
@@ -371,10 +403,12 @@ export async function inspectWindowsInstallation({ root, publicKey }) {
   });
 }
 
-export async function resolveWindowsLaunch({ root, publicKey }) {
+export async function resolveWindowsLaunch({ root, publicKey, publisherSha256 }) {
+  const publisher = publisherPin(publisherSha256);
   const key = localPath(publicKey);
   const context = await prepareRoot(root, [key], false);
   const previous = await readInstallation(context, false);
+  requirePublisher(previous.state, publisher);
   if (!previous.state.active) fail('INSTALL_STATE_INVALID');
   const location = await verifyRetained(context, previous.state, previous.state.active, key);
   const current = await readInstallation(context, false);
@@ -383,11 +417,13 @@ export async function resolveWindowsLaunch({ root, publicKey }) {
   return result(current.state, location);
 }
 
-export async function rollbackWindowsInstallation({ root, publicKey }) {
+export async function rollbackWindowsInstallation({ root, publicKey, publisherSha256 }) {
+  const publisher = publisherPin(publisherSha256);
   const key = localPath(publicKey);
   return locked(root, [key], false, async context => {
     const previous = await readInstallation(context, false);
     const { state } = previous;
+    requirePublisher(state, publisher);
     if (!state.previous) fail('ROLLBACK_UNAVAILABLE');
     const location = await verifyRetained(context, state, state.previous, key);
     const next = { ...state, active: state.previous, previous: null };

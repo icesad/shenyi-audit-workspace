@@ -219,6 +219,46 @@ async function installedFixture() {
   return { ...item,options,installed };
 }
 
+test('a release manifest cannot initialize an Ed25519-only installation', async () => {
+  const candidate = await fixture();
+  candidate.manifest.schemaVersion = 2;
+  candidate.manifest.releaseStatus = 'authenticode-signed-portable-candidate';
+  candidate.manifest.authenticode = { publisherCertificateSha256: 'a'.repeat(64), unsignedExecutableSha256: 'b'.repeat(64) };
+  await fs.writeFile(candidate.manifestPath, json(candidate.manifest));
+  const { signWindowsCandidate } = await import('../scripts/windows-candidate-signature.mjs');
+  const { applyWindowsCandidate } = await import('../scripts/windows-candidate-install-core.mjs');
+  await signWindowsCandidate(candidate.signOptions);
+  const root = path.join(candidate.directory, 'unclaimed-installation');
+  await assert.rejects(applyWindowsCandidate(sourceOf(candidate, { root, publicKey: candidate.publicPath })), {
+    code: 'INSTALL_PUBLISHER_REQUIRED',
+  });
+  assert.deepEqual(await fs.readdir(root), []);
+});
+
+test('installation operations reject omitted or mismatched publisher policy before reading a candidate', async () => {
+  const f = await installedFixture();
+  const { applyWindowsCandidate, inspectWindowsInstallation, resolveWindowsLaunch, rollbackWindowsInstallation } =
+    await import('../scripts/windows-candidate-install-core.mjs');
+  const publisherCertificateSha256 = 'a'.repeat(64);
+  const pinned = { ...f.options, publisherSha256: publisherCertificateSha256 };
+  const state = path.join(f.options.root, 'state.json');
+  const legacyState = await fs.readFile(state);
+  await assert.rejects(resolveWindowsLaunch(pinned), { code: 'INSTALL_PUBLISHER_MISMATCH' });
+  assert.deepEqual(await fs.readFile(state), legacyState);
+
+  // The signed bundle is irrelevant for missing or wrong policy. Change only the isolated test state.
+  const strictState = json({ ...JSON.parse(legacyState), schemaVersion: 2, publisherCertificateSha256 });
+  await fs.writeFile(state, strictState);
+  const apply = options => applyWindowsCandidate(sourceOf(f, options));
+  for (const operation of [apply, inspectWindowsInstallation, resolveWindowsLaunch, rollbackWindowsInstallation]) {
+    await assert.rejects(operation(f.options), { code: 'INSTALL_PUBLISHER_REQUIRED' });
+    await assert.rejects(operation({ ...f.options, publisherSha256: 'b'.repeat(64) }), { code: 'INSTALL_PUBLISHER_MISMATCH' });
+    await assert.rejects(operation({ ...f.options, publisherSha256: 'invalid' }), { code: 'INSTALL_PUBLISHER_INVALID' });
+  }
+  assert.equal(await fs.readFile(state, 'utf8'), strictState);
+  assert.deepEqual((await fs.readdir(f.options.root)).sort(), ['releases', 'state.json']);
+});
+
 async function installationFacts(root) {
   const records = [];
   async function visit(filename) {

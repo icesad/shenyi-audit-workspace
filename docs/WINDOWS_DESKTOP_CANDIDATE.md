@@ -17,7 +17,7 @@ node scripts/build-windows-desktop-candidate.mjs `
 
 ## 启动
 
-由部署人员在包目录之外准备可信团队服务配置，并把其绝对路径作为 `SHENYI_TEAM_SERVICE_CONFIG` 传给 `Shenyi.exe`。该文件包含 `schemaVersion`、团队服务的 HTTPS 源地址 `apiBase`，以及部署时确定的服务实例 UUID `serverId`。客户端根据正常证书链校验 HTTPS，并在公开认证能力读取后核验实例，再使用登录凭据。 [服务配置约定](TRUSTED_TEAM_HTTPS_CONTRACT.md)
+以下方法用于直接启动未安装的本地候选。已安装的双签名候选按[双签名便携安装](#双签名便携安装)启动。可信团队服务配置由部署人员在包目录之外准备。直接启动未安装候选时，将配置的绝对路径作为 `SHENYI_TEAM_SERVICE_CONFIG` 传给 `Shenyi.exe`。该文件包含 `schemaVersion`、团队服务的 HTTPS 源地址 `apiBase`，以及部署时确定的服务实例 UUID `serverId`。客户端根据正常证书链校验 HTTPS，并在公开认证能力读取后核验实例，再使用登录凭据。 [服务配置约定](TRUSTED_TEAM_HTTPS_CONTRACT.md)
 
 ```powershell
 $env:SHENYI_TEAM_SERVICE_CONFIG = 'D:/local-test-config/trusted-team.json'
@@ -74,11 +74,11 @@ node scripts/windows-candidate-authenticode.mjs verify `
   --installed-version '0.60.0'
 ```
 
-`verify` 返回 `osSignatureVerified: true` 后再继续发行验收。当前核验范围为 `Shenyi.exe` 的内嵌签名和完整包清单，时间戳结果来自 Windows 验签。Windows 可能按本机信任配置联网检查证书。便携安装工具仍使用 Ed25519 核验包。正式系统安装器、发布证书和终端 Windows 安装验收继续单独办理。
+`verify` 返回 `osSignatureVerified: true` 后再继续发行验收。当前核验范围为 `Shenyi.exe` 的内嵌签名和完整包清单，时间戳结果来自 Windows 验签。Windows 可能按本机信任配置联网检查证书。完成核验的 `schemaVersion: 2` 候选按[双签名便携安装](#双签名便携安装)管理。
 
 ### 管理本地便携安装
 
-使用 `manage-windows-candidate-install.mjs` 在专用目录管理便携包。首次安装使用尚未创建或为空的本地目录，目录位于候选包和仓库之外。此入口使用已单独配置的发布公钥，无需提供当前安装版本。示例中的候选包和发布签名是上一节的成对产物。
+以下命令用于 `schemaVersion: 1` 便携演练。首次安装使用还未创建或为空的专用本地目录，目录位于候选包和仓库之外。命令使用独立配置的 Ed25519 公钥和该候选清单的发布签名，当前版本取自安装状态。本类目录后续只接受同类候选。
 
 ```powershell
 $installRoot = 'D:/shenyi-local-install'
@@ -95,9 +95,56 @@ node scripts/manage-windows-candidate-install.mjs rollback --root $installRoot -
 
 `rollback` 仅切换到仍可通过核验的上一版。回滚后保留已接受的最高版本记录，常规升级仍须超过这个版本。此命令只管理程序目录；客户端配置、设备密钥与服务端数据各自沿用原位置。版本状态保存在安装目录中的 `state.json`，历史程序及失败时保留的复制文件位于 `releases`。Windows 演练在专用目录验证切换与版本读取；系统级安装、断电耐久和跨版本业务数据迁移待单独验收。 [Node.js 文件操作接口](https://nodejs.org/docs/latest-v24.x/api/fs.html#fspromisesrenameoldpath-newpath)
 
+### 双签名便携安装
+
+首次安装 `schemaVersion: 2` 候选时，为它准备全新的专用本地安装目录。维护方通过独立可信渠道取得 Ed25519 公钥和发布者叶证书的 DER 字节 SHA-256 指纹，分别保存到受保护的配置目录。日常账号对该配置目录只有读取权限。首次 `apply` 固定这两个信任值，之后每次安装、检查、定位、启动和回滚都传入相同的公钥和指纹。`schemaVersion: 1` 的既有目录继续用于便携演练，双签名候选须安装到新目录。发布者证书轮换流程待另行制定。
+
+在仓库根目录打开 PowerShell。安装操作员和日常账号分别在自己的窗口设置以下变量。
+
+```powershell
+$installTool = 'scripts/manage-windows-candidate-install.mjs'
+$installRoot = 'D:/shenyi-signed-install'
+$publisherKey = 'D:/trusted-config/update-ed25519.pub.pem'
+$publisherSha256 = (Get-Content -Raw -LiteralPath 'D:/trusted-config/publisher-cert-sha256.txt').Trim()
+```
+
+安装操作员先安装一份已完成两种签名的新候选。安装命令核验候选与复制后的文件，再切换活动版本。`inspect` 可复核活动版本。双签名核验通过后，成功回执含 `osSignatureVerified: true` 和发布者指纹。
+
+```powershell
+node $installTool apply `
+  --root $installRoot --public-key $publisherKey --publisher-sha256 $publisherSha256 `
+  --bundle 'D:/release-lab/windows-0.61.0-authenticode' `
+  --signature 'D:/release-metadata/shenyi-0.61.0-win-x64.sig'
+node $installTool inspect --root $installRoot --public-key $publisherKey --publisher-sha256 $publisherSha256
+```
+
+日常账号使用相同的工具、目录和受保护的信任配置。`resolve-launch` 返回本次核验时的可执行路径。正常启动可直接调用 `launch`，另传入安装目录之外的团队服务配置绝对路径。两个命令均执行双签名核验。
+
+```powershell
+node $installTool resolve-launch --root $installRoot --public-key $publisherKey --publisher-sha256 $publisherSha256
+node $installTool launch `
+  --root $installRoot --public-key $publisherKey --publisher-sha256 $publisherSha256 `
+  --service-config 'D:/trusted-config/team-service.json'
+```
+
+升级前关闭本次安装启动的客户端。由安装操作员传入同一信任配置下更高版本的包和发布签名。
+
+```powershell
+node $installTool apply `
+  --root $installRoot --public-key $publisherKey --publisher-sha256 $publisherSha256 `
+  --bundle 'D:/release-lab/windows-0.61.1-authenticode' `
+  --signature 'D:/release-metadata/shenyi-0.61.1-win-x64.sig'
+```
+
+需要回退时，先关闭客户端。回滚只核验即将生效的上一版。当前程序包损坏或其签名失去信任时，只要安装状态可读、上一版仍通过双签名，就可以回退。最高已接受版本继续保留，下一次升级仍须超过该版本。
+
+```powershell
+node $installTool rollback --root $installRoot --public-key $publisherKey --publisher-sha256 $publisherSha256
+```
+
 ### 后续发行验证
 
-当前交付是便携目录、独立发布签名及本地版本切换工具。Windows EXE 的 Authenticode 签名、系统安装器、macOS 原生构建及签名公证仍待完成。正式发布密钥与操作系统证书需独立配置，本地验证使用合成测试密钥。
+当前交付覆盖便携目录、双签名发行核验和本地版本切换。正式发布者证书、原生系统安装器、真实正式版本升级与回滚，以及 macOS 实机安装、签名和公证，仍需各自验收。
 
 ### 受管服务窗口验收
 
@@ -105,7 +152,7 @@ Windows x64 0.61.0 便携候选已通过临时发布密钥验签并安装到独�
 
 正式部署由管理员提供已核对的服务配置和受信证书。M7O 使用子进程单独信任的自建 CA，并验证缺少该 CA 时连接被拒绝。该轮将合成文件路径交给产品主进程的选件回调，同时记录了提交成功后误报权限不足的问题。原生选件与提示修复见下节。
 
-本轮用同一包实测重装被拒绝，实际新旧正式版本的切换仍待实机检验。系统安装器、Authenticode、macOS 原生安装和生产试点沿后续发行流程独立验收。
+该轮用同一包实测重装被拒绝。双签名包使用[双签名便携安装](#双签名便携安装)中的门禁。原生系统安装器、实际新旧正式版本切换、macOS 实机安装和生产试点另行验收。
 
 ### 采集提交与原生选件
 
@@ -125,7 +172,7 @@ M7Q 在原签名清单和应用内容上做 NTFS 权限演练。新安装的 `bu
 
 ### 日常账号只读启动定位
 
-日常账号可用 `resolve-launch` 核验当前活动版本，取得 `Shenyi.exe` 的绝对路径。先由操作员准备可信脚本和 Node 运行环境，保护安装状态、程序目录和独立取得的验签公钥，并为客户端配置已核对的团队服务。日常账号需要读取和执行权限，用户资料仍保存在独立可写目录。
+日常账号可用 `resolve-launch` 核验当前活动版本，取得 `Shenyi.exe` 的绝对路径。先由操作员准备可信脚本和 Node 运行环境，保护安装状态、程序目录和独立取得的验签公钥，并为客户端配置已核对的团队服务。日常账号需要读取和执行权限，用户资料仍保存在独立可写目录。以下是旧版便携演练参数，双签名候选另传 [发布者指纹](#双签名便携安装)。
 
 ```powershell
 $receipt = node scripts/manage-windows-candidate-install.mjs resolve-launch `
@@ -139,7 +186,7 @@ $active = ConvertFrom-Json -InputObject ($receipt -join "`n")
 
 ### 直接启动已验签版本
 
-日常启动入口可调用 `launch`。由操作员在安装目录之外提供团队服务配置，固定受信的 Node 运行环境、启动工具和验签公钥，再用日常账号执行。
+日常启动入口可调用 `launch`。由操作员在安装目录之外提供团队服务配置，固定受信的 Node 运行环境、启动工具和验签公钥，再用日常账号执行。以下是旧版便携演练参数，双签名候选另传 [发布者指纹](#双签名便携安装)。
 
 ```powershell
 node scripts/manage-windows-candidate-install.mjs launch `

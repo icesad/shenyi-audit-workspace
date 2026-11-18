@@ -115,15 +115,21 @@ try {
 finally { $file.Dispose() }
 `;
 
+const windowsTrustExecutable = String.raw`\\?\GLOBALROOT\SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`;
+
 async function verifyEmbeddedSignature(filename, publisherCertificateSha256, expected) {
   if (!expected || !sameFacts(await fileFacts(filename), expected)) fail('AUTHENTICODE_BUNDLE_INVALID');
-  const powershell = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
   let result;
   try {
-    const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(?:psmodulepath|shenyi_release_exe)$/i.test(name)));
-    env.SHENYI_RELEASE_EXE = filename;
+    const powershell = await realpath(windowsTrustExecutable);
+    const shellDirectory = path.dirname(powershell);
+    const systemDirectory = path.resolve(shellDirectory, '..', '..');
+    const windowsDirectory = path.dirname(systemDirectory);
+    // Resolve the OS binary through Windows itself and give the verifier only its OS and input paths.
+    const env = { SystemRoot: windowsDirectory, windir: windowsDirectory, Path: systemDirectory,
+      PSModulePath: path.join(shellDirectory, 'Modules'), SHENYI_RELEASE_EXE: filename };
     const { stdout } = await run(powershell, ['-NoProfile', '-NonInteractive', '-Command', authenticodeProbe],
-      { env, cwd: path.dirname(powershell), maxBuffer: 64 * 1024, timeout: 60_000, windowsHide: true });
+      { env, cwd: shellDirectory, maxBuffer: 64 * 1024, timeout: 60_000, windowsHide: true });
     result = JSON.parse(stdout);
   } catch { fail('AUTHENTICODE_UNTRUSTED'); }
   if (result?.status !== 'Valid' || result.type !== 'Authenticode' || result.timestamp !== true ||
@@ -193,7 +199,7 @@ async function finalize(options) {
     publisherCertificateSha256: publisher, osSignatureVerified: true };
 }
 
-async function verifyRelease(options) {
+export async function verifyWindowsCandidateRelease(options) {
   const publisher = trustedPublisher(options['--publisher-sha256']);
   const candidate = await readWindowsCandidateManifest(options['--bundle']);
   if (candidate.manifest.authenticode?.publisherCertificateSha256 !== publisher) fail('AUTHENTICODE_UNTRUSTED');
@@ -221,7 +227,7 @@ async function main(args) {
     if (!required.includes(name) || Object.hasOwn(options, name) || !value || value.startsWith('--')) fail('INVALID_ARGUMENTS');
     options[name] = value;
   }
-  const result = await (command === 'finalize' ? finalize(options) : verifyRelease(options));
+  const result = await (command === 'finalize' ? finalize(options) : verifyWindowsCandidateRelease(options));
   console.log(JSON.stringify({ ok: true, operation: command, ...result }));
 }
 
