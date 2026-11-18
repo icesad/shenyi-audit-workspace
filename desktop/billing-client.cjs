@@ -10,6 +10,7 @@ const MAX_BILLING_BYTES=128*1024;
 const PRODUCTS={annual:'team-annual-renewal',seat:'team-seat-addition'};
 const SUBSCRIPTION_STATES=new Set(['unconfigured','scheduled','active','expired']);
 const ORDER_STATES=new Set(['pending','payment-verified','paid']);
+const PAYMENT_EXCEPTION_KINDS=new Set(['refund','chargeback']);
 const OFFER_KEYS=['id','revision','product','amountMinor','currency'];
 const ORDER_KEYS=['id','teamId','actorId','requestId','merchantId','offer','simulation','createdAt','status','confirmedAt'];
 const BILLING_ERRORS=Object.freeze({
@@ -113,10 +114,17 @@ function seatOrderView(order,reject){
   return {quantity,annualUnitAmountMinor,quoteExpiresAt,termEndsAt,grant};
 }
 
+function paymentExceptionView(value,createdAt,reject){
+  const exception=fields(value,['kind','occurredAt','state'],reject);
+  if(!PAYMENT_EXCEPTION_KINDS.has(exception.kind)||!timestamp(exception.occurredAt)||
+    exception.occurredAt<createdAt||exception.state!=='review-required')reject();
+  return exception;
+}
+
 function orderView(value,{teamId,kind,orderId,selection},reject){
   const annual=kind==='annual';
-  const order=annual?fields(value,[...ORDER_KEYS,'fulfilment'],reject,['renewalSeats','renewalSeatGrant']):
-    fields(value,[...ORDER_KEYS,'quantity','annualUnitAmountMinor','quoteExpiresAt','termStartsAt','termEndsAt','termRevision','grant'],reject);
+  const order=annual?fields(value,[...ORDER_KEYS,'fulfilment'],reject,['renewalSeats','renewalSeatGrant','paymentException']):
+    fields(value,[...ORDER_KEYS,'quantity','annualUnitAmountMinor','quoteExpiresAt','termStartsAt','termEndsAt','termRevision','grant'],reject,['paymentException']);
   const {id,actorId,requestId,merchantId,createdAt,status,confirmedAt}=order;
   if(!match(UUID,id)||order.teamId!==teamId||orderId!==undefined&&id!==orderId||!match(ID,actorId)||
     !match(UUID,requestId)||!match(ID,merchantId)||order.simulation!==true||!timestamp(createdAt)||!ORDER_STATES.has(status)||
@@ -125,12 +133,19 @@ function orderView(value,{teamId,kind,orderId,selection},reject){
   const details=annual?annualOrderView(order,reject):seatOrderView(order,reject);
   if(selection&&(requestId!==selection.requestId||offer.id!==selection.offerId||offer.revision!==selection.offerRevision||
     (annual?(selection.selectedSeats??details.renewalSeats?.defaultSeats)!==details.renewalSeats?.selectedSeats:selection.quantity!==details.quantity)))reject();
+  if(Object.hasOwn(order,'paymentException'))details.paymentException=paymentExceptionView(order.paymentException,createdAt,reject);
   return {id,teamId,offer,createdAt,status,confirmedAt,...details};
 }
 
 function overviewView(value,teamId,reject){
-  const overview=fields(value,['teamId','simulation','subscription','seats','annualOffers','renewalSeats','seatOffer','canReconcile'],reject);
+  const overview=fields(value,['teamId','simulation','subscription','seats','annualOffers','renewalSeats','seatOffer','canReconcile'],reject,['canReconcilePaymentExceptions']);
   if(overview.teamId!==teamId||overview.simulation!==true||!boolean(overview.canReconcile))reject();
+  const capabilities={canReconcile:overview.canReconcile};
+  if(Object.hasOwn(overview,'canReconcilePaymentExceptions')){
+    const enabled=overview.canReconcilePaymentExceptions;
+    if(!boolean(enabled)||enabled&&!overview.canReconcile)reject();
+    capabilities.canReconcilePaymentExceptions=enabled;
+  }
   const subscription=fields(overview.subscription,['state','revision','startsAt','endsAt'],reject);
   const {state,revision,startsAt,endsAt}=subscription;
   if(!SUBSCRIPTION_STATES.has(state)||(state==='unconfigured'?
@@ -151,7 +166,7 @@ function overviewView(value,teamId,reject){
     if(!match(ID,seatOffer.id)||!integer(seatOffer.revision,1)||!integer(seatOffer.annualUnitAmountMinor,1)||
       seatOffer.currency!=='CNY'||seatOffer.product!==PRODUCTS.seat)reject();
   }
-  return {teamId,simulation:true,subscription,seats,annualOffers,renewalSeats,seatOffer,canReconcile:overview.canReconcile};
+  return {teamId,simulation:true,subscription,seats,annualOffers,renewalSeats,seatOffer,...capabilities};
 }
 
 function createBillingClient({request,failure}){

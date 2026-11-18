@@ -185,6 +185,69 @@ test('all cursor pages remain reachable and reconciling a paid order keeps its p
   assert.equal(f.calls.filter(call => call.name === 'listBillingOrders').at(-1).input.after, '5');
 });
 
+test('a trusted exception stays visible with historical order facts and clears on a team change', async t => {
+  const refund = { kind: 'refund', occurredAt: termStart + 1000, state: 'review-required' };
+  const chargeback = { kind: 'chargeback', occurredAt: termStart + 2000, state: 'review-required' };
+  const pending = { ...order('pending'), quantity: 2, termEndsAt: termEnd, paymentException: chargeback };
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok({ ...snapshot(teamId), ...(teamId === 'a' ? { canReconcilePaymentExceptions: true } : {}) }),
+    listBillingOrders: ({ teamId, kind }) => ok({ orders: kind === 'seat' ? [pending] : [order('annual-paid', 'paid', teamId)], hasMore: false, nextCursor: null }),
+    reconcileBillingOrder: ({ kind }) => kind === 'annual'
+      ? ok({ order: { ...order('annual-paid', 'paid'), paymentException: refund } })
+      : ok({ order: { ...pending, status: 'payment-verified', confirmedAt: termStart + 3000 } })
+  });
+  const row = id => f.id('order-list').querySelector('[data-order-id="' + id + '"]');
+  const action = id => row(id)?.querySelector('[data-billing-reconcile]');
+  await f.open();
+  await until(() => !!action('annual-paid') && !action('annual-paid').disabled);
+  const previousTerm = f.id('term').textContent;
+  const previousSeats = f.id('seats').textContent;
+  action('annual-paid').click();
+  await until(() => f.id('message').textContent === '模拟订单 · 退款待复核。');
+  assert.equal(row('annual-paid').querySelector('[data-state="paid"]').textContent, '已到账');
+  assert.equal(row('annual-paid').querySelector('[data-payment-exception="refund"]').textContent, '退款待复核');
+  assert.match(row('annual-paid').textContent, /异常发生于.*北京时间，模拟.*续费期限/);
+  assert.equal(action('annual-paid'), null);
+  assert.equal(f.id('term').textContent, previousTerm);
+  assert.equal(f.id('seats').textContent, previousSeats);
+
+  f.change('order-kind', 'seat');
+  await until(() => !!action('pending') && !action('pending').disabled);
+  assert.equal(row('pending').querySelector('[data-state="pending"]').textContent, '未确认收款');
+  assert.equal(row('pending').querySelector('[data-payment-exception="chargeback"]').textContent, '拒付待复核');
+  action('pending').click();
+  await until(() => f.id('message').textContent === '模拟订单 · 拒付待复核。');
+  assert.equal(row('pending').querySelector('[data-state="payment-verified"]').textContent, '已核验收款');
+
+  f.change('order-kind', 'annual');
+  f.change('team', 'b');
+  await until(() => f.calls.some(call => call.name === 'listBillingOrders' && call.input.teamId === 'b') && !!row('annual-paid'));
+  assert.equal(f.id('order-list').querySelector('[data-payment-exception]'), null);
+  assert.equal(action('annual-paid'), null);
+  assert.doesNotMatch(f.id('message').textContent, /退款|拒付/);
+});
+
+test('a late trusted exception response cannot populate a signed-out billing view', async t => {
+  const review = deferred();
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok({ ...snapshot(teamId), canReconcilePaymentExceptions: true }),
+    listBillingOrders: () => ok({ orders: [order('annual-paid', 'paid')], hasMore: false, nextCursor: null }),
+    reconcileBillingOrder: () => review.promise
+  });
+  await f.open();
+  const button = () => f.id('order-list').querySelector('[data-billing-reconcile]');
+  await until(() => !!button() && !button().disabled);
+  button().click();
+  await until(() => f.calls.some(call => call.name === 'reconcileBillingOrder'));
+  Object.assign(f.context, { ready: false, identity: '' });
+  f.view.reset();
+  review.resolve(ok({ order: { ...order('annual-paid', 'paid'), paymentException: { kind: 'refund', occurredAt: termStart, state: 'review-required' } } }));
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(f.panel.hidden, true);
+  assert.equal(f.id('order-list').childElementCount, 0);
+  assert.equal(f.id('message').textContent, '');
+});
+
 test('a coalesced close and reopen suppresses an ended billing read', async t => {
   const old = deferred();
   const fresh = deferred();

@@ -5,10 +5,13 @@ import {safeMemberText} from './member-access-policy.mjs';
 import {createAnnualOrderWithinTransaction,readAnnualOrder,readAnnualOrderRequest,listAnnualOrders,recordVerifiedAnnualPayment,fulfilAnnualOrder,readAnnualSeatRenewalDefaults} from './billing-store.mjs';
 import {createSeatOrderWithinTransaction,readSeatOrder,readSeatOrderRequest,listSeatOrders,recordVerifiedSeatPayment,fulfilSeatOrder} from './seat-order-store.mjs';
 import {ANNUAL_PRODUCT,SEAT_PRODUCT,readSimulationPaymentRequest,verifySimulationPaymentEnvelope} from './billing-simulation.mjs';
+import {readSimulationPaymentExceptionRequest,verifySimulationPaymentExceptionEnvelope} from './billing-payment-exception.mjs';
+import {recordVerifiedBillingPaymentException,recordVerifiedBillingPaymentExceptionWithinTransaction} from './billing-payment-exception-store.mjs';
 import {readSeatCapacity} from './seat-capacity-store.mjs';
 import {readSubscriptionState} from './subscription-store.mjs';
 
 export const SIMULATION_NOTIFICATION_PATH='/api/billing/simulation/notifications';
+export const SIMULATION_PAYMENT_EXCEPTION_PATH='/api/billing/simulation/payment-exceptions';
 const unavailable=()=>{throw new ApiError(503,'BILLING_UNAVAILABLE','模拟账务尚未配置或暂不可用。');};
 const matches=(re,value)=>typeof value==='string'&&re.exec(value)?.[0]===value;
 function time(now){const at=now();if(!Number.isSafeInteger(at)||Object.is(at,-0)||at<0)unavailable();return at;}
@@ -48,11 +51,13 @@ function billingOverview(db,teamId,at,billingSimulation){
   ...readAnnualSeatRenewalDefaults(db,teamId,at),unitAmountMinor,currency:'CNY',
  };
  const seatOffer=billingSimulation.seatOffer?{...billingSimulation.seatOffer,product:SEAT_PRODUCT}:null;
+ const canReconcile=typeof billingSimulation.lookupPayment==='function';
  return json({
   teamId,simulation:true,subscription:{state,revision,startsAt,endsAt},
   seats:readSeatCapacity(db,teamId,at),
   annualOffers:renewalSeats?billingSimulation.offers:[],renewalSeats,seatOffer,
-  canReconcile:typeof billingSimulation.lookupPayment==='function',
+  canReconcile,
+  ...(billingSimulation.paymentExceptions&&canReconcile?{canReconcilePaymentExceptions:true}:{}),
  });
 }
 function renewalSeatSelectionMatches(order,selectedSeats){
@@ -61,22 +66,39 @@ function renewalSeatSelectionMatches(order,selectedSeats){
  return (selectedSeats??plan.defaultSeats)===plan.selectedSeats;
 }
 function settle(db,receipt,now,options){
+ let fulfil;
  if(receipt.product===SEAT_PRODUCT){
   if(!seatOrderingEnabled(options))unavailable();
   recordVerifiedSeatPayment(db,receipt,{now});
-  return fulfilSeatOrder(db,receipt.orderId,{now});
+  fulfil=fulfilSeatOrder;
+ }else{
+  recordVerifiedAnnualPayment(db,receipt,{now});
+  fulfil=fulfilAnnualOrder;
  }
- recordVerifiedAnnualPayment(db,receipt,{now});
- return fulfilAnnualOrder(db,receipt.orderId,{now});
+ try{
+  fulfil(db,receipt.orderId,{now});
+ }catch(error){
+  // A complete reversal is already durable. Keep the matched late capture for
+  // reconciliation and acknowledge it without publishing new entitlements.
+  if(!(error instanceof ApiError&&error.code==='BILLING_PAYMENT_EXCEPTION_REVIEW_REQUIRED'))throw error;
+ }
 }
 export async function handleBillingSimulationNotification(request,options={}){
  const {db,now=Date.now,billingSimulation}=options;
- const url=new URL(request.url);if(url.pathname!==SIMULATION_NOTIFICATION_PATH)return null;
+ const url=new URL(request.url),exception=url.pathname===SIMULATION_PAYMENT_EXCEPTION_PATH;
+ if(!exception&&url.pathname!==SIMULATION_NOTIFICATION_PATH)return null;
  if(url.search||url.hash||url.href.endsWith('?'))invalid();
  if(request.method!=='POST')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'POST'});
- if(!billingSimulation)unavailable();
- const receipt=await readSimulationPaymentRequest(request,billingSimulation);
- settle(db,receipt,now,options);return json({accepted:true,simulation:true});
+ if(!billingSimulation||exception&&billingSimulation.paymentExceptions!==true)unavailable();
+ if(exception){
+  const receipt=await readSimulationPaymentExceptionRequest(request,billingSimulation);
+  if(receipt.product===SEAT_PRODUCT&&!seatOrderingEnabled(options))unavailable();
+  recordVerifiedBillingPaymentException(db,receipt,{now});
+ }else{
+  const receipt=await readSimulationPaymentRequest(request,billingSimulation);
+  settle(db,receipt,now,options);
+ }
+ return json({accepted:true,simulation:true});
 }
 function page(url){
  for(const name of url.searchParams.keys())if(!['after','limit'].includes(name)||url.searchParams.getAll(name).length!==1)invalid();
@@ -134,6 +156,16 @@ export async function handleBillingRequest(request,options={}){
   await readJson(request,[]);
   const order=scoped(()=>{const found=readOrder(db,teamId,orderId);if(!found)deny();return found;});
   const envelope=await lookup(billingSimulation,order);
+  if(envelope?.kind==='payment-exception'){
+   if(billingSimulation.paymentExceptions!==true)unavailable();
+   const exception=verifySimulationPaymentExceptionEnvelope(envelope.body,envelope.signature,billingSimulation);
+   if(exception.orderId!==orderId||exception.product!==(isSeatOrder?SEAT_PRODUCT:ANNUAL_PRODUCT))invalid();
+   return scoped(()=>{
+    if(!readOrder(db,teamId,orderId))deny();
+    recordVerifiedBillingPaymentExceptionWithinTransaction(db,exception,{now});
+    return json({simulation:true,order:readOrder(db,teamId,orderId)});
+   });
+  }
   const receipt=envelope===null?null:verifySimulationPaymentEnvelope(envelope?.body,envelope?.signature,billingSimulation);
   if(receipt&&(receipt.orderId!==orderId||receipt.product!==(isSeatOrder?SEAT_PRODUCT:ANNUAL_PRODUCT)))invalid();
   scoped(()=>{if(!readOrder(db,teamId,orderId))deny();});

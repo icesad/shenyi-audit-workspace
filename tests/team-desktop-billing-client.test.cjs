@@ -87,6 +87,8 @@ test('scoping, pagination, and DTO integrity fail before any unsupported data cr
     {...OVERVIEW,teamId:'team-b'},
     {...OVERVIEW,seats:{...OVERVIEW.seats,usedSeats:2}},
     {...OVERVIEW,annualOffers:[ANNUAL_OFFER,ANNUAL_OFFER]},
+    {...OVERVIEW,canReconcilePaymentExceptions:'true'},
+    {...OVERVIEW,canReconcile:false,canReconcilePaymentExceptions:true},
   ];
   for(const data of envelopes){
     responses.push(data);
@@ -97,6 +99,15 @@ test('scoping, pagination, and DTO integrity fail before any unsupported data cr
     {...ANNUAL_ORDER,requestId:OPERATION},
     {...ANNUAL_ORDER,offer:{...ANNUAL_OFFER,amountMinor:Number.MAX_SAFE_INTEGER+1}},
     {...ANNUAL_ORDER,fulfilment:{...ANNUAL_ORDER.fulfilment,providerReceipt:'unexpected'}},
+    ...[
+      null,
+      {kind:'unknown',occurredAt:CONFIRMED,state:'review-required'},
+      {kind:'refund',occurredAt:CREATED-1,state:'review-required'},
+      {kind:'refund',occurredAt:8640000000000001,state:'review-required'},
+      {kind:'refund',occurredAt:CONFIRMED,state:'complete'},
+      {kind:'refund',occurredAt:CONFIRMED,state:'review-required',originalTransactionId:OPERATION},
+      {kind:'refund',occurredAt:CONFIRMED,state:'review-required',amountMinor:600},
+    ].map(paymentException=>({...ANNUAL_ORDER,paymentException})),
   ]){
     responses.push({simulation:true,order});
     await assert.rejects(client.createBillingOrder(SELECTION),{code:'INVALID_RESPONSE'});
@@ -108,6 +119,32 @@ test('scoping, pagination, and DTO integrity fail before any unsupported data cr
   assert.match(calls.at(-1).route,/\?limit=20&after=/);
   responses.push({simulation:true,order:SEAT_ORDER});
   await assert.rejects(client.reconcileBillingOrder({teamId:TEAM,kind:'seat',orderId:OPERATION}),{code:'INVALID_RESPONSE'});
+});
+
+test('both products project review evidence independently of fulfilment and keep old DTOs compatible',async()=>{
+  const {client,responses}=fixture();
+  const refund={kind:'refund',occurredAt:CONFIRMED+20,state:'review-required'};
+  const chargeback={kind:'chargeback',occurredAt:CREATED+20,state:'review-required'};
+  for(const capability of [undefined,false,true]){
+    const overview=capability===undefined?OVERVIEW:{...OVERVIEW,canReconcilePaymentExceptions:capability};
+    responses.push(overview);
+    assert.deepEqual(await client.getBillingOverview({teamId:TEAM}),overview);
+  }
+  responses.push({simulation:true,order:{...ANNUAL_ORDER,paymentException:refund}});
+  const {order:annual}=await client.reconcileBillingOrder({teamId:TEAM,kind:'annual',orderId:ID});
+  assert.deepEqual(annual.paymentException,refund);
+  assert.equal(annual.status,'paid');
+  assert.equal(annual.fulfilment.endsAt,END);
+  assert.equal(annual.renewalSeatGrant.seats,2);
+  for(const status of ['pending','payment-verified']){
+    const confirmedAt=status==='pending'?null:CONFIRMED;
+    responses.push({simulation:true,orders:[{...SEAT_ORDER,status,confirmedAt,grant:null,paymentException:chargeback}],hasMore:false,nextCursor:null});
+    const {orders:[seat]}=await client.listBillingOrders({teamId:TEAM,kind:'seat'});
+    assert.deepEqual(seat.paymentException,chargeback);
+    assert.equal(seat.status,status);
+    assert.equal(seat.confirmedAt,confirmedAt);
+    assert.equal(seat.grant,null);
+  }
 });
 
 test('all five preload actions and guarded bridge channels are exact and have no arbitrary pass-through',async()=>{

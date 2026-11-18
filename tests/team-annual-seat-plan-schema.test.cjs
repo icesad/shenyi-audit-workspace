@@ -1,4 +1,5 @@
 'use strict';
+const {withoutEmptyPaymentExceptionLayer,peelPaymentExceptionSchema,assertPaymentExceptionSchemaRestored}=require('./helpers/billing-payment-exception-schema-layer.cjs');
 
 const assert = require('node:assert/strict');
 const {test} = require('node:test');
@@ -104,8 +105,9 @@ test('fresh database adds one empty STRICT rowid plan table and exactly three im
   const {db, initializeTeamDatabase} = await database(t);
   assert.deepEqual(annualSeatPlanSchemaLayer(db), {tables: 1, objects: 4});
   const before = snapshot(db);
-  assert.equal(before.tables.length, 93);
-  assert.equal(before.definitions.length, 372);
+  const historical = withoutEmptyPaymentExceptionLayer(db, before);
+  assert.equal(historical.tables.length, 93);
+  assert.equal(historical.definitions.length, 372);
   initializeTeamDatabase(db);
   assert.deepEqual(snapshot(db), before);
   checkIntegrity(db);
@@ -114,6 +116,7 @@ test('fresh database adds one empty STRICT rowid plan table and exactly three im
 test('pre-plan database upgrades with only the exact empty layer and preserves annual and seat order history', async t => {
   const f = await database(t);
   await retainedOldFacts(f);
+  const paymentExceptionLayer = peelPaymentExceptionSchema(f.db);
   const layer = peelAnnualSeatPlanSchema(f.db);
   assert.deepEqual(annualSeatPlanDefinitions(f.db), []);
   const old = snapshot(f.db);
@@ -126,8 +129,9 @@ test('pre-plan database upgrades with only the exact empty layer and preserves a
   }
   f.initializeTeamDatabase(f.db);
   assertAnnualSeatPlanSchemaRestored(f.db, layer);
+  assertPaymentExceptionSchemaRestored(f.db, paymentExceptionLayer);
   const upgraded = snapshot(f.db);
-  assert.deepEqual(withoutEmptyAnnualSeatPlanLayer(f.db, upgraded), old);
+  assert.deepEqual(withoutEmptyAnnualSeatPlanLayer(f.db, withoutEmptyPaymentExceptionLayer(f.db, upgraded)), old);
   f.initializeTeamDatabase(f.db);
   assert.deepEqual(snapshot(f.db), upgraded);
   checkIntegrity(f.db);

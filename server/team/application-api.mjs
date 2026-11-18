@@ -37,7 +37,7 @@ import {handleSubscriptionRequest} from './subscription-api.mjs';
 import {subscriptionEnforcementMode} from './subscription-configuration.mjs';
 import {seatCapacityMode} from './seat-capacity-policy.mjs';
 import {billingSimulationConfiguration} from './billing-simulation.mjs';
-import {handleBillingRequest,handleBillingSimulationNotification,SIMULATION_NOTIFICATION_PATH} from './billing-api.mjs';
+import {handleBillingRequest,handleBillingSimulationNotification,SIMULATION_NOTIFICATION_PATH,SIMULATION_PAYMENT_EXCEPTION_PATH} from './billing-api.mjs';
 
 /** Local M2 application boundary. No fake registration/phone verification. */
 export async function handleTeamApplicationRequest(request, options = {}) {
@@ -76,7 +76,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
       return json({mode:'local-preview',methods:{demoUsername:true,phonePassword:true,phoneVerification:sms,wechat:isWechatConfigured(identityProviders),recovery:sms&&recoveryConfigured(identityProviders)},
         ...(identityProviders.deviceProofRequired===true?{deviceBinding:{required:true,serverId:deviceServerId(db),protocolVersion:1}}:{})});
     }
-    if(url.pathname===SIMULATION_NOTIFICATION_PATH)return await handleBillingSimulationNotification(request,options);
+    if(url.pathname===SIMULATION_NOTIFICATION_PATH||url.pathname===SIMULATION_PAYMENT_EXCEPTION_PATH)return await handleBillingSimulationNotification(request,options);
     const deviceAuthorization=await authorizeDeviceRequest(request,options);
     releaseDeviceBody=deviceAuthorization.release;
     request=deviceAuthorization.request;options.deviceContext=deviceAuthorization.context;

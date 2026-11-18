@@ -3,6 +3,7 @@
 
   const orderNames = { annual: '团队年费', seat: '增购席位' };
   const orderStates = { pending: '待支付', 'payment-verified': '已核验，待到账', paid: '已到账' };
+  const paymentExceptionStates = { refund: '退款待复核', chargeback: '拒付待复核' };
   const subscriptionStates = { active: '有效', expired: '已到期', scheduled: '待生效', unconfigured: '尚未开通' };
   const dateFormat = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -289,24 +290,39 @@
       }
     }
 
+    function canReconcileOrder(order) {
+      return overview?.canReconcile === true && order && (order.status !== 'paid' ||
+        overview.canReconcilePaymentExceptions === true && !order.paymentException);
+    }
+
     function orderRow(order) {
       const row = element('li', undefined, 'billing-order');
       const header = element('div');
-      const state = element('strong', orderStates[order.status], 'billing-order-state');
+      const exception = order.paymentException;
+      const stateText = exception && order.status === 'pending' ? '未确认收款' :
+        exception && order.status === 'payment-verified' ? '已核验收款' : orderStates[order.status];
+      const state = element('strong', stateText, 'billing-order-state');
       row.dataset.orderId = order.id;
       state.dataset.state = order.status;
-      header.append(state, element('span', amount(order.offer.amountMinor), 'billing-order-amount'));
+      header.append(state);
+      if (exception) {
+        const exceptionState = element('strong', paymentExceptionStates[exception.kind], 'billing-order-exception');
+        exceptionState.dataset.paymentException = exception.kind;
+        header.append(exceptionState);
+      }
+      header.append(element('span', amount(order.offer.amountMinor), 'billing-order-amount'));
       row.append(header, element('p', '订单 ' + order.id), element('p', '创建于 ' + date(order.createdAt) + '（北京时间）'));
       if (order.confirmedAt != null) row.append(element('p', '收款确认 ' + date(order.confirmedAt) + '（北京时间，模拟）'));
+      if (exception) row.append(element('p', '异常发生于 ' + date(exception.occurredAt) + '（北京时间，模拟）'));
       if (kind === 'seat') {
         row.append(element('p', '增购 ' + order.quantity + ' 席，到期 ' + date(order.termEndsAt) + '（北京时间）'));
-        if (order.status === 'pending') row.append(element('p', '报价有效至 ' + date(order.quoteExpiresAt) + '（北京时间）'));
+        if (order.status === 'pending' && !exception) row.append(element('p', '报价有效至 ' + date(order.quoteExpiresAt) + '（北京时间）'));
       }
       if (order.renewalSeats) row.append(element('p', '续费 ' + order.renewalSeats.selectedSeats + ' 席（默认 ' + order.renewalSeats.defaultSeats + ' 席）'));
       if (order.fulfilment) row.append(element('p', '续费期限 ' + date(order.fulfilment.renewalStartsAt) + ' 至 ' + date(order.fulfilment.endsAt) + '（北京时间）'));
       const grant = order.grant || order.renewalSeatGrant;
       if (grant) row.append(element('p', '席位 ' + grant.seats + ' 席适用期限 ' + date(grant.startsAt) + ' 至 ' + date(grant.endsAt) + '（北京时间）'));
-      if (overview?.canReconcile && order.status !== 'paid') {
+      if (canReconcileOrder(order)) {
         const button = element('button', '核对订单状态', 'button');
         button.type = 'button';
         button.dataset.billingReconcile = order.id;
@@ -420,7 +436,8 @@
     }
 
     async function reconcile(orderId) {
-      if (!overview?.canReconcile || mutation || ordersRead || !orders.some(order => order.id === orderId && order.status !== 'paid')) return;
+      const order = orders.find(item => item.id === orderId);
+      if (mutation || ordersRead || !canReconcileOrder(order)) return;
       const at = capture();
       if (!currentView(at) || getContext().busy) return;
       const operation = {};
@@ -433,7 +450,8 @@
         if (!currentView(at)) return;
         if (result?.order?.id !== orderId || result.order.teamId !== team) throw new Error('Unexpected billing order');
         upsertOrder(result.order);
-        if (result.order.status === 'paid') await loadOverview({ success: '模拟订单已到账。', keepOrders: true });
+        if (result.order.paymentException) message('模拟订单 · ' + paymentExceptionStates[result.order.paymentException.kind] + '。');
+        else if (order.status !== 'paid' && result.order.status === 'paid') await loadOverview({ success: '模拟订单已到账。', keepOrders: true });
         else message('模拟订单 · ' + orderStates[result.order.status] + '。');
       } catch (error) {
         if (!currentView(at) || handleSessionError(error)) return;

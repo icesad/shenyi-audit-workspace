@@ -1,4 +1,5 @@
 'use strict';
+const {withoutEmptyPaymentExceptionLayer,peelPaymentExceptionSchema,assertPaymentExceptionSchemaRestored}=require('./helpers/billing-payment-exception-schema-layer.cjs');
 
 const assert = require('node:assert/strict');
 const {test} = require('node:test');
@@ -113,7 +114,7 @@ test('fresh initializer has two empty STRICT rowid seat order tables and exactly
   const {db, initializeTeamDatabase} = await database(t);
   assert.deepEqual(seatOrderSchemaLayer(db), {tables: 2, objects: 8});
   const before = snapshot(db);
-  const historical = withoutEmptyAnnualSeatPlanLayer(db, before);
+  const historical = withoutEmptyAnnualSeatPlanLayer(db, withoutEmptyPaymentExceptionLayer(db, before));
   assert.equal(historical.tables.length, 92);
   assert.equal(historical.definitions.length, 368);
   initializeTeamDatabase(db);
@@ -124,6 +125,7 @@ test('fresh initializer has two empty STRICT rowid seat order tables and exactly
 test('upgrade from 90 tables changes only the seat order layer with prior billing, capacity, and invitation rows present', async t => {
   const {db, initializeTeamDatabase} = await database(t);
   await retainedOldFacts(db);
+  const paymentExceptionLayer = peelPaymentExceptionSchema(db);
   const annualPlanLayer = peelAnnualSeatPlanSchema(db);
   const layer = peelSeatOrderSchema(db);
   assert.deepEqual(seatOrderDefinitions(db), []);
@@ -137,8 +139,9 @@ test('upgrade from 90 tables changes only the seat order layer with prior billin
   initializeTeamDatabase(db);
   assertSeatOrderSchemaRestored(db, layer);
   assertAnnualSeatPlanSchemaRestored(db, annualPlanLayer);
+  assertPaymentExceptionSchemaRestored(db, paymentExceptionLayer);
   const upgraded = snapshot(db);
-  assert.deepEqual(withoutEmptySeatOrderLayer(db, withoutEmptyAnnualSeatPlanLayer(db, upgraded)), legacy);
+  assert.deepEqual(withoutEmptySeatOrderLayer(db, withoutEmptyAnnualSeatPlanLayer(db, withoutEmptyPaymentExceptionLayer(db, upgraded))), legacy);
   initializeTeamDatabase(db);
   assert.deepEqual(snapshot(db), upgraded);
   checkIntegrity(db);

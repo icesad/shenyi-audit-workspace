@@ -48,5 +48,5 @@ main{margin-left:232px;padding:0 38px;min-height:100vh;display:flex;flex-directi
 .billing-order p{margin:0;color:var(--muted);font-size:11px;line-height:1.65;overflow-wrap:anywhere}
 .billing-order .button{justify-self:start;margin-top:4px}
 .billing-order-state{color:var(--accent);font-size:12px}
-.billing-order-state[data-state="pending"]{color:var(--amber)}
+.billing-order-state[data-state="pending"],.billing-order-exception{color:var(--amber);font-size:12px}
 .billing-order-amount{margin-left:auto;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}

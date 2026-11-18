@@ -1,4 +1,5 @@
 'use strict';
+const {withoutEmptyPaymentExceptionLayer,peelPaymentExceptionSchema,assertPaymentExceptionSchemaRestored}=require('./helpers/billing-payment-exception-schema-layer.cjs');
 
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
@@ -62,7 +63,7 @@ test('fresh initialization installs one strictly typed empty table and its four 
   const {db, initializeTeamDatabase} = await database(t);
   assert.deepEqual(seatCapacitySchemaLayer(db), {tables: 1, objects: 5});
   const before = snapshot(db);
-  const historical = withoutEmptySeatOrderLayer(db, withoutEmptyAnnualSeatPlanLayer(db, before));
+  const historical = withoutEmptySeatOrderLayer(db, withoutEmptyAnnualSeatPlanLayer(db, withoutEmptyPaymentExceptionLayer(db, before)));
   assert.equal(historical.tables.length, 90);
   assert.equal(historical.definitions.length, 360);
   initializeTeamDatabase(db);
@@ -90,6 +91,7 @@ test('existing 89-table billing database gains only the empty seat layer and pre
 
   const paidBeforeUpgrade = store.readAnnualOrder(db, TEAM, order.id);
   assert.equal(paidBeforeUpgrade.status, 'paid');
+  const paymentExceptionLayer = peelPaymentExceptionSchema(db);
   const annualPlanLayer = peelAnnualSeatPlanSchema(db);
   const seatOrderLayer = peelSeatOrderSchema(db);
   const layer = peelSeatCapacitySchema(db);
@@ -102,9 +104,10 @@ test('existing 89-table billing database gains only the empty seat layer and pre
   assertSeatCapacitySchemaRestored(db, layer);
   assertSeatOrderSchemaRestored(db, seatOrderLayer);
   assertAnnualSeatPlanSchemaRestored(db, annualPlanLayer);
+  assertPaymentExceptionSchemaRestored(db, paymentExceptionLayer);
   assert.deepEqual(store.readAnnualOrder(db, TEAM, order.id), paidBeforeUpgrade);
   const upgraded = snapshot(db);
-  assert.deepEqual(withoutEmptySeatCapacityLayer(db, withoutEmptySeatOrderLayer(db, withoutEmptyAnnualSeatPlanLayer(db, upgraded))), before);
+  assert.deepEqual(withoutEmptySeatCapacityLayer(db, withoutEmptySeatOrderLayer(db, withoutEmptyAnnualSeatPlanLayer(db, withoutEmptyPaymentExceptionLayer(db, upgraded)))), before);
   initializeTeamDatabase(db);
   assert.deepEqual(snapshot(db), upgraded);
   assertIntegrity(db);

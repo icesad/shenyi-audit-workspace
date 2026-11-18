@@ -5,6 +5,7 @@ import {readSubscriptionState} from './subscription-store.mjs';
 import {addBeijingCalendarYear} from './renewal-calendar.mjs';
 import {recordSeatCapacityGrantWithinTransaction,readSeatCapacity} from './seat-capacity-store.mjs';
 import {validateSimulationPaymentReceipt,simulationReceiptBytes} from './billing-simulation.mjs';
+import {assertBillingCaptureCompatible,assertBillingPaymentFulfillable,readBillingPaymentException} from './billing-payment-exception-store.mjs';
 
 const MAX=Number.MAX_SAFE_INTEGER,DATE_MAX=8640000000000000,PRODUCT='team-seat-addition',TTL=15*60*1000;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,SHA=/^[0-9a-f]{64}$/;
@@ -130,13 +131,14 @@ function grantFact(db,order,payment){
 }
 function view(db,order){
  const payment=paymentFact(db,order),grant=grantFact(db,order,payment);
+ const paymentException=readBillingPaymentException(db,PRODUCT,order.id);
  return Object.freeze({
   id:order.id,teamId:order.teamId,actorId:order.actorId,requestId:order.requestId,merchantId:order.merchantId,
   offer:Object.freeze({id:order.offer.id,revision:order.offer.revision,product:PRODUCT,amountMinor:order.amountMinor,currency:order.offer.currency}),
   quantity:order.quantity,annualUnitAmountMinor:order.offer.annualUnitAmountMinor,
   quoteExpiresAt:order.quoteExpiresAt,termStartsAt:order.termStartsAt,termEndsAt:order.termEndsAt,termRevision:order.termRevision,
   simulation:true,createdAt:order.createdAt,status:grant?'paid':payment?'payment-verified':'pending',
-  confirmedAt:payment?.confirmedAt??null,grant,
+  confirmedAt:payment?.confirmedAt??null,grant,...(paymentException?{paymentException}:{}),
  });
 }
 
@@ -182,6 +184,7 @@ export function recordVerifiedSeatPayment(db,receipt,{now=Date.now}={}){
   const order=orderFact(db,value.orderId);
   if(!order)deny();
   matchesOrder(order,value);
+  assertBillingCaptureCompatible(db,value);
   noAnnualCollision(db,value);
   const collisions=all(db,'SELECT * FROM team_seat_verified_payments WHERE order_id=? OR event_id=? OR transaction_id=?',value.orderId,value.eventId,value.transactionId);
   if(collisions.length){
@@ -214,6 +217,7 @@ export function fulfilSeatOrder(db,id,{now=Date.now}={}){
   if(!payment)conflict();
   const prior=grantFact(db,order,payment);
   if(prior)return{order:view(db,order),grant:prior};
+  assertBillingPaymentFulfillable(db,payment.receipt);
   let latest=payment.confirmedAt;
   const fresh=()=>{
    const time=at(now);

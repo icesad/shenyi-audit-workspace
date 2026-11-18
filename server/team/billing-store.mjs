@@ -4,6 +4,7 @@ import {ApiError,ID,deny,invalid} from './http-utils.mjs';
 import {appendSubscriptionTermWithinTransaction,readSubscriptionState} from './subscription-store.mjs';
 import {annualRenewalWindow} from './renewal-calendar.mjs';
 import {ANNUAL_PRODUCT,validateSimulationPaymentReceipt,simulationReceiptBytes} from './billing-simulation.mjs';
+import {assertBillingCaptureCompatible,assertBillingPaymentFulfillable,readBillingPaymentException} from './billing-payment-exception-store.mjs';
 import {readSeatCapacity,recordSeatCapacityGrantWithinTransaction} from './seat-capacity-store.mjs';
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,SHA=/^[0-9a-f]{64}$/,MAX=Number.MAX_SAFE_INTEGER,DATE_MAX=8640000000000000;
@@ -136,7 +137,8 @@ function assertSeatWindow(db,order,plan,window,time){
 function view(db,order){
  const payment=paymentFact(db,order),fulfilment=fulfilmentFact(db,order,payment),plan=seatPlanFact(db,order);
  const seats=plan?{renewalSeats:plan,renewalSeatGrant:annualSeatGrantFact(db,order,plan,payment,fulfilment)}:{};
- return Object.freeze({id:order.id,teamId:order.teamId,actorId:order.actorId,requestId:order.requestId,merchantId:order.merchantId,offer:Object.freeze({...order.offer}),simulation:true,createdAt:order.createdAt,status:fulfilment?'paid':payment?'payment-verified':'pending',confirmedAt:payment?.confirmedAt??null,fulfilment,...seats});
+ const paymentException=readBillingPaymentException(db,ANNUAL_PRODUCT,order.id);
+ return Object.freeze({id:order.id,teamId:order.teamId,actorId:order.actorId,requestId:order.requestId,merchantId:order.merchantId,offer:Object.freeze({...order.offer}),simulation:true,createdAt:order.createdAt,status:fulfilment?'paid':payment?'payment-verified':'pending',confirmedAt:payment?.confirmedAt??null,fulfilment,...seats,...(paymentException?{paymentException}:{})});
 }
 
 // Trusted service primitive. HTTP caller owns its lease/technical-authority checks.
@@ -195,6 +197,7 @@ export function recordVerifiedAnnualPayment(db,receipt,{now=Date.now}={}){
  return ownTransaction(db,()=>{
   const order=orderFact(db,value.orderId);if(!order)deny();matchesOrder(order,value);
   const plan=seatPlanFact(db,order);
+  assertBillingCaptureCompatible(db,value);
   if(one(db,'SELECT 1 FROM team_seat_verified_payments WHERE event_id=? OR transaction_id=?',value.eventId,value.transactionId))conflict();
   const collisions=all(db,'SELECT * FROM team_annual_verified_payments WHERE order_id=? OR event_id=? OR transaction_id=?',value.orderId,value.eventId,value.transactionId);
   if(collisions.length){if(collisions.length!==1)conflict();const old=paymentValue(collisions[0],order);if(old.receiptSha256!==hash)conflict();return old;}
@@ -207,14 +210,32 @@ export function recordVerifiedAnnualPayment(db,receipt,{now=Date.now}={}){
  });
 }
 
+function assertAnnualPaymentTurn(db,order,payment){
+ const pending=db.prepare(`SELECT payment.order_id,payment.payment_id,exception.event_id FROM team_annual_verified_payments payment
+  LEFT JOIN team_annual_fulfilments fulfil ON fulfil.payment_id=payment.payment_id
+  LEFT JOIN team_billing_payment_exceptions exception ON exception.order_id=payment.order_id
+  WHERE payment.team_id=? AND fulfil.order_id IS NULL
+  ORDER BY payment.confirmed_at,payment.payment_id COLLATE BINARY`).iterate(order.teamId);
+ for(const row of pending){
+  if(row.payment_id===payment.paymentId)return;
+  if(row.event_id===null)conflict();
+  const previous=orderFact(db,row.order_id);
+  if(!previous||previous.teamId!==order.teamId)conflict();
+  const captured=paymentFact(db,previous);
+  if(!captured||captured.paymentId!==row.payment_id)conflict();
+  assertBillingCaptureCompatible(db,captured.receipt);
+ }
+ conflict();
+}
+
 export function fulfilAnnualOrder(db,orderId,{now=Date.now}={}){
  requireOrderId(orderId);if(typeof now!=='function')invalid();return ownTransaction(db,()=>{
   const order=orderFact(db,orderId);if(!order)deny();const payment=paymentFact(db,order);if(!payment)conflict();const currentTime=at(now);if(currentTime<payment.confirmedAt)conflict();
   const plan=seatPlanFact(db,order);
   const current=readSubscriptionState(db,order.teamId,currentTime),prior=fulfilmentFact(db,order,payment);
   if(prior)return{order:view(db,order),fulfilment:prior,subscription:termReceipt(db,order.teamId,prior.subscriptionRevision)};
-  const earliest=one(db,`SELECT payment.payment_id FROM team_annual_verified_payments payment LEFT JOIN team_annual_fulfilments fulfil ON fulfil.payment_id=payment.payment_id
-    WHERE payment.team_id=? AND fulfil.order_id IS NULL ORDER BY payment.confirmed_at,payment.payment_id COLLATE BINARY LIMIT 1`,order.teamId);if(earliest?.payment_id!==payment.paymentId)conflict();
+  assertBillingPaymentFulfillable(db,payment.receipt);
+  assertAnnualPaymentTurn(db,order,payment);
   const window=annualRenewalWindow(current.revision?{startsAt:current.startsAt,endsAt:current.endsAt}:null,payment.confirmedAt);
   if(plan){
    if(one(db,'SELECT 1 FROM team_seat_capacity_grants WHERE grant_id=?',order.id))conflict();
