@@ -30,6 +30,14 @@ function snapshot(teamId, committedSeats = 5, defaultSeats = 8) {
   };
 }
 
+function managedSnapshot(teamId, { state = 'active', purchased = 7 } = {}) {
+  return {
+    teamId, simulation: false,
+    subscription: { state, startsAt: termStart, endsAt: termEnd },
+    seats: { purchasedSeats: purchased, activeBusinessSeats: 3, reservedInvitationSeats: 2, usedSeats: 5, availableSeats: purchased - 5 }
+  };
+}
+
 async function until(expectation) {
   const limit = Date.now() + 3000;
   while (!expectation()) {
@@ -81,9 +89,76 @@ function fixture(t, overrides = {}) {
   return { id, calls, callbacks, context, view, panel, open, change };
 }
 
+test('managed billing renders terms and seats while keeping all order actions closed through refresh', async t => {
+  let overview = managedSnapshot('a');
+  const f = fixture(t, { getBillingOverview: () => ok(overview), reconcileBillingPage: () => ok({}) });
+  const metrics = () => [...f.id('seats').querySelectorAll('dt, dd')].map(element => element.textContent);
+  const orderCalls = () => f.calls.filter(call => /^(listBillingOrders|createBillingOrder|reconcileBillingOrder|reconcileBillingPage)$/.test(call.name));
+  await f.open();
+  assert.match(f.id('notice').textContent, /仅可查阅订阅与席位/);
+  assert.match(f.id('term').textContent, /有效.*2025.*至.*2026.*北京时间/);
+  assert.deepEqual(metrics(), ['已购', '7', '已启用', '3', '邀请预留', '2', '合计占用', '5', '可用', '2']);
+  assert.equal(f.id('checkout-section').hidden, true);
+  assert.equal(f.id('orders-section').hidden, true);
+  assert.equal(f.id('order-list').childElementCount, 0);
+  assert.deepEqual(orderCalls(), []);
+
+  f.change('order-kind', 'seat');
+  for (const button of ['orders-refresh', 'review', 'confirm', 'batch-start']) f.id(button).click();
+  overview = managedSnapshot('a', { state: 'expired', purchased: 9 });
+  assert.equal(f.id('refresh').disabled, false);
+  f.id('refresh').click();
+  await until(() => f.id('term').textContent.includes('已到期'));
+  assert.equal(f.calls.filter(call => call.name === 'getBillingOverview').length, 2);
+  assert.deepEqual(metrics(), ['已购', '9', '已启用', '3', '邀请预留', '2', '合计占用', '5', '可用', '4']);
+  assert.equal(f.id('checkout-section').hidden, true);
+  assert.equal(f.id('orders-section').hidden, true);
+  assert.equal(f.id('confirmation').hidden, true);
+  assert.deepEqual(orderCalls(), []);
+});
+
+test('managed billing clears terms on close and ignores an in-flight overview after sign-out', async t => {
+  const pending = deferred();
+  let reads = 0;
+  const f = fixture(t, { getBillingOverview: () => ++reads === 1 ? ok(managedSnapshot('a')) : pending.promise });
+  await f.open();
+  assert.match(f.id('term').textContent, /有效/);
+  f.panel.open = false;
+  await until(() => f.id('overview').hidden);
+  assert.equal(f.id('term').textContent, '');
+  assert.equal(f.id('seats').textContent, '');
+
+  f.panel.open = true;
+  await until(() => reads === 2);
+  Object.assign(f.context, { ready: false, identity: '' });
+  f.view.reset();
+  pending.resolve(ok(managedSnapshot('a', { purchased: 9 })));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.panel.hidden, true);
+  assert.equal(f.id('overview').hidden, true);
+  assert.equal(f.id('term').textContent, '');
+  assert.equal(f.id('seats').textContent, '');
+  assert.equal(f.id('order-list').childElementCount, 0);
+  assert.deepEqual(f.calls.map(call => call.name), ['getBillingAccess', 'getBillingOverview', 'getBillingOverview']);
+});
+
+test('simulation-only fields cannot enable simulated checkout in a managed view', async t => {
+  const f = fixture(t, { getBillingOverview: () => ok({ ...snapshot('a'), ...managedSnapshot('a') }) });
+  await f.open();
+  assert.match(f.id('notice').textContent, /只读|仅可查阅/);
+  assert.match(f.id('term').textContent, /有效/);
+  assert.equal(f.id('checkout-section').hidden, true);
+  assert.equal(f.id('orders-section').hidden, true);
+  assert.equal(f.id('annual-offer').options.length, 0);
+  assert.deepEqual(f.calls.map(call => call.name), ['getBillingAccess', 'getBillingOverview']);
+});
+
 test('billing defaults to the prior-term seat quantity, protects reductions and displays the exact server amount', async t => {
   const f = fixture(t);
   await f.open();
+  assert.match(f.id('notice').textContent, /本机模拟账务/);
+  assert.equal(f.id('checkout-section').hidden, false);
+  assert.equal(f.id('orders-section').hidden, false);
   assert.match(f.id('term').textContent, /待生效.*北京时间/);
   assert.deepEqual([...f.id('seats').querySelectorAll('dd')].map(node => node.textContent), ['7', '3', '2', '5', '2']);
   assert.equal(f.id('selected-seats').value, '8');

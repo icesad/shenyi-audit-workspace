@@ -122,19 +122,21 @@
     }
 
     function canReconcileBatch() {
-      return overview?.canReconcile === true && overview.canReconcileBillingBatch === true &&
+      return overview?.simulation === true && overview.canReconcile === true && overview.canReconcileBillingBatch === true &&
         typeof api?.reconcileBillingPage === 'function';
     }
 
     function controls() {
       const disabled = !currentScope(scope) || panel.hidden || !panel.open || !!getContext().busy || !!mutation;
       const annual = kind === 'annual';
-      const hasOffer = annual ? overview?.annualOffers.length > 0 : !!overview?.seatOffer;
+      const simulation = overview?.simulation === true;
+      const hasOffer = simulation && (annual ? overview.annualOffers.length > 0 : !!overview.seatOffer);
       const blocked = disabled || !!overviewRead;
       node('team').disabled = disabled || teams.length <= 1 || !!accessRead;
       node('refresh').disabled = blocked || !!accessRead;
       node('overview').hidden = !overview;
-      node('order-kind').disabled = blocked;
+      node('checkout-section').hidden = node('orders-section').hidden = !simulation;
+      node('order-kind').disabled = blocked || !simulation;
       node('annual-fields').hidden = !annual;
       node('renewal-fields').hidden = !annual || !overview?.renewalSeats;
       node('seat-fields').hidden = annual;
@@ -145,7 +147,7 @@
       node('confirmation').hidden = !confirmation;
       node('confirm').disabled = blocked || !!ordersRead || !confirmation;
       node('cancel').disabled = disabled;
-      node('orders-refresh').disabled = disabled || !overview || !!ordersRead;
+      node('orders-refresh').disabled = disabled || !simulation || !!ordersRead;
       node('orders-more').hidden = !nextCursor;
       node('orders-previous').hidden = !previousCursors.length;
       node('orders-more').disabled = node('orders-previous').disabled = node('orders-refresh').disabled;
@@ -196,7 +198,7 @@
       clearOrders();
       clearBatch();
       message();
-      for (const name of ['term', 'seats', 'annual-offer', 'order-hint']) node(name).replaceChildren();
+      for (const name of ['notice', 'term', 'seats', 'annual-offer', 'order-hint']) node(name).replaceChildren();
       node('selected-seats').value = '';
       node('seat-quantity').value = '';
       controls();
@@ -289,6 +291,9 @@
 
     function drawOverview(keepDraft = false) {
       const { subscription, seats, annualOffers, renewalSeats } = overview;
+      node('notice').textContent = overview.simulation
+        ? '本机模拟账务。创建订单和核对状态均不收款。'
+        : '当前仅可查阅订阅与席位。在线续费尚未开通。';
       const term = subscription.startsAt == null ? '' : '　' + date(subscription.startsAt) + ' 至 ' + date(subscription.endsAt) + '（北京时间）';
       node('term').textContent = '团队年订阅 · ' + (subscriptionStates[subscription.state] || '状态待核对') + term;
       node('seats').replaceChildren();
@@ -301,6 +306,7 @@
         metric.append(element('dt', label), element('dd', value));
         node('seats').append(metric);
       }
+      if (!overview.simulation) return;
       const selectedOffer = node('annual-offer').value;
       const chosen = annualOffers.map((offer, index) => option(offer.id, annualOffers.length === 1 ? '团队年费' : '团队年费 · 目录价 ' + amount(offer.amountMinor) + ' · 选项 ' + (index + 1)));
       node('annual-offer').replaceChildren(...chosen);
@@ -321,12 +327,15 @@
       try {
         const value = await invoke('getBillingOverview', { teamId: team });
         if (!currentView(read) || overviewRead !== read) return;
-        if (value?.teamId !== team || value?.simulation !== true) throw new Error('Unexpected billing overview');
+        if (value?.teamId !== team || typeof value.simulation !== 'boolean') throw new Error('Unexpected billing overview');
         overview = value;
         if (!canReconcileBatch()) clearBatch();
         drawOverview(keepDraft);
         message(success);
-        if (keepOrders) drawOrders();
+        if (!overview.simulation) {
+          clearConfirmation();
+          clearOrders();
+        } else if (keepOrders) drawOrders();
         else void loadOrders();
       } catch (error) {
         if (!currentView(read) || overviewRead !== read || handleSessionError(error)) return;
@@ -339,7 +348,7 @@
     }
 
     function canReconcileOrder(order) {
-      return overview?.canReconcile === true && order && (order.status !== 'paid' ||
+      return overview?.simulation === true && overview.canReconcile === true && order && (order.status !== 'paid' ||
         overview.canReconcilePaymentExceptions === true && !order.paymentException);
     }
 
@@ -404,7 +413,7 @@
     }
 
     async function loadOrders(move = 'reload') {
-      if (!overview || ordersRead || move === 'next' && !nextCursor || move === 'previous' && !previousCursors.length) return;
+      if (overview?.simulation !== true || ordersRead || move === 'next' && !nextCursor || move === 'previous' && !previousCursors.length) return;
       const read = capture();
       if (!currentView(read)) return;
       const input = { teamId: team, kind };
@@ -434,7 +443,7 @@
     }
 
     function review() {
-      if (node('review').disabled || !overview || !currentView(capture())) return;
+      if (node('review').disabled || overview?.simulation !== true || !currentView(capture())) return;
       const annual = kind === 'annual';
       const offer = annual ? overview.annualOffers.find(record => record.id === node('annual-offer').value) : overview.seatOffer;
       if (!offer) return;
@@ -471,7 +480,7 @@
     }
 
     async function createOrder() {
-      if (node('confirm').disabled || !confirmation || !currentView(capture())) return;
+      if (node('confirm').disabled || overview?.simulation !== true || !confirmation || !currentView(capture())) return;
       const at = capture();
       const { input, key } = confirmation;
       const store = intents;
@@ -619,7 +628,7 @@
       void loadOverview();
     });
     node('order-kind').addEventListener('change', () => {
-      if (!overview || !Object.hasOwn(orderNames, node('order-kind').value)) return;
+      if (overview?.simulation !== true || !Object.hasOwn(orderNames, node('order-kind').value)) return;
       kind = node('order-kind').value;
       revision++;
       clearOrders();

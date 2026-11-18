@@ -171,8 +171,23 @@ function orderView(value,{teamId,kind,orderId,selection},reject){
 }
 
 function overviewView(value,teamId,reject){
-  const overview=fields(value,['teamId','simulation','subscription','seats','annualOffers','renewalSeats','seatOffer','canReconcile'],reject,['canReconcilePaymentExceptions','canReconcileBillingBatch']);
-  if(overview.teamId!==teamId||overview.simulation!==true||!boolean(overview.canReconcile))reject();
+  const commonKeys=['teamId','simulation','subscription','seats'];
+  const simulationKeys=['annualOffers','renewalSeats','seatOffer','canReconcile'];
+  const optionalKeys=['canReconcilePaymentExceptions','canReconcileBillingBatch'];
+  const overview=fields(value,commonKeys,reject,[...simulationKeys,...optionalKeys]);
+  if(overview.teamId!==teamId||!boolean(overview.simulation))reject();
+  const subscription=fields(overview.subscription,['state','revision','startsAt','endsAt'],reject);
+  const {state,revision,startsAt,endsAt}=subscription;
+  if(!SUBSCRIPTION_STATES.has(state)||(state==='unconfigured'?
+    revision!==0||startsAt!==null||endsAt!==null:!integer(revision,1)||!timestamp(startsAt)||!timestamp(endsAt)||startsAt>=endsAt))reject();
+  const seats=fields(overview.seats,['purchasedSeats','activeBusinessSeats','reservedInvitationSeats','usedSeats','availableSeats'],reject);
+  if(!Object.values(seats).every(value=>integer(value))||seats.usedSeats!==seats.activeBusinessSeats+seats.reservedInvitationSeats||
+    seats.availableSeats!==Math.max(0,seats.purchasedSeats-seats.usedSeats))reject();
+  if(!overview.simulation){
+    if(Object.keys(overview).length!==commonKeys.length)reject();
+    return {teamId,simulation:false,subscription,seats};
+  }
+  if(!simulationKeys.every(key=>Object.hasOwn(overview,key))||!boolean(overview.canReconcile))reject();
   const capabilities={canReconcile:overview.canReconcile};
   if(Object.hasOwn(overview,'canReconcilePaymentExceptions')){
     const enabled=overview.canReconcilePaymentExceptions;
@@ -183,13 +198,6 @@ function overviewView(value,teamId,reject){
     if(overview.canReconcileBillingBatch!==true||!overview.canReconcile)reject();
     capabilities.canReconcileBillingBatch=true;
   }
-  const subscription=fields(overview.subscription,['state','revision','startsAt','endsAt'],reject);
-  const {state,revision,startsAt,endsAt}=subscription;
-  if(!SUBSCRIPTION_STATES.has(state)||(state==='unconfigured'?
-    revision!==0||startsAt!==null||endsAt!==null:!integer(revision,1)||!timestamp(startsAt)||!timestamp(endsAt)||startsAt>=endsAt))reject();
-  const seats=fields(overview.seats,['purchasedSeats','activeBusinessSeats','reservedInvitationSeats','usedSeats','availableSeats'],reject);
-  if(!Object.values(seats).every(value=>integer(value))||seats.usedSeats!==seats.activeBusinessSeats+seats.reservedInvitationSeats||
-    seats.availableSeats!==Math.max(0,seats.purchasedSeats-seats.usedSeats))reject();
   const annualOffers=array(overview.annualOffers,10,reject).map(item=>offerView(item,'annual',reject));
   if(new Set(annualOffers.map(item=>item.id)).size!==annualOffers.length)reject();
   let renewalSeats=null,seatOffer=null;

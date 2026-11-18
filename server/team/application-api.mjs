@@ -64,7 +64,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
     }
     const at = now();
     if (!Number.isSafeInteger(at) || at < 0) throw new Error('Invalid clock');
-    const url=new URL(request.url),options={db,now,identityProviders,subscriptionEnforcement:subscriptionEnforcementMode(subscriptionEnforcement,identityProviders)};
+    const url=new URL(request.url),options={db,now,identityProviders,serviceMode,subscriptionEnforcement:subscriptionEnforcementMode(subscriptionEnforcement,identityProviders)};
     options.seatCapacityEnforcement=seatCapacityMode(seatCapacityEnforcement,options);
     options.billingSimulation=billingSimulationConfiguration(billingSimulation,options);
     // A provider's top-level browser callback is cross-site by design. Only this

@@ -112,16 +112,16 @@
       </details>
       <details id="billing-panel" class="identity-panel billing-panel" hidden>
         <summary>订阅与席位</summary>
-        <p class="billing-notice">本机模拟账务。创建订单和核对状态均不收款。</p>
         <div class="billing-toolbar">
           <div><label for="billing-team">账务团队</label><select id="billing-team"></select></div>
           <button id="billing-refresh" class="button" type="button">刷新订阅与席位</button>
         </div>
         <p id="billing-message" class="feedback" role="status" aria-live="polite"></p>
         <div id="billing-overview" hidden>
+          <p id="billing-notice" class="billing-notice"></p>
           <p id="billing-term" class="billing-term"></p>
           <dl id="billing-seats" class="billing-metrics"></dl>
-          <section class="billing-section" aria-labelledby="billing-checkout-heading">
+          <section id="billing-checkout-section" class="billing-section" aria-labelledby="billing-checkout-heading" hidden>
             <h4 id="billing-checkout-heading">创建订单</h4>
             <div class="billing-toolbar">
               <div><label for="billing-order-kind">订单类型</label><select id="billing-order-kind"><option value="annual">团队年费</option><option value="seat">增购席位</option></select></div>
@@ -136,7 +136,7 @@
               <div class="billing-actions"><button id="billing-confirm" class="button primary" type="button">确认创建模拟订单</button><button id="billing-cancel" class="button" type="button">返回修改</button></div>
             </div>
           </section>
-          <section class="billing-section" aria-labelledby="billing-orders-heading">
+          <section id="billing-orders-section" class="billing-section" aria-labelledby="billing-orders-heading" hidden>
             <div class="billing-actions billing-orders-heading"><h4 id="billing-orders-heading" tabindex="-1">团队年费订单</h4><button id="billing-orders-refresh" class="button" type="button">刷新订单</button></div>
             <div id="billing-batch-section" class="billing-batch" hidden>
               <div class="billing-actions">

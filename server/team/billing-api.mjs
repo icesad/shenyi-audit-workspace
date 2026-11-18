@@ -35,11 +35,14 @@ function actor(db,request,options,teamId,before){
 function seatOrderingEnabled(options){
  return options.seatCapacityEnforcement==='invitation-reservations-v1';
 }
+function billingOverviewEnabled(options){
+ return seatOrderingEnabled(options)&&(options.serviceMode==='managed-service'||!!options.billingSimulation);
+}
 function billingAccess(request,options){
- const {db,billingSimulation}=options;
+ const {db}=options;
  return transaction(db,()=>{
   const current=heldActor(db,request,options);
-  const rows=billingSimulation&&seatOrderingEnabled(options)?db.prepare(`
+  const rows=billingOverviewEnabled(options)?db.prepare(`
    SELECT operator.team_id,profile.name FROM team_operators operator
    LEFT JOIN team_profiles profile ON profile.team_id=operator.team_id
    WHERE operator.user_id=? AND ${administratorTechnicalEligibilitySql()}
@@ -51,6 +54,8 @@ function billingAccess(request,options){
 }
 function billingOverview(db,teamId,at,billingSimulation){
  const {state,revision,startsAt,endsAt}=readSubscriptionState(db,teamId,at);
+ const summary={teamId,subscription:{state,revision,startsAt,endsAt},seats:readSeatCapacity(db,teamId,at)};
+ if(!billingSimulation)return json({...summary,simulation:false});
  const unitAmountMinor=billingSimulation.annualSeatUnitAmountMinor;
  const renewalSeats=unitAmountMinor===undefined?null:{
   ...readAnnualSeatRenewalDefaults(db,teamId,at),unitAmountMinor,currency:'CNY',
@@ -58,8 +63,7 @@ function billingOverview(db,teamId,at,billingSimulation){
  const seatOffer=billingSimulation.seatOffer?{...billingSimulation.seatOffer,product:SEAT_PRODUCT}:null;
  const canReconcile=typeof billingSimulation.lookupPayment==='function';
  return json({
-  teamId,simulation:true,subscription:{state,revision,startsAt,endsAt},
-  seats:readSeatCapacity(db,teamId,at),
+  ...summary,simulation:true,
   annualOffers:renewalSeats?billingSimulation.offers:[],renewalSeats,seatOffer,
   canReconcile,
   ...(billingSimulation.paymentExceptions&&canReconcile?{canReconcilePaymentExceptions:true}:{}),
@@ -214,10 +218,12 @@ export async function handleBillingRequest(request,options={}){
  if(url.hash||url.href.endsWith('?')||(!isOrder||orderId)&&url.search)invalid();
  const {db,billingSimulation,now=Date.now}=options,currentOptions={...options,now};
  const initial=actor(db,request,currentOptions,teamId);
- if(kind==='seats'||isSeatOrder||kind==='seat-offer'||kind==='renewal-seats'||kind==='overview'){
+ if(kind==='seats'||isSeatOrder||kind==='seat-offer'||kind==='renewal-seats'){
   if(!seatOrderingEnabled(options))unavailable();
  }
- if(kind!=='seats'&&!billingSimulation)unavailable();
+ if(kind==='overview'){
+  if(!billingOverviewEnabled(options))unavailable();
+ }else if(kind!=='seats'&&!billingSimulation)unavailable();
  const allowed=reconcile||kind==='reconciliation'?'POST':isOrder&&!orderId?'GET, POST':'GET';
  if(!allowed.split(', ').includes(request.method))return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:allowed});
  const authorize=()=>actor(db,request,currentOptions,teamId,initial);

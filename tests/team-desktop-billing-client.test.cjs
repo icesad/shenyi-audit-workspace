@@ -70,6 +70,25 @@ test('fixed billing paths and request bodies return only renderer-safe order fie
   ]);
 });
 
+test('managed billing overview carries only a scoped subscription and seat summary',async()=>{
+  const {client,responses}=fixture();
+  const overview={teamId:TEAM,simulation:false,subscription:OVERVIEW.subscription,seats:OVERVIEW.seats};
+  responses.push(overview);
+  assert.deepEqual(await client.getBillingOverview({teamId:TEAM}),overview);
+  for(const data of [
+    {...overview,simulation:true},
+    {...overview,teamId:'team-b'},
+    {...overview,canReconcile:false},
+    {...overview,annualOffers:[]},
+    {...overview,subscription:{...overview.subscription,sourceRef:'private'}},
+    {...overview,seats:{...overview.seats,memberIds:[]}},
+    {...overview,seats:{...overview.seats,usedSeats:2}},
+  ]){
+    responses.push(data);
+    await assert.rejects(client.getBillingOverview({teamId:TEAM}),{code:'INVALID_RESPONSE'});
+  }
+});
+
 test('scoping, pagination, and DTO integrity fail before any unsupported data crosses to the renderer',async()=>{
   const {client,calls,responses}=fixture();
   let reads=0;

@@ -1574,7 +1574,9 @@
     api,
     getContext:billingContext,
     onUnauthorized:()=>{showLogin();message('login-message','当前账号登录已失效，请重新登录。',true);},
-    onDeviceUnavailable:()=>suspendDeviceView('当前设备无法通过核验，团队业务已暂停。请重新连接并核验。如刚提交订单，请恢复后先到订单列表核对。')
+    onDeviceUnavailable:()=>suspendDeviceView(identityServiceMode==='managed-service'
+      ? '当前设备无法通过核验，团队业务已暂停。请重新连接并核验。'
+      : '当前设备无法通过核验，团队业务已暂停。请重新连接并核验。如刚提交订单，请恢复后先到订单列表核对。')
   });
   refundIntake=window.createRefundIntakeView?.({
     api,
