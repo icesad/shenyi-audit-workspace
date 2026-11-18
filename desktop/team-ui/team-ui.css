@@ -42,6 +42,21 @@ main{margin-left:232px;padding:0 38px;min-height:100vh;display:flex;flex-directi
 .billing-section h4{margin:0 0 10px;font-size:13px;font-weight:600}
 .billing-orders-heading{justify-content:space-between;align-items:center}
 .billing-orders-heading h4{margin:0}
+.billing-batch {
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+}
+.billing-batch .feedback { margin: 8px 0 0; min-height: 0; }
+.billing-batch .feedback:empty, .billing-batch-results:empty { display: none; }
+.billing-batch-results { margin: 8px 0 0; padding: 0; list-style: none; }
+.billing-batch-results li { display: grid; gap: 4px; padding: 7px 0; border-top: 1px solid var(--line); }
+.billing-batch-results strong { color: var(--ink); font-size: 12px; }
+.billing-batch-results [data-outcome="matched"] strong { color: var(--accent); }
+.billing-batch-results [data-outcome="awaiting-review"] strong { color: var(--amber); }
+.billing-batch-results span { color: var(--muted); font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
 .billing-order-list{display:grid;gap:8px;margin:10px 0;padding:0;list-style:none}
 .billing-order{display:grid;gap:4px;padding:10px 12px;border:1px solid var(--line);border-radius:6px;min-width:0}
 .billing-order div{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center}

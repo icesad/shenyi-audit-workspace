@@ -7,6 +7,7 @@ const BILLING_RPC=Object.freeze([
  ['getBillingAccess','billing-access'],['getBillingOverview','billing-overview'],['listBillingOrders','billing-orders'],
  ['createBillingOrder','billing-order-create'],['reconcileBillingOrder','billing-order-reconcile']
 ]);
+const BILLING_BATCH_RPC=Object.freeze([['reconcileBillingPage','billing-page-reconcile']]);
 const digest=names=>createHash('sha256').update(names.join('\n')).digest('hex');
 function oldNames(names,suffix,baseline,{allowHistorical=false}={}){
  assert.equal(names.length,allowHistorical&&names.length===135?135:135+suffix.length);
@@ -14,9 +15,9 @@ function oldNames(names,suffix,baseline,{allowHistorical=false}={}){
  assert.deepEqual(names.slice(135),names.length===135?[]:suffix);
  return names.slice(0,135);
 }
-function workpaperOldApiNames(api,options){return oldNames(Object.keys(api),[...RPC,...BILLING_RPC].map(x=>x[0]),'bf32a639b6956ae133c8879f774d2fe40c9ffcf5a30216c7b56c0c75c01a5fd9',options);}
+function workpaperOldApiNames(api,options){return oldNames(Object.keys(api),[...RPC,...BILLING_RPC,...BILLING_BATCH_RPC].map(x=>x[0]),'bf32a639b6956ae133c8879f774d2fe40c9ffcf5a30216c7b56c0c75c01a5fd9',options);}
 function workpaperOldApi(api){return Object.freeze(Object.fromEntries(workpaperOldApiNames(api).map(name=>[name,api[name]])));}
-function workpaperOldChannelNames(handlers,options){return oldNames([...handlers.keys()],[...RPC,...BILLING_RPC].map(x=>'shenyi:'+x[1]),'5ea6cae22b7b5ef71d3c844dd3851a20a1638fccbca566d42bc91c71300eff38',options);}
+function workpaperOldChannelNames(handlers,options){return oldNames([...handlers.keys()],[...RPC,...BILLING_RPC,...BILLING_BATCH_RPC].map(x=>'shenyi:'+x[1]),'5ea6cae22b7b5ef71d3c844dd3851a20a1638fccbca566d42bc91c71300eff38',options);}
 function workpaperDomLayer(doc,{allowAbsent=false}={}){
  const assets=['workpaper-sheets.js','workpaper-original-sheet.js','workpaper-original-word.js','workpapers.js'];
  const signatures=doc.querySelectorAll('[id^="workpaper-"],script[src^="workpaper"],link[href="workpapers.css"]');
@@ -33,4 +34,4 @@ function workpaperDomLayer(doc,{allowAbsent=false}={}){
  assert.equal(doc.querySelectorAll('link[rel=stylesheet][href="workpapers.css"]').length,1);
  return {forms:2,passwords:2};
 }
-module.exports={RPC,BILLING_RPC,workpaperOldApiNames,workpaperOldApi,workpaperOldChannelNames,workpaperDomLayer};
+module.exports={RPC,BILLING_RPC,BILLING_BATCH_RPC,workpaperOldApiNames,workpaperOldApi,workpaperOldChannelNames,workpaperDomLayer};

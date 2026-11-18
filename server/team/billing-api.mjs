@@ -12,6 +12,8 @@ import {readSubscriptionState} from './subscription-store.mjs';
 
 export const SIMULATION_NOTIFICATION_PATH='/api/billing/simulation/notifications';
 export const SIMULATION_PAYMENT_EXCEPTION_PATH='/api/billing/simulation/payment-exceptions';
+const RECONCILIATION_PAGE_SIZE=8;
+const reconcilingTeams=new WeakMap();
 const unavailable=()=>{throw new ApiError(503,'BILLING_UNAVAILABLE','模拟账务尚未配置或暂不可用。');};
 const matches=(re,value)=>typeof value==='string'&&re.exec(value)?.[0]===value;
 function time(now){const at=now();if(!Number.isSafeInteger(at)||Object.is(at,-0)||at<0)unavailable();return at;}
@@ -58,6 +60,7 @@ function billingOverview(db,teamId,at,billingSimulation){
   annualOffers:renewalSeats?billingSimulation.offers:[],renewalSeats,seatOffer,
   canReconcile,
   ...(billingSimulation.paymentExceptions&&canReconcile?{canReconcilePaymentExceptions:true}:{}),
+  ...(billingSimulation.batchReconciliation&&canReconcile?{canReconcileBillingBatch:true}:{}),
  });
 }
 function renewalSeatSelectionMatches(order,selectedSeats){
@@ -65,23 +68,25 @@ function renewalSeatSelectionMatches(order,selectedSeats){
  if(!plan)return selectedSeats===undefined;
  return (selectedSeats??plan.defaultSeats)===plan.selectedSeats;
 }
-function settle(db,receipt,now,options){
- let fulfil;
- if(receipt.product===SEAT_PRODUCT){
-  if(!seatOrderingEnabled(options))unavailable();
-  recordVerifiedSeatPayment(db,receipt,{now});
-  fulfil=fulfilSeatOrder;
- }else{
-  recordVerifiedAnnualPayment(db,receipt,{now});
-  fulfil=fulfilAnnualOrder;
- }
+function recordCapture(db,receipt,now,options,authorize){
+ const seat=receipt.product===SEAT_PRODUCT;
+ if(seat&&!seatOrderingEnabled(options))unavailable();
+ const record=seat?recordVerifiedSeatPayment:recordVerifiedAnnualPayment;
+ record(db,receipt,{now,authorize});
+}
+function fulfilCapture(db,receipt,now,authorize){
+ const fulfil=receipt.product===SEAT_PRODUCT?fulfilSeatOrder:fulfilAnnualOrder;
  try{
-  fulfil(db,receipt.orderId,{now});
+  fulfil(db,receipt.orderId,{now,authorize});
  }catch(error){
   // A complete reversal is already durable. Keep the matched late capture for
   // reconciliation and acknowledge it without publishing new entitlements.
   if(!(error instanceof ApiError&&error.code==='BILLING_PAYMENT_EXCEPTION_REVIEW_REQUIRED'))throw error;
  }
+}
+function settle(db,receipt,now,options,authorize){
+ recordCapture(db,receipt,now,options,authorize);
+ fulfilCapture(db,receipt,now,authorize);
 }
 export async function handleBillingSimulationNotification(request,options={}){
  const {db,now=Date.now,billingSimulation}=options;
@@ -114,6 +119,72 @@ async function lookup(configuration,order){
   new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('Gateway timeout'));},5000);}),
  ]);}catch{unavailable();}finally{clearTimeout(timer);}
 }
+function lookupEvidence(configuration,envelope,orderId,product){
+ if(envelope===null)return null;
+ const exception=envelope?.kind==='payment-exception';
+ if(exception&&configuration.paymentExceptions!==true)unavailable();
+ const verify=exception?verifySimulationPaymentExceptionEnvelope:verifySimulationPaymentEnvelope;
+ const receipt=verify(envelope?.body,envelope?.signature,configuration);
+ if(receipt.orderId!==orderId||receipt.product!==product)invalid();
+ return {exception,receipt};
+}
+const rejectedWrite=error=>error instanceof ApiError&&error.status<500?'evidence-rejected':'local-failure';
+
+function applyBatchLookup(result,order,context){
+ const {db,options,now,product,scoped,authorize}=context;
+ if(result.status==='rejected')return 'lookup-unavailable';
+ let evidence;
+ try{evidence=lookupEvidence(options.billingSimulation,result.value,order.id,product);}
+ catch{return 'evidence-rejected';}
+ if(!evidence)return 'no-evidence';
+ if(evidence.exception){
+  try{scoped(()=>recordVerifiedBillingPaymentExceptionWithinTransaction(db,evidence.receipt,{now}));}
+  catch(error){return rejectedWrite(error);}
+  return 'awaiting-review';
+ }
+ try{recordCapture(db,evidence.receipt,now,options,authorize);}
+ catch(error){return rejectedWrite(error);}
+ try{fulfilCapture(db,evidence.receipt,now,authorize);}
+ catch(error){
+  // Expected settlement conflicts leave the verified fact for a review.
+  return error instanceof ApiError&&error.status===409?'inspect-capture':'local-failure';
+ }
+ return 'inspect-capture';
+}
+
+async function reconcileBatch(request,{db,teamId,options,now,scoped,authorize}){
+ const {billingSimulation}=options;
+ if(billingSimulation.batchReconciliation!==true)unavailable();
+ const input=await readJson(request,['kind','after']);
+ if(!['annual','seat'].includes(input.kind)||(input.after!==undefined&&!matches(UUID,input.after)))invalid();
+ const seat=input.kind==='seat';
+ if(seat&&!seatOrderingEnabled(options))unavailable();
+ const list=seat?listSeatOrders:listAnnualOrders,read=seat?readSeatOrder:readAnnualOrder;
+ const product=seat?SEAT_PRODUCT:ANNUAL_PRODUCT;
+ let active=reconcilingTeams.get(db);
+ if(!active){active=new Set();reconcilingTeams.set(db,active);}
+ // Concurrent requests from separate teams do not share a cursor or block each other.
+ if(active.has(teamId))throw new ApiError(409,'BILLING_RECONCILIATION_BUSY','该团队已有一批账务正在核对。');
+ active.add(teamId);
+ try{
+  const {orders,hasMore}=scoped(()=>list(db,teamId,{limit:RECONCILIATION_PAGE_SIZE,after:input.after??null}));
+  const found=await Promise.allSettled(orders.map(order=>lookup(billingSimulation,order)));
+  const results=[];
+  for(const [index,order] of orders.entries()){
+   authorize();
+   let outcome=applyBatchLookup(found[index],order,{db,options,now,product,scoped,authorize});
+   const current=scoped(()=>read(db,teamId,order.id));
+   if(!current)deny();
+   const paymentException=!!current.paymentException;
+   if(outcome==='inspect-capture'){
+    if(paymentException||current.status==='payment-verified')outcome='awaiting-review';
+    else outcome=current.status==='paid'?'matched':'local-failure';
+   }
+   results.push({orderId:order.id,outcome,status:current.status,paymentException});
+  }
+  return scoped(()=>json({simulation:true,teamId,kind:input.kind,results,nextCursor:hasMore?orders.at(-1).id:null}));
+ }finally{active.delete(teamId);}
+}
 export async function handleBillingRequest(request,options={}){
  const url=new URL(request.url);
  if(url.pathname==='/api/auth/billing/access'){
@@ -121,7 +192,7 @@ export async function handleBillingRequest(request,options={}){
   if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
   return billingAccess(request,{...options,now:options.now??Date.now});
  }
- const match=/^\/api\/teams\/([^/]+)\/billing\/(offers|orders|seats|seat-offer|seat-orders|renewal-seats|overview)(?:\/([^/]+)(\/reconcile)?)?$/.exec(url.pathname);
+ const match=/^\/api\/teams\/([^/]+)\/billing\/(offers|orders|seats|seat-offer|seat-orders|renewal-seats|overview|reconciliation)(?:\/([^/]+)(\/reconcile)?)?$/.exec(url.pathname);
  if(!match)return null;
  const [,teamId,kind,orderId,reconcile]=match;
  const isSeatOrder=kind==='seat-orders',isOrder=kind==='orders'||isSeatOrder;
@@ -133,9 +204,11 @@ export async function handleBillingRequest(request,options={}){
   if(!seatOrderingEnabled(options))unavailable();
  }
  if(kind!=='seats'&&!billingSimulation)unavailable();
- const allowed=reconcile?'POST':isOrder&&!orderId?'GET, POST':'GET';
+ const allowed=reconcile||kind==='reconciliation'?'POST':isOrder&&!orderId?'GET, POST':'GET';
  if(!allowed.split(', ').includes(request.method))return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:allowed});
- const scoped=action=>transaction(db,()=>{const current=actor(db,request,currentOptions,teamId,initial),result=action(current);actor(db,request,currentOptions,teamId,current);return result;});
+ const authorize=()=>actor(db,request,currentOptions,teamId,initial);
+ const scoped=action=>transaction(db,()=>{const current=authorize(),result=action(current);authorize();return result;});
+ if(kind==='reconciliation')return reconcileBatch(request,{db,teamId,options:currentOptions,now,scoped,authorize});
  if(kind==='seats')return scoped(()=>json({seats:readSeatCapacity(db,teamId,time(now))}));
  if(kind==='overview')return scoped(()=>billingOverview(db,teamId,time(now),billingSimulation));
  if(kind==='offers')return scoped(()=>json({simulation:true,offers:billingSimulation.offers}));
@@ -155,21 +228,16 @@ export async function handleBillingRequest(request,options={}){
  if(reconcile){
   await readJson(request,[]);
   const order=scoped(()=>{const found=readOrder(db,teamId,orderId);if(!found)deny();return found;});
-  const envelope=await lookup(billingSimulation,order);
-  if(envelope?.kind==='payment-exception'){
-   if(billingSimulation.paymentExceptions!==true)unavailable();
-   const exception=verifySimulationPaymentExceptionEnvelope(envelope.body,envelope.signature,billingSimulation);
-   if(exception.orderId!==orderId||exception.product!==(isSeatOrder?SEAT_PRODUCT:ANNUAL_PRODUCT))invalid();
+  const evidence=lookupEvidence(billingSimulation,await lookup(billingSimulation,order),orderId,isSeatOrder?SEAT_PRODUCT:ANNUAL_PRODUCT);
+  if(evidence?.exception){
    return scoped(()=>{
     if(!readOrder(db,teamId,orderId))deny();
-    recordVerifiedBillingPaymentExceptionWithinTransaction(db,exception,{now});
+    recordVerifiedBillingPaymentExceptionWithinTransaction(db,evidence.receipt,{now});
     return json({simulation:true,order:readOrder(db,teamId,orderId)});
    });
   }
-  const receipt=envelope===null?null:verifySimulationPaymentEnvelope(envelope?.body,envelope?.signature,billingSimulation);
-  if(receipt&&(receipt.orderId!==orderId||receipt.product!==(isSeatOrder?SEAT_PRODUCT:ANNUAL_PRODUCT)))invalid();
   scoped(()=>{if(!readOrder(db,teamId,orderId))deny();});
-  if(receipt)settle(db,receipt,now,options);
+  if(evidence)settle(db,evidence.receipt,now,options,authorize);
   return scoped(()=>json({simulation:true,order:readOrder(db,teamId,orderId)}));
  }
  if(orderId)return scoped(()=>{const order=readOrder(db,teamId,orderId);if(!order)deny();return json({simulation:true,order});});

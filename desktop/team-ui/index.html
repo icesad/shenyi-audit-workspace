@@ -134,6 +134,15 @@
           </section>
           <section class="billing-section" aria-labelledby="billing-orders-heading">
             <div class="billing-actions billing-orders-heading"><h4 id="billing-orders-heading">团队年费订单</h4><button id="billing-orders-refresh" class="button" type="button">刷新订单</button></div>
+            <div id="billing-batch-section" class="billing-batch" hidden>
+              <div class="billing-actions">
+                <button id="billing-batch-start" class="button" type="button">批量核对订单</button>
+                <button id="billing-batch-retry" class="button" type="button" hidden>重试本批</button>
+                <button id="billing-batch-next" class="button" type="button" hidden>核对下一批</button>
+              </div>
+              <p id="billing-batch-message" class="feedback" role="status" aria-live="polite"></p>
+              <ul id="billing-batch-results" class="billing-batch-results" aria-label="本批订单核对结果"></ul>
+            </div>
             <p id="billing-orders-message" class="identity-note" role="status" aria-live="polite"></p>
             <ul id="billing-order-list" class="billing-order-list"></ul>
             <div class="billing-actions"><button id="billing-orders-previous" class="button" type="button" hidden>上一页</button><button id="billing-orders-more" class="button" type="button" hidden>下一页</button></div>

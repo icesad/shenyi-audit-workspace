@@ -7,7 +7,7 @@ const {test}=require('node:test');
 const {APP_URL,registerDesktopBridge}=require('../desktop/bridge.cjs');
 const {createBillingClient,isBillingRoute,billingErrorMessage}=require('../desktop/billing-client.cjs');
 const {ClientError,createTeamClient}=require('../desktop/team-client.cjs');
-const {BILLING_RPC,workpaperOldApiNames,workpaperOldChannelNames}=require('./helpers/workpaper-entry-layer.cjs');
+const {BILLING_RPC,BILLING_BATCH_RPC,workpaperOldApiNames,workpaperOldChannelNames}=require('./helpers/workpaper-entry-layer.cjs');
 
 const TEAM='team-a',CREATED=100,CONFIRMED=200,RENEWAL_START=1000,END=2000;
 const ID='01000000-0000-4000-8000-000000000000';
@@ -30,6 +30,9 @@ const ANNUAL_ORDER={...COMMON,offer:ANNUAL_OFFER,status:'paid',confirmedAt:CONFI
 const SEAT_ORDER={...COMMON,offer:{id:SEAT_OFFER.id,revision:SEAT_OFFER.revision,product:SEAT_OFFER.product,amountMinor:123,currency:'CNY'},
   status:'paid',confirmedAt:CONFIRMED,quantity:2,annualUnitAmountMinor:100,quoteExpiresAt:300,termStartsAt:50,termEndsAt:RENEWAL_START,termRevision:1,
   grant:{grantId:ID,seats:2,startsAt:CONFIRMED,endsAt:RENEWAL_START,recordedAt:CONFIRMED+1}};
+const RECONCILIATION_ROUTE='/api/teams/'+TEAM+'/billing/reconciliation';
+const RECONCILIATION_ROW={orderId:ID,outcome:'matched',status:'paid',paymentException:false};
+const RECONCILIATION_PAGE={simulation:true,teamId:TEAM,kind:'annual',results:[RECONCILIATION_ROW],nextCursor:null};
 
 function fixture(){
   const calls=[],responses=[];
@@ -89,6 +92,9 @@ test('scoping, pagination, and DTO integrity fail before any unsupported data cr
     {...OVERVIEW,annualOffers:[ANNUAL_OFFER,ANNUAL_OFFER]},
     {...OVERVIEW,canReconcilePaymentExceptions:'true'},
     {...OVERVIEW,canReconcile:false,canReconcilePaymentExceptions:true},
+    {...OVERVIEW,canReconcileBillingBatch:false},
+    {...OVERVIEW,canReconcileBillingBatch:'true'},
+    {...OVERVIEW,canReconcile:false,canReconcileBillingBatch:true},
   ];
   for(const data of envelopes){
     responses.push(data);
@@ -147,7 +153,75 @@ test('both products project review evidence independently of fulfilment and keep
   }
 });
 
-test('all five preload actions and guarded bridge channels are exact and have no arbitrary pass-through',async()=>{
+test('batch reconciliation projects bounded ordered pages from a fixed signed-request route',async()=>{
+  const {client,calls,responses}=fixture();
+  const overview={...OVERVIEW,canReconcileBillingBatch:true};
+  responses.push(overview);
+  assert.deepEqual(await client.getBillingOverview({teamId:TEAM}),overview);
+
+  const expected=[
+    {outcome:'no-evidence',status:'paid',paymentException:false},
+    {outcome:'matched',status:'paid',paymentException:false},
+    {outcome:'awaiting-review',status:'pending',paymentException:true},
+    {outcome:'awaiting-review',status:'payment-verified',paymentException:false},
+    {outcome:'lookup-unavailable',status:'pending',paymentException:false},
+    {outcome:'evidence-rejected',status:'paid',paymentException:true},
+    {outcome:'local-failure',status:'payment-verified',paymentException:false},
+    {outcome:'no-evidence',status:'payment-verified',paymentException:true},
+  ];
+  const results=expected.map((result,index)=>({
+    ...result,orderId:String(index+1).padStart(8,'0')+'-0000-4000-8000-000000000000',
+  }));
+  const nextCursor=results.at(-1).orderId;
+  responses.push({...RECONCILIATION_PAGE,results,nextCursor},RECONCILIATION_PAGE,
+    {...RECONCILIATION_PAGE,kind:'seat',results:[]});
+  assert.deepEqual(await client.reconcileBillingPage({teamId:TEAM,kind:'annual'}),{results,nextCursor});
+  assert.deepEqual(await client.reconcileBillingPage({teamId:TEAM,kind:'annual',after:nextCursor}),{
+    results:[RECONCILIATION_ROW],nextCursor:null,
+  });
+  assert.deepEqual(await client.reconcileBillingPage({teamId:TEAM,kind:'seat'}),{results:[],nextCursor:null});
+  assert.deepEqual(calls.slice(1),[
+    {route:RECONCILIATION_ROUTE,options:{method:'POST',body:{kind:'annual'}}},
+    {route:RECONCILIATION_ROUTE,options:{method:'POST',body:{kind:'annual',after:nextCursor}}},
+    {route:RECONCILIATION_ROUTE,options:{method:'POST',body:{kind:'seat'}}},
+  ]);
+});
+
+test('batch selectors and result rows reject unexpected fields, stale cursors and contradictory order states',async()=>{
+  const {client,calls,responses}=fixture();
+  const scope={teamId:TEAM,kind:'annual'};
+  for(const input of [
+    {...scope,teamId:'team-a/billing'},{...scope,kind:'capture'},{...scope,after:undefined},
+    {...scope,after:null},{...scope,after:ID+'/reconcile'},{...scope,orderIds:[ID]},
+  ])await assert.rejects(client.reconcileBillingPage(input),{code:'INVALID_INPUT'});
+  assert.equal(calls.length,0);
+  for(const route of [RECONCILIATION_ROUTE+'?after='+ID,RECONCILIATION_ROUTE+'/',RECONCILIATION_ROUTE+'\n',
+    'https://example.invalid'+RECONCILIATION_ROUTE,RECONCILIATION_ROUTE+'#key'])assert.equal(isBillingRoute(route),false);
+
+  for(const page of [
+    {...RECONCILIATION_PAGE,teamId:'team-b'},
+    {...RECONCILIATION_PAGE,kind:'seat'},
+    {...RECONCILIATION_PAGE,simulation:false},
+    {...RECONCILIATION_PAGE,merchantId:'secret'},
+    {...RECONCILIATION_PAGE,nextCursor:ID},
+    {...RECONCILIATION_PAGE,nextCursor:undefined},
+    {...RECONCILIATION_PAGE,results:Array(9).fill(RECONCILIATION_ROW)},
+    {...RECONCILIATION_PAGE,results:[RECONCILIATION_ROW,RECONCILIATION_ROW]},
+    {...RECONCILIATION_PAGE,results:[{...RECONCILIATION_ROW,orderId:OPERATION},RECONCILIATION_ROW]},
+    ...[
+      {originalTransactionId:REQUEST},{orderId:'arbitrary'},{outcome:'confirmed'},{status:'fulfilled'},
+      {status:'payment-verified'},{paymentException:true},{paymentException:'false'},
+      {outcome:'awaiting-review',status:'pending'},
+    ].map(changes=>({...RECONCILIATION_PAGE,results:[{...RECONCILIATION_ROW,...changes}]})),
+  ]){
+    responses.push(page);
+    await assert.rejects(client.reconcileBillingPage(scope),{code:'INVALID_RESPONSE'});
+  }
+  responses.push(RECONCILIATION_PAGE);
+  await assert.rejects(client.reconcileBillingPage({...scope,after:ID}),{code:'INVALID_RESPONSE'});
+});
+
+test('billing preload actions and guarded bridge channels are exact and have no arbitrary pass-through',async()=>{
   const {client,calls,responses}=fixture(),handlers=new Map(),contents=new EventEmitter();
   contents.mainFrame={url:APP_URL};
   const event={sender:contents,senderFrame:contents.mainFrame};
@@ -161,9 +235,10 @@ test('all five preload actions and guarded bridge channels are exact and have no
   }});
   try{
     assert.equal(workpaperOldApiNames(api).length,135);assert.equal(workpaperOldChannelNames(handlers).length,135);
-    assert.deepEqual(Object.keys(api).slice(-5),BILLING_RPC.map(([name])=>name));
-    assert.deepEqual([...handlers.keys()].slice(-5),BILLING_RPC.map(([,channel])=>'shenyi:'+channel));
-    for(const [,operation] of BILLING_RPC){
+    const operations=[...BILLING_RPC,...BILLING_BATCH_RPC];
+    assert.deepEqual(Object.keys(api).slice(-operations.length),operations.map(([name])=>name));
+    assert.deepEqual([...handlers.keys()].slice(-operations.length),operations.map(([,channel])=>'shenyi:'+channel));
+    for(const [,operation] of operations){
       const run=handlers.get('shenyi:'+operation);
       for(const context of [{sender:{},senderFrame:event.senderFrame},{sender:event.sender,senderFrame:{url:APP_URL}}]){
         assert.equal((await run(context,{teamId:TEAM})).error.code,'UNTRUSTED_SENDER');
@@ -173,10 +248,13 @@ test('all five preload actions and guarded bridge channels are exact and have no
       contents.mainFrame.url=APP_URL;
     }
     assert.equal(calls.length,0);
-    responses.push(ACCESS);
+    responses.push(ACCESS,RECONCILIATION_PAGE);
     assert.deepEqual(await api.getBillingAccess(),{ok:true,value:ACCESS});
+    assert.deepEqual(await api.reconcileBillingPage({teamId:TEAM,kind:'annual'}),{
+      ok:true,value:{results:[RECONCILIATION_ROW],nextCursor:null},
+    });
     assert.equal((await api.createBillingOrder({...SELECTION,signature:'extra'})).error.code,'INVALID_INPUT');
-    assert.equal(calls.length,1);
+    assert.equal(calls.length,2);
     assert.equal(api.invoke,undefined);assert.equal(api.billingSecret,undefined);
   }finally{dispose();assert.equal(handlers.size,0);}
 });
@@ -185,6 +263,7 @@ test('billing signed transport requires login and only forwards locally fixed er
   let count=0;
   const client=createTeamClient({fetchImpl:async()=>{count++;throw Error('Unexpected transport');}});
   await assert.rejects(client.getBillingAccess(),{code:'SIGN_IN_REQUIRED'});
+  await assert.rejects(client.reconcileBillingPage({teamId:TEAM,kind:'annual'}),{code:'SIGN_IN_REQUIRED'});
   assert.equal(count,0);
   assert.equal(billingErrorMessage(409,'BILLING_CONFLICT'),'模拟订单或收款状态需要核对，请保留原订单。');
   assert.equal(billingErrorMessage(403,'BILLING_CONFLICT'),undefined);

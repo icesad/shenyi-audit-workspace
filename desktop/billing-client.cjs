@@ -4,13 +4,15 @@ const {isProxy}=require('node:util').types;
 const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const BILLING_ROOT='/api/auth/billing/access';
-const BILLING_PATH=/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/billing\/(?:overview|(?:orders|seat-orders)(?:\?limit=20(?:&after=([0-9a-f-]{36}))?|\/([0-9a-f-]{36})\/reconcile)?)$/;
+const BILLING_PATH=/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/billing\/(?:overview|reconciliation|(?:orders|seat-orders)(?:\?limit=20(?:&after=([0-9a-f-]{36}))?|\/([0-9a-f-]{36})\/reconcile)?)$/;
 const PAGE_SIZE=20;
+const RECONCILIATION_PAGE_SIZE=8;
 const MAX_BILLING_BYTES=128*1024;
 const PRODUCTS={annual:'team-annual-renewal',seat:'team-seat-addition'};
 const SUBSCRIPTION_STATES=new Set(['unconfigured','scheduled','active','expired']);
 const ORDER_STATES=new Set(['pending','payment-verified','paid']);
 const PAYMENT_EXCEPTION_KINDS=new Set(['refund','chargeback']);
+const RECONCILIATION_OUTCOMES=new Set(['no-evidence','matched','awaiting-review','lookup-unavailable','evidence-rejected','local-failure']);
 const OFFER_KEYS=['id','revision','product','amountMinor','currency'];
 const ORDER_KEYS=['id','teamId','actorId','requestId','merchantId','offer','simulation','createdAt','status','confirmedAt'];
 const BILLING_ERRORS=Object.freeze({
@@ -138,13 +140,17 @@ function orderView(value,{teamId,kind,orderId,selection},reject){
 }
 
 function overviewView(value,teamId,reject){
-  const overview=fields(value,['teamId','simulation','subscription','seats','annualOffers','renewalSeats','seatOffer','canReconcile'],reject,['canReconcilePaymentExceptions']);
+  const overview=fields(value,['teamId','simulation','subscription','seats','annualOffers','renewalSeats','seatOffer','canReconcile'],reject,['canReconcilePaymentExceptions','canReconcileBillingBatch']);
   if(overview.teamId!==teamId||overview.simulation!==true||!boolean(overview.canReconcile))reject();
   const capabilities={canReconcile:overview.canReconcile};
   if(Object.hasOwn(overview,'canReconcilePaymentExceptions')){
     const enabled=overview.canReconcilePaymentExceptions;
     if(!boolean(enabled)||enabled&&!overview.canReconcile)reject();
     capabilities.canReconcilePaymentExceptions=enabled;
+  }
+  if(Object.hasOwn(overview,'canReconcileBillingBatch')){
+    if(overview.canReconcileBillingBatch!==true||!overview.canReconcile)reject();
+    capabilities.canReconcileBillingBatch=true;
   }
   const subscription=fields(overview.subscription,['state','revision','startsAt','endsAt'],reject);
   const {state,revision,startsAt,endsAt}=subscription;
@@ -167,6 +173,23 @@ function overviewView(value,teamId,reject){
       seatOffer.currency!=='CNY'||seatOffer.product!==PRODUCTS.seat)reject();
   }
   return {teamId,simulation:true,subscription,seats,annualOffers,renewalSeats,seatOffer,...capabilities};
+}
+
+function reconciliationPageView(value,{teamId,kind,after},reject){
+  const page=fields(value,['simulation','teamId','kind','results','nextCursor'],reject);
+  if(page.simulation!==true||page.teamId!==teamId||page.kind!==kind)reject();
+  const results=array(page.results,RECONCILIATION_PAGE_SIZE,reject).map(item=>{
+    const result=fields(item,['orderId','outcome','status','paymentException'],reject);
+    const {orderId,outcome,status,paymentException}=result;
+    if(!match(UUID,orderId)||!RECONCILIATION_OUTCOMES.has(outcome)||!ORDER_STATES.has(status)||!boolean(paymentException)||
+      outcome==='matched'&&(status!=='paid'||paymentException)||
+      outcome==='awaiting-review'&&status!=='payment-verified'&&!paymentException)reject();
+    return result;
+  });
+  const {nextCursor}=page;
+  if(results.some((result,index)=>result.orderId<=(index===0?after??'':results[index-1].orderId))||
+    nextCursor!==null&&(results.length!==RECONCILIATION_PAGE_SIZE||nextCursor!==results.at(-1).orderId))reject();
+  return {results,nextCursor};
 }
 
 function createBillingClient({request,failure}){
@@ -229,6 +252,14 @@ function createBillingClient({request,failure}){
       if((kind!=='annual'&&kind!=='seat')||!match(UUID,orderId))badInput();
       const route=scoped(teamId,kind)+'/'+orderId+'/reconcile';
       return orderResponse(await request(route,{method:'POST',body:{}}),{teamId,kind,orderId});
+    },
+    async reconcileBillingPage(input){
+      const scope=fields(input,['teamId','kind'],badInput,['after']);
+      const {teamId,kind,after}=scope;
+      if(!match(ID,teamId)||(kind!=='annual'&&kind!=='seat')||Object.hasOwn(scope,'after')&&!match(UUID,after))badInput();
+      const body=after===undefined?{kind}:{kind,after};
+      const route='/api/teams/'+teamId+'/billing/reconciliation';
+      return reconciliationPageView(await request(route,{method:'POST',body}),scope,badResponse);
     },
   };
 }

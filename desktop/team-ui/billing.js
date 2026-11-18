@@ -4,6 +4,14 @@
   const orderNames = { annual: '团队年费', seat: '增购席位' };
   const orderStates = { pending: '待支付', 'payment-verified': '已核验，待到账', paid: '已到账' };
   const paymentExceptionStates = { refund: '退款待复核', chargeback: '拒付待复核' };
+  const batchOutcomes = {
+    matched: '已核实',
+    'awaiting-review': '待复核',
+    'no-evidence': '未返回可信凭据',
+    'lookup-unavailable': '暂无法查询渠道',
+    'evidence-rejected': '凭据未通过核验',
+    'local-failure': '账本处理失败'
+  };
   const subscriptionStates = { active: '有效', expired: '已到期', scheduled: '待生效', unconfigured: '尚未开通' };
   const dateFormat = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -46,6 +54,12 @@
     return node;
   }
 
+  function orderStateText(status, hasException) {
+    if (hasException && status === 'pending') return '未确认收款';
+    if (hasException && status === 'payment-verified') return '已核验收款';
+    return orderStates[status];
+  }
+
   window.createBillingView = function ({ api, getContext, onUnauthorized, onDeviceUnavailable }) {
     const node = name => document.getElementById('billing-' + name);
     const panel = node('panel');
@@ -53,6 +67,7 @@
     let scope = '', identity = '', revision = 0, accessRead = null, team = '', teams = [];
     let overview = null, overviewRead = null, ordersRead = null, orders = [], nextCursor = null, pageCursor = null, previousCursors = [];
     let kind = 'annual', confirmation = null, mutation = null;
+    let batchReport = null, failedBatch = null;
     let intents = new Map();
 
     function keys(context) {
@@ -70,6 +85,7 @@
     }
 
     function currentView(at) {
+      if (panelObserver.takeRecords().length) panelOpenChanged();
       return currentScope(at.scope) && panel.open && !panel.hidden && at.revision === revision && at.team === team && at.kind === kind;
     }
 
@@ -103,6 +119,11 @@
       return false;
     }
 
+    function canReconcileBatch() {
+      return overview?.canReconcile === true && overview.canReconcileBillingBatch === true &&
+        typeof api?.reconcileBillingPage === 'function';
+    }
+
     function controls() {
       const disabled = !currentScope(scope) || panel.hidden || !panel.open || !!getContext().busy || !!mutation;
       const annual = kind === 'annual';
@@ -127,6 +148,14 @@
       node('orders-previous').hidden = !previousCursors.length;
       node('orders-more').disabled = node('orders-previous').disabled = node('orders-refresh').disabled;
       for (const button of node('order-list').querySelectorAll('[data-billing-reconcile]')) button.disabled = disabled || !!ordersRead;
+      const batchAvailable = canReconcileBatch();
+      const batchBlocked = !batchAvailable || blocked || !!ordersRead || !!accessRead;
+      node('batch-section').hidden = !batchAvailable;
+      node('batch-start').hidden = !!failedBatch && failedBatch.after === null;
+      node('batch-start').textContent = batchReport ? '从首批核对' : '批量核对订单';
+      node('batch-retry').hidden = !batchReport && !failedBatch;
+      node('batch-next').hidden = !batchReport?.nextCursor || !!failedBatch;
+      node('batch-start').disabled = node('batch-retry').disabled = node('batch-next').disabled = batchBlocked;
     }
 
     function clearConfirmation() {
@@ -144,12 +173,26 @@
       node('orders-message').textContent = '';
     }
 
+    function batchMessage(words = '', error = false) {
+      const feedback = node('batch-message');
+      feedback.textContent = words;
+      feedback.classList.toggle('error', error);
+    }
+
+    function clearBatch() {
+      batchReport = null;
+      failedBatch = null;
+      node('batch-results').replaceChildren();
+      batchMessage();
+    }
+
     function clearOverview() {
       revision++;
       overview = null;
       overviewRead = null;
       clearConfirmation();
       clearOrders();
+      clearBatch();
       message();
       for (const name of ['term', 'seats', 'annual-offer', 'order-hint']) node(name).replaceChildren();
       node('selected-seats').value = '';
@@ -242,7 +285,7 @@
       node('order-hint').textContent = hint;
     }
 
-    function drawOverview() {
+    function drawOverview(keepDraft = false) {
       const { subscription, seats, annualOffers, renewalSeats } = overview;
       const term = subscription.startsAt == null ? '' : '　' + date(subscription.startsAt) + ' 至 ' + date(subscription.endsAt) + '（北京时间）';
       node('term').textContent = '团队年订阅 · ' + (subscriptionStates[subscription.state] || '状态待核对') + term;
@@ -256,15 +299,17 @@
         metric.append(element('dt', label), element('dd', value));
         node('seats').append(metric);
       }
+      const selectedOffer = node('annual-offer').value;
       const chosen = annualOffers.map((offer, index) => option(offer.id, annualOffers.length === 1 ? '团队年费' : '团队年费 · 目录价 ' + amount(offer.amountMinor) + ' · 选项 ' + (index + 1)));
       node('annual-offer').replaceChildren(...chosen);
+      if (keepDraft && annualOffers.some(offer => offer.id === selectedOffer)) node('annual-offer').value = selectedOffer;
       node('selected-seats').min = renewalSeats?.committedSeats ?? 0;
-      node('selected-seats').value = renewalSeats?.defaultSeats ?? '';
-      node('seat-quantity').value = overview.seatOffer ? '1' : '';
+      if (!keepDraft || !renewalSeats) node('selected-seats').value = renewalSeats?.defaultSeats ?? '';
+      if (!keepDraft || !overview.seatOffer) node('seat-quantity').value = overview.seatOffer ? '1' : '';
       drawCheckout();
     }
 
-    async function loadOverview({ success = '', keepOrders = false } = {}) {
+    async function loadOverview({ success = '', keepOrders = false, keepDraft = false } = {}) {
       if (!team || panel.hidden || !panel.open || !currentScope(scope)) return;
       if (!keepOrders) clearOverview();
       const read = capture();
@@ -276,7 +321,8 @@
         if (!currentView(read) || overviewRead !== read) return;
         if (value?.teamId !== team || value?.simulation !== true) throw new Error('Unexpected billing overview');
         overview = value;
-        drawOverview();
+        if (!canReconcileBatch()) clearBatch();
+        drawOverview(keepDraft);
         message(success);
         if (keepOrders) drawOrders();
         else void loadOrders();
@@ -299,9 +345,7 @@
       const row = element('li', undefined, 'billing-order');
       const header = element('div');
       const exception = order.paymentException;
-      const stateText = exception && order.status === 'pending' ? '未确认收款' :
-        exception && order.status === 'payment-verified' ? '已核验收款' : orderStates[order.status];
-      const state = element('strong', stateText, 'billing-order-state');
+      const state = element('strong', orderStateText(order.status, exception), 'billing-order-state');
       row.dataset.orderId = order.id;
       state.dataset.state = order.status;
       header.append(state);
@@ -462,10 +506,71 @@
       }
     }
 
-    const panelObserver = new MutationObserver(() => {
+    function drawBatch() {
+      const rows = batchReport.results.map(result => {
+        const row = element('li');
+        row.dataset.batchOrderId = result.orderId;
+        row.dataset.outcome = result.outcome;
+        row.append(
+          element('strong', batchOutcomes[result.outcome]),
+          element('span', '订单 ' + result.orderId),
+          element('span', '账本 · ' + orderStateText(result.status, result.paymentException) + (result.paymentException ? ' · 支付异常待复核' : ''))
+        );
+        return row;
+      });
+      node('batch-results').replaceChildren(...rows);
+      if (!rows.length) {
+        batchMessage('暂无订单可核对。');
+        return;
+      }
+      const counts = new Map();
+      for (const result of batchReport.results) counts.set(result.outcome, (counts.get(result.outcome) ?? 0) + 1);
+      const summary = Object.entries(batchOutcomes)
+        .filter(([outcome]) => counts.has(outcome))
+        .map(([outcome, label]) => label + ' ' + counts.get(outcome) + ' 笔');
+      batchMessage('本批 ' + rows.length + ' 笔。' + summary.join(' · '));
+    }
+
+    async function reconcileBatch(move) {
+      const button = node('batch-' + move);
+      if (button.hidden || button.disabled || !canReconcileBatch() || mutation || ordersRead || overviewRead || accessRead) return;
+      const at = capture();
+      if (!currentView(at) || getContext().busy) return;
+      const after = move === 'next' ? batchReport.nextCursor : move === 'retry' ? (failedBatch ?? batchReport).after : null;
+      const operation = {};
+      mutation = operation;
+      clearConfirmation();
+      batchMessage('正在批量核对' + orderNames[kind] + '订单…');
+      controls();
+      try {
+        const value = await invoke('reconcileBillingPage', { teamId: team, kind, ...(after ? { after } : {}) });
+        if (!currentView(at)) return;
+        batchReport = { ...value, after };
+        failedBatch = null;
+        drawBatch();
+        if (value.results.length) {
+          await loadOrders();
+          if (currentView(at)) await loadOverview({ keepOrders: true, keepDraft: true });
+        }
+      } catch (error) {
+        if (!currentView(at) || handleSessionError(error)) return;
+        if (permissionErrors.has(error?.code)) discardTeam();
+        else {
+          failedBatch = { after };
+          batchMessage(errorMessage(error, '暂时无法完成本批核对，请重试本批。'), true);
+        }
+      } finally {
+        if (mutation === operation) mutation = null;
+        controls();
+      }
+    }
+
+    function panelOpenChanged() {
       if (panel.open && !panel.hidden && currentScope(scope)) void loadOverview();
       else clearOverview();
-    });
+    }
+
+    const panelObserver = new MutationObserver(panelOpenChanged);
     panelObserver.observe(panel, { attributes: true, attributeFilter: ['open'] });
     node('refresh').addEventListener('click', () => { if (!node('refresh').disabled) void discover(); });
     node('team').addEventListener('change', () => {
@@ -479,6 +584,7 @@
       kind = node('order-kind').value;
       revision++;
       clearOrders();
+      clearBatch();
       clearConfirmation();
       message();
       drawCheckout();
@@ -492,6 +598,7 @@
     node('orders-refresh').addEventListener('click', () => void loadOrders());
     node('orders-more').addEventListener('click', () => void loadOrders('next'));
     node('orders-previous').addEventListener('click', () => void loadOrders('previous'));
+    for (const move of ['start', 'next', 'retry']) node('batch-' + move).addEventListener('click', () => void reconcileBatch(move));
     node('order-list').addEventListener('click', event => {
       const button = event.target.closest('[data-billing-reconcile]');
       if (button && !button.disabled) void reconcile(button.dataset.billingReconcile);

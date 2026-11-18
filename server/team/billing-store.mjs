@@ -192,9 +192,10 @@ export function listAnnualOrders(db,teamId,{limit=20,after=null}={}){
 
 // Called only after the server gateway verifies HMAC. Repeat passive validation
 // and locked-order matching here; never accept a browser's success assertion.
-export function recordVerifiedAnnualPayment(db,receipt,{now=Date.now}={}){
+export function recordVerifiedAnnualPayment(db,receipt,{now=Date.now,authorize}={}){
  const value=validateSimulationPaymentReceipt(receipt),bytes=simulationReceiptBytes(value),hash=digest(bytes);if(value.product!==ANNUAL_PRODUCT||typeof now!=='function')invalid();
  return ownTransaction(db,()=>{
+  authorize?.();
   const order=orderFact(db,value.orderId);if(!order)deny();matchesOrder(order,value);
   const plan=seatPlanFact(db,order);
   assertBillingCaptureCompatible(db,value);
@@ -228,8 +229,9 @@ function assertAnnualPaymentTurn(db,order,payment){
  conflict();
 }
 
-export function fulfilAnnualOrder(db,orderId,{now=Date.now}={}){
+export function fulfilAnnualOrder(db,orderId,{now=Date.now,authorize}={}){
  requireOrderId(orderId);if(typeof now!=='function')invalid();return ownTransaction(db,()=>{
+  authorize?.();
   const order=orderFact(db,orderId);if(!order)deny();const payment=paymentFact(db,order);if(!payment)conflict();const currentTime=at(now);if(currentTime<payment.confirmedAt)conflict();
   const plan=seatPlanFact(db,order);
   const current=readSubscriptionState(db,order.teamId,currentTime),prior=fulfilmentFact(db,order,payment);

@@ -163,4 +163,5 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   listBillingOrders:input=>invoke('billing-orders',input),
   createBillingOrder:input=>invoke('billing-order-create',input),
   reconcileBillingOrder:input=>invoke('billing-order-reconcile',input),
+  reconcileBillingPage:input=>invoke('billing-page-reconcile',input),
 }));

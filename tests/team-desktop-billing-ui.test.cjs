@@ -88,6 +88,7 @@ test('billing defaults to the prior-term seat quantity, protects reductions and 
   assert.deepEqual([...f.id('seats').querySelectorAll('dd')].map(node => node.textContent), ['7', '3', '2', '5', '2']);
   assert.equal(f.id('selected-seats').value, '8');
   assert.equal(f.id('selected-seats').min, '5');
+  assert.equal(f.id('batch-section').hidden, true);
   f.change('selected-seats', '4', 'input');
   f.id('review').click();
   assert.equal(f.id('confirmation').hidden, true);
@@ -263,4 +264,120 @@ test('a coalesced close and reopen suppresses an ended billing read', async t =>
   fresh.resolve(ok(snapshot('a')));
   await until(() => !f.id('overview').hidden);
   assert.deepEqual(f.callbacks, []);
+});
+
+const batchId = number => '00000000-0000-4000-8000-' + String(number).padStart(12, '0');
+const batchRow = (number, outcome, status = 'pending', paymentException = false) =>
+  ({ orderId: batchId(number), outcome, status, paymentException });
+
+test('batch reports retain the independent order page while refreshing, and retry the attempted cursor', async t => {
+  const first = deferred();
+  const firstBatch = [
+    batchRow(0, 'no-evidence'), batchRow(1, 'matched', 'paid'),
+    batchRow(2, 'awaiting-review', 'payment-verified', true), batchRow(3, 'lookup-unavailable'),
+    batchRow(4, 'evidence-rejected'), batchRow(5, 'local-failure'),
+    batchRow(6, 'matched', 'paid'), batchRow(7, 'no-evidence')
+  ];
+  let attempts = 0, matched = false;
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => {
+      const overview = snapshot(teamId);
+      if (matched) overview.seats.purchasedSeats = 9;
+      return ok({ ...overview, canReconcileBillingBatch: true });
+    },
+    listBillingOrders: ({ after }) => ok(after
+      ? { orders: [order('second-page', matched ? 'paid' : 'pending')], hasMore: false, nextCursor: null }
+      : { orders: [order('first-page')], hasMore: true, nextCursor: 'list-page-2' }),
+    reconcileBillingPage: () => {
+      attempts++;
+      if (attempts === 1) return first.promise;
+      if (attempts === 2) return fail('NETWORK');
+      return ok({ results: [batchRow(8, 'matched', 'paid')], nextCursor: null });
+    }
+  });
+  const batchCalls = () => f.calls.filter(call => call.name === 'reconcileBillingPage').map(call => ({ ...call.input }));
+  await f.open();
+  await until(() => !f.id('orders-more').disabled);
+  f.id('orders-more').click();
+  await until(() => !f.id('batch-start').disabled);
+  f.change('selected-seats', '6', 'input');
+  f.id('batch-start').click();
+  assert.equal(f.id('batch-start').disabled, true);
+  f.id('batch-start').click();
+  assert.equal(attempts, 1);
+  matched = true;
+  first.resolve(ok({ results: firstBatch, nextCursor: batchId(7) }));
+  await until(() => !f.id('batch-next').disabled);
+  assert.equal(f.id('batch-section').hidden, false);
+  assert.equal(f.id('batch-next').hidden, false);
+  assert.equal(f.id('batch-results').childElementCount, 8);
+  assert.match(f.id('batch-message').textContent, /本批 8 笔.*已核实 2 笔.*待复核 1 笔.*未返回可信凭据 2 笔/u);
+  assert.match(f.id('batch-results').querySelector('[data-outcome="awaiting-review"]').textContent, /支付异常待复核/u);
+  assert.ok(f.id('order-list').querySelector('[data-order-id="second-page"] [data-state="paid"]'));
+  assert.equal(f.id('seats').querySelector('dd').textContent, '9');
+  assert.equal(f.id('selected-seats').value, '6');
+
+  f.id('orders-refresh').click();
+  await until(() => !f.id('batch-next').disabled);
+  assert.equal(f.id('batch-results').childElementCount, 8);
+
+  f.id('batch-next').click();
+  await until(() => f.id('batch-message').classList.contains('error'));
+  assert.equal(f.id('batch-next').hidden, true);
+  assert.equal(f.id('batch-results').childElementCount, 8);
+  f.id('batch-retry').click();
+  await until(() => !!f.id('batch-results').querySelector('[data-batch-order-id="' + batchId(8) + '"]'));
+  assert.equal(f.id('batch-results').childElementCount, 1);
+  assert.equal(f.id('batch-next').hidden, true);
+  assert.deepEqual(batchCalls(), [
+    { teamId: 'a', kind: 'annual' },
+    { teamId: 'a', kind: 'annual', after: batchId(7) },
+    { teamId: 'a', kind: 'annual', after: batchId(7) }
+  ]);
+  assert.equal(f.calls.filter(call => call.name === 'listBillingOrders').at(-1).input.after, 'list-page-2');
+  f.change('order-kind', 'seat');
+  await until(() => !f.id('batch-start').disabled);
+  assert.equal(f.id('batch-results').childElementCount, 0);
+  f.id('batch-start').click();
+  assert.deepEqual(batchCalls().at(-1), { teamId: 'a', kind: 'seat' });
+});
+
+test('batch responses from a coalesced reopen, changed team, or ended session cannot update the report', async t => {
+  const reopened = deferred();
+  const switched = deferred();
+  const signedOut = deferred();
+  const queue = [reopened, switched, signedOut];
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok({ ...snapshot(teamId), canReconcileBillingBatch: true }),
+    reconcileBillingPage: () => queue.shift().promise
+  });
+  await f.open();
+  await until(() => !f.id('batch-start').disabled);
+  f.id('batch-start').click();
+  reopened.resolve(fail('SIGN_IN_REQUIRED'));
+  f.panel.open = false;
+  f.panel.open = true;
+  await until(() => !f.id('batch-start').disabled);
+  assert.equal(f.id('batch-message').textContent, '');
+  assert.deepEqual(f.callbacks, []);
+
+  f.id('batch-start').click();
+  f.context.teamId = 'b';
+  f.view.update();
+  switched.resolve(ok({ results: [batchRow(0, 'matched', 'paid')], nextCursor: null }));
+  await f.open();
+  await until(() => !f.id('batch-start').disabled);
+  assert.equal(f.id('batch-results').childElementCount, 0);
+  assert.equal(f.id('batch-message').textContent, '');
+  assert.equal(f.id('team').value, 'b');
+
+  f.id('batch-start').click();
+  Object.assign(f.context, { ready: false, identity: '' });
+  f.view.reset();
+  signedOut.resolve(ok({ results: [batchRow(1, 'matched', 'paid')], nextCursor: null }));
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(f.panel.hidden, true);
+  assert.equal(f.id('batch-section').hidden, true);
+  assert.equal(f.id('batch-results').childElementCount, 0);
+  assert.equal(f.id('batch-message').textContent, '');
 });

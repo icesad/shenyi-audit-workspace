@@ -176,11 +176,12 @@ export function listSeatOrders(db,team,{limit=20,after=null}={}){teamId(team);if
 
 // Only an authenticated trusted gateway adapter may supply this exact receipt.
 // Save the verified inbox before attempting fulfilment, including late receipts.
-export function recordVerifiedSeatPayment(db,receipt,{now=Date.now}={}){
+export function recordVerifiedSeatPayment(db,receipt,{now=Date.now,authorize}={}){
  const value=validateSimulationPaymentReceipt(receipt);
  const bytes=simulationReceiptBytes(value),hash=digest(bytes);
  if(typeof now!=='function')invalid();
  return own(db,()=>{
+  authorize?.();
   const order=orderFact(db,value.orderId);
   if(!order)deny();
   matchesOrder(order,value);
@@ -207,10 +208,11 @@ export function recordVerifiedSeatPayment(db,receipt,{now=Date.now}={}){
   return saved;
  });
 }
-export function fulfilSeatOrder(db,id,{now=Date.now}={}){
+export function fulfilSeatOrder(db,id,{now=Date.now,authorize}={}){
  orderId(id);
  if(typeof now!=='function')invalid();
  return own(db,()=>{
+  authorize?.();
   const order=orderFact(db,id);
   if(!order)deny();
   const payment=paymentFact(db,order);
