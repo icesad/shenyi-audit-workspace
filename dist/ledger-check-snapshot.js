@@ -36,7 +36,7 @@
       if (typeof v !== 'object' || seen.has(v)) fail();
       seen.add(v);
       const array = Array.isArray(v);
-      if (!array && !plain(v)) fail();
+      if (array ? Object.getPrototypeOf(v) !== Array.prototype : !plain(v)) fail();
       const ds = Object.getOwnPropertyDescriptors(v), keys = Reflect.ownKeys(ds);
       if (array && (keys.length !== v.length + 1 || keys.some(k => k !== 'length' && (typeof k !== 'string' || !/^(?:0|[1-9]\d*)$/.test(k) || Number(k) >= v.length)))) fail();
       for (const k of keys) {

@@ -1,5 +1,13 @@
 # 当前状态：M4团队模块接入（进行中）
 
+## 2026-11-18 最新：账表快照被动数组边界修复
+
+`codex/ledger-passive-arrays`从`63d19d2`修复已记录P3：直接对象create／serialize现在拒绝自定义／null数组原型与Array子类，继承toJSON／getter不得执行；仅1个判断变化，不改格式、算法、限额、权限或正常输入／映射SHA。正常JSON／IndexedDB利用可达性仍未证，不称远程高危。
+
+新增同10断言原码2pass／8fail→修后10/10；五完整相关文件58/58，独立五文件53/53（含原外部3与两真实browser），均0失败／跳过，分别计数不相加。1155源门内同，原1154仅codec改1、新test1，其他1153保持；实际旧端15358B合成快照在新旧codec逐byte及两摘要一致。详见[进度](../进度.md)及[快照合同](LEDGER_CHECK_SNAPSHOT_CONTRACT.md)。
+
+原63 browser严格门仍缺固定SHA原始ZIP，当前344＝281＋63只为发现，未跑完整unit／strict；后续补冻结候选全量unit。OS门工具前提未变不重复，两旧预览／共享库按用户决定保留，仅元数据和公开methods核同。报告及M5细则原问题待答；未push／main／一键重验／上线，M4／Goal active，M5 planned。证据`D:/codex-temp/shenyi-ledger-array-prototype-20261118/`。以下保留历史范围。
+
 ## 2026-11-18 最新：同库四模块组合隔离回归通过
 
 `codex/cross-module-isolation`从`93d2708`接续M4，新增合成单库W/Q四模块非空组合回归，无产品／旧测试改动。最终v4完整9/9由作者和独审分别通过；先前三版同组绿门的断言盲区已纠正并保留原稿，不累加次数。四种单模块及逐域撤read、公共拒绝和正向／发现投影、原件及既有freeze保持得到有限矩阵证明，不能扩大为所有权限组合。
