@@ -39,18 +39,26 @@ function serviceIndex(bytes,configuration,isolatedPreview=false){
     html=html.replace(fixed,()=>'<meta name="'+name+'" content="'+escapeAttribute(value)+'">');
   }
   if(isolatedPreview){
-    for(const [before,after]of [['本机合成演示</span>','独立合成候选预览</span>'],['<span id="service-mode-label">本机演示</span>','<span id="service-mode-label">独立候选预览</span>'],['使用合成账号和资料验证团队流程。','本窗口为独立合成候选预览；每次启动新建环境，关闭后合成资料保留。'],['账号：intern-a 或 assistant-a<br>密码：ShenyiDemo!2026','账号：manager-a、partner-a、intern-a 或 assistant-a<br>密码：ShenyiDemo!2026']]){if(html.split(before).length!==2)throw new Error('Isolated preview label unavailable');html=html.replace(before,after);}
+    for(const [before,after]of [['本机合成演示</span>','独立合成候选预览</span>'],['<span id="service-mode-label">本机演示</span>','<span id="service-mode-label">独立候选预览</span>'],['使用合成账号和资料验证团队流程。','本窗口为独立合成候选预览；每次启动新建环境，关闭后合成资料保留。'],['账号：intern-a 或 assistant-a','账号：manager-a、partner-a、intern-a 或 assistant-a']]){if(html.split(before).length!==2)throw new Error('Isolated preview label unavailable');html=html.replace(before,after);}
   }
   return html;
 }
 
 async function main() {
-  const isolatedPreview=await loadIsolatedPreviewConfiguration({env:process.env,isPackaged:app.isPackaged===true});
+  const isPackaged=app.isPackaged===true;
+  if(isPackaged&&(Object.hasOwn(process.env,'SHENYI_DESKTOP_DATA_DIR')||app.commandLine.hasSwitch('user-data-dir'))){
+    throw new Error('Packaged desktop cannot use a preview data directory');
+  }
+  const isolatedPreview=await loadIsolatedPreviewConfiguration({env:process.env,isPackaged});
   if(isolatedPreview){if(app.commandLine.getSwitchValue('user-data-dir')!==isolatedPreview.desktopDataDirectory)throw new Error('Isolated startup profile mismatch');app.setPath('sessionData',isolatedPreview.desktopDataDirectory);}
-  const serviceConfiguration=isolatedPreview?Object.freeze({mode:'local-preview',profile:null}):await loadTeamServiceConfiguration({env:process.env,isPackaged:app.isPackaged===true});
-  // Development preview data is isolated from both the original browser and production.
-  const dataRoot=isolatedPreview?.desktopDataDirectory || process.env.SHENYI_DESKTOP_DATA_DIR || (process.platform==='win32'?'D:/codex-temp/shenyi-desktop-preview':path.join(app.getPath('appData'),'ShenyiTeamPreview'));
-  await fs.mkdir(dataRoot,{recursive:true});app.setPath('userData',dataRoot);
+  const serviceConfiguration=isolatedPreview?Object.freeze({mode:'local-preview',profile:null}):await loadTeamServiceConfiguration({env:process.env,isPackaged});
+  const installedVault=isPackaged?resolveDeviceVaultDirectory({isPackaged}):null;
+  // The packaged profile and vault share a per-machine root distinct from every preview.
+  const dataRoot=installedVault?path.join(path.dirname(installedVault),'profile'):
+    isolatedPreview?.desktopDataDirectory||process.env.SHENYI_DESKTOP_DATA_DIR||(process.platform==='win32'?'D:/codex-temp/shenyi-desktop-preview':path.join(app.getPath('appData'),'ShenyiTeamPreview'));
+  await fs.mkdir(dataRoot,{recursive:true});
+  if(isPackaged)app.setPath('sessionData',dataRoot);
+  app.setPath('userData',dataRoot);
   if(!app.requestSingleInstanceLock()){app.quit();return;}
   await app.whenReady();
   const isolated=session.fromPartition('shenyi-team-preview');
@@ -64,7 +72,7 @@ async function main() {
     try{const bytes=await fs.readFile(asset.file);return new Response(url.pathname==='/index.html'?serviceIndex(bytes,isolatedPreview?{mode:'local-preview',profile:isolatedPreview.profile}:serviceConfiguration,!!isolatedPreview):bytes,{headers:{'Content-Type':asset.mime,'Content-Security-Policy':CONTENT_SECURITY_POLICY,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'}});}catch{return new Response('Asset unavailable',{status:503});}
   });
   const wechatPolicy={appId:process.env.SHENYI_WECHAT_APP_ID,redirectUri:process.env.SHENYI_WECHAT_REDIRECT_URI};
-  const vault=createDeviceKeyVault({directory:isolatedPreview?.deviceVaultDirectory??resolveDeviceVaultDirectory(),safeStorage});
+  const vault=createDeviceKeyVault({directory:installedVault??isolatedPreview?.deviceVaultDirectory??resolveDeviceVaultDirectory(),safeStorage});
   const client=createTeamClient({baseUrl:API_BASE,...(serviceConfiguration.profile?{trustedService:serviceConfiguration.profile}:{}),...(isolatedPreview?{isolatedPreview:isolatedPreview.profile}:{}),wechatPolicy,openAuthorization:url=>shell.openExternal(url),
     deviceIdentity:{vault,platform:process.platform,displayName:process.platform==='darwin'?'我的Mac电脑':'我的Windows电脑'}});
   const win=new BrowserWindow({width:1210,height:800,minWidth:840,minHeight:600,show:false,title:'审易 · 团队采集预览',backgroundColor:'#f5f6f2',
@@ -85,5 +93,5 @@ async function main() {
   app.on('second-instance',()=>{if(win.isMinimized())win.restore();win.show();win.focus();});
   await win.loadURL(APP_URL);if(isolatedPreview)win.setTitle('审易 · 独立合成候选预览 · '+isolatedPreview.candidateId.slice(0,8));win.show();
 }
-main().catch(()=>{console.error('审易团队预览启动失败。请检查本机环境与配置。');if(Object.hasOwn(process.env,'SHENYI_ISOLATED_PREVIEW_CONFIG'))app.exit(1);else app.quit();});
+main().catch(()=>{console.error('审易团队客户端启动失败。请检查本机环境与配置。');if(app.isPackaged===true||Object.hasOwn(process.env,'SHENYI_ISOLATED_PREVIEW_CONFIG'))app.exit(1);else app.quit();});
 app.on('window-all-closed',()=>app.quit());

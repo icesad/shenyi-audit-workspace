@@ -7,16 +7,16 @@ const ROOT=path.resolve(__dirname,'../desktop'),HTML=fs.readFileSync(path.join(R
 const PROFILE={schemaVersion:1,apiBase:'https://team.example.invalid:9443',serverId:'11111111-1111-4111-8111-111111111111'},ok=value=>({ok:true,value});
 async function until(check){for(let i=0;i<180;i++){if(check())return;await new Promise(resolve=>setTimeout(resolve,0));}assert.ok(check(),'expected startup or renderer state');}
 async function remoteFile(t,profile=PROFILE){const directory=await asyncFs.mkdtemp(path.join(os.tmpdir(),'shenyi-desktop-service-')),filename=path.join(directory,'trusted-team.json');t.after(()=>asyncFs.rm(directory,{recursive:true,force:true}));await asyncFs.writeFile(filename,JSON.stringify(profile));return filename;}
-async function start(t,{env={},isPackaged=false,readIndex=HTML}={}){
+async function start(t,{env={},isPackaged=false,commandLineProfile=false,readIndex=HTML}={}){
   const seen={events:[],errors:[]},app=new EventEmitter(),power=new EventEmitter(),isolated=new EventEmitter();
-  Object.assign(app,{isPackaged,enableSandbox(){seen.sandbox=true;},requestSingleInstanceLock(){seen.events.push('lock');return true;},whenReady:async()=>{seen.events.push('ready');},setPath(name,value){seen.events.push('profile');seen.profile={name,value};},quit(){seen.quit=true;},getPath(){throw Error('unexpected profile fallback');}});
+  Object.assign(app,{isPackaged,commandLine:{hasSwitch:name=>name==='user-data-dir'&&commandLineProfile},enableSandbox(){seen.sandbox=true;},requestSingleInstanceLock(){seen.events.push('lock');return true;},whenReady:async()=>{seen.events.push('ready');},setPath(name,value){seen.events.push(name);(seen.paths??={})[name]=value;},quit(){seen.quit=true;},exit(code){seen.exit=code;},getPath(){throw Error('unexpected profile fallback');}});
   Object.assign(isolated,{setPermissionRequestHandler(handler){seen.permission=handler;},setPermissionCheckHandler(handler){seen.permissionCheck=handler;},webRequest:{onBeforeRequest(handler){seen.networkGate=handler;}},protocol:{handle(scheme,handler){seen.handler=handler;seen.scheme=scheme;}}});
   class Window extends EventEmitter{constructor(options){super();seen.events.push('window');seen.window=this;seen.options=options;this.webContents=new EventEmitter();this.webContents.setWindowOpenHandler=handler=>{seen.openHandler=handler;};}async loadURL(value){seen.url=value;}show(){seen.shown=true;}}
   const vault={dispose(){seen.disposed=true;}},client={checkDeviceConnection:async()=>{},pauseDeviceConnection(){}};
   const deps={'electron':{app,BrowserWindow:Window,session:{fromPartition:()=>isolated},protocol:{registerSchemesAsPrivileged(values){seen.schemes=values;}},ipcMain:{},dialog:{},Menu:{setApplicationMenu(){}},shell:{openExternal(){}},safeStorage:{},powerMonitor:power},'node:fs/promises':{async mkdir(){seen.events.push('mkdir');},async readFile(filename){return filename===path.join(ROOT,'team-ui/index.html')?Buffer.from(readIndex):asyncFs.readFile(filename);}},'node:path':path,'./team-service-config.cjs':{async loadTeamServiceConfiguration(options){seen.events.push('config');seen.configArgs=options;const value=await config.loadTeamServiceConfiguration(options);seen.events.push('configured');seen.configuration=value;return value;}},'./team-client.cjs':{API_BASE:config.API_BASE,createTeamClient(options){seen.events.push('client');seen.clientOptions=options;return client;}},'./bridge.cjs':{APP_URL:'shenyi://app/index.html',registerDesktopBridge(){return ()=>{};}},'./device-key-vault.cjs':{createDeviceKeyVault(){seen.events.push('vault');return vault;}},'./device-key-directory.cjs':{resolveDeviceVaultDirectory(){seen.events.push('vault-directory');return 'D:/synthetic-isolated-vault';}},'./material-preview-window.cjs':{PREVIEW_SCHEME:'shenyi-preview'}};
   deps['./isolated-preview-config.cjs']=require('../desktop/isolated-preview-config.cjs');
-  const context={require:name=>{assert.ok(Object.hasOwn(deps,name),name);return deps[name];},__dirname:ROOT,process:{env:{SHENYI_DESKTOP_DATA_DIR:'D:/synthetic-isolated-profile',...env},platform:'win32'},URL,Response,console:{error(value){seen.errors.push(value);}},setInterval(){return {unref(){}};},clearInterval(){}};
-  vm.runInNewContext(MAIN,context);await until(()=>seen.quit||seen.shown);t.after(()=>{seen.window?.emit('closed');});return {...seen,context};
+  const context={require:name=>{assert.ok(Object.hasOwn(deps,name),name);return deps[name];},__dirname:ROOT,process:{env:{...(!isPackaged&&{SHENYI_DESKTOP_DATA_DIR:'D:/synthetic-isolated-profile'}),...env},platform:'win32'},URL,Response,console:{error(value){seen.errors.push(value);}},setInterval(){return {unref(){}};},clearInterval(){}};
+  vm.runInNewContext(MAIN,context);await until(()=>seen.quit||seen.exit!==undefined||seen.shown);t.after(()=>{seen.window?.emit('closed');});return {...seen,context};
 }
 function renderer(t,html=HTML,overrides={}){
   const dom=new JSDOM(html,{url:'shenyi://app/index.html',runScripts:'outside-only'}),{window}=dom,calls=[];
@@ -28,13 +28,21 @@ function renderer(t,html=HTML,overrides={}){
 test('packaged missing/invalid config and conflicting env fail before profile, vault, client or window',async t=>{
   const filename=await remoteFile(t);
   for(const options of [{isPackaged:true},{env:{SHENYI_TEAM_SERVICE_CONFIG:''}},{env:{SHENYI_TEAM_SERVICE_CONFIG:filename,SHENYI_TEAM_API:config.API_BASE}},{env:{SHENYI_TEAM_SERVICE_CONFIG:filename,NODE_TLS_REJECT_UNAUTHORIZED:'0'}},{env:{SHENYI_TEAM_API:'https://arbitrary.invalid'}}]){
-    const seen=await start(t,options);assert.equal(seen.quit,true);assert.deepEqual(seen.events,['config']);assert.equal(seen.errors.length,1);assert.equal(seen.shown,undefined);assert.equal(seen.clientOptions,undefined);assert.equal(seen.profile,undefined);assert.equal(seen.errors[0].includes(filename),false);
+    const seen=await start(t,options);assert.equal(options.isPackaged?seen.exit:seen.quit,options.isPackaged?1:true);assert.deepEqual(seen.events,['config']);assert.equal(seen.errors.length,1);assert.equal(seen.shown,undefined);assert.equal(seen.clientOptions,undefined);assert.equal(seen.paths,undefined);assert.equal(seen.errors[0].includes(filename),false);
+  }
+});
+
+test('packaged startup rejects alternate preview data roots before config or profile setup',async t=>{
+  const filename=await remoteFile(t);
+  for(const options of [{env:{SHENYI_DESKTOP_DATA_DIR:'D:/preview'}},{commandLineProfile:true}]){
+    const seen=await start(t,{isPackaged:true,...options,env:{SHENYI_TEAM_SERVICE_CONFIG:filename,...options.env}});
+    assert.equal(seen.exit,1);assert.deepEqual(seen.events,[]);assert.equal(seen.paths,undefined);
   }
 });
 
 test('normal main loads frozen profile before mutable startup and passes it only to private client',async t=>{
   const filename=await remoteFile(t,{...PROFILE,apiBase:PROFILE.apiBase+'/'}),seen=await start(t,{env:{SHENYI_TEAM_SERVICE_CONFIG:filename},isPackaged:true});
-  assert.deepEqual(seen.events,['config','configured','mkdir','profile','lock','ready','vault-directory','vault','client','window']);assert.ok(Object.isFrozen(seen.configuration));assert.ok(Object.isFrozen(seen.clientOptions.trustedService));assert.equal(seen.clientOptions.trustedService,seen.configuration.profile);assert.equal(seen.clientOptions.baseUrl,config.API_BASE);assert.equal(seen.configArgs.isPackaged,true);
+  assert.deepEqual(seen.events,['config','configured','vault-directory','mkdir','sessionData','userData','lock','ready','vault','client','window']);assert.deepEqual(seen.paths,{sessionData:path.join('D:/','profile'),userData:path.join('D:/','profile')});assert.ok(Object.isFrozen(seen.configuration));assert.ok(Object.isFrozen(seen.clientOptions.trustedService));assert.equal(seen.clientOptions.trustedService,seen.configuration.profile);assert.equal(seen.clientOptions.baseUrl,config.API_BASE);assert.equal(seen.configArgs.isPackaged,true);
   const response=await seen.handler({url:'shenyi://app/index.html',method:'GET'}),html=await response.text(),dom=new JSDOM(html);t.after(()=>dom.window.close());
   assert.equal(response.status,200);assert.equal(dom.window.document.querySelector('meta[name="shenyi-team-service-mode"]').content,'remote-https');assert.equal(dom.window.document.querySelector('meta[name="shenyi-team-service-origin"]').content,PROFILE.apiBase);
   assert.equal(html.includes(PROFILE.serverId),false);assert.equal(html.includes(filename),false);assert.match(response.headers.get('Content-Security-Policy'),/connect-src 'none'/);assert.equal(response.headers.get('Cache-Control'),'no-store');assert.equal(dom.window.document.querySelectorAll('script:not([src])').length,0);

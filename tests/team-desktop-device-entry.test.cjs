@@ -11,6 +11,11 @@ test('device vault stays outside roaming or business profiles and rejects ambigu
   for(const home of ['relative','//server/home','/Users/../shared'])assert.throws(()=>resolveDeviceVaultDirectory({platform:'darwin',home}));
   assert.throws(()=>resolveDeviceVaultDirectory({platform:'linux',home:'/tmp'}));
 });
+test('packaged vault uses its own product directory on Windows and macOS',()=>{
+  assert.equal(resolveDeviceVaultDirectory({platform:'win32',localAppData:'C:/Users/fixture/AppData/Local',isPackaged:true}),'C:\\Users\\fixture\\AppData\\Local\\ShenyiTeamDesktop\\device-vault');
+  assert.equal(resolveDeviceVaultDirectory({platform:'darwin',home:'/Users/fixture',isPackaged:true}),'/Users/fixture/Library/Application Support/ShenyiTeamDesktop/device-vault');
+  assert.throws(()=>resolveDeviceVaultDirectory({platform:'darwin',home:'/Users/fixture',isPackaged:'true'}),{code:'DEVICE_DIRECTORY_UNAVAILABLE'});
+});
 test('normal main always injects protected vault and owns heartbeat plus suspend/resume cleanup',async()=>{
   const app=new EventEmitter(),power=new EventEmitter(),seen={};app.enableSandbox=()=>{};app.requestSingleInstanceLock=()=>true;app.whenReady=async()=>{};app.setPath=()=>{};app.quit=()=>{seen.quit=true;};
   const webContents=new EventEmitter();webContents.setWindowOpenHandler=()=>{};
