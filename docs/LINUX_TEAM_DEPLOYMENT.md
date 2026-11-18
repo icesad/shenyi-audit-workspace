@@ -4,13 +4,14 @@
 
 ## 构件和目录
 
-在私有工作区以已审定的 Git 提交生成服务构件。保留 `dist/` 中的原有解析器、首位负责人初始化入口和离线备份演练工具。文件校验值通过有权限的发布渠道交接。
+在私有工作区以已审定的 Git 提交生成服务构件。保留 `dist/` 中的原有解析器、首位负责人初始化入口、离线备份演练工具和上线检查工具。文件校验值通过有权限的发布渠道交接。
 
 ```sh
 release=$(git rev-parse --verify HEAD)
 git archive --format=tar --output="shenyi-team-${release}.tar" "$release" -- \
   package.json package-lock.json dist shared server/team deploy/linux \
   scripts/start-team-service.mjs scripts/bootstrap-managed-team.mjs scripts/team-database-backup.mjs \
+  scripts/check-team-service.mjs \
   docs/LINUX_TEAM_DEPLOYMENT.md docs/MANAGED_TEAM_SERVICE.md docs/TEAM_OFFLINE_BACKUP.md
 sha256sum "shenyi-team-${release}.tar"
 ```
@@ -48,6 +49,30 @@ curl --fail-with-body --silent --show-error --include "https://${api_host}/api/a
 - 合成低权限账户经公共入口登录、完成设备证明并读取指派任务，验证其他项目拒绝。覆盖包含百分号编码的查询及有正文的持钥请求。Nginx `proxy_pass` 无 URI 部分，原始路径和查询、应用凭证、请求正文以及服务端签名相关响应头直接通过。 [Nginx 转发语义](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)
 - 代理请求上限为 67,125,248 字节，对应账表快照的最大请求。底稿导出继续走流式响应，核对下载长度、SHA-256 和中途终止；上传和下载均关闭代理缓冲。运行层按目标主机再验证大文件和并发。
 - 使用本机探针和对外诊断分别监测可用性，观察受管进程重启次数、代理 5xx、磁盘空间和证书到期时间。访问日志仅记录时间、请求编号、方法、状态、响应长度和耗时。错误日志可能附带请求上下文，限制读取权限和保留时间。
+
+### 一次性上线检查
+
+在受管主机上使用已部署的配置和 Nginx 验证后端所用的 CA 文件运行以下命令。磁盘阈值和证书到期阈值可省略，默认分别为 10 GiB 和 30 天。
+
+```sh
+/opt/shenyi-team/node/bin/node /opt/shenyi-team/current/scripts/check-team-service.mjs \
+  --config /etc/shenyi-team/service.json \
+  --backend-ca /etc/nginx/shenyi-team/backend-ca.pem \
+  --disk-warning-bytes 10737418240 \
+  --certificate-warning-days 30
+```
+
+探针直连后端回环地址，以配置中的公共主机名和指定后端 CA 校验 TLS，再读取 `/ready` 及 `/api/auth/methods`。它通过运行主机的名称解析和 Node 默认 TLS 信任连接配置中的边缘入口。两侧的 `/api/auth/methods` 均须返回配置的实例 ID 和受管设备登录声明。公共 `/ready` 和 `/health` 均须返回 404。探针分别检查两侧在线叶证书的有效期，确认两侧使用不同的公钥，并从文件系统元数据取得数据库所在卷的可用字节数。每个网络检查最长等待 5 秒。另从实际办公网络验收客户端访问。
+
+| JSON `status` | 退出码 | 含义 |
+| --- | --- | --- |
+| `healthy` | `0` | 必需检查通过，剩余磁盘和证书有效期均未触发告警。 |
+| `warning` | `2` | 必需检查通过，剩余磁盘或证书有效期触发阈值。 |
+| `failed` | `1` | 配置、连接、服务实例、路由或其他必要检查失败。 |
+
+输出的 `checks` 可定位具体检查和度量。参数、配置或后端 CA 在检查开始前被拒绝时，输出顶层 `code`。
+
+该命令只对固定路径发出无凭据的只读 GET，读取配置、后端 CA 和文件系统元数据。SQLite 内容和 TLS 私钥字节不在读取范围内，命令不写入文件。该探针可在上线、变更或回滚后手动运行，定时监控和实际生产环境验收仍待部署时完成。
 
 ## 变更与回滚
 
