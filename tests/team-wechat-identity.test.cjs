@@ -306,8 +306,12 @@ test('cross-site POST APIs remain blocked even though callback navigation is all
 });
 
 test('user-declined authorization cancels its transaction without calling provider', async t => {
-  const f = await fixture(t), transaction = await begin(f);
-  const result = await call(f, '/api/auth/wechat/callback?' + new URLSearchParams({state: transaction.state, error: 'access_denied'}), {method: 'GET', headers: {'Sec-Fetch-Site': 'cross-site'}});
-  assert.equal(result.response.status, 200, result.raw); privacy(result);
-  assert.equal((await poll(f, transaction)).json.status, 'canceled'); assert.equal(f.exchangeCalls.length, 0); assert.equal(sessionCount(f), 0);
+  const f = await fixture(t);
+  for(const decline of [{error:'access_denied'},{}]){
+    const transaction = await begin(f);
+    const result = await call(f, '/api/auth/wechat/callback?' + new URLSearchParams({state: transaction.state, ...decline}), {method: 'GET', headers: {'Sec-Fetch-Site': 'cross-site'}});
+    assert.equal(result.response.status, 200, result.raw); privacy(result);
+    assert.equal((await poll(f, transaction)).json.status, 'canceled');
+  }
+  assert.equal(f.exchangeCalls.length, 0); assert.equal(sessionCount(f), 0);
 });

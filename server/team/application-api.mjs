@@ -82,7 +82,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
         ...(identityProviders.deviceProofRequired===true?{deviceBinding:{required:true,serverId:deviceServerId(db),protocolVersion:1}}:{})});
     }
     if(managedService&&url.pathname==='/api/auth/login'){
-      return json({error:{code:'DEMO_LOGIN_DISABLED',message:'此团队服务仅支持手机号登录。'}},403);
+      return json({error:{code:'DEMO_LOGIN_DISABLED',message:'演示登录在受管团队服务中已关闭。'}},403);
     }
     if([SIMULATION_NOTIFICATION_PATH,SIMULATION_PAYMENT_EXCEPTION_PATH,SIMULATION_ORDER_CLOSURE_PATH].includes(url.pathname))return await handleBillingSimulationNotification(request,options);
     const deviceAuthorization=await authorizeDeviceRequest(request,options);

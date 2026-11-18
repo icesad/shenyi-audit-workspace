@@ -5,6 +5,7 @@
 import {randomBytes,randomUUID,createHash,timingSafeEqual} from 'node:crypto';
 import {authenticated,consume,limitedPasswordWork,issueSession} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
+import {currentDeviceLease,deviceServerId,deviceRequired} from './device-policy.mjs';
 import {ApiError,ID,json,readJson,deny,invalid,transaction,PRIVATE_HEADERS} from './http-utils.mjs';
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const opaque=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{43}$/.test(value)&&Buffer.from(value,'base64url').toString('base64url')===value;
@@ -47,7 +48,15 @@ function currentLinkedUser(db,row){
     WHERE identity.app_id=? AND identity.open_id=?`).get(row.app_id,row.open_id);
 }
 
-export async function handleWechatRequest(request,{db,now=Date.now,identityProviders={}}={}){
+function assertLinkDevice(db,request,actor,at,deviceContext){
+  if(!deviceContext||deviceContext.userId!==actor.userId)deviceRequired();
+  const lease=currentDeviceLease(db,request,at);
+  if(lease.userId!==actor.userId||lease.stamp!==deviceContext.stamp||lease.leaseId!==deviceContext.leaseId||
+    lease.deviceId!==deviceContext.deviceId||lease.bindingRevision!==deviceContext.bindingRevision||
+    deviceServerId(db)!==deviceContext.serverId)deviceRequired();
+}
+
+export async function handleWechatRequest(request,{db,now=Date.now,identityProviders={},deviceContext}={}){
   const url=new URL(request.url),path=url.pathname;
   if(!path.startsWith('/api/auth/wechat/'))return null;
   const provider=providerFor(identityProviders);
@@ -58,12 +67,12 @@ export async function handleWechatRequest(request,{db,now=Date.now,identityProvi
     const keys=[...url.searchParams.keys()];
     if(keys.some(key=>!['state','code','error'].includes(key)||url.searchParams.getAll(key).length!==1))invalid();
     const state=url.searchParams.get('state'),code=url.searchParams.get('code'),error=url.searchParams.get('error');
-    if(!opaque(state)||((code!==null)===(error!==null)))invalid();
+    if(!opaque(state)||(code!==null&&error!==null))invalid();
     if(code!==null&&(!code||code.length>512||/[\x00-\x20\x7f]/.test(code)))invalid();
     const row=transaction(db,()=>{
       const candidate=db.prepare('SELECT * FROM team_wechat_transactions WHERE state_hash=?').get(hash(state));
       if(!candidate||candidate.app_id!==provider.appId||candidate.redirect_uri!==provider.redirectUri||candidate.expires_at<=now()||candidate.status!=='pending')deny();
-      if(error!==null){db.prepare("UPDATE team_wechat_transactions SET status='canceled' WHERE transaction_id=?").run(candidate.transaction_id);return null;}
+      if(code===null){db.prepare("UPDATE team_wechat_transactions SET status='canceled' WHERE transaction_id=?").run(candidate.transaction_id);return null;}
       try{db.prepare('INSERT INTO team_wechat_codes VALUES (?,?)').run(provider.appId,hash(code));}catch{deny();}
       db.prepare("UPDATE team_wechat_transactions SET status='processing' WHERE transaction_id=?").run(candidate.transaction_id);
       return candidate;
@@ -123,7 +132,8 @@ export async function handleWechatRequest(request,{db,now=Date.now,identityProvi
     return json(issueSession(db,user.user_id,now()));
   });
   if(row.status!=='binding_required')conflict();
-  const actor=authenticated(db,request,now());
+  const linkedAt=now(),actor=authenticated(db,request,linkedAt);
+  if(identityProviders.wechatLinkRequiresDevice===true)assertLinkDevice(db,request,actor,linkedAt,deviceContext);
   const credential=db.prepare('SELECT password_hash,revision FROM team_credentials WHERE user_id=?').get(actor.userId);
   const phone=db.prepare('SELECT phone,revision,verified_at FROM team_phone_credentials WHERE user_id=?').get(actor.userId);
   if(!phone||phone.verified_at<=0||phone.verified_at>now()||!credential)deny();
@@ -132,14 +142,16 @@ export async function handleWechatRequest(request,{db,now=Date.now,identityProvi
   return limitedPasswordWork(db,async()=>{
     if(!await verifyPassword(body.currentPassword,credential.password_hash))deny();
     return transaction(db,()=>{
-      authenticated(db,request,now());
-      const fresh=readTransaction(db,id,body,now());
+      const at=now(),currentActor=authenticated(db,request,at);
+      if(currentActor.userId!==actor.userId)deny();
+      if(identityProviders.wechatLinkRequiresDevice===true)assertLinkDevice(db,request,actor,at,deviceContext);
+      const fresh=readTransaction(db,id,body,at);
       if(fresh.status!=='binding_required'||!proof(fresh,body))conflict();
       const current=db.prepare('SELECT password_hash,revision FROM team_credentials WHERE user_id=?').get(actor.userId);
       const currentPhone=db.prepare('SELECT phone,revision,verified_at FROM team_phone_credentials WHERE user_id=?').get(actor.userId);
       if(current?.password_hash!==credential.password_hash||current?.revision!==credential.revision||currentPhone?.phone!==phone.phone||currentPhone?.revision!==phone.revision||currentPhone?.verified_at!==phone.verified_at)deny();
       if(db.prepare('SELECT 1 FROM team_wechat_identities WHERE app_id=? AND (open_id=? OR user_id=?)').get(fresh.app_id,fresh.open_id,actor.userId))conflict();
-      db.prepare('INSERT INTO team_wechat_identities VALUES (?,?,?,?)').run(fresh.app_id,fresh.open_id,actor.userId,now());
+      db.prepare('INSERT INTO team_wechat_identities VALUES (?,?,?,?)').run(fresh.app_id,fresh.open_id,actor.userId,at);
       db.prepare("UPDATE team_wechat_transactions SET status='ready',user_id=?,credential_revision=? WHERE transaction_id=?").run(actor.userId,current.revision,id);
       return json({linked:true});
     });

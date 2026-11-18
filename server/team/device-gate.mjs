@@ -16,7 +16,7 @@ const BOOTSTRAP_POST=new Set(['/api/auth/login','/api/auth/logout','/api/auth/ph
   '/api/auth/devices/enrollment-challenges','/api/auth/devices/proof-challenges','/api/auth/devices/revocation-challenges','/api/auth/devices/enroll','/api/auth/devices/prove','/api/auth/devices/revoke',
   '/api/auth/wechat/transactions',
   '/api/auth/device-replacements/request-challenges','/api/auth/device-replacements/request','/api/auth/device-replacements/withdraw-challenges','/api/auth/device-replacements/withdraw','/api/auth/device-replacements/activate-challenges','/api/auth/device-replacements/activate']);
-export function deviceBootstrapAllowed(request){
+export function deviceBootstrapAllowed(request,{wechatLinkRequiresDevice=false}={}){
   const url=new URL(request.url);
   // This one exact external callback keeps its own strict state/code/error
   // query validation. No prefix, arbitrary query or alternate verb is exempt.
@@ -26,7 +26,7 @@ export function deviceBootstrapAllowed(request){
   if(request.method!=='POST')return false;
   if(BOOTSTRAP_POST.has(url.pathname))return true;
   const wechat=/^\/api\/auth\/wechat\/transactions\/([^/]+)\/(status|cancel|link|exchange)$/.exec(url.pathname);
-  return !!wechat&&UUID.test(wechat[1]);
+  return !!wechat&&UUID.test(wechat[1])&&(wechat[2]!=='link'||!wechatLinkRequiresDevice);
 }
 async function bodyBytes(request,maximum=BODY_LIMIT){
   const length=request.headers.get('Content-Length');
@@ -43,7 +43,7 @@ function freshLease(db,request,before,serverId,at){
   return fresh;
 }
 export async function authorizeDeviceRequest(request,{db,now=Date.now,identityProviders={}}={}){
-  if(identityProviders.deviceProofRequired!==true||deviceBootstrapAllowed(request))return {request,context:null};
+  if(identityProviders.deviceProofRequired!==true||deviceBootstrapAllowed(request,identityProviders))return {request,context:null};
   const at=now(),identity=currentDeviceLease(db,request,at),serverId=deviceServerId(db);
   const nonce=request.headers.get('X-Shenyi-Device-Nonce'),bodySha256=request.headers.get('X-Shenyi-Device-Body-SHA256'),signature=request.headers.get('X-Shenyi-Device-Signature');
   let nonceRaw,signatureRaw;

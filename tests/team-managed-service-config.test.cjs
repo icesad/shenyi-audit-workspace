@@ -97,6 +97,49 @@ test('managed reviewed recovery requires an explicit boolean and a valid SMS pro
   await assert.rejects(fs.stat(configuration.database), { code: 'ENOENT' });
 });
 
+test('managed WeChat setup validates its external profile and callback origin before database access', async () => {
+  const { loadManagedServiceConfiguration, openConfiguredTeamService } = await import('../scripts/start-team-service.mjs');
+  const { directory, filename, configuration } = await fixture();
+  const wechatProfile = path.join(directory, 'wechat-private.json');
+  const configured = { ...configuration, apiBase:'https://login.shenyi.example', wechatProfile };
+  const write = value => fs.writeFile(filename, JSON.stringify(value));
+  await write(configuration);
+  assert.equal(Object.hasOwn(await loadManagedServiceConfiguration(filename), 'wechatProfile'), false);
+  for (const change of [{wechatProfile:'relative.json'}, {wechatProfile:configuration.tlsKey}, {smsProfile:wechatProfile}]) {
+    await write({ ...configured, ...change });
+    await assert.rejects(loadManagedServiceConfiguration(filename), {code:'MANAGED_SERVICE_CONFIGURATION_INVALID'});
+  }
+  await write(configured);
+  assert.equal((await loadManagedServiceConfiguration(filename)).wechatProfile, wechatProfile);
+  const invalidProfile = {code:'MANAGED_WECHAT_INVALID'};
+  await assert.rejects(openConfiguredTeamService(filename), invalidProfile);
+  const provider = {schemaVersion:1,provider:'wechat-open-platform',appId:'wx0123456789abcdef',appSecret:'synthetic-only'};
+  await fs.writeFile(wechatProfile, JSON.stringify({...provider,redirectUri:configured.apiBase+'/api/auth/wechat/callback'}));
+  await assert.rejects(openConfiguredTeamService(filename), invalidProfile);
+  await fs.writeFile(wechatProfile, JSON.stringify(provider));
+  for (const apiBase of ['https://127.0.0.1','https://login.shenyi.example:9443']) {
+    await write({...configured,apiBase});
+    await assert.rejects(openConfiguredTeamService(filename), invalidProfile);
+  }
+  await write(configured);
+  await assert.rejects(openConfiguredTeamService(filename), {code:'MANAGED_TLS_INVALID'});
+  await assert.rejects(fs.stat(configuration.database), {code:'ENOENT'});
+});
+
+test('managed readiness requires WeChat tables only when that provider is enabled', async t => {
+  const { initializeTeamDatabase } = await import('../server/team/database.mjs');
+  const { deviceServerId } = await import('../server/team/device-policy.mjs');
+  const { assertManagedDatabaseReady } = await import('../server/team/managed-database-readiness.mjs');
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  initializeTeamDatabase(db);
+  const serverId = deviceServerId(db);
+  assertManagedDatabaseReady(db,serverId,{wechatEnabled:true});
+  db.exec('DROP TABLE team_wechat_codes');
+  assertManagedDatabaseReady(db,serverId);
+  assert.throws(() => assertManagedDatabaseReady(db,serverId,{wechatEnabled:true}), {code:'MANAGED_DATABASE_NOT_READY'});
+});
+
 test('managed readiness requires recovery epoch triggers and challenge bindings only when reviewed recovery is enabled', async t => {
   const { initializeTeamDatabase } = await import('../server/team/database.mjs');
   const { deviceServerId } = await import('../server/team/device-policy.mjs');

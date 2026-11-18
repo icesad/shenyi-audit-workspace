@@ -19,21 +19,25 @@ function syntheticVault(){
  },publicKey,fingerprint};
 }
 let baseline;
-async function fixture(t){
+async function fixture(t,{managed=false}={}){
  const {initializeTeamDatabase,seedDemoTeamData}=await source('database.mjs');baseline||=(async()=>{const db=new DatabaseSync(':memory:');try{initializeTeamDatabase(db);await seedDemoTeamData(db);return db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY rowid").all().map(({name})=>({name,rows:db.prepare('SELECT * FROM "'+name+'"').all()}));}finally{db.close();}})();
  const db=new DatabaseSync(':memory:');t.after(()=>db.close());initializeTeamDatabase(db);db.exec('BEGIN;PRAGMA defer_foreign_keys=ON;');for(const {name,rows} of await baseline)for(const row of rows){const columns=Object.keys(row);db.prepare('INSERT OR REPLACE INTO "'+name+'"('+columns.map(key=>'"'+key+'"').join(',')+') VALUES ('+columns.map(()=>'?').join(',')+')').run(...Object.values(row));}db.exec('COMMIT;');
  db.prepare('INSERT INTO team_phone_credentials(user_id,phone,verified_at) VALUES (?,?,?)').run('intern-a','+8613800000011',NOW-1000);
  const {handleTeamApplicationRequest}=await source('application-api.mjs'),clock={value:NOW},state={offline:false,strict:true,after:null},calls=[],secrets=[],opened=[];
+ const apiBase=new URL(POLICY.redirectUri).origin,serverId=db.prepare("SELECT value FROM team_database_metadata WHERE name='device-server-id'").get().value;
  const providers={deviceProofRequired:true,wechat:{...POLICY,createAuthorizationUrl({state}){const url=new URL('https://open.weixin.qq.com/connect/qrconnect');for(const [key,value] of Object.entries({appid:POLICY.appId,redirect_uri:POLICY.redirectUri,response_type:'code',scope:'snsapi_login',state}))url.searchParams.set(key,value);return url.href+'#wechat_redirect';},async exchangeCode(){return {appId:POLICY.appId,openId:'synthetic-open'};}}};
- const client=(identity=syntheticVault(),options={})=>createTeamClient({deviceIdentity:{vault:identity.vault,platform:'win32',displayName:'合成设备'},now:()=>clock.value,wechatPolicy:POLICY,openAuthorization:async url=>opened.push(url),fetchImpl:async(url,settings)=>{
+ const callApp=(request,strict=true)=>handleTeamApplicationRequest(request,{
+  db,now:()=>clock.value,identityProviders:{...providers,deviceProofRequired:strict,...(managed?{wechatLinkRequiresDevice:true}:{})},...(managed?{serviceMode:'managed-service'}:{})});
+ const client=(identity=syntheticVault(),options={})=>createTeamClient({deviceIdentity:{vault:identity.vault,platform:'win32',displayName:'合成设备'},now:()=>clock.value,wechatPolicy:POLICY,openAuthorization:async url=>opened.push(url),
+  ...(managed?{trustedService:{schemaVersion:1,apiBase,serverId}}:{}),fetchImpl:async(url,settings)=>{
   const route=new URL(url).pathname,call={route,method:settings.method,body:settings.body,headers:settings.headers};calls.push(call);if(state.offline)throw Error('synthetic provider secret must not escape');
-  let response=await handleTeamApplicationRequest(new Request(url,settings),{db,now:()=>clock.value,identityProviders:{...providers,deviceProofRequired:state.strict}});
+  let response=await callApp(new Request(url,settings),state.strict);
   if((response.headers.get('Content-Type')||'').startsWith('application/json')){const data=await response.clone().json();if(data.token)secrets.push(data.token);if(data.lease?.token)secrets.push(data.lease.token);}
-  if(state.after){const changed=await state.after(call,response);if(changed)response=changed;}return response;
+  if(state.after){const changed=await state.after(call,response);if(changed)response=changed;}if(managed)Object.defineProperty(response,'url',{value:url});return response;
  },...options});
  const login=(c,username='intern-a')=>c.login({username,password:PASSWORD});
  const enroll=async(c,username='intern-a')=>{const pending=await login(c,username);assert.equal(pending.device.state,'enrollment_required');return c.enrollDevice({displayName:'合成电脑',currentPassword:PASSWORD,confirmed:true});};
- const completeWechat=async()=>{const url=new URL(opened.at(-1)),response=await handleTeamApplicationRequest(new Request(POLICY.redirectUri+'?state='+url.searchParams.get('state')+'&code=synthetic-code'),{db,now:()=>clock.value,identityProviders:providers});assert.equal(response.status,200);};
+ const completeWechat=async()=>{const url=new URL(opened.at(-1)),response=await callApp(new Request(POLICY.redirectUri+'?state='+url.searchParams.get('state')+'&code=synthetic-code'));assert.equal(response.status,200);};
  return {db,clock,state,calls,secrets,opened,client,login,enroll,providers,completeWechat};
 }
 function noSecrets(value,f){const raw=JSON.stringify(value);for(const secret of f.secrets)assert.equal(raw.includes(secret),false);for(const key of ['publicKey','privateKey','leaseId','sessionToken','Authorization'])assert.equal(raw.includes('"'+key+'"'),false);}
@@ -101,4 +105,100 @@ test('WeChat cancellation retains authority over its completed main result until
 });
 test('tampered challenge server identity is never signed or adopted',async t=>{
  const f=await fixture(t),c=f.client();await f.login(c);f.state.after=async(call,response)=>{if(call.route==='/api/auth/devices/enrollment-challenges'){const value=await response.json();value.challenge.serverId=randomUUID();return new Response(JSON.stringify(value),{status:201,headers:{'Content-Type':'application/json'}});}};await assert.rejects(c.enrollDevice({displayName:'合成电脑',currentPassword:PASSWORD,confirmed:true}),{code:'INVALID_RESPONSE'});assert.equal(c.getDeviceStatus().state,'paused');assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_device_bindings').get().n,0);
+});
+
+
+const associationInput={phone:'13800000011',password:PASSWORD};
+async function startManagedAssociation(f,client){
+ await client.startWechatLogin();
+ await f.completeWechat();
+ assert.equal((await client.pollWechatLogin()).status,'binding_required');
+}
+async function enrollManaged(client){
+ const first=await client.loginPhone(associationInput);
+ assert.equal(first.device.state,'enrollment_required');
+ const value=await client.enrollDevice({displayName:'合成已绑定电脑',currentPassword:PASSWORD,confirmed:true});
+ assert.equal(value.device.state,'ready');
+ await client.logout();
+}
+const activeLeases=f=>f.db.prepare('SELECT COUNT(*) n FROM team_device_leases WHERE revoked_at IS NULL').get().n;
+const activeSessions=f=>f.db.prepare('SELECT COUNT(*) n FROM team_sessions WHERE revoked_at IS NULL').get().n;
+const associationCount=f=>f.db.prepare('SELECT COUNT(*) n FROM team_wechat_identities').get().n;
+
+test('managed first association requires an existing device and signs exactly the link with its private temporary lease',async t=>{
+ const f=await fixture(t,{managed:true}),identity=syntheticVault(),c=f.client(identity);
+ await enrollManaged(c);
+ await startManagedAssociation(f,c);
+ const commonTables=['team_users','teams','team_memberships','team_operators','team_employee_invitations','team_device_bindings'];
+ const inventory=()=>Object.fromEntries(commonTables.map(name=>[name,f.db.prepare('SELECT * FROM '+name).all()]));
+ const before=inventory();
+ const result=await c.linkWechatAccount(associationInput);
+ assert.equal(result.status,'signed_in');
+ assert.equal(result.session.account.id,'intern-a');
+ assert.deepEqual(result.session.memberships,[{teamId:'team-a',role:'intern'}]);
+ assert.equal(result.session.device.state,'ready');
+ assert.deepEqual(inventory(),before);
+ assert.equal(associationCount(f),1);
+ const link=f.calls.find(call=>call.route.endsWith('/link'));
+ const proofs=f.calls.filter(call=>call.route==='/api/auth/devices/prove');
+ assert.equal(proofs.length,2);
+ assert.ok(link.headers['X-Shenyi-Device-Lease']);
+ assert.equal(link.headers['X-Shenyi-Device-Body-SHA256'],hash(link.body));
+ assert.ok(identity.state.requests.some(fields=>fields.pathAndQuery===link.route&&fields.bodySha256===hash(link.body)));
+ assert.ok(f.calls.some(call=>call.route==='/api/auth/logout'&&call.headers.Authorization===link.headers.Authorization));
+ assert.equal(activeSessions(f),1);
+ assert.equal(activeLeases(f),1);
+ noSecrets(result,f);
+ await c.logout();
+ assert.equal(activeSessions(f),0);
+ assert.equal(activeLeases(f),0);
+});
+
+test('managed first association on an unbound or different computer does not dispatch link, enroll or leave a session',async t=>{
+ for(const bindAnotherDevice of [false,true]){
+  const f=await fixture(t,{managed:true});
+  if(bindAnotherDevice)await enrollManaged(f.client());
+  const c=f.client();
+  await startManagedAssociation(f,c);
+  const startedAt=f.calls.length;
+  await assert.rejects(c.linkWechatAccount(associationInput),{code:'DEVICE_NOT_READY'});
+  const dispatched=f.calls.slice(startedAt).map(call=>call.route);
+  assert.equal(dispatched.some(route=>/\/(link|exchange|enroll|prove)$/.test(route)),false);
+  assert.ok(dispatched.includes('/api/auth/logout'));
+  assert.equal(associationCount(f),0);
+  assert.equal(activeSessions(f),0);
+  assert.equal(activeLeases(f),0);
+  assert.equal(await c.getSession(),null);
+  assert.equal(c.getDeviceStatus().state,'signed_out');
+ }
+});
+
+test('managed cancellation during late temporary device proof revokes the minted proof without dispatching link',async t=>{
+ const f=await fixture(t,{managed:true}),c=f.client();
+ await enrollManaged(c);
+ await startManagedAssociation(f,c);
+ const entered=deferred(),release=deferred();
+ f.state.after=async(call,response)=>{
+  if(call.route==='/api/auth/devices/prove'&&response.ok){entered.resolve();await release.promise;}
+ };
+ const pending=c.linkWechatAccount(associationInput);
+ const rejected=assert.rejects(pending,{code:'SESSION_CHANGED'});
+ await entered.promise;
+ assert.equal(activeLeases(f),1);
+ try{await c.cancelWechatLogin();}finally{release.resolve();}
+ await rejected;
+ assert.equal(f.calls.some(call=>call.route.endsWith('/link')),false);
+ assert.equal(associationCount(f),0);
+ assert.equal(activeSessions(f),0);
+ assert.equal(activeLeases(f),0);
+ assert.equal(await c.getSession(),null);
+});
+
+test('managed desktop disables its browser policy when the trusted service origin disagrees',async t=>{
+ const f=await fixture(t,{managed:true}),c=f.client(undefined,{wechatPolicy:{...POLICY,redirectUri:'https://separate.synthetic.invalid/api/auth/wechat/callback'}});
+ const result=await c.getAuthMethods();
+ assert.equal(result.methods.wechat,true);
+ assert.equal(result.desktopWechatReady,false);
+ await assert.rejects(c.startWechatLogin(),{code:'WECHAT_UNAVAILABLE'});
+ assert.deepEqual(f.opened,[]);
 });

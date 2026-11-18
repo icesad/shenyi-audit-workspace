@@ -49,6 +49,11 @@ const reviewedRecoveryColumns = {
   team_recovery_requests: 'request_id, challenge_id, target_user_id, team_id, target_kind, target_stamp, status, revision, created_at, expires_at, approved_by, approval_stamp, token_hash, consumed_at',
   team_recovery_events: 'event_id, request_id, actor_id, action, revision, created_at',
 };
+const wechatColumns = {
+  team_wechat_identities: 'app_id, open_id, user_id, created_at',
+  team_wechat_transactions: 'transaction_id, state_hash, poll_hash, code_challenge, app_id, redirect_uri, status, expires_at, open_id, user_id, credential_revision',
+  team_wechat_codes: 'app_id, code_hash',
+};
 // An approved recovery must lose authority after a revoke and same-value regrant.
 const reviewedRecoveryTriggers = {
   recovery_epoch_account_update: 'team_users',
@@ -74,13 +79,13 @@ export function assertDatabaseIdentity(db, serverId) {
 }
 
 /** Check an already provisioned database without initializing or mutating it. */
-export function assertManagedDatabaseReady(db, serverId, {reviewedRecovery = false} = {}) {
+export function assertManagedDatabaseReady(db, serverId, {reviewedRecovery = false, wechatEnabled = false} = {}) {
   try {
-    if (typeof reviewedRecovery !== 'boolean' || typeof serverId !== 'string' || !uuid.test(serverId) || db.isTransaction ||
+    if (typeof reviewedRecovery !== 'boolean' || typeof wechatEnabled !== 'boolean' || typeof serverId !== 'string' || !uuid.test(serverId) || db.isTransaction ||
         db.prepare('PRAGMA foreign_keys').get()?.foreign_keys !== 1) fail();
     assertDatabaseIdentity(db, serverId);
     const tables = new Set(db.prepare("SELECT name FROM main.sqlite_schema WHERE type = 'table'").all().map(row => row.name));
-    const requiredColumns = reviewedRecovery ? {...essentialColumns, ...reviewedRecoveryColumns} : essentialColumns;
+    const requiredColumns = {...essentialColumns, ...(reviewedRecovery ? reviewedRecoveryColumns : {}), ...(wechatEnabled ? wechatColumns : {})};
     for (const [table, columns] of Object.entries(requiredColumns)) {
       if (!tables.has(table)) fail();
       db.prepare(`SELECT ${columns} FROM main.${table} LIMIT 0`).get();

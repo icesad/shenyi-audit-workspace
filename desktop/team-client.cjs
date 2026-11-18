@@ -2,7 +2,7 @@
 const taskOriginalsExport=require('../shared/task-originals-export.cjs');
 const {createHash}=require('node:crypto');
 const {createWechatLogin}=require('./wechat-login.cjs');
-const {createDeviceSession}=require('./device-session.cjs');
+const {createDeviceSession,isWechatLinkRequest}=require('./device-session.cjs');
 const {createDeviceReplacement}=require('./device-replacement.cjs');
 const {createProjectMaterialsClient}=require('./project-materials-client.cjs');
 const {createMaterialPreservationExportClient,PACKAGE_MAX}=require('./material-preservation-export-client.cjs');
@@ -146,7 +146,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   async function revokeResponseToken(bytes){
     try{const data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));if(typeof data?.token==='string'&&/^[A-Za-z0-9_-]{43}$/.test(data.token))await detachedPost('/api/auth/logout',{},data.token);}catch{}
   }
-  async function request(route, {method = 'GET', body, authenticated = true, binary = false, unavailableMessage,temporaryBearer,discardSessionOnChange=false,messagesOverride,beforeSend,onDispatch,responseLimit,materialPreviewHead=false,materialPreservationPlan,materialPreservationExport,workspaceSourceExport,workspaceSourceRead,ledgerCheck,workpaper} = {}) {
+  async function request(route, {method = 'GET', body, authenticated = true, binary = false, unavailableMessage,temporaryBearer,wechatLinkProof,discardSessionOnChange=false,messagesOverride,beforeSend,onDispatch,responseLimit,materialPreviewHead=false,materialPreservationPlan,materialPreservationExport,workspaceSourceExport,workspaceSourceRead,ledgerCheck,workpaper} = {}) {
     const billing=isBillingRoute(route);
     if(materialPreviewHead&&(method!=='HEAD'||!binary||!/^\/api\/teams\/[A-Za-z0-9_-]+\/projects\/[A-Za-z0-9_-]+\/materials\/files\/[A-Fa-f0-9-]+$/.test(route)))throw failure('INVALID_INPUT','预览响应范围无效。');
     if(responseLimit!==undefined&&(responseLimit!==26*1024*1024||method!=='GET'||binary||!/^\/api\/teams\/[A-Za-z0-9_-]+\/projects\/[A-Za-z0-9_-]+\/materials$/.test(route)))throw failure('INVALID_INPUT','响应范围无效。');
@@ -168,10 +168,15 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     const sensitiveHooks=workpaper??ledgerCheck??sourceHooks,guardedHooks=sensitiveHooks??materialHooks;
     if (authenticated && !token && !temporaryBearer) throw failure('SIGN_IN_REQUIRED', '请先登录。', 401);
     const at = generation, bearer = temporaryBearer||token,serialized=body===undefined?undefined:JSON.stringify(body),bytes=serialized===undefined?Buffer.alloc(0):Buffer.from(serialized,'utf8');
-    const protectedRoute=device?.required&&!device.isBootstrap(method,route);
+    const linking=wechatLinkProof!==undefined;
+    if(linking&&(trustedService===undefined||typeof wechatLinkProof!=='function'||!temporaryBearer||!isWechatLinkRequest(method,route)||body===undefined||binary)){
+      throw failure('INVALID_INPUT','微信关联需要指定账号的已绑定设备。');
+    }
+    const protectedRoute=linking||device?.required&&!device.isBootstrap(method,route);
     if(billing&&!protectedRoute)throw failure('DEVICE_NOT_READY','模拟账务需要当前已持钥核验的业务登录。');
-    if(protectedRoute&&(!authenticated||temporaryBearer))throw failure('INVALID_INPUT','此操作需要当前已证明的设备会话。');
-    const signed=protectedRoute?await device.prepare(method,route,bytes):null;
+    if(protectedRoute&&(!authenticated||temporaryBearer&&!linking))throw failure('INVALID_INPUT','此操作需要当前已证明的设备会话。');
+    const signed=linking?await wechatLinkProof(bytes):protectedRoute?await device.prepare(method,route,bytes):null;
+    if(linking&&!signed)throw failure('DEVICE_NOT_READY','请先使用已经绑定的电脑确认微信关联。');
     if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();
     const transportSignal=guardedHooks?AbortSignal.any([AbortSignal.timeout(workpaper?workpaperTimeoutMilliseconds(route,{kind:workpaper.kind,method}):materialPreservationExport?180000:15000),...(guardedHooks.signal?[guardedHooks.signal]:[])]):AbortSignal.timeout(15000);
     const materialCheck=()=>{if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();guardedHooks?.assertCurrent?.();if(guardedHooks?.signal?.aborted)throw failure(workpaper?'WORKPAPER_CANCELED':ledgerCheck?'LEDGER_CHECK_CANCELED':sourceHooks?'WORKSPACE_SOURCE_EXPORT_CANCELED':'MATERIAL_EXPORT_CANCELED',workpaper?'本次底稿操作已停止；已发操作仍须按原编号核对。':ledgerCheck?'本次账表查阅已停止；已发导入仍须查询原操作。':sourceHooks?'本次立项来源保存已停止。':'本次资料保全导出已停止。');};
@@ -198,9 +203,9 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     if (!response.ok) {
       const messages = {400:'提交内容无效，请检查后重试。',401:'账号或密码无效，请检查后重试。',403:'当前操作未获授权。',404:'任务不存在或当前账号无权访问。',409:'任务状态或版本已更新，请刷新后重试。',413:'资料超过12 MiB，请选择较小的文件。',429:'尝试过于频繁，请稍后重试。'};
       if(device?.required&&signed&&!(method==='HEAD'&&response.status===404)){
-        let code,errorBytes;try{errorBytes=await boundedBytes(response,65536);const payload=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(errorBytes));code=payload?.error?.code;}catch{if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed.assertCurrent();if(sensitiveHooks)materialCheck();device.pause();throw failure('SERVICE_UNAVAILABLE','服务响应无法确认，业务已暂停，请联网后核对结果。');}finally{if(sensitiveHooks||billing)errorBytes?.fill(0);}
+        let code,errorBytes;try{errorBytes=await boundedBytes(response,65536);const payload=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(errorBytes));code=payload?.error?.code;}catch{if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed.assertCurrent();if(sensitiveHooks)materialCheck();if(!linking)device.pause();throw failure('SERVICE_UNAVAILABLE','服务响应无法确认，业务已暂停，请联网后核对结果。');}finally{if(sensitiveHooks||billing)errorBytes?.fill(0);}
         if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed.assertCurrent();if(sensitiveHooks)materialCheck();
-        if(['DEVICE_PROOF_REQUIRED','DEVICE_BODY_MISMATCH','DEVICE_REQUEST_REPLAY','DEVICE_PROOF_LIMIT','DEVICE_STATE_CHANGED'].includes(code)){device.pause();throw failure(code,'设备业务状态需要重新在线核验；已发操作请先核对结果。',response.status);}
+        if(['DEVICE_PROOF_REQUIRED','DEVICE_BODY_MISMATCH','DEVICE_REQUEST_REPLAY','DEVICE_PROOF_LIMIT','DEVICE_STATE_CHANGED'].includes(code)){if(!linking)device.pause();throw failure(code,'设备业务状态需要重新在线核验；已发操作请先核对结果。',response.status);}
         const safeBillingMessage=billing?billingErrorMessage(response.status,code):undefined;
         if(safeBillingMessage)throw failure(code,safeBillingMessage,response.status);
       }
@@ -255,8 +260,41 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     try{await device.finalize(()=>{if(at!==generation||token!==bootstrap)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');external();},minted=>{receiptToken=minted;receiptGeneration=generation;});receipt.assertCurrent();return snapshot();}
     catch(cause){if(cause.code==='SESSION_CHANGED')await receipt.rollback();throw cause;}
   }
-  wechat=createWechatLogin({policy:wechatPolicy,openAuthorization,request,now,error:failure,getGeneration:()=>generation,isSignedIn:()=>!!token,
-    cancelRemote:(route,body)=>detachedPost(route,body),revokeTemporary:bearer=>detachedPost('/api/auth/logout',{},bearer),
+  const revokeTemporary=bearer=>detachedPost('/api/auth/logout',{},bearer);
+  async function linkWechatOnBoundDevice(route,bootstrapSession,body,assertCurrent){
+    let temporary={token:bootstrapSession.token,current:cleanSession(bootstrapSession),generation:0};
+    let mintedBearer;
+    const linkDevice=createDeviceSession({
+      identity:deviceIdentity,now,error:failure,requireWechatLinkProof:true,
+      getAccount:()=>temporary,
+      adopt(data){
+        temporary={token:data.token,current:cleanSession(data),generation:temporary.generation+1};
+        mintedBearer=data.token;
+      },
+      clearAccount(){temporary={token:null,current:null,generation:temporary.generation+1};},
+      bootstrap(path,{token:bearer,minted,...options}={}){
+        return request(path,{...options,temporaryBearer:bearer,discardSessionOnChange:minted===true,beforeSend:assertCurrent});
+      },
+      revoke:revokeTemporary,
+    });
+    try{
+      await linkDevice.finalize(assertCurrent);
+      assertCurrent();
+      if(!linkDevice.isReady())throw failure('DEVICE_NOT_READY','请先用手机号登录并绑定电脑，再从已绑定的电脑关联微信。');
+      return await request(route,{method:'POST',body,temporaryBearer:mintedBearer,async wechatLinkProof(bytes){
+        const signed=await linkDevice.prepare('POST',route,bytes);
+        return {headers:signed.headers,assertCurrent(){assertCurrent();signed.assertCurrent();}};
+      }});
+    }finally{
+      linkDevice.reset();
+      if(mintedBearer)await revokeTemporary(mintedBearer).catch(()=>{});
+    }
+  }
+  const managedWechat=trustedService!==undefined;
+  const browserPolicy=managedWechat&&wechatPolicy?.redirectUri!==trusted.url('/api/auth/wechat/callback')?undefined:wechatPolicy;
+  wechat=createWechatLogin({policy:browserPolicy,openAuthorization,request,now,error:failure,getGeneration:()=>generation,isSignedIn:()=>!!token,
+    cancelRemote:(route,body)=>detachedPost(route,body),revokeTemporary,
+    ...(managedWechat?{linkWithDevice:linkWechatOnBoundDevice}:{}),
     adoptSession:(data,external,receiveReceipt)=>finalizeSession(data,external,receiveReceipt)});
   const onboardingRequest=(route,options)=>request(route,{...options,unavailableMessage:'员工邀请或手机号验证服务尚未开通或暂不可用。',messagesOverride:{400:'验证内容无效，请核对后重试。',404:'邀请码或手机号无效，或邀请已失效；管理操作也可能未获授权。',409:'当前账号或邀请状态不适用于激活，请联系管理员核对。',410:'本次验证已过期，请重新获取。'}});
   const sessionsRequest=(route,options)=>request(route,{...options,messagesOverride:{403:'当前密码验证未通过，请核对后重试。',404:'无法访问该登录会话，请刷新列表。',409:'账号或登录状态已改变，请刷新后重试。'}});

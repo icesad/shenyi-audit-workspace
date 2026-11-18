@@ -4,6 +4,7 @@ import {isIP} from 'node:net';
 import {handleTeamApplicationRequest} from './application-api.mjs';
 import {json} from './http-utils.mjs';
 import {assertDatabaseIdentity, assertManagedDatabaseReady} from './managed-database-readiness.mjs';
+import {isWechatConfigured} from './wechat-api.mjs';
 import {serviceUnavailable, startLoopbackTeamListener} from './team-http-listener.mjs';
 
 export {assertManagedDatabaseReady};
@@ -57,19 +58,26 @@ function resolveManagedTarget(incoming, origin) {
 }
 
 /** Loopback-only HTTPS listener for a separately provisioned non-demo database. */
-export async function startManagedTeamServer({db, apiBase, port = 0, serverId, key, cert, sms, phonePepper, reviewedRecovery = false} = {}) {
+export async function startManagedTeamServer({db, apiBase, port = 0, serverId, key, cert, sms, phonePepper, reviewedRecovery = false, wechat} = {}) {
   const origin = managedOrigin(apiBase, port, serverId);
   const hasSms = sms !== undefined || phonePepper !== undefined;
   const validSms = typeof sms?.send === 'function' && Buffer.isBuffer(phonePepper) && phonePepper.length === 32;
   if (typeof reviewedRecovery !== 'boolean' || ((hasSms || reviewedRecovery) && !validSms)) {
     fail('MANAGED_SERVICE_CONFIGURATION_INVALID');
   }
-  const readinessOptions = {reviewedRecovery};
+  const wechatEnabled = wechat !== undefined;
+  if (wechatEnabled && (!isWechatConfigured({wechat}) || !/^wx[a-zA-Z0-9]{16}$/.test(wechat.appId) ||
+    origin.port || isIP(origin.hostname.replace(/^\[|\]$/g, '')) || !origin.hostname.includes('.') ||
+    wechat.redirectUri !== origin.origin + '/api/auth/wechat/callback')) fail('MANAGED_SERVICE_CONFIGURATION_INVALID');
+  const readinessOptions = {reviewedRecovery,wechatEnabled};
   assertManagedDatabaseReady(db, serverId, readinessOptions);
   checkTlsConfiguration(origin, key, cert);
   const pepper = hasSms ? Buffer.from(phonePepper) : undefined;
   const identityProviders = Object.freeze({deviceProofRequired:true, reviewedRecovery,
     ...(hasSms ? {sms:Object.freeze({send:sms.send.bind(sms)}), phonePepper:pepper} : {}),
+    ...(wechatEnabled ? {wechat:Object.freeze({appId:wechat.appId,redirectUri:wechat.redirectUri,
+      createAuthorizationUrl:wechat.createAuthorizationUrl.bind(wechat),exchangeCode:wechat.exchangeCode.bind(wechat)}),
+      wechatLinkRequiresDevice:true} : {}),
   });
   const settings = Object.freeze({
     db, serviceMode:'managed-service', identityProviders,
@@ -92,9 +100,10 @@ export async function startManagedTeamServer({db, apiBase, port = 0, serverId, k
           return json({status:'ready'});
         }
         assertDatabaseIdentity(db, serverId);
-        if (reviewedRecovery) {
+        if (reviewedRecovery || wechatEnabled) {
           const pathname = new URL(request.url).pathname;
-          if (recoveryRoutes.has(pathname) || recoveryDecisionRoute.test(pathname)) {
+          if ((reviewedRecovery && (recoveryRoutes.has(pathname) || recoveryDecisionRoute.test(pathname))) ||
+            (wechatEnabled && pathname.startsWith('/api/auth/wechat/'))) {
             try { assertManagedDatabaseReady(db, serverId, readinessOptions); }
             catch {
               const denied = serviceUnavailable();

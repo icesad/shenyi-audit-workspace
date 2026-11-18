@@ -18,7 +18,7 @@ function validWechatAuthorization(value,policy){
       &&[...u.searchParams.keys()].every(key=>Object.hasOwn(expected,key)||key==='state')&&['','#wechat_redirect'].includes(u.hash);
   }catch{return false;}
 }
-function createWechatLogin({policy,openAuthorization,request,cancelRemote,revokeTemporary,adoptSession,getGeneration,isSignedIn,error,now=Date.now}){
+function createWechatLogin({policy,openAuthorization,request,cancelRemote,revokeTemporary,linkWithDevice,adoptSession,getGeneration,isSignedIn,error,now=Date.now}){
   policy=validWechatPolicy(policy)?Object.freeze({appId:policy.appId,redirectUri:policy.redirectUri}):null;
   const configured=!!policy&&typeof openAuthorization==='function';
   // Main cannot observe when the renderer receives its successful IPC reply.
@@ -79,7 +79,10 @@ function createWechatLogin({policy,openAuthorization,request,cancelRemote,revoke
         const value=await request('/api/auth/phone/login',{method:'POST',authenticated:false,discardSessionOnChange:true,body:input});
         if(!opaque(value?.token))throw error('INVALID_RESPONSE','账号服务返回格式无效。');
         temporary=value.token;changed(at,generation);
-        await request(route(row)+'/link',{method:'POST',temporaryBearer:temporary,body:{pollToken:row.pollToken,codeVerifier:row.verifier,currentPassword:input.password}});
+        const linkRoute=route(row)+'/link';
+        const body={pollToken:row.pollToken,codeVerifier:row.verifier,currentPassword:input.password};
+        if(linkWithDevice)await linkWithDevice(linkRoute,value,body,()=>changed(at,generation));
+        else await request(linkRoute,{method:'POST',temporaryBearer:temporary,body});
         changed(at,generation);finalSession=await receiveExchange(row);
       }finally{if(temporary)await revokeTemporary(temporary).catch(()=>{});}
       // Do not install the final session while temporary-session cleanup is

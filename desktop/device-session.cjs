@@ -12,13 +12,20 @@ const POST_BOOTSTRAP=new Set(['/api/auth/login','/api/auth/logout','/api/auth/ph
  '/api/auth/onboarding/preview','/api/auth/onboarding/challenges','/api/auth/onboarding/activate','/api/auth/first-administrator/preview','/api/auth/first-administrator/challenges','/api/auth/first-administrator/activate',
  '/api/auth/devices/enrollment-challenges','/api/auth/devices/proof-challenges','/api/auth/devices/revocation-challenges','/api/auth/devices/enroll','/api/auth/devices/prove','/api/auth/devices/revoke','/api/auth/wechat/transactions',
  '/api/auth/device-replacements/request-challenges','/api/auth/device-replacements/withdraw-challenges','/api/auth/device-replacements/activate-challenges','/api/auth/device-replacements/request','/api/auth/device-replacements/withdraw','/api/auth/device-replacements/activate']);
-function deviceBootstrapRequest(method,route){
+const WECHAT_TRANSACTION=/^\/api\/auth\/wechat\/transactions\/([^/]+)\/(status|cancel|link|exchange)$/;
+function isWechatLinkRequest(method,route){
+ const match=method==='POST'&&typeof route==='string'&&WECHAT_TRANSACTION.exec(route);
+ return !!match&&UUID.test(match[1])&&match[2]==='link';
+}
+function deviceBootstrapRequest(method,route,requireWechatLinkProof=false){
  if(typeof route!=='string'||!route.startsWith('/')||route.startsWith('//')||route.includes('?')||route.includes('#'))return false;
  if(method==='GET')return GET_BOOTSTRAP.has(route);if(method!=='POST')return false;if(POST_BOOTSTRAP.has(route))return true;
- const match=/^\/api\/auth\/wechat\/transactions\/([^/]+)\/(status|cancel|link|exchange)$/.exec(route);return !!match&&UUID.test(match[1]);
+ const match=WECHAT_TRANSACTION.exec(route);
+ return !!match&&UUID.test(match[1])&&(!requireWechatLinkProof||match[2]!=='link');
 }
-function createDeviceSession({identity,getAccount,adopt,clearAccount,bootstrap,protectedRequest,revoke,error,now=Date.now,onContextChange=()=>{}}){
+function createDeviceSession({identity,getAccount,adopt,clearAccount,bootstrap,protectedRequest,revoke,error,now=Date.now,onContextChange=()=>{},requireWechatLinkProof=false}){
  const required=identity!==undefined;
+ const isBootstrap=(method,route)=>deviceBootstrapRequest(method,route,requireWechatLinkProof);
  let state=required?'signed_out':'diagnostic',epoch=0,work=0,device=null,local=null,lease=null,serverId=null,pending=null;
  const fail=(code,message,status=0)=>error(code,message,status);
  const changed=()=>fail('SESSION_CHANGED','账号或设备状态已改变，请重新操作。');
@@ -123,7 +130,7 @@ function createDeviceSession({identity,getAccount,adopt,clearAccount,bootstrap,p
   try{return await operation;}finally{if(checking===operation)checking=null;}
  }
  async function prepare(method,route,bytes){
-  if(!required||deviceBootstrapRequest(method,route))return null;const assertCurrent=guard(),account=getAccount(),currentLease=lease;
+  if(!required||isBootstrap(method,route))return null;const assertCurrent=guard(),account=getAccount(),currentLease=lease;
   const fields={serverId,userId:account.current.account.id,sessionBinding:proof.sessionBinding(account.token),deviceId:currentLease.deviceId,bindingRevision:currentLease.bindingRevision,leaseId:currentLease.id,method,pathAndQuery:route,bodySha256:createHash('sha256').update(bytes).digest('hex'),nonce:randomBytes(32).toString('base64url')};
   let signature;try{signature=await identity.vault.signRequest(fields,{serverId,userId:account.current.account.id,sessionToken:account.token,deviceId:currentLease.deviceId,bindingRevision:currentLease.bindingRevision,leaseId:currentLease.id,keyFingerprint:local.fingerprint});}catch{assertCurrent();lease=null;work++;transition('vault_unavailable',{force:true});throw fail('DEVICE_VAULT_UNAVAILABLE','系统设备密钥无法完成请求签名。');}assertCurrent();
   try{proof.signatureBytes(signature);}catch{lease=null;work++;transition('vault_unavailable',{force:true});throw fail('DEVICE_VAULT_UNAVAILABLE','系统设备签名返回格式无效。');}
@@ -137,6 +144,6 @@ function createDeviceSession({identity,getAccount,adopt,clearAccount,bootstrap,p
   if(!exact(value,['id','token','serverId','deviceId','bindingRevision','expiresAt'])||!UUID.test(value.id)||!opaque(value.token)||value.serverId!==expected.serverId||value.deviceId!==bound.id||value.bindingRevision!==1||bound.id===expected.device.id||bound.revision!==1||bound.status!=='active'||bound.keyFingerprint!==expected.fingerprint||bound.displayName!==expected.displayName||bound.platform!==expected.platform||!Number.isSafeInteger(value.expiresAt)||value.expiresAt<=now()||value.expiresAt!==data.expiresAt||value.expiresAt>expected.challengeExpiresAt+15*60000)throw fail('INVALID_RESPONSE','换机激活的设备或业务授权状态无效，请重新登录核对。');
   assertCurrent();device=bound;lease={...value};work++;transition('ready',{force:true});return adopt(data);
  }
- return Object.freeze({required,status,reset,pause,guard,prepare,finalize,enroll,reconnect,check,getReplacementContext,adoptReplacementSession,isReady:()=>state==='ready',isBootstrap:deviceBootstrapRequest});
+ return Object.freeze({required,status,reset,pause,guard,prepare,finalize,enroll,reconnect,check,getReplacementContext,adoptReplacementSession,isReady:()=>state==='ready',isBootstrap});
 }
-module.exports={createDeviceSession,deviceBootstrapRequest};
+module.exports={createDeviceSession,deviceBootstrapRequest,isWechatLinkRequest};

@@ -58,7 +58,7 @@ try {
 
 ## 客户端与权限
 
-桌面客户端使用单独配置的 HTTPS origin 和实例 UUID 连接。受管服务只接受已绑定手机号的账号通过密码登录，团队资料请求继续要求已绑定设备和当前权限。已配置的席位与订阅管理规则继续在服务端执行。演示账号登录和模拟付款处理关闭。微信扫码与正式支付仍待接入。 [桌面连接配置](TRUSTED_TEAM_HTTPS.md)
+桌面客户端使用单独配置的 HTTPS origin 和实例 UUID 连接。受管服务支持已验证手机号密码登录，也可按下文显式启用微信扫码。团队资料请求继续要求已绑定设备和当前权限。已配置的席位与订阅管理规则继续在服务端执行。演示账号登录和模拟付款处理关闭。正式支付仍待接入。 [桌面连接配置](TRUSTED_TEAM_HTTPS.md)
 
 ## 可选阿里云短信配置
 
@@ -88,5 +88,22 @@ try {
 在主服务配置中同时设置 `smsProfile` 和 `"reviewedRecovery": true`。省略 `reviewedRecovery` 或设为 `false` 时，审核式密码恢复关闭，其他已配置的短信功能可继续使用。启用时，缺少短信配置、短信配置无效或数据库缺少必要的恢复结构都会阻止启动。
 
 本团队员工由该团队技术管理员审核，技术管理员本人由获授权的产品负责人审核。审核人须在已绑定电脑登录并验证当前密码。申请人须提供本人收到的短信验证码和一次性恢复凭证。改密成功后原会话失效，申请人需重新登录。含最高审核权限历史的账号首版不开放在线恢复。 [密码恢复流程](RECOVERY_APPROVAL.md) · [最高审核账号处理决定](PRIVILEGED_ACCOUNT_RECOVERY_DECISION.md)
+
+## 可选微信网站应用扫码
+
+取得微信开放平台网站应用授权后，在主配置添加 `wechatProfile`，指定仓库外的独立 UTF-8 JSON 文件。省略此字段时微信扫码关闭。启用时，`apiBase` 须是使用标准 HTTPS 端口的域名，服务端将唯一回调固定为同一 origin 下的 `/api/auth/wechat/callback`。Node 的回环监听端口可继续使用现有值，公网入口须提供与微信审核一致的域名。 [网站应用微信登录开发指南](https://developers.weixin.qq.com/doc/oplatform/Website_App/WeChat_Login/Wechat_Login.html) · [腾讯 PC 微信登录](https://cloud.tencent.com/document/product/1441/62649)
+
+```json
+{
+  "schemaVersion": 1,
+  "provider": "wechat-open-platform",
+  "appId": "<已批准的网站应用 AppID>",
+  "appSecret": "<服务端保管的 AppSecret>"
+}
+```
+
+桌面启动时配置 `SHENYI_WECHAT_APP_ID` 和 `SHENYI_WECHAT_REDIRECT_URI`，须与上面的应用和完整回调 URL 一致。AppSecret 留在服务端。首次使用时，员工先用已验证手机号与密码登录并完成电脑绑定，退出后在这台电脑上扫码并确认关联。客户端使用独立的临时会话证明设备，关联结束清理临时会话。以后扫码仍须核验当前绑定设备，原员工身份、团队和项目权限继续生效。
+
+授权页拒绝或关闭后，可回到桌面取消，未完成的事务按服务端期限过期。换码请求和响应由服务端处理，持久化关联使用同一 AppID 下的 OpenID。回调正文不返回身份、票据或会话。部署时沿用代理的专用回调日志规则，验收代理故障时的日志与其他转发层的记录。 [身份方案](PHONE_WECHAT_AUTH_PLAN.md) · [Linux 代理模板](LINUX_TEAM_DEPLOYMENT.md)
 
 当前验收使用本机受控 TLS 证书和合成账号。后续仍需验证实际域名和证书、服务器进程托管、外部代理、防护与告警、真实负责人身份与手机号核验、真实供应商、数据库迁移及正式上线切换。

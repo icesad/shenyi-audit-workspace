@@ -6,10 +6,11 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { assertManagedDatabaseReady, startManagedTeamServer } from '../server/team/managed-service.mjs';
 import { createAliyunSms } from '../server/team/aliyun-sms.mjs';
+import { createWechatOpenPlatform } from '../server/team/wechat-open-platform.mjs';
 
 const checkout = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fields = ['schemaVersion', 'database', 'apiBase', 'serverId', 'listenPort', 'tlsCertificate', 'tlsKey'];
-const optionalFields = ['smsProfile', 'reviewedRecovery'];
+const optionalFields = ['smsProfile', 'reviewedRecovery', 'wechatProfile'];
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const configCode = 'MANAGED_SERVICE_CONFIGURATION_INVALID';
 const messages = {
@@ -17,6 +18,7 @@ const messages = {
   MANAGED_DATABASE_NOT_READY: '指定数据库未通过服务启动检查。',
   MANAGED_TLS_INVALID: '证书和私钥无法用于配置的 HTTPS 地址。',
   MANAGED_SMS_INVALID: '短信服务配置无效。请检查独立配置文件及模板。',
+  MANAGED_WECHAT_INVALID: '微信扫码服务配置无效。请检查独立配置文件、应用和回调域名。',
   MANAGED_SERVICE_LISTEN_FAILED: '团队服务未能监听配置的本机端口。',
   MANAGED_SERVICE_STOP_FAILED: '团队服务关闭未完成。',
 };
@@ -122,11 +124,14 @@ export async function loadManagedServiceConfiguration(filename) {
     const { database, tlsCertificate, tlsKey } = Object.fromEntries(['database', 'tlsCertificate', 'tlsKey'].map(name => [name, localPath(value[name])]));
     const filenames = [configPath, database, tlsCertificate, tlsKey];
     const smsProfile = Object.hasOwn(value, 'smsProfile') ? localPath(value.smsProfile) : undefined;
+    const wechatProfile = Object.hasOwn(value, 'wechatProfile') ? localPath(value.wechatProfile) : undefined;
     if ((Object.hasOwn(value, 'reviewedRecovery') && typeof value.reviewedRecovery !== 'boolean') ||
       (value.reviewedRecovery === true && !smsProfile)) fail(configCode);
     if (smsProfile) filenames.push(smsProfile);
+    if (wechatProfile) filenames.push(wechatProfile);
     if (filenames.some((name, index) => inside(repository, name) || filenames.slice(0, index).some(previous => !path.relative(previous, name)))) fail(configCode);
-    return Object.freeze({ ...value, database, tlsCertificate, tlsKey, ...(smsProfile ? { smsProfile } : {}) });
+    return Object.freeze({ ...value, database, tlsCertificate, tlsKey, ...(smsProfile ? { smsProfile } : {}),
+      ...(wechatProfile ? { wechatProfile } : {}) });
   } catch {
     fail(configCode);
   }
@@ -152,14 +157,32 @@ async function loadSmsProvider(filename) {
   }
 }
 
-async function openManagedDatabase(filename, serverId, { reviewedRecovery }) {
+async function loadWechatProvider(filename, apiBase) {
+  if (filename === undefined) return;
+  const code = 'MANAGED_WECHAT_INVALID';
+  let bytes;
+  try {
+    if (Object.hasOwn(process.env, 'NODE_TLS_REJECT_UNAUTHORIZED') && process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '1') fail(code);
+    bytes = await readLocalFile(filename, 16 * 1024, code);
+    const { schemaVersion, provider, ...settings } = parseProfile(bytes, code);
+    if (schemaVersion !== 1 || provider !== 'wechat-open-platform' || Object.keys(settings).length !== 2 ||
+      !Object.hasOwn(settings, 'appSecret') || typeof settings.appId !== 'string' || !/^wx[a-zA-Z0-9]{16}$/.test(settings.appId)) fail(code);
+    return createWechatOpenPlatform({ ...settings, redirectUri: apiBase + '/api/auth/wechat/callback' });
+  } catch {
+    fail(code);
+  } finally {
+    bytes?.fill(0);
+  }
+}
+
+async function openManagedDatabase(filename, serverId, readinessOptions) {
   const code = 'MANAGED_DATABASE_NOT_READY';
   let readonly, writable;
   try {
     const entry = await existingFile(filename, code);
     const uri = pathToFileURL(filename).href;
     readonly = new DatabaseSync(uri + '?mode=ro', { readOnly: true });
-    assertManagedDatabaseReady(readonly, serverId, { reviewedRecovery });
+    assertManagedDatabaseReady(readonly, serverId, readinessOptions);
     readonly.close();
     readonly = undefined;
     writable = new DatabaseSync(uri + '?mode=rw', { timeout: 5000 });
@@ -174,14 +197,15 @@ async function openManagedDatabase(filename, serverId, { reviewedRecovery }) {
 
 export async function openConfiguredTeamService(filename) {
   const configuration = await loadManagedServiceConfiguration(filename);
-  const { database, serverId, apiBase, listenPort: port, tlsCertificate, tlsKey, smsProfile, reviewedRecovery = false } = configuration;
+  const { database, serverId, apiBase, listenPort: port, tlsCertificate, tlsKey, smsProfile, reviewedRecovery = false, wechatProfile } = configuration;
   let db, key, smsProvider;
   try {
     smsProvider = await loadSmsProvider(smsProfile);
+    const wechat = await loadWechatProvider(wechatProfile, apiBase);
     const cert = await readLocalFile(tlsCertificate, 128 * 1024, 'MANAGED_TLS_INVALID');
     key = await readLocalFile(tlsKey, 32 * 1024, 'MANAGED_TLS_INVALID');
-    db = await openManagedDatabase(database, serverId, { reviewedRecovery });
-    const service = await startManagedTeamServer({ db, apiBase, port, serverId, cert, key, ...smsProvider, reviewedRecovery });
+    db = await openManagedDatabase(database, serverId, { reviewedRecovery, wechatEnabled: wechat !== undefined });
+    const service = await startManagedTeamServer({ db, apiBase, port, serverId, cert, key, ...smsProvider, reviewedRecovery, wechat });
     let stopping;
     return { address: service.address, apiBase: service.apiBase, serverId,
       close: () => stopping ??= service.close().finally(() => db.close()) };
