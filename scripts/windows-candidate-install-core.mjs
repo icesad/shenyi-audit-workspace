@@ -110,10 +110,22 @@ async function prepareRoot(input, excluded, create) {
   } catch { fail('INSTALL_ROOT_INVALID'); }
 }
 
-async function checkLock(context) {
+async function checkRootIdentity(context) {
   await directoryChain(context.root, 'INSTALL_ROOT_INVALID');
-  if (!sameInode(context.rootIdentity, await directoryStat(context.root, 'INSTALL_ROOT_INVALID')) ||
-      !sameInode(context.lockIdentity, await fileStat(context.lockPath, 'INSTALL_BUSY'))) fail('INSTALL_BUSY');
+  if (!sameInode(context.rootIdentity, await directoryStat(context.root, 'INSTALL_ROOT_INVALID'))) fail('INSTALL_BUSY');
+}
+
+async function checkLock(context) {
+  await checkRootIdentity(context);
+  if (!sameInode(context.lockIdentity, await fileStat(context.lockPath, 'INSTALL_BUSY'))) fail('INSTALL_BUSY');
+}
+
+async function checkIdleInstallation(context) {
+  try { await checkRootIdentity(context); }
+  catch (error) { if (error.code === 'INSTALL_BUSY') throw error; fail('INSTALL_ROOT_INVALID'); }
+  try { await fs.lstat(path.join(context.root, lockName)); }
+  catch (error) { if (error.code === 'ENOENT') return; fail('INSTALL_STATE_INVALID'); }
+  fail('INSTALL_BUSY');
 }
 
 async function locked(input, exclusions, create, action) {
@@ -170,8 +182,10 @@ function parseState(bytes) {
 
 async function readInstallation(context, allowEmpty) {
   try {
-    await checkLock(context);
+    if (context.lockPath) await checkLock(context);
+    else await checkIdleInstallation(context);
     const names = await fs.readdir(context.root);
+    if (!context.lockPath && names.includes(lockName)) fail('INSTALL_BUSY');
     if (!names.includes(stateName)) {
       if (allowEmpty && names.length === 1 && names[0] === lockName) return null;
       fail('INSTALL_STATE_INVALID');
@@ -355,6 +369,18 @@ export async function inspectWindowsInstallation({ root, publicKey }) {
     await checkExpectedState(context, previous);
     return result(state, location);
   });
+}
+
+export async function resolveWindowsLaunch({ root, publicKey }) {
+  const key = localPath(publicKey);
+  const context = await prepareRoot(root, [key], false);
+  const previous = await readInstallation(context, false);
+  if (!previous.state.active) fail('INSTALL_STATE_INVALID');
+  const location = await verifyRetained(context, previous.state, previous.state.active, key);
+  const current = await readInstallation(context, false);
+  await checkIdleInstallation(context);
+  if (!sameFile(previous.stat, current.stat) || !previous.bytes.equals(current.bytes)) fail('INSTALL_BUSY');
+  return result(current.state, location);
 }
 
 export async function rollbackWindowsInstallation({ root, publicKey }) {

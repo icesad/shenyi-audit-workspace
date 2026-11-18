@@ -95,3 +95,17 @@ M7Q 在原签名清单和应用内容上做 NTFS 权限演练。新安装的 `bu
 正式安装由操作员控制安装父目录、`releases`、签名和 `state.json`。日常用户只需读取执行，用户配置、设备密钥及业务选件位于独立可写位置。验签公钥也由操作员从可信渠道固定并单独保护。验证有效权限时需同时检查父目录的删除子项能力，防止子目录被移除或替换。发布新版本时在受保护的父目录下创建新的版本目录并验签。 [权限继承](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights) · [删除与重命名权限](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-deletefilew)
 
 `apply`、`inspect` 和 `rollback` 由具备写入安装状态及锁文件权限的操作员执行。确认回执中的可执行文件后，使用日常账号启动。现有安装工具以便携目录为入口，正式部署仍需用独立的安装与日常账号实测有效权限、新旧正式版本切换、回滚和操作系统签名。
+
+### 日常账号只读启动定位
+
+日常账号可用 `resolve-launch` 核验当前活动版本，取得 `Shenyi.exe` 的绝对路径。先由操作员准备可信脚本和 Node 运行环境，保护安装状态、程序目录和独立取得的验签公钥，并为客户端配置已核对的团队服务。日常账号需要读取和执行权限，用户资料仍保存在独立可写目录。
+
+```powershell
+$receipt = node scripts/manage-windows-candidate-install.mjs resolve-launch `
+  --root 'D:/shenyi-local-install' --public-key 'D:/trusted-config/update-ed25519.pub.pem'
+if ($LASTEXITCODE -ne 0) { throw '无法核验已安装的审易版本。' }
+$active = ConvertFrom-Json -InputObject ($receipt -join "`n")
+& $active.executablePath
+```
+
+定位过程读取完整的签名和文件清单，并在输出前再次核对安装状态。当前存在安装锁或核验期间状态被替换时，请等操作员完成安装或回滚后重新定位。回执只对应本次核验时的活动版本。操作员仍用 `inspect` 获取带锁检查结果。

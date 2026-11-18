@@ -208,3 +208,143 @@ test('simultaneous first installs yield one active copy and cannot initialize an
   assert.ok(['INSTALL_BUSY', 'CANDIDATE_VERSION_NOT_NEWER'].includes(rejected[0].reason.code));
   assert.equal((await inspectWindowsInstallation(options)).executablePath, passed[0].value.executablePath);
 });
+
+async function installedFixture() {
+  const item = await fixture();
+  const { signWindowsCandidate } = await import('../scripts/windows-candidate-signature.mjs');
+  const { applyWindowsCandidate } = await import('../scripts/windows-candidate-install-core.mjs');
+  await signWindowsCandidate(item.signOptions);
+  const options = { root: path.join(item.directory,'installed-launch'),publicKey:item.publicPath };
+  const installed = await applyWindowsCandidate(sourceOf(item,options));
+  return { ...item,options,installed };
+}
+
+async function installationFacts(root) {
+  const records = [];
+  async function visit(filename) {
+    const entry = await fs.lstat(filename,{bigint:true});
+    records.push({path:path.relative(root,filename),kind:entry.isDirectory()?'directory':'file',
+      dev:entry.dev.toString(),ino:entry.ino.toString(),mode:entry.mode.toString(),nlink:entry.nlink.toString(),
+      size:entry.size.toString(),mtimeNs:entry.mtimeNs.toString(),ctimeNs:entry.ctimeNs.toString(),
+      sha256:entry.isFile()?sha(await fs.readFile(filename)):null});
+    if (entry.isDirectory()) for (const name of (await fs.readdir(filename)).sort()) await visit(path.join(filename,name));
+  }
+  await visit(root);
+  return records;
+}
+
+test('resolve-launch returns the verified inspect receipt without creating locks or changing installed files', async () => {
+  const f = await installedFixture();
+  const { inspectWindowsInstallation,resolveWindowsLaunch } = await import('../scripts/windows-candidate-install-core.mjs');
+  const { runWindowsCandidateInstall } = await import('../scripts/manage-windows-candidate-install.mjs');
+  const { syncBuiltinESMExports } = require('node:module');
+  const { constants } = require('node:fs');
+  const expected = await inspectWindowsInstallation(f.options);
+  const before = await installationFacts(f.options.root),opened=[];
+  const originalOpen = fs.open;
+  fs.open = async function(filename,flags,...rest) {
+    opened.push({filename:String(filename),flags});
+    return originalOpen.call(this,filename,flags,...rest);
+  };
+  syncBuiltinESMExports();
+  let resolved,command;
+  try {
+    resolved = await resolveWindowsLaunch(f.options);
+    command = await runWindowsCandidateInstall(['resolve-launch','--root',f.options.root,'--public-key',f.publicPath]);
+  } finally { fs.open=originalOpen;syncBuiltinESMExports(); }
+  assert.deepEqual(resolved,expected);
+  assert.deepEqual(command,{ok:true,...expected,operation:'resolve-launch'});
+  assert.ok(opened.some(entry=>entry.filename===f.installed.executablePath),'real installed executable must be opened');
+  for (const {filename,flags} of opened) {
+    assert.notEqual(path.basename(filename),'.install.lock');
+    if (typeof flags==='number') assert.equal(flags&(constants.O_WRONLY|constants.O_RDWR|constants.O_CREAT|constants.O_TRUNC|constants.O_APPEND),0,filename);
+    else assert.ok(['r','rs','sr'].includes(flags),String(flags));
+  }
+  assert.deepEqual(await installationFacts(f.options.root),before);
+  const { spawnSync } = require('node:child_process');
+  const cli = spawnSync(process.execPath,[path.resolve(__dirname,'../scripts/manage-windows-candidate-install.mjs'),
+    'resolve-launch','--root',f.options.root,'--public-key',f.publicPath],{encoding:'utf8',windowsHide:true,timeout:15000});
+  assert.equal(cli.error,undefined);
+  assert.equal(cli.status,0,cli.stderr);
+  assert.deepEqual(JSON.parse(cli.stdout),command);
+  assert.deepEqual(await installationFacts(f.options.root),before);
+});
+
+test('resolve-launch refuses an existing installation lock and leaves its bytes and installation untouched', async () => {
+  const f = await installedFixture();
+  const { resolveWindowsLaunch } = await import('../scripts/windows-candidate-install-core.mjs');
+  const lock = path.join(f.options.root,'.install.lock'),bytes=Buffer.from('synthetic concurrent install owner');
+  await fs.writeFile(lock,bytes,{flag:'wx'});
+  const before = await installationFacts(f.options.root);
+  await assert.rejects(resolveWindowsLaunch(f.options),{code:'INSTALL_BUSY'});
+  assert.deepEqual(await fs.readFile(lock),bytes);
+  assert.deepEqual(await installationFacts(f.options.root),before);
+});
+
+test('resolve-launch rejects corrupted retained signature, manifest and payload without repairing them', async () => {
+  const f = await installedFixture();
+  const { resolveWindowsLaunch } = await import('../scripts/windows-candidate-install-core.mjs');
+  const bundle = path.dirname(f.installed.executablePath);
+  const signature = path.join(path.dirname(bundle),'signature.ed25519');
+  const manifest = path.join(bundle,'candidate-manifest.json');
+  for (const [filename,code,change] of [
+    [signature,'CANDIDATE_SIGNATURE_INVALID',bytes=>{const changed=Buffer.from(bytes);changed[0]^=1;return changed;}],
+    [manifest,'CANDIDATE_MANIFEST_INVALID',bytes=>Buffer.concat([bytes,Buffer.from(' ')])],
+    [f.installed.executablePath,'CANDIDATE_INVENTORY_INVALID',bytes=>{const changed=Buffer.from(bytes);changed[0]^=1;return changed;}],
+  ]) {
+    const original = await fs.readFile(filename),altered=change(original);
+    await fs.writeFile(filename,altered);
+    const before = await installationFacts(f.options.root);
+    try {
+      await assert.rejects(resolveWindowsLaunch(f.options),{code});
+      assert.deepEqual(await installationFacts(f.options.root),before);
+      assert.deepEqual(await fs.readFile(filename),altered);
+    } finally { await fs.writeFile(filename,original); }
+  }
+  assert.deepEqual(await resolveWindowsLaunch(f.options),f.installed);
+});
+
+test('resolve-launch detects a real lock or canonical state replacement while native payload verification is in progress', async () => {
+  const f = await installedFixture();
+  const { resolveWindowsLaunch } = await import('../scripts/windows-candidate-install-core.mjs');
+  const { syncBuiltinESMExports } = require('node:module');
+  const stateFile = path.join(f.options.root,'state.json'),originalState=await fs.readFile(stateFile);
+  const lockFile = path.join(f.options.root,'.install.lock'),lockBytes=Buffer.from('synthetic lock created during actual payload verification');
+  for (const mode of ['busy-lock','canonical-state-replaced','invalid-state']) {
+    const originalOpen = fs.open;
+    const oldStat = await fs.stat(stateFile,{bigint:true});
+    let injected=0;
+    fs.open = async function(filename,...arguments_) {
+      const handle = await originalOpen.call(this,filename,...arguments_);
+      if (String(filename)===f.installed.executablePath && injected===0) {
+        injected++;
+        try {
+          if (mode==='busy-lock') await fs.writeFile(lockFile,lockBytes,{flag:'wx'});
+          else if (mode==='canonical-state-replaced') {
+            const replacement = path.join(f.options.root,'synthetic-state-replacement.pending');
+            await fs.writeFile(replacement,originalState,{flag:'wx'});
+            await fs.rename(replacement,stateFile);
+          } else await fs.writeFile(stateFile,'{}\n');
+        } catch (error) { await handle.close();throw error; }
+      }
+      return handle;
+    };
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(resolveWindowsLaunch(f.options),{code:mode==='invalid-state'?'INSTALL_STATE_INVALID':'INSTALL_BUSY'},mode);
+    } finally { fs.open=originalOpen;syncBuiltinESMExports(); }
+    assert.equal(injected,1,mode+' must occur at the real executable open');
+    if (mode==='busy-lock') {
+      assert.deepEqual(await fs.readFile(lockFile),lockBytes);
+      await fs.unlink(lockFile);
+      assert.deepEqual(await fs.readFile(stateFile),originalState);
+    } else if (mode==='canonical-state-replaced') {
+      assert.deepEqual(await fs.readFile(stateFile),originalState,'valid canonical state was replaced with exactly the same bytes');
+      assert.notEqual((await fs.stat(stateFile,{bigint:true})).ino,oldStat.ino,'replacement must be a different real file');
+    } else {
+      assert.equal(await fs.readFile(stateFile,'utf8'),'{}\n');
+      await fs.writeFile(stateFile,originalState);
+    }
+    assert.deepEqual(await resolveWindowsLaunch(f.options),f.installed);
+  }
+});

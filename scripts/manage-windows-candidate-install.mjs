@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyWindowsCandidate, inspectWindowsInstallation, rollbackWindowsInstallation } from './windows-candidate-install-core.mjs';
+import { applyWindowsCandidate, inspectWindowsInstallation, resolveWindowsLaunch, rollbackWindowsInstallation } from './windows-candidate-install-core.mjs';
 
 const operations = new Map([
   ['apply', { action: applyWindowsCandidate, fields: { '--root': 'root', '--bundle': 'bundle', '--signature': 'signature', '--public-key': 'publicKey' } }],
   ['inspect', { action: inspectWindowsInstallation, fields: { '--root': 'root', '--public-key': 'publicKey' } }],
+  ['resolve-launch', { action: resolveWindowsLaunch, fields: { '--root': 'root', '--public-key': 'publicKey' } }],
   ['rollback', { action: rollbackWindowsInstallation, fields: { '--root': 'root', '--public-key': 'publicKey' } }],
 ]);
 
 const messages = {
-  INVALID_ARGUMENTS: '请提供完整的安装、核验或回滚参数。',
+  INVALID_ARGUMENTS: '请提供完整的安装、核验、启动定位或回滚参数。',
   INSTALL_ROOT_INVALID: '安装目录必须是仓库和候选包之外的专用本地目录。',
   INSTALL_STATE_INVALID: '无法确认安装状态或已授权的版本。',
   INSTALL_BUSY: '安装目录正在执行其他操作，或上次操作需要检查。',
