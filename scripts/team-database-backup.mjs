@@ -1,15 +1,18 @@
 #!/usr/bin/env node
-// Offline synthetic backup/rehearsal only. No listener or online restore mode.
+// Offline backup and rehearsal for synthetic and managed databases.
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {assertOfflineBackupRuntime,createOfflineBackup,verifyOfflineBackup,rehearseOfflineRestore,sealOfflineBackup,rehearseSealedOfflineRestore,OfflineBackupError} from '../server/team/offline-backup.mjs';
+import {assertOfflineBackupRuntime,createOfflineBackup,verifyOfflineBackup,rehearseOfflineRestore,sealOfflineBackup,rehearseSealedOfflineRestore,createManagedSealedBackup,rehearseManagedSealedRestore,OfflineBackupError} from '../server/team/offline-backup.mjs';
 
+const serverIdPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const commandOptions = new Map([
  ['create', {required:{'--source':'sourceDatabase'}, optional:{'--output-root':'outputRoot'}}],
  ['verify', {required:{'--bundle':'bundleDirectory'}}],
  ['rehearse', {required:{'--bundle':'bundleDirectory'}, optional:{'--output-root':'outputRoot'}}],
  ['seal', {required:{'--bundle':'bundleDirectory','--key-file':'keyFile'}, optional:{'--output-root':'outputRoot'}}],
  ['rehearse-sealed', {required:{'--bundle':'bundleDirectory','--key-file':'keyFile'}, optional:{'--output-root':'outputRoot'}}],
+ ['create-managed-sealed', {required:{'--source':'sourceDatabase','--server-id':'serverId','--key-file':'keyFile','--output-root':'outputRoot'}}],
+ ['rehearse-managed-sealed', {required:{'--bundle':'bundleDirectory','--server-id':'serverId','--key-file':'keyFile','--output-root':'outputRoot'}}],
 ]);
 
 export function parseOfflineBackupArguments(args){
@@ -24,20 +27,23 @@ export function parseOfflineBackupArguments(args){
   options[allowed[key]]=value;
  }
  if(!Object.values(fields.required).every(key=>Object.hasOwn(options,key)))throw new OfflineBackupError('INVALID_INPUT');
+ if(Object.hasOwn(options,'serverId')&&!serverIdPattern.test(options.serverId))throw new OfflineBackupError('INVALID_INPUT');
  return {command,options};
 }
 export async function runOfflineBackupCommand(args){
  assertOfflineBackupRuntime();const {command,options}=parseOfflineBackupArguments(args);
- if(command==='create'){
+ if(command==='create'||command==='create-managed-sealed'){
+  const create=command==='create'?createOfflineBackup:createManagedSealedBackup;
   let previousAt=0,reportedComplete=false;
-  return createOfflineBackup({...options,onProgress(progress){
+  return create({...options,onProgress(progress){
    const at=Date.now(),complete=progress.remainingPages===0;
-   if(previousAt===0||at-previousAt>=1000||complete&&!reportedComplete){console.error(JSON.stringify({type:'progress',operation:'create',...progress,offlineOnly:true}));previousAt=at;if(complete)reportedComplete=true;}
+   if(previousAt===0||at-previousAt>=1000||complete&&!reportedComplete){console.error(JSON.stringify({type:'progress',operation:command,...progress,offlineOnly:true}));previousAt=at;if(complete)reportedComplete=true;}
   }});
  }
  if(command==='verify')return verifyOfflineBackup(options);
  if(command==='rehearse')return rehearseOfflineRestore(options);
  if(command==='seal')return sealOfflineBackup(options);
+ if(command==='rehearse-managed-sealed')return rehearseManagedSealedRestore(options);
  return rehearseSealedOfflineRestore(options);
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){

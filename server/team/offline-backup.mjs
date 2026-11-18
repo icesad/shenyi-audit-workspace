@@ -1,12 +1,13 @@
-// Local operator tool for synthetic SQLite snapshots; never starts a service.
+// Local operator tools for offline SQLite snapshots and restore rehearsals.
 import path from 'node:path';
 import os from 'node:os';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {constants} from 'node:fs';
 import * as fs from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
 import {DatabaseSync,backup} from 'node:sqlite';
 import {SealedEnvelopeError,decryptBackupEnvelope,encryptBackupEnvelope,readBackupEnvelope,writeEnvelopeBytes} from './sealed-backup-envelope.mjs';
+import {assertManagedDatabaseReady,MANAGED_REHEARSAL_MARKER} from './managed-database-readiness.mjs';
 
 const REPOSITORY=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
@@ -16,8 +17,11 @@ const MANIFEST_MAX=1024*1024;
 const BACKUP_KIND='shenyi-offline-synthetic-backup';
 const REHEARSAL_KIND='shenyi-offline-synthetic-rehearsal';
 const SEALED_KIND='shenyi-offline-synthetic-sealed-backup';
+const MANAGED_BACKUP_KIND='shenyi-offline-managed-backup';
+const MANAGED_SEALED_KIND='shenyi-offline-managed-sealed-backup';
+const MANAGED_REHEARSAL_KIND='shenyi-offline-managed-rehearsal';
 const SEALED_ARCHIVE='snapshot.sealed';
-const MESSAGES={INVALID_INPUT:'离线备份参数无效。',RUNTIME_UNSUPPORTED:'请使用Node.js 24.15以上24.x。',SOURCE_INVALID:'仅支持结构完整、具有服务身份的合成团队数据库。',BUNDLE_INVALID:'离线备份工件不完整、已变化或不匹配。',BACKUP_FAILED:'离线备份未完成；已创建的本次目录保留。',RESTORE_FAILED:'离线恢复核验未完成；已创建的本次目录保留。',INVALID_BACKUP_KEY:'请使用独立保管的32字节原始备份密钥文件。',SEALED_BUNDLE_INVALID:'加密备份无法完成完整性及身份核验。'};
+const MESSAGES={INVALID_INPUT:'离线备份参数无效。',RUNTIME_UNSUPPORTED:'请使用Node.js 24.15以上24.x。',SOURCE_INVALID:'源数据库的结构、服务身份或离线状态不符合本命令要求。',BUNDLE_INVALID:'离线备份工件不完整、已变化或不匹配。',BACKUP_FAILED:'离线备份未完成；已创建的本次目录保留。',RESTORE_FAILED:'离线恢复核验未完成；已创建的本次目录保留。',INVALID_BACKUP_KEY:'请使用独立保管的32字节原始备份密钥文件。',SEALED_BUNDLE_INVALID:'加密备份无法完成完整性及身份核验。'};
 export class OfflineBackupError extends Error{
  constructor(code){super(MESSAGES[code]??MESSAGES.BUNDLE_INVALID);this.name='OfflineBackupError';this.code=code;}
 }
@@ -89,7 +93,17 @@ function readDatabase(filename){
  const db=new DatabaseSync(filename,{readOnly:true,enableForeignKeyConstraints:true,allowExtension:false,timeout:5000});
  try{db.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;');return db;}catch(error){db.close();throw error;}
 }
-function identity(db){
+function identity(db,{serverId,rehearsal=false}={}){
+ if(serverId!==undefined){
+  try{
+   if(rehearsal){
+    const marker=db.prepare('SELECT value FROM main.team_database_metadata WHERE name=?').get(MANAGED_REHEARSAL_MARKER);
+    const stored=db.prepare("SELECT value FROM main.team_database_metadata WHERE name='device-server-id'").get();
+    if(marker?.value!=='1'||stored?.value!==serverId)fail('SOURCE_INVALID');
+   }else assertManagedDatabaseReady(db,serverId);
+  }catch{fail('SOURCE_INVALID');}
+  return {prototypeVersion:'2',syntheticDemo:false,serverId};
+ }
  const rows=db.prepare("SELECT name,value FROM team_database_metadata WHERE name IN ('prototype-version','demo','device-server-id') ORDER BY name").all();
  const values=Object.fromEntries(rows.map(row=>[row.name,row.value]));
  if(rows.length!==3||values['prototype-version']!=='2'||values.demo!=='true'||(typeof values['device-server-id']!=='string'||!UUID.test(values['device-server-id'])))fail('SOURCE_INVALID');
@@ -107,8 +121,8 @@ function typed(hash,value){
  if(value instanceof Uint8Array){frame(hash,'B',Buffer.from(value.buffer,value.byteOffset,value.byteLength));return;}
  fail('SOURCE_INVALID');
 }
-function inventory(db){
- const identity_=identity(db),checks=db.prepare('PRAGMA integrity_check').all();
+function inventory(db,mode){
+ const identity_=identity(db,mode),checks=db.prepare('PRAGMA integrity_check').all();
  if(checks.length!==1||checks[0].integrity_check!=='ok'||db.prepare('PRAGMA foreign_key_check').all().length)fail('SOURCE_INVALID');
  const objects=db.prepare('SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type COLLATE BINARY,name COLLATE BINARY').all();
  if(objects.some(row=>!['table','index','view','trigger'].includes(row.type)))fail('SOURCE_INVALID');
@@ -159,9 +173,9 @@ async function normalizeOwnedSnapshot(filename){
  const current=await regular(filename,'BUNDLE_INVALID');if(current.dev!==entry.dev||current.ino!==entry.ino)fail('BUNDLE_INVALID');
  await standaloneSnapshot(filename);
 }
-async function inspect(filename){
+async function inspect(filename,mode){
  const first=await hashFile(filename);let db;let value;
- try{db=readDatabase(filename);value=inventory(db);}finally{db?.close();}
+ try{db=readDatabase(filename);value=inventory(db,mode);}finally{db?.close();}
  const final=await hashFile(filename);
  if(!sameState(first.state,final.state)||first.sha256!==final.sha256||first.byteLength!==final.byteLength)fail('BUNDLE_INVALID');
  return {...value,databaseBytes:first.byteLength,databaseSha256:first.sha256,_fileState:first.state};
@@ -204,11 +218,12 @@ async function publish(directory,name,value,assertReady){
  await regular(final,'BUNDLE_INVALID');
 }
 async function failure(directory,code){if(!directory)return;try{await publish(directory,'failure.json',{schemaVersion:1,kind:'shenyi-offline-operation-failed',code,failedAt:new Date().toISOString(),offlineOnly:true});}catch{}}
-function manifestFor(snapshotId,value){return {schemaVersion:1,kind:BACKUP_KIND,snapshotId,createdAt:new Date().toISOString(),identity:value.identity,database:{filename:'snapshot.sqlite',byteLength:value.databaseBytes,sha256:value.databaseSha256},inventory:{schemaSha256:value.schemaSha256,totalRows:value.totalRows,tables:value.tables},offlineOnly:true,onlineCutoverSupported:false,containsCredentials:true};}
-function validateManifest(value){
+function manifestFor(snapshotId,value){return {schemaVersion:1,kind:value.identity.syntheticDemo?BACKUP_KIND:MANAGED_BACKUP_KIND,snapshotId,createdAt:new Date().toISOString(),identity:value.identity,database:{filename:'snapshot.sqlite',byteLength:value.databaseBytes,sha256:value.databaseSha256},inventory:{schemaSha256:value.schemaSha256,totalRows:value.totalRows,tables:value.tables},offlineOnly:true,onlineCutoverSupported:false,containsCredentials:true};}
+function validateManifest(value,{serverId}={}){
  exact(value,['schemaVersion','kind','snapshotId','createdAt','identity','database','inventory','offlineOnly','onlineCutoverSupported','containsCredentials']);
- if(value.schemaVersion!==1||value.kind!==BACKUP_KIND||(typeof value.snapshotId!=='string'||!UUID.test(value.snapshotId))||typeof value.createdAt!=='string'||!Number.isFinite(Date.parse(value.createdAt))||new Date(value.createdAt).toISOString()!==value.createdAt||value.offlineOnly!==true||value.onlineCutoverSupported!==false||value.containsCredentials!==true)fail('BUNDLE_INVALID');
- exact(value.identity,['prototypeVersion','syntheticDemo','serverId']);if(value.identity.prototypeVersion!=='2'||value.identity.syntheticDemo!==true||(typeof value.identity.serverId!=='string'||!UUID.test(value.identity.serverId)))fail('BUNDLE_INVALID');
+ const synthetic=serverId===undefined;
+ if(value.schemaVersion!==1||value.kind!==(synthetic?BACKUP_KIND:MANAGED_BACKUP_KIND)||(typeof value.snapshotId!=='string'||!UUID.test(value.snapshotId))||typeof value.createdAt!=='string'||!Number.isFinite(Date.parse(value.createdAt))||new Date(value.createdAt).toISOString()!==value.createdAt||value.offlineOnly!==true||value.onlineCutoverSupported!==false||value.containsCredentials!==true)fail('BUNDLE_INVALID');
+ exact(value.identity,['prototypeVersion','syntheticDemo','serverId']);if(value.identity.prototypeVersion!=='2'||value.identity.syntheticDemo!==synthetic||(typeof value.identity.serverId!=='string'||!UUID.test(value.identity.serverId))||(!synthetic&&value.identity.serverId!==serverId))fail('BUNDLE_INVALID');
  exact(value.database,['filename','byteLength','sha256']);if(value.database.filename!=='snapshot.sqlite'||!Number.isSafeInteger(value.database.byteLength)||value.database.byteLength<1||(typeof value.database.sha256!=='string'||!SHA.test(value.database.sha256)))fail('BUNDLE_INVALID');
  exact(value.inventory,['schemaSha256','totalRows','tables']);if((typeof value.inventory.schemaSha256!=='string'||!SHA.test(value.inventory.schemaSha256))||!Number.isSafeInteger(value.inventory.totalRows)||value.inventory.totalRows<0||!Array.isArray(value.inventory.tables)||value.inventory.tables.length<1)fail('BUNDLE_INVALID');
  let previous='',rows=0;
@@ -228,13 +243,8 @@ async function verifyBundle(bundleDirectory){
  if(canonical(await readManifest(path.join(directory,'manifest.json')))!==canonical(manifest))fail('BUNDLE_INVALID');
  return {directory,manifest,value};
 }
-export async function createOfflineBackup(options){
- assertOfflineBackupRuntime();const {sourceDatabase,outputRoot,onProgress}=input(options,['sourceDatabase'],['outputRoot','onProgress']);if(onProgress!==undefined&&typeof onProgress!=='function')fail('INVALID_INPUT');let directory,sourceDb;
- try{
-  const source=absolute(sourceDatabase);if(inside(source,REPOSITORY))fail('INVALID_INPUT');const before=await regular(source,'SOURCE_INVALID');
-  sourceDb=readDatabase(source);const sourceIdentity=identity(sourceDb);const created=await freshDirectory(outputRoot,'backup');directory=created.directory;
-  const target=path.join(directory,'snapshot.sqlite');let reservation;try{reservation=await fs.open(target,'wx',0o600);await reservation.sync();}finally{await reservation?.close();}
-  const reserved=await fs.lstat(target,{bigint:true});let progressFailed=false;
+async function copySnapshot(sourceDb,target,onProgress){
+  let progressFailed=false;
   const reportProgress=({remainingPages,totalPages})=>{
    if(progressFailed)return;
    try{
@@ -249,7 +259,16 @@ export async function createOfflineBackup(options){
   // Node reports intermediate batches but may omit a final native callback.
   // Completion is observed from its resolved total-page count, never a timer.
   reportProgress({remainingPages:0,totalPages:copiedPages});
-  if(progressFailed)fail('BACKUP_FAILED');sourceDb.close();sourceDb=undefined;
+  if(progressFailed)fail('BACKUP_FAILED');
+}
+export async function createOfflineBackup(options){
+ assertOfflineBackupRuntime();const {sourceDatabase,outputRoot,onProgress}=input(options,['sourceDatabase'],['outputRoot','onProgress']);if(onProgress!==undefined&&typeof onProgress!=='function')fail('INVALID_INPUT');let directory,sourceDb;
+ try{
+  const source=absolute(sourceDatabase);if(inside(source,REPOSITORY))fail('INVALID_INPUT');const before=await regular(source,'SOURCE_INVALID');
+  sourceDb=readDatabase(source);const sourceIdentity=identity(sourceDb);const created=await freshDirectory(outputRoot,'backup');directory=created.directory;
+  const target=path.join(directory,'snapshot.sqlite');let reservation;try{reservation=await fs.open(target,'wx',0o600);await reservation.sync();}finally{await reservation?.close();}
+  const reserved=await fs.lstat(target,{bigint:true});
+  await copySnapshot(sourceDb,target,onProgress);sourceDb.close();sourceDb=undefined;
   const current=await regular(source,'SOURCE_INVALID'),targetStat=await regular(target,'BUNDLE_INVALID');
   if(current.dev!==before.dev||current.ino!==before.ino||targetStat.dev!==reserved.dev||targetStat.ino!==reserved.ino)fail('BUNDLE_INVALID');
   await fs.chmod(target,0o600);await normalizeOwnedSnapshot(target);await syncRegularFile(target);const value=await inspect(target);if(JSON.stringify(value.identity)!==JSON.stringify(sourceIdentity))fail('SOURCE_INVALID');
@@ -394,24 +413,30 @@ async function publishSealedRehearsalReceipt(directory,receipt,assertReady) {
  }
 }
 
+async function writeSealedSnapshot(owned,open,manifest,value,key) {
+ const plaintext=Buffer.from(canonical(manifest),'utf8');
+ try{
+  if(!sameState(open.before,value._fileState))fail('BUNDLE_INVALID');
+  await encryptBackupEnvelope({database:open.handle,manifest:plaintext,databaseBytes:value.databaseBytes,databaseSha256:value.databaseSha256,key,output:owned.handle});
+  await owned.handle.sync();
+  await closePendingFile(owned);
+  await recheckOpenFile(open,'BUNDLE_INVALID');
+ }finally{plaintext.fill(0);}
+}
+
 export async function sealOfflineBackup(options) {
  assertOfflineBackupRuntime();
  const {bundleDirectory,keyFile,outputRoot}=input(options,['bundleDirectory','keyFile'],['outputRoot']);
  const locations=sealedPaths(bundleDirectory,keyFile,outputRoot,false);
- let key,plaintext,open,owned,directory,published;
+ let key,open,owned,directory,published;
  try{
   key=await readKeyFile(locations.keyPath);
   const checked=await verifyBundle(locations.bundle);
   const snapshot=path.join(checked.directory,'snapshot.sqlite');
   open=await openCheckedFile(snapshot,'BUNDLE_INVALID');
-  if(!sameState(open.before,checked.value._fileState))fail('BUNDLE_INVALID');
-  plaintext=Buffer.from(canonical(checked.manifest),'utf8');
   directory=(await freshDirectory(locations.root,'sealed')).directory;
   owned=await openPendingFile(directory,'BACKUP_FAILED');
-  await encryptBackupEnvelope({database:open.handle,manifest:plaintext,databaseBytes:checked.value.databaseBytes,databaseSha256:checked.value.databaseSha256,key,output:owned.handle});
-  await owned.handle.sync();
-  await closePendingFile(owned);
-  await recheckOpenFile(open,'BUNDLE_INVALID');
+  await writeSealedSnapshot(owned,open,checked.manifest,checked.value,key);
   await standaloneSnapshot(snapshot);
   if(canonical(await readManifest(path.join(checked.directory,'manifest.json')))!==canonical(checked.manifest))fail('BUNDLE_INVALID');
   const facts=await hashFile(owned.filename);
@@ -427,17 +452,86 @@ export async function sealOfflineBackup(options) {
   await failure(directory,code);
   fail(code);
  }finally{
-  key?.fill(0);plaintext?.fill(0);
+  key?.fill(0);
   await open?.handle.close().catch(()=>{});
  }
 }
 
-function authenticatedManifest(bytes,databaseBytes) {
+function authenticatedManifest(bytes,databaseBytes,mode) {
  try{
-  const text=new TextDecoder('utf-8',{fatal:true}).decode(bytes),manifest=validateManifest(JSON.parse(text));
+  const text=new TextDecoder('utf-8',{fatal:true}).decode(bytes),manifest=validateManifest(JSON.parse(text),mode);
   if(Buffer.byteLength(text)!==bytes.length||text!==canonical(manifest)||manifest.database.byteLength!==databaseBytes)fail('SEALED_BUNDLE_INVALID');
   return manifest;
  }catch{fail('SEALED_BUNDLE_INVALID');}
+}
+
+function managedMode(serverId){
+ if(typeof serverId!=='string'||!UUID.test(serverId))fail('INVALID_INPUT');
+ return {serverId};
+}
+
+async function managedSourceState(filename){
+ try{
+  await standaloneSnapshot(filename);
+  return state(await regular(filename,'SOURCE_INVALID'));
+ }catch{fail('SOURCE_INVALID');}
+}
+
+export async function createManagedSealedBackup(options) {
+ assertOfflineBackupRuntime();
+ const {sourceDatabase,outputRoot,keyFile,serverId,onProgress}=input(options,['sourceDatabase','outputRoot','keyFile','serverId'],['onProgress']);
+ const mode=managedMode(serverId);
+ if(onProgress!==undefined&&typeof onProgress!=='function')fail('INVALID_INPUT');
+ const source=absolute(sourceDatabase),root=absolute(outputRoot),keyPath=absolute(keyFile,'INVALID_BACKUP_KEY');
+ if(inside(source,REPOSITORY)||inside(root,REPOSITORY))fail('INVALID_INPUT');
+ if(inside(keyPath,REPOSITORY)||samePath(source,keyPath))fail('INVALID_BACKUP_KEY');
+ let key,sourceDb,directory,staged,open,owned,published;
+ try{
+  const before=await managedSourceState(source);
+  sourceDb=readDatabase(source);
+  identity(sourceDb,mode);
+  key=await readKeyFile(keyPath);
+  const created=await freshDirectory(root,'sealed');
+  directory=created.directory;
+  staged=await openPendingFile(directory,'BACKUP_FAILED');
+  await closePendingFile(staged);
+  await copySnapshot(sourceDb,staged.filename,onProgress);
+  sourceDb.close();
+  sourceDb=undefined;
+  if(!sameState(before,await managedSourceState(source)))fail('SOURCE_INVALID');
+  if(!ownsFile(staged,await regular(staged.filename,'BUNDLE_INVALID')))fail('BUNDLE_INVALID');
+  await standaloneSnapshot(staged.filename);
+  await syncRegularFile(staged.filename);
+  const value=await inspect(staged.filename,mode);
+  open=await openCheckedFile(staged.filename,'BUNDLE_INVALID');
+  owned=await openPendingFile(directory,'BACKUP_FAILED');
+  await writeSealedSnapshot(owned,open,manifestFor(created.id,value),value,key);
+  await open.handle.close();
+  open=undefined;
+  await discardOwnedFile(staged);
+  const entries=await fs.readdir(directory);
+  if(entries.length!==1||entries[0]!==path.basename(owned.filename))fail('BACKUP_FAILED');
+  const facts=await hashFile(owned.filename);
+  published=await publishOwnedFile(owned,SEALED_ARCHIVE,facts.state);
+  const final=await hashFile(published);
+  if(final.sha256!==facts.sha256||final.byteLength!==facts.byteLength||final.state.dev!==owned.dev||final.state.ino!==owned.ino)fail('BUNDLE_INVALID');
+  await checkSealedDirectory(directory);
+  return Object.freeze({kind:MANAGED_SEALED_KIND,directory,archivePath:published,archiveSha256:final.sha256,archiveBytes:final.byteLength,
+    serverId,snapshotId:created.id,authenticatedSnapshotSha256:value.databaseSha256,offlineOnly:true,onlineCutoverSupported:false,containsCredentials:true});
+ }catch(error){
+  await open?.handle.close().catch(()=>{});
+  await closePendingFile(staged).catch(()=>{});
+  await discardOwnedFile(staged);
+  await closePendingFile(owned).catch(()=>{});
+  await discardOwnedFile(owned);
+  if(published)await discardOwnedFile(owned,published);
+  const code=error instanceof OfflineBackupError?error.code:'BACKUP_FAILED';
+  await failure(directory,code);
+  fail(code);
+ }finally{
+  key?.fill(0);
+  try{sourceDb?.close();}catch{}
+ }
 }
 
 async function checkSealedDirectory(directory) {
@@ -449,9 +543,30 @@ async function checkSealedDirectory(directory) {
  }catch{fail('SEALED_BUNDLE_INVALID');}
 }
 
-export async function rehearseSealedOfflineRestore(options) {
- assertOfflineBackupRuntime();
- const {bundleDirectory,keyFile,outputRoot}=input(options,['bundleDirectory','keyFile'],['outputRoot']);
+async function markManagedRehearsal(owned,original,mode){
+ await assertInspectedFile(owned.filename,original);
+ const db=new DatabaseSync(pathToFileURL(owned.filename).href+'?mode=rw',{enableForeignKeyConstraints:true,allowExtension:false,timeout:5000});
+ try{
+  db.exec('PRAGMA trusted_schema=OFF;');
+  identity(db,mode);
+  db.exec('BEGIN IMMEDIATE;');
+  const before=db.prepare('SELECT name,value FROM main.team_database_metadata ORDER BY name').all();
+  db.prepare('INSERT INTO main.team_database_metadata (name,value) VALUES (?,?)').run(MANAGED_REHEARSAL_MARKER,'1');
+  const after=db.prepare('SELECT name,value FROM main.team_database_metadata WHERE name<>? ORDER BY name').all(MANAGED_REHEARSAL_MARKER);
+  if(JSON.stringify(before)!==JSON.stringify(after))fail('RESTORE_FAILED');
+  db.exec('COMMIT;');
+ }finally{db.close();}
+ if(!ownsFile(owned,await regular(owned.filename,'RESTORE_FAILED')))fail('RESTORE_FAILED');
+ await syncRegularFile(owned.filename);
+ await standaloneSnapshot(owned.filename);
+ const marked=await inspect(owned.filename,{...mode,rehearsal:true});
+ const unchangedTables=tables=>tables.filter(table=>table.name!=='team_database_metadata');
+ if(marked.schemaSha256!==original.schemaSha256||marked.totalRows!==original.totalRows+1||
+    JSON.stringify(unchangedTables(marked.tables))!==JSON.stringify(unchangedTables(original.tables)))fail('RESTORE_FAILED');
+ return marked;
+}
+
+async function rehearseSealedRestore({bundleDirectory,keyFile,outputRoot},mode) {
  const locations=sealedPaths(bundleDirectory,keyFile,outputRoot,true);
  let key,open,first,second,owned,directory,published;
  try{
@@ -461,7 +576,7 @@ export async function rehearseSealedOfflineRestore(options) {
   const envelope=await readBackupEnvelope(open.handle,Number(open.before.size));
   first=await decryptBackupEnvelope(open.handle,envelope,key);
   await recheckOpenFile(open,'SEALED_BUNDLE_INVALID');
-  const manifest=authenticatedManifest(first.manifest,envelope.databaseBytes);
+  const manifest=authenticatedManifest(first.manifest,envelope.databaseBytes,mode);
   const created=await freshDirectory(locations.root,'rehearsal');
   directory=created.directory;
   owned=await openPendingFile(directory,'RESTORE_FAILED');
@@ -472,14 +587,17 @@ export async function rehearseSealedOfflineRestore(options) {
   await owned.handle.sync();
   await closePendingFile(owned);
   await standaloneSnapshot(owned.filename);
-  const value=await inspect(owned.filename);
-  if(!matches(value,manifest))fail('SEALED_BUNDLE_INVALID');
+  const original=await inspect(owned.filename,mode);
+  if(!matches(original,manifest))fail('SEALED_BUNDLE_INVALID');
+  const value=mode?await markManagedRehearsal(owned,original,mode):original;
+  const kind=mode?MANAGED_REHEARSAL_KIND:REHEARSAL_KIND;
+  const authenticated=mode?{authenticatedSnapshotSha256:original.databaseSha256,authenticatedSnapshotBytes:original.databaseBytes}:{};
   published=await publishOwnedFile(owned,'snapshot.sqlite',value._fileState);
   const final=await hashFile(published);
   if(final.sha256!==value.databaseSha256||final.byteLength!==value.databaseBytes)fail('BUNDLE_INVALID');
   value._fileState=final.state;
-  await publishSealedRehearsalReceipt(directory,{schemaVersion:1,kind:REHEARSAL_KIND,rehearsalId:created.id,snapshotId:manifest.snapshotId,verifiedAt:new Date().toISOString(),database:{filename:'snapshot.sqlite',byteLength:value.databaseBytes,sha256:value.databaseSha256},identity:value.identity,inventory:{schemaSha256:value.schemaSha256,totalRows:value.totalRows,tables:value.tables},offlineOnly:true,onlineCutoverSupported:false,containsCredentials:true},()=>assertInspectedFile(published,value));
-  return summary(REHEARSAL_KIND,directory,manifest.snapshotId,value);
+  await publishSealedRehearsalReceipt(directory,{schemaVersion:1,kind,rehearsalId:created.id,snapshotId:manifest.snapshotId,verifiedAt:new Date().toISOString(),database:{filename:'snapshot.sqlite',byteLength:value.databaseBytes,sha256:value.databaseSha256},identity:value.identity,inventory:{schemaSha256:value.schemaSha256,totalRows:value.totalRows,tables:value.tables},offlineOnly:true,onlineCutoverSupported:false,containsCredentials:true,...authenticated},()=>assertInspectedFile(published,value));
+  return Object.freeze({...summary(kind,directory,manifest.snapshotId,value),...authenticated});
  }catch(error){
   await closePendingFile(owned).catch(()=>{});
   await discardOwnedFile(owned);
@@ -491,4 +609,15 @@ export async function rehearseSealedOfflineRestore(options) {
   key?.fill(0);first?.manifest.fill(0);second?.manifest.fill(0);first?.frames.fill(0);
   await open?.handle.close().catch(()=>{});
  }
+}
+
+export async function rehearseSealedOfflineRestore(options) {
+ assertOfflineBackupRuntime();
+ return rehearseSealedRestore(input(options,['bundleDirectory','keyFile'],['outputRoot']));
+}
+
+export async function rehearseManagedSealedRestore(options) {
+ assertOfflineBackupRuntime();
+ const {serverId,...selected}=input(options,['bundleDirectory','keyFile','outputRoot','serverId']);
+ return rehearseSealedRestore(selected,managedMode(serverId));
 }

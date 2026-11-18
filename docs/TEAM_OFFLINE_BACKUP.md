@@ -1,8 +1,29 @@
-# 合成团队库离线备份与恢复演练
+# 团队库离线备份与恢复演练
+
+## 受管库加密备份
+
+受管库使用独立的加密备份及恢复演练入口。先停受管服务并停止其他写入者，选用已获授权的现有 SQLite 文件，手工核对服务配置中的 UUID。源库须为可独立打开的回滚日志格式，旁边没有 WAL、SHM 或事务日志附档。工具检查文件及身份，停服由操作方确认。
+
+```sh
+node scripts/team-database-backup.mjs create-managed-sealed \
+  --source "/var/lib/shenyi-team/team.sqlite" --server-id "$server_id" \
+  --key-file "$backup_key_file" --output-root "$backup_root"
+node scripts/team-database-backup.mjs rehearse-managed-sealed \
+  --bundle "$sealed_bundle_directory" --server-id "$server_id" \
+  --key-file "$backup_key_file" --output-root "$rehearsal_root"
+```
+
+所有路径均为本机实际绝对路径。私有输出目录位于发布树之外，备份和演练应使用受控的加密存储。密钥文件为单独保管的 32 个随机字节。备份通过 SQLite 一致性快照保全表结构、身份、权限及原件，再封存为 `sealed-UUID/snapshot.sealed`。封存成功后目录只剩密文。异常中断或断电可能留下隐藏暂存文件，按敏感数据管理，等待核实后处理；只有成功回执和通过验证的归档才交给恢复方。
+
+演练时先验证 AES-256-GCM、备份类型、预期 UUID、完整快照 SHA-256、表结构和分类型行摘要，再在新目录生成演练数据库。输出库只添加离线标记。现有和上一版受管服务均会按库内标记拒绝启动，改名或移动文件依然生效。回执中 `authenticatedSnapshotSha256` 是归档中原始快照的哈希，`database.sha256` 是添加标记后演练副本的哈希。演练副本和回执同样保存在受控存储，副本含原始资料和凭据记录。
+
+备份对应捕获时刻，之后发生的停用、换机、撤权、凭据和支付状态变更需在正式切换前与可信记录核对。当前演练只发布离线副本，不承担正式切换和历史安全状态补偿。 [Linux 变更与回滚](LINUX_TEAM_DEPLOYMENT.md#变更与回滚)
+
+## 合成库工作流
 
 本工具补齐 M4 的合成库备份／恢复核验：把一个明确指定的合成团队数据库备份到全新目录，再从该备份恢复到另一个全新目录，核对整库字节和业务记录。它不替换运行中的数据库、不启动恢复服务、不接桌面，也不提供生产切换命令。
 
-## 用法
+### 用法
 
 使用 Node.js 24.15 以上 24.x，在仓库根目录执行：
 
