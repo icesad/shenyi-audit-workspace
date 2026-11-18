@@ -49,7 +49,7 @@ export async function resolveBuildOutput(output, checkout = root) {
   return destination;
 }
 
-async function fileFacts(file) {
+export async function fileFacts(file) {
   const hash = createHash('sha256');
   let bytes = 0;
   for await (const chunk of createReadStream(file)) {
@@ -89,7 +89,10 @@ function exactFiles(actual, expected, label) {
   if (JSON.stringify(actual) !== JSON.stringify([...expected].sort())) throw new Error(`${label}与已确认的清单不一致。`);
 }
 
-export async function loadBuildInventory(checkout = root) {
+export async function loadBuildInventory(checkout = root, { platform = 'win32', arch = 'x64' } = {}) {
+  if (!(platform === 'win32' && arch === 'x64') && !(platform === 'darwin' && ['arm64', 'x64'].includes(arch))) {
+    throw new Error('桌面运行时平台或架构不受支持。');
+  }
   const [allowlist, desktop, desktopLock, installedElectron, checksums, installedExtractor, appSource, appLock] = await Promise.all([
     'scripts/windows-desktop-candidate-files.json', 'desktop/package.json', 'desktop/package-lock.json',
     'desktop/node_modules/electron/package.json', 'desktop/node_modules/electron/checksums.json',
@@ -101,9 +104,9 @@ export async function loadBuildInventory(checkout = root) {
       installedExtractor.version !== desktopLock.packages['node_modules/@electron-internal/extract-zip'].version) {
     throw new Error('Electron、ZIP 解包器或 Windows 运行文件清单与锁文件不一致。');
   }
-  const zipName = `electron-v${electronVersion}-win32-x64.zip`;
+  const zipName = `electron-v${electronVersion}-${platform}-${arch}.zip`;
   const archiveHash = checksums[zipName];
-  if (!archiveHashPattern.test(archiveHash ?? '')) throw new Error('Electron 包中没有 Windows x64 官方归档校验值。');
+  if (!archiveHashPattern.test(archiveHash ?? '')) throw new Error('Electron 包中没有目标平台的官方归档校验值。');
   const appPackage = {
     name: 'shenyi-team-desktop', productName: '审易', version: appSource.version, private: true,
     main: 'desktop/main.cjs', dependencies: { jsdom: appSource.dependencies.jsdom },
@@ -138,8 +141,11 @@ async function findNpmCli() {
   const program = path.dirname(process.execPath);
   const locations = [program, path.dirname(program), ...(process.env.PATH ?? '').split(path.delimiter).map(item => item.trim().replace(/^"|"$/g, '')).filter(Boolean)];
   for (const directory of new Set(locations.filter(name => path.isAbsolute(name)))) {
-    const cli = path.join(directory, 'node_modules', 'npm', 'bin', 'npm-cli.js');
-    if ((await lstat(cli).catch(error => { if (error.code !== 'ENOENT') throw error; }))?.isFile()) return cli;
+    const options = [path.join(directory, 'node_modules', 'npm', 'bin', 'npm-cli.js')];
+    if (process.platform !== 'win32') options.push(path.resolve(directory, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'));
+    for (const cli of options) {
+      if ((await lstat(cli).catch(error => { if (error.code !== 'ENOENT') throw error; }))?.isFile()) return cli;
+    }
   }
   throw new Error('未找到 npm-cli.js，请使用配有 npm 的 Node.js 运行环境。');
 }
@@ -178,6 +184,14 @@ async function copySources(appRoot, sourceFiles) {
   }
 }
 
+export async function prepareDesktopCandidatePayload(appRoot, inventory, npmCache, npmCli) {
+  await mkdir(appRoot);
+  await writeJson(path.join(appRoot, 'package.json'), inventory.appPackage);
+  await writeJson(path.join(appRoot, 'package-lock.json'), inventory.appPackageLock);
+  await copySources(appRoot, inventory.sourceFiles);
+  await installProduction(appRoot, npmCli ?? await findNpmCli(), npmCache, inventory.production);
+}
+
 export async function buildWindowsDesktopCandidate({ electronArchive, npmCache, output }) {
   if (process.platform !== 'win32') throw new Error('此命令仅用于 Windows x64 便携候选。');
   const destination = await resolveBuildOutput(output);
@@ -199,11 +213,7 @@ export async function buildWindowsDesktopCandidate({ electronArchive, npmCache, 
     await rename(path.join(staging, 'electron_wer.dll'), path.join(staging, 'Shenyi_wer.dll'));
     await unlink(path.join(staging, defaultApp));
     const appRoot = path.join(staging, 'resources', 'app');
-    await mkdir(appRoot);
-    await writeJson(path.join(appRoot, 'package.json'), inventory.appPackage);
-    await writeJson(path.join(appRoot, 'package-lock.json'), inventory.appPackageLock);
-    await copySources(appRoot, inventory.sourceFiles);
-    await installProduction(appRoot, npmCli, cache, inventory.production);
+    await prepareDesktopCandidatePayload(appRoot, inventory, cache, npmCli);
     const entries = await walkFiles(staging);
     const files = {};
     for (const file of entries) files[file] = await fileFacts(path.join(staging, file));
