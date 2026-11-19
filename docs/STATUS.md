@@ -1,4 +1,8 @@
-# 当前状态 · 受管预检与首件采集贯通
+# 当前状态 · 空库四职级评审
+
+## 2026-11-20 M8X 空库四职级评审
+
+Windows 受管试点评审包增加两名固定的合成员工候选，可在同一干净演练中从只有一名负责人开通团队，经四份邀请完成四名员工激活与各自电脑绑定。两席首件路线继续可用。四席实机分别核对实习生、助理、经理和合伙人的任务与资料权限。评审 ZIP 位于 `C:/Users/icesa/Documents/ShenyiM8FourRoles1120/release-accepted/Shenyi-Owner-Review-Win-x64.zip`。证据见 `C:/Users/icesa/Documents/ShenyiM8FourRoles1120/verification.json`。
 
 ## 2026-11-20 M8W 受管预检与首件采集贯通
 

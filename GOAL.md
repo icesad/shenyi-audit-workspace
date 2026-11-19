@@ -1,5 +1,9 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-20 M8X 空库四职级评审
+
+Windows 受管试点评审包增加两名固定的合成员工候选，可在同一干净演练中从只有一名负责人开通团队，经四份邀请完成四名员工激活与各自电脑绑定。两席首件路线继续可用。四席实机分别核对实习生、助理、经理和合伙人的任务与资料权限。评审 ZIP 位于 `C:/Users/icesa/Documents/ShenyiM8FourRoles1120/release-accepted/Shenyi-Owner-Review-Win-x64.zip`。证据见 `C:/Users/icesa/Documents/ShenyiM8FourRoles1120/verification.json`。
+
 ## 2026-11-20 M8W 受管预检与首件采集贯通
 
 从只有一名负责人、没有团队的新合成库开始，以实际受管服务入口执行 --check-pilot-readiness。预检只读并保持文件摘要，随后用同一配置和同一库启动 HTTPS。最新版评审包的 Windows 桌面文件经摘要核对后以正常入口连接，走完开通、首管理员激活、试点两席、员工调职、指派和原生文件选择。经理只读预览的 2,048 字节原件与数据库、源文件一致，实习生直接读取未指派任务返回 404。212 项回归通过。证据见 `C:/Users/icesa/Documents/ShenyiM8PilotJoined1120/verification.json`。
