@@ -132,6 +132,20 @@ journalctl -u shenyi-team-monitor.service -n 30 --no-pager
 
 通过服务单元的 drop-in 覆盖 `SHENYI_MONITOR_DISK_WARNING_BYTES` 和 `SHENYI_MONITOR_CERTIFICATE_WARNING_DAYS`。默认分别为 10 GiB 和 30 天。生产监控验收应核对实际阈值、journal 保留和授权告警接收渠道。
 
+## 续期 Nginx 对外证书
+
+对外证书到期告警出现后，按实际域名准备待更新的证书链与配套私钥。先核对证书的主机名、有效期、完整信任链和私钥匹配情况。把两份文件放在管理员可写的新目录内，私钥限制为 `0600 root:root`。保留当前仍有效的一对证书和私钥，便于在同一窗口回退。后端回环 HTTPS 使用独立证书和 CA。 [Nginx 证书链配置](https://nginx.org/en/docs/http/configuring_https_servers.html#chains)
+
+首次采用这套流程时，可将 Nginx 站点中直接配置的 `ssl_certificate` 和 `ssl_certificate_key` 替换成同一 `include`，先用旧文件路径验证一次。让 `include` 文件同时引用待切换的两份文件。在同一目录准备新配置，再原子替换 `include` 文件，避免调用方看到只改了一条路径的中间状态。证书变更期间协调此站点的配置写入与重载。 [Nginx 配置重载](https://nginx.org/en/docs/control.html#reconfiguration)
+
+1. 运行 `nginx -t`。失败时立即把配置文件恢复至上一版，再核对线上当前证书和服务实例。
+2. 预检通过后运行 `systemctl reload nginx`。建立新的 TLS 连接，验证实际送出的叶证书摘要、主机名、信任链与有效期。执行一次[上线检查](#一次性上线检查)，核对两路 HTTPS、实例标识和健康探针隔离，再用获准试点账号读取已分配任务。记录新证书的到期时间。
+3. 重载或验收失败时，将引用文件原子恢复到上一版。运行 `nginx -t` 后重载，并通过新连接复核旧证书和业务读取。仍失败时保留日志和两套证书文件，按主机故障流程处置。
+
+此次流程适用于对外叶证书与配套私钥续期。后端证书和密钥由受管服务启动时加载。涉及后端证书、后端 CA 或桌面信任链的变更时，安排独立窗口核对所有受影响方的信任与服务恢复。
+
+隔离 Ubuntu 使用同一测试 CA 签发两张叶证书，验证旧证书告警、错配私钥拒绝、续期生效、回退及再次续期。新证书有效期超过演练设定的七天阈值。三次重载均换代 Nginx worker，主进程及后端服务调用标识保持一致。63 次全新 TLS 连接成功，采集合成账号保持同一持钥会话完成 10 次签名任务请求，正常注销后撤销会话和租约。该演练运行于已准备的 Ubuntu 服务候选，使用当前客户端协议和检查器。生产域名、正式证书和办公网络留待目标环境核对。证据见 `D:/codex-temp/shenyi-m7-linux-edge-tls-20261119/verification.json`。
+
 ## Linux 虚拟机演练
 
 2026-11-19 从提交 `600d603` 生成本页白名单归档，在隔离的 QEMU Ubuntu 24.04.5 LTS 虚拟机运行 Node 24.22.1。原 systemd 单元和 Nginx 配置逐字节部署。16 项检查覆盖配置解析、专用账号及文件权限、回环就绪、边缘 HTTPS 实例标识、健康路由 404、部署自检、手动重启、下线与复启。 [QEMU 下载来源](https://www.qemu.org/download/) · [Ubuntu 云镜像校验](https://ubuntu.com/docs/public-images/public-images-how-to/verify-image-checksum/)
@@ -185,7 +199,7 @@ journalctl -u shenyi-team-monitor.service -n 30 --no-pager
 
 返回 `0` 时，旧版保存在 `previous-$release`。候选启动或探针失败且旧版已恢复时返回 `2`，候选保留在 `failed-$release`。两种结果均写入 `activation-$release.json`。返回 `1` 或进程意外退出时，在发布根核对结案回执及 `/opt/shenyi-team/.shenyi-activation.json`。未结案记录及其中的目录设备号和 inode 用于定位当前落位。遇到存储故障或无法证明已安全停服时，核对受管单元、进程、目录和实际库后再处置。SQLite 与配置保留在各自的原路径。
 
-核对一条获准的正常业务操作后再恢复接入。证书更新后重启受管服务以加载后端密钥，重新校验并按目标环境流程加载 Nginx。
+核对一条获准的正常业务操作后再恢复接入。若同时变更后端证书，核对受管服务已加载新密钥并通过双路 HTTPS 探针。单独更换对外证书时，按[对外证书续期流程](#续期-nginx-对外证书)完成验证。
 
 隔离 Ubuntu 验证了错误审批摘要在停服前被拒绝。模拟 systemd 启动失败后，原目录恢复，旧版重新启动并通过双路 HTTPS，故障候选留存。另一份测试密钥签名的候选随后成功启用，旧版目录保留。三个 systemd 调用标识各异，Nginx、配置和 SQLite 文件身份及字节保持。
 
