@@ -2,11 +2,13 @@
 
 候选归档分别面向 Apple 芯片 `arm64` 和 Intel `x64`，当前锁定的 Electron 需要 macOS 13 或更新版本。两份构件使用同一份审易客户端源码与生产依赖清单。产物用于后续在 Mac 上签名并验收。 [Electron macOS 支持范围](https://www.electronjs.org/docs/latest/breaking-changes#removed-macos-12-support)
 
-## 2026-11-19 候选交接
+## 2026-11-19 当前候选交接
 
-Apple 芯片与 Intel 的 0.61.0 原 ZIP 和清单均已从提交 `4bc11ab` 构建，存放在 `D:/codex-temp/shenyi-m7-macos-current-candidates-20261119/release`。用同一架构目录中的 ZIP 和清单交接。对应文件摘要和源码对证见 `D:/codex-temp/shenyi-m7-macos-current-candidates-20261119/verification.json`。
+Apple 芯片与 Intel 的 0.61.0 原 ZIP 与 Windows 评审客户端均基于 `418250f`。本轮 Mac 签前交接包位于 `D:/codex-temp/shenyi-m7-macos-parity-20261119/handoff/Shenyi-macOS-Candidate-Handoff-0.61.0.zip`。选择对应架构目录的原 ZIP 与清单，交接包内的 README 和 SHA256SUMS.txt 可独立使用。证据见 `D:/codex-temp/shenyi-m7-macos-parity-20261119/verification.json`。
 
-本次独立审查逐项核对了两架构的应用载荷、当前源码、生产依赖和 ZIP 权限。一次性密钥仅用于交接演练。实际交接由获准的发行人员使用独立保管的发行密钥签署后进行，随后按下文办理 Apple 签名、公证与实机验收。
+接收方可从解压包根目录运行 `python3 -I ./tools/build-macos-desktop-archive.py --verify`，按 README 明确给出原 ZIP、架构和版本。获准发行人员另行签发候选签名后，可从同一目录运行 `node ./tools/macos-candidate-signature.mjs verify`。需要从可信渠道独立取得发布公钥。在空接收路径实测这两类工具可直接运行。
+
+当前候选尚待 Apple Developer ID 签名、公证及实际 Mac 验收。签前演练的一次性密钥仅用于测试，签名及测试公钥保存在交接包外。已经接受 0.61.0 的环境必须使用更高经批准版本完成升级。较早的 4bc11ab 归档与证据保存在原 M7AV 检查点。
 
 ## 构建候选
 
