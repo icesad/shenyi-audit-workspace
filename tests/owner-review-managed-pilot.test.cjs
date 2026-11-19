@@ -12,10 +12,13 @@ const {OWNER_REVIEW_RUNTIME_MARKER, loadOwnerReviewManagedPilotConfiguration} = 
 const windows = {skip: process.platform !== 'win32' || process.arch !== 'x64'};
 const badCertificate = error => /^(?:DEPTH_|CERT_|UNABLE_|SELF_SIGNED_|ERR_TLS_)/.test(error?.code);
 
-async function packageFixture(t) {
+async function packageFixture(t, {longAppDataPath = false} = {}) {
   const parent = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'shenyi-owner-managed-test-'));
   const appRoot = path.join(parent, "review 'package !");
-  const appData = path.join(parent, 'local-app-data');
+  const localAppData = path.join(parent, 'local-app-data');
+  const appData = longAppDataPath && localAppData.length < 176
+    ? localAppData + '-' + 'x'.repeat(176 - localAppData.length - 1)
+    : localAppData;
   const previousAppData = process.env.LOCALAPPDATA;
   const runs = [];
   t.after(async () => {
@@ -59,8 +62,8 @@ test('managed pilot refuses an unpackaged runtime before allocating review files
   assert.deepEqual((await fs.readdir(appRoot)).sort(), ['owner-review-runtime.json', 'runtime']);
 });
 
-test('simultaneous managed reviews own separate loopback listeners, credentials and owner-only databases', windows, async t => {
-  const {appRoot, appData, runs} = await packageFixture(t);
+test('simultaneous managed reviews own separate listeners, credentials and databases with long Windows paths', windows, async t => {
+  const {appRoot, appData, runs} = await packageFixture(t, {longAppDataPath: true});
   await fs.writeFile(path.join(appRoot, 'owner-review-runtime.json'), OWNER_REVIEW_RUNTIME_MARKER);
   const {createOwnerReviewManagedPilot} = await import('../scripts/owner-review-managed-pilot-service.mjs');
   let syntheticMessages = 0;
@@ -124,7 +127,11 @@ test('simultaneous managed reviews own separate loopback listeners, credentials 
     assert.equal(started.includes(run.credentials.ownerPassword), false);
     const {databasePath} = JSON.parse(started);
     assert.equal(path.relative(run.directory, databasePath).startsWith('..'), false);
-    const db = new DatabaseSync(databasePath, {readOnly: true});
+    assert.equal(databasePath, run.databasePath);
+    assert.ok(databasePath.length >= 260);
+    assert.match(databasePath, /^[a-z]:\\/i);
+    assert.deepEqual(await fs.readdir(path.dirname(databasePath)), ['team.sqlite']);
+    const db = new DatabaseSync(path.toNamespacedPath(databasePath), {readOnly: true});
     try {
       assert.equal(db.prepare('SELECT COUNT(*) AS n FROM team_users').get().n, 1);
       for (const table of ['teams', 'team_memberships', 'team_operators', 'team_collection_tasks', 'team_task_submissions',

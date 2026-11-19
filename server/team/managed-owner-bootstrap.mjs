@@ -119,8 +119,8 @@ function initializeOwner(db,owner) {
   return deviceServerId(db);
 }
 
-function verifyStagedDatabase(filename, serverId, owner) {
-  const db=new DatabaseSync(filename,{readOnly:true,enableForeignKeyConstraints:true});
+function verifyStagedDatabase(sqlitePath, serverId, owner) {
+  const db=new DatabaseSync(sqlitePath,{readOnly:true,enableForeignKeyConstraints:true});
   try {
     assertManagedDatabaseReady(db,serverId);
     if (db.prepare('PRAGMA journal_mode').get()?.journal_mode!=='delete' ||
@@ -197,10 +197,12 @@ export async function bootstrapManagedOwner(input) {
     try { fileIdentity=await reservation.stat({bigint:true}); }
     finally { await reservation.close(); }
     await ownedFile(staged,fileIdentity,1n);
-    await backup(db,staged);
+    // SQLite's Windows VFS needs the extended path for the database and its journal.
+    const sqlitePath=path.toNamespacedPath(staged);
+    await backup(db,sqlitePath);
     await assertDirectoryChain(chain);
     const initial=await ownedFile(staged,fileIdentity,1n);
-    verifyStagedDatabase(staged,serverId,owner);
+    verifyStagedDatabase(sqlitePath,serverId,owner);
     const synced=await syncStagedFile(staged,fileIdentity);
     if (!sameContentStat(initial,synced) || !await exactDirectoryFile(directory,staged)) throw new Error();
     await assertDirectoryChain(chain);

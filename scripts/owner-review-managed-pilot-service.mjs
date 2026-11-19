@@ -112,7 +112,7 @@ export async function createOwnerReviewManagedPilot(options={}){
   const owner=await bootstrapManagedOwner({outputDirectory:path.join(directory,'managed-owner'),displayName:'合成产品负责人',phone:credentials.ownerPhone,password:credentials.ownerPassword,verifiedOutOfBand:true});
   check(samePath(owner.databasePath,databasePath));serverId=owner.serverId;
   const databaseInfo=await fs.lstat(databasePath,{bigint:true});check(databaseInfo.isFile()&&!databaseInfo.isSymbolicLink()&&databaseInfo.nlink===1n&&samePath(await fs.realpath(databasePath),databasePath));
-  await recheck(chain);db=new DatabaseSync(databasePath,{timeout:5000});db.exec('PRAGMA foreign_keys=ON');
+  await recheck(chain);db=new DatabaseSync(path.toNamespacedPath(databasePath),{timeout:5000});db.exec('PRAGMA foreign_keys=ON');
   check(db.prepare('SELECT COUNT(*) n FROM team_users').get().n===1);
   for(const table of ['teams','team_memberships','team_operators','team_sessions','team_device_bindings','team_subscription_events','team_seat_capacity_grants'])check(db.prepare('SELECT COUNT(*) n FROM '+table).get().n===0);
   phase='ephemeral-public-ca-and-synthetic-original';const certificate=createOwnerReviewCheckoutCertificate(),original=originalBytes(candidateId);
