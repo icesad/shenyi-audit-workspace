@@ -296,6 +296,7 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('billing-access',arg=>client.getBillingAccess(arg));
   handle('billing-overview',arg=>client.getBillingOverview(arg));
   handle('billing-orders',arg=>client.listBillingOrders(arg));
+  handle('billing-order-read',arg=>client.getBillingOrder(arg));
   handle('billing-order-create',arg=>client.createBillingOrder(arg));
   handle('billing-order-reconcile',arg=>client.reconcileBillingOrder(arg));
   handle('billing-page-reconcile',arg=>client.reconcileBillingPage(arg));

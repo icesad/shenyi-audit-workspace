@@ -64,14 +64,15 @@ function fixture(t, overrides = {}) {
     getBillingAccess: () => ok({ teams }),
     getBillingOverview: ({ teamId }) => ok(snapshot(teamId)),
     listBillingOrders: () => ok({ orders: [], hasMore: false, nextCursor: null }),
+    getBillingOrder: ({ orderId, teamId }) => ok({ order: order(orderId, 'pending', teamId) }),
     createBillingOrder: ({ teamId }) => ok({ order: order('created', 'pending', teamId) }),
     reconcileBillingOrder: ({ orderId, teamId }) => ok({ order: order(orderId, 'paid', teamId) }),
     ...overrides
   };
-  const api = Object.fromEntries(Object.entries(handlers).map(([name, handler]) => [name, async input => {
+  const api = Object.fromEntries(Object.entries(handlers).map(([name, handler]) => [name, typeof handler === 'function' ? async input => {
     calls.push({ name, input });
     return handler(input);
-  }]));
+  } : handler]));
   const view = window.createBillingView({ api, getContext: () => context, onUnauthorized: () => callbacks.push('logout'), onDeviceUnavailable: () => callbacks.push('device') });
   const id = name => window.document.getElementById('billing-' + name);
   const panel = id('panel');
@@ -595,4 +596,232 @@ test('batch responses from a coalesced reopen, changed team, or ended session ca
   assert.equal(f.id('batch-section').hidden, true);
   assert.equal(f.id('batch-results').childElementCount, 0);
   assert.equal(f.id('batch-message').textContent, '');
+});
+
+const lookupId = 'abcdef01-0000-4000-8000-000000000001';
+const otherLookupId = 'abcdef02-0000-4000-8000-000000000002';
+const lookupCalls = f => f.calls.filter(call => call.name === 'getBillingOrder');
+function lookUp(f, value) {
+  f.change('order-lookup-id', value, 'input');
+  f.id('order-lookup-submit').click();
+}
+
+test('exact order lookup normalizes a pasted UUID and Enter without changing pagination or reconciling', async t => {
+  let pages = 0;
+  const f = fixture(t, { listBillingOrders: () => ok(++pages === 1
+    ? { orders: [order(otherLookupId)], hasMore: true, nextCursor: otherLookupId }
+    : { orders: [], hasMore: false, nextCursor: null }) });
+  await f.open();
+  await until(() => f.id('order-list').childElementCount === 1);
+  f.change('order-lookup-id', ' \t' + lookupId.toUpperCase() + '  ', 'input');
+  const window = f.id('order-lookup-id').ownerDocument.defaultView;
+  const event = new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+  f.id('order-lookup-id').dispatchEvent(event);
+  await until(() => f.id('order-lookup-result').childElementCount === 1);
+  assert.equal(event.defaultPrevented, true);
+  assert.deepEqual(lookupCalls(f).map(call => ({ ...call.input })), [{ teamId: 'a', kind: 'annual', orderId: lookupId }]);
+  assert.equal(f.id('order-lookup-id').value, lookupId);
+  assert.equal(f.id('order-lookup-message').getAttribute('role'), 'status');
+  assert.equal(f.id('order-lookup-message').getAttribute('aria-live'), 'polite');
+  assert.match(f.id('order-lookup-message').textContent, /仅供查阅/);
+  assert.equal(f.id('order-lookup-result').querySelector('button'), null);
+  assert.equal(f.id('order-list').firstElementChild.dataset.orderId, otherLookupId);
+  assert.equal(f.id('orders-more').hidden, false);
+  assert.equal(f.calls.filter(call => /^(createBillingOrder|reconcileBillingOrder|reconcileBillingPage)$/.test(call.name)).length, 0);
+  f.id('orders-more').click();
+  await until(() => pages === 2 && !f.id('orders-previous').hidden);
+  assert.deepEqual({ ...f.calls.filter(call => call.name === 'listBillingOrders').at(-1).input },
+    { teamId: 'a', kind: 'annual', after: otherLookupId });
+  assert.equal(f.id('order-lookup-result').firstElementChild.dataset.orderId, lookupId);
+});
+
+test('lookup rejects partial IDs and unrelated text before RPC, and editing clears the prior answer', async t => {
+  const f = fixture(t);
+  await f.open();
+  for (const invalid of ['', 'abcdef01', lookupId + '?team=b', lookupId.replace('-4000-', '-7000-'), lookupId.replace('-', '–'), '订单 ' + lookupId]) {
+    lookUp(f, invalid);
+    assert.match(f.id('order-lookup-message').textContent, /完整.*UUID/);
+  }
+  assert.equal(lookupCalls(f).length, 0);
+  lookUp(f, lookupId);
+  await until(() => f.id('order-lookup-result').childElementCount === 1);
+  f.change('order-lookup-id', otherLookupId, 'input');
+  assert.equal(f.id('order-lookup-result').childElementCount, 0);
+  assert.equal(f.id('order-lookup-message').textContent, '');
+  assert.equal(lookupCalls(f).length, 1);
+});
+
+test('lookup uses the selected seat kind and existing read-only amount and status conventions', async t => {
+  const f = fixture(t, { getBillingOrder: ({ orderId, teamId }) => ok({ order: {
+    ...order(orderId, 'pending', teamId), offer: { ...seat, amountMinor: 96000 }, quantity: 2,
+    quoteExpiresAt: termStart + 60000, termEndsAt: termEnd
+  } }) });
+  await f.open();
+  f.change('order-kind', 'seat');
+  lookUp(f, lookupId);
+  await until(() => f.id('order-lookup-result').childElementCount === 1);
+  assert.deepEqual({ ...lookupCalls(f)[0].input }, { teamId: 'a', kind: 'seat', orderId: lookupId });
+  assert.match(f.id('order-lookup-result').textContent, /增购 2 席/);
+  assert.match(f.id('order-lookup-result').textContent, /待支付/);
+  assert.match(f.id('order-lookup-result').textContent, /960\.00/);
+  assert.equal(f.id('order-lookup-result').querySelector('[data-billing-reconcile]'), null);
+});
+
+test('a missing or inaccessible exact order leaves the scoped list and navigation intact', async t => {
+  const f = fixture(t, { getBillingOrder: () => fail('HTTP_404'), listBillingOrders: () => ok({ orders: [order(otherLookupId)], hasMore: false, nextCursor: null }) });
+  await f.open();
+  await until(() => f.id('order-list').childElementCount === 1);
+  lookUp(f, lookupId);
+  await until(() => f.id('order-lookup-message').textContent.includes('未找到该订单'));
+  assert.match(f.id('order-lookup-message').textContent, /或当前无权查阅/);
+  assert.equal(f.id('order-lookup-result').childElementCount, 0);
+  assert.equal(f.id('order-list').firstElementChild.dataset.orderId, otherLookupId);
+  assert.equal(f.id('team').value, 'a');
+  assert.equal(f.id('overview').hidden, false);
+  assert.deepEqual(f.callbacks, []);
+});
+
+test('unexpected order IDs or a different response team cannot populate the lookup result', async t => {
+  for (const wrong of [order(otherLookupId), order(lookupId, 'pending', 'b')]) {
+    const f = fixture(t, { getBillingOrder: () => ok({ order: wrong }) });
+    await f.open();
+    lookUp(f, lookupId);
+    await until(() => f.id('order-lookup-message').textContent.includes('暂时无法查询'));
+    assert.equal(f.id('order-lookup-result').childElementCount, 0);
+    assert.equal(f.id('team').value, 'a');
+  }
+});
+
+test('managed billing and a legacy bridge never enable or dispatch order lookup', async t => {
+  const managed = fixture(t, { getBillingOverview: ({ teamId }) => ok(managedSnapshot(teamId)) });
+  await managed.open();
+  const legacy = fixture(t, { getBillingOrder: undefined });
+  await legacy.open();
+  for (const f of [managed, legacy]) {
+    assert.equal(f.id('order-lookup').hidden, true);
+    assert.equal(f.id('order-lookup-submit').disabled, true);
+    lookUp(f, lookupId);
+    const window = f.id('order-lookup-id').ownerDocument.defaultView;
+    f.id('order-lookup-id').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    assert.equal(lookupCalls(f).length, 0);
+    assert.equal(f.id('order-lookup-result').childElementCount, 0);
+  }
+  assert.equal(legacy.id('orders-section').hidden, false);
+});
+
+test('switching team or order kind clears the exact input and rejects its late response', async t => {
+  for (const change of ['team', 'order-kind']) {
+    const pending = deferred();
+    const f = fixture(t, { getBillingOrder: () => pending.promise });
+    await f.open();
+    lookUp(f, lookupId);
+    assert.equal(lookupCalls(f).length, 1);
+    f.change(change, change === 'team' ? 'b' : 'seat');
+    assert.equal(f.id('order-lookup-id').value, '');
+    pending.resolve(ok({ order: order(lookupId) }));
+    await until(() => !f.id('order-lookup-submit').disabled);
+    assert.equal(f.id('order-lookup-result').childElementCount, 0);
+    assert.equal(f.id('order-lookup-message').textContent, '');
+    assert.deepEqual(f.callbacks, []);
+  }
+});
+
+test('a coalesced panel close and reopen invalidates lookup and its late unauthorized result', async t => {
+  const pending = deferred();
+  const f = fixture(t, { getBillingOrder: () => pending.promise });
+  await f.open();
+  lookUp(f, lookupId);
+  f.panel.open = false;
+  f.panel.open = true;
+  pending.resolve(fail('SIGN_IN_REQUIRED'));
+  await until(() => !f.id('order-lookup-submit').disabled);
+  assert.equal(f.id('order-lookup-id').value, '');
+  assert.equal(f.id('order-lookup-result').childElementCount, 0);
+  assert.equal(f.id('order-lookup-message').textContent, '');
+  assert.deepEqual(f.callbacks, []);
+});
+
+test('ended actor, device or signed-out scope ignores a late lookup response and its callbacks', async t => {
+  for (const change of ['actor', 'device', 'signed-out']) {
+    const pending = deferred();
+    const f = fixture(t, { getBillingOrder: () => pending.promise });
+    await f.open();
+    lookUp(f, lookupId);
+    if (change === 'signed-out') { Object.assign(f.context, { identity: '', ready: false }); f.view.reset(); }
+    else { f.context[change] += ':new'; f.view.update(); }
+    pending.resolve(fail(change === 'device' ? 'DEVICE_STATE_CHANGED' : 'SIGN_IN_REQUIRED'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(f.id('order-lookup-result').childElementCount, 0);
+    assert.equal(f.id('order-lookup-message').textContent, '');
+    assert.deepEqual(f.callbacks, []);
+  }
+});
+
+test('a current lookup authentication or device failure clears scope through the existing callbacks', async t => {
+  for (const [code, callback] of [['SIGN_IN_REQUIRED', 'logout'], ['DEVICE_STATE_CHANGED', 'device']]) {
+    const f = fixture(t, { getBillingOrder: () => fail(code) });
+    await f.open();
+    lookUp(f, lookupId);
+    await until(() => f.callbacks.length === 1);
+    assert.deepEqual(f.callbacks, [callback]);
+    assert.equal(f.id('order-lookup-result').childElementCount, 0);
+    assert.equal(f.id('order-lookup-id').value, '');
+    assert.equal(f.panel.hidden, true);
+  }
+});
+
+test('editing a pending lookup supersedes it without allowing its later answer to replace a newer result', async t => {
+  const previous = deferred();
+  const f = fixture(t, { getBillingOrder: ({ orderId }) => orderId === lookupId ? previous.promise : ok({ order: order(orderId) }) });
+  const document = f.panel.ownerDocument;
+  document.getElementById('workspace-view').hidden = false;
+  await f.open();
+  f.change('order-lookup-id', lookupId, 'input');
+  f.id('order-lookup-id').focus();
+  const event = new document.defaultView.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+  f.id('order-lookup-id').dispatchEvent(event);
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(f.id('order-lookup-id').disabled, false);
+  assert.equal(document.activeElement, f.id('order-lookup-id'));
+  assert.equal(f.id('order-lookup-submit').disabled, true);
+  lookUp(f, otherLookupId);
+  await until(() => f.id('order-lookup-result').childElementCount === 1);
+  previous.resolve(ok({ order: order(lookupId, 'paid') }));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(lookupCalls(f).length, 2);
+  assert.equal(f.id('order-lookup-result').firstElementChild.dataset.orderId, otherLookupId);
+  assert.equal(f.id('order-lookup-id').value, otherLookupId);
+});
+
+test('only an explicit existing-list reconciliation mutates, and it invalidates a prior pending lookup', async t => {
+  const pending = deferred();
+  const f = fixture(t, { getBillingOrder: () => pending.promise, listBillingOrders: () => ok({ orders: [order(otherLookupId)], hasMore: false, nextCursor: null }) });
+  await f.open();
+  await until(() => f.id('order-list').querySelector('[data-billing-reconcile]'));
+  lookUp(f, lookupId);
+  assert.equal(f.calls.filter(call => call.name === 'reconcileBillingOrder').length, 0);
+  f.id('order-list').querySelector('[data-billing-reconcile]').click();
+  await until(() => f.calls.some(call => call.name === 'reconcileBillingOrder'));
+  pending.resolve(ok({ order: order(lookupId, 'paid') }));
+  await until(() => f.id('order-list').textContent.includes('已到账'));
+  assert.equal(f.id('order-lookup-result').childElementCount, 0);
+  assert.equal(f.id('order-lookup-id').value, '');
+  assert.equal(f.id('order-list').children.length, 1);
+  assert.equal(f.id('order-list').firstElementChild.dataset.orderId, otherLookupId);
+});
+
+test('lookup reuses trusted closure and exception facts without enabling a reconciliation action', async t => {
+  const result = { ...order(lookupId, 'payment-verified'), confirmedAt: termStart + 40,
+    closure: { deadlineAt: termStart + 10, closedAt: termStart + 20 },
+    paymentException: { kind: 'chargeback', occurredAt: termStart + 30, state: 'review-required' } };
+  const f = fixture(t, { getBillingOrder: () => ok({ order: result }) });
+  await f.open();
+  lookUp(f, lookupId);
+  await until(() => f.id('order-lookup-result').childElementCount === 1);
+  const row = f.id('order-lookup-result').firstElementChild;
+  assert.match(row.textContent, /迟到收款待复核/);
+  assert.match(row.textContent, /拒付待复核/);
+  assert.ok(row.querySelector('[data-order-closure]'));
+  assert.equal(row.querySelector('button'), null);
+  assert.equal(f.calls.filter(call => /^reconcileBilling/.test(call.name)).length, 0);
 });

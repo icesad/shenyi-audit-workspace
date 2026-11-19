@@ -4,7 +4,7 @@ const {isProxy}=require('node:util').types;
 const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const BILLING_ROOT='/api/auth/billing/access';
-const BILLING_PATH=/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/billing\/(?:overview|reconciliation|(?:orders|seat-orders)(?:\?limit=20(?:&after=([0-9a-f-]{36}))?|\/([0-9a-f-]{36})\/reconcile)?)$/;
+const BILLING_PATH=/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/billing\/(?:overview|reconciliation|(?:orders|seat-orders)(?:\?limit=20(?:&after=([0-9a-f-]{36}))?|\/([0-9a-f-]{36})(?:\/reconcile)?)?)$/;
 const REFUND_ACCESS='/api/auth/refund-intake/access';
 const REFUND_PATH=/^\/api\/platform\/billing\/refund-intakes\/(?:annual|seat)\/([0-9a-f-]{36})(?:\?beforeRevision=([1-9][0-9]{0,15}))?$/;
 const REFUND_REFERENCE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
@@ -300,6 +300,11 @@ function createBillingClient({request,failure}){
       if(orders.some((order,index)=>order.id<=(index===0?after??'':orders[index-1].id))||
         (data.hasMore?(orders.length!==PAGE_SIZE||data.nextCursor!==orders.at(-1).id):data.nextCursor!==null))badResponse();
       return {orders,hasMore:data.hasMore,nextCursor:data.nextCursor};
+    },
+    async getBillingOrder(input){
+      const {teamId,kind,orderId}=fields(input,['teamId','kind','orderId'],badInput);
+      if((kind!=='annual'&&kind!=='seat')||!match(UUID,orderId))badInput();
+      return orderResponse(await request(scoped(teamId,kind)+'/'+orderId),{teamId,kind,orderId});
     },
     async createBillingOrder(input){
       const selection=fields(input,

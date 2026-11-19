@@ -65,6 +65,9 @@ main{margin-left:232px;padding:0 38px;min-height:100vh;display:flex;flex-directi
 .billing-order div{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center}
 .billing-order p{margin:0;color:var(--muted);font-size:11px;line-height:1.65;overflow-wrap:anywhere}
 .billing-order .button{justify-self:start;margin-top:4px}
+.billing-order-lookup{margin:12px 0 16px;padding:12px;border:1px solid var(--line);border-radius:6px;background:var(--paper)}
+.billing-order-lookup .identity-note{margin:8px 0 0}
+.billing-order-lookup .billing-order-list:empty{display:none}
 .refund-intake-panel .refund-intake-lookup>div:first-child{flex:0 1 120px}
 .refund-intake-panel .refund-intake-lookup>div:nth-child(2){flex-grow:2;max-width:360px}
 .refund-intake-panel .refund-intake-entry>div{flex-basis:130px}

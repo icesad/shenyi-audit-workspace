@@ -26,6 +26,7 @@
     return amountFormat.formatToParts(cents / 100n).map(part => part.type === 'fraction' ? fraction : part.value).join('');
   }
   const whole = value => /^[1-9][0-9]*$/.test(value) && Number.isSafeInteger(Number(value));
+  const orderIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
   const methods = ['getBillingAccess', 'getBillingOverview', 'listBillingOrders', 'createBillingOrder', 'reconcileBillingOrder'];
   const permissionErrors = new Set(['FORBIDDEN', 'HTTP_403', 'HTTP_404', 'NOT_FOUND']);
   const deviceErrors = new Set(['DEVICE_PROOF_REQUIRED', 'DEVICE_NOT_READY', 'DEVICE_STATE_CHANGED', 'DEVICE_VAULT_UNAVAILABLE', 'DEVICE_CAPABILITY_REQUIRED', 'DEVICE_SERVER_CHANGED']);
@@ -66,10 +67,12 @@
     const node = name => document.getElementById('billing-' + name);
     const panel = node('panel');
     const supported = methods.every(method => typeof api?.[method] === 'function');
+    const lookupSupported = typeof api?.getBillingOrder === 'function';
     let scope = '', identity = '', revision = 0, accessRead = null, team = '', teams = [];
     let overview = null, overviewRead = null, ordersRead = null, orders = [], nextCursor = null, pageCursor = null, previousCursors = [];
     let kind = 'annual', confirmation = null, mutation = null;
     let batchReport = null, failedBatch = null;
+    let lookupRead = null;
     let intents = new Map();
 
     function keys(context) {
@@ -151,6 +154,10 @@
       node('orders-more').hidden = !nextCursor;
       node('orders-previous').hidden = !previousCursors.length;
       node('orders-more').disabled = node('orders-previous').disabled = node('orders-refresh').disabled;
+      node('order-lookup').hidden = !simulation || !lookupSupported;
+      node('order-lookup-id').disabled = blocked || !simulation || !lookupSupported;
+      node('order-lookup-submit').disabled = node('order-lookup-id').disabled || !!lookupRead;
+      node('order-lookup-hint').textContent = '查询当前团队的' + orderNames[kind] + '订单，不改变订单状态。';
       for (const button of node('order-list').querySelectorAll('[data-billing-reconcile]')) button.disabled = disabled || !!ordersRead;
       const batchAvailable = canReconcileBatch();
       const batchBlocked = !batchAvailable || blocked || !!ordersRead || !!accessRead;
@@ -168,6 +175,7 @@
     }
 
     function clearOrders() {
+      clearOrderLookup();
       ordersRead = null;
       orders = [];
       nextCursor = null;
@@ -175,6 +183,50 @@
       previousCursors = [];
       node('order-list').replaceChildren();
       node('orders-message').textContent = '';
+    }
+
+    function lookupMessage(words = '', error = false) {
+      const feedback = node('order-lookup-message');
+      feedback.textContent = words;
+      feedback.classList.toggle('error', error);
+    }
+
+    function clearOrderLookup(keepInput = false) {
+      lookupRead = null;
+      node('order-lookup-result').replaceChildren();
+      if (!keepInput) node('order-lookup-id').value = '';
+      lookupMessage();
+    }
+
+    async function lookupOrder() {
+      if (node('order-lookup-submit').disabled || !lookupSupported || overview?.simulation !== true || !currentView(capture())) return;
+      const orderId = node('order-lookup-id').value.trim().toLowerCase();
+      clearOrderLookup(true);
+      if (!orderIdPattern.test(orderId)) {
+        lookupMessage('请输入完整的订单编号（UUID）。', true);
+        return;
+      }
+      node('order-lookup-id').value = orderId;
+      const read = { ...capture(), orderId };
+      lookupRead = read;
+      lookupMessage('正在查询' + orderNames[kind] + '订单…');
+      controls();
+      try {
+        const value = await invoke('getBillingOrder', { teamId: read.team, kind: read.kind, orderId });
+        if (!currentView(read) || lookupRead !== read) return;
+        if (value?.order?.teamId !== read.team || value.order.id !== orderId) throw new Error('Unexpected billing order');
+        node('order-lookup-result').replaceChildren(orderRow(value.order, false));
+        lookupMessage('已找到' + orderNames[kind] + '订单。此处仅供查阅。');
+      } catch (error) {
+        if (!currentView(read) || lookupRead !== read || handleSessionError(error)) return;
+        if (error?.code === 'HTTP_403' || error?.code === 'FORBIDDEN') discardTeam();
+        else lookupMessage(error?.code === 'HTTP_404' || error?.code === 'NOT_FOUND'
+          ? '未找到该订单，或当前无权查阅。请核对编号、订单类型和团队。'
+          : errorMessage(error, '暂时无法查询订单，请核对后重试。'), true);
+      } finally {
+        if (lookupRead === read) lookupRead = null;
+        controls();
+      }
     }
 
     function batchMessage(words = '', error = false) {
@@ -335,6 +387,7 @@
 
     async function loadOverview({ success = '', keepOrders = false, keepDraft = false } = {}) {
       if (!team || panel.hidden || !panel.open || !currentScope(scope)) return;
+      clearOrderLookup();
       if (!keepOrders) clearOverview();
       const read = capture();
       overviewRead = read;
@@ -368,7 +421,7 @@
         overview.canReconcilePaymentExceptions === true && !order.paymentException);
     }
 
-    function orderRow(order) {
+    function orderRow(order, actionable = true) {
       const row = element('li', undefined, 'billing-order');
       const header = element('div');
       const exception = order.paymentException;
@@ -401,7 +454,7 @@
       if (order.fulfilment) row.append(element('p', '续费期限 ' + date(order.fulfilment.renewalStartsAt) + ' 至 ' + date(order.fulfilment.endsAt) + '（北京时间）'));
       const grant = order.grant || order.renewalSeatGrant;
       if (grant) row.append(element('p', '席位 ' + grant.seats + ' 席适用期限 ' + date(grant.startsAt) + ' 至 ' + date(grant.endsAt) + '（北京时间）'));
-      if (canReconcileOrder(order)) {
+      if (actionable && canReconcileOrder(order)) {
         const button = element('button', '核对订单状态', 'button');
         button.type = 'button';
         button.dataset.billingReconcile = order.id;
@@ -411,7 +464,7 @@
     }
 
     function drawOrders() {
-      node('order-list').replaceChildren(...orders.map(orderRow));
+      node('order-list').replaceChildren(...orders.map(order => orderRow(order)));
       node('orders-message').textContent = orders.length === 0 ? '暂无' + orderNames[kind] + '订单。' : previousCursors.length || nextCursor ? '第 ' + (previousCursors.length + 1) + ' 页' : '';
     }
 
@@ -498,6 +551,7 @@
     async function createOrder() {
       if (node('confirm').disabled || overview?.simulation !== true || !confirmation || !currentView(capture())) return;
       const at = capture();
+      clearOrderLookup();
       const { input, key } = confirmation;
       const store = intents;
       let requestId = store.get(key);
@@ -536,6 +590,7 @@
       const restoreFocus = trackActionFocus(button);
       const operation = {};
       mutation = operation;
+      clearOrderLookup();
       clearConfirmation();
       controls();
       message('正在核对订单状态…');
@@ -597,6 +652,7 @@
       const after = move === 'next' ? batchReport.nextCursor : move === 'retry' ? (failedBatch ?? batchReport).after : null;
       const operation = {};
       mutation = operation;
+      clearOrderLookup();
       clearConfirmation();
       batchMessage('正在批量核对' + orderNames[kind] + '订单…');
       controls();
@@ -662,6 +718,11 @@
     node('orders-refresh').addEventListener('click', () => void loadOrders());
     node('orders-more').addEventListener('click', () => void loadOrders('next'));
     node('orders-previous').addEventListener('click', () => void loadOrders('previous'));
+    node('order-lookup-id').addEventListener('input', () => { clearOrderLookup(true); controls(); });
+    node('order-lookup-id').addEventListener('keydown', event => {
+      if (event.key === 'Enter') { event.preventDefault(); void lookupOrder(); }
+    });
+    node('order-lookup-submit').addEventListener('click', () => void lookupOrder());
     for (const move of ['start', 'next', 'retry']) node('batch-' + move).addEventListener('click', () => void reconcileBatch(move));
     node('order-list').addEventListener('click', event => {
       const button = event.target.closest('[data-billing-reconcile]');

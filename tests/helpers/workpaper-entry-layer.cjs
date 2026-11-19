@@ -4,7 +4,7 @@ const RPC=Object.freeze([
  ['openWorkpaperView','workpaper-view-open'],['closeWorkpaperView','workpaper-view-close'],['listWorkpaperProjects','workpaper-projects'],['getWorkpaperAccess','workpaper-access'],['listWorkpaperMembers','workpaper-members'],['changeWorkpaperAccess','workpaper-access-change'],['getWorkpaperData','workpaper-data'],['listWorkpaperVersions','workpaper-versions'],['getWorkpaperRecord','workpaper-record'],['getWorkpaperForm','workpaper-form'],['saveWorkpaperEntries','workpaper-entries-save'],['getWorkpaperReceipt','workpaper-receipt'],['chooseWorkpaperSource','workpaper-source-open'],['confirmWorkpaperImport','workpaper-source-confirm'],['resumeWorkpaperImport','workpaper-source-resume'],['queryWorkpaperImport','workpaper-import-query'],['cancelWorkpaperSourceImport','workpaper-import-cancel'],['discardWorkpaperSource','workpaper-source-discard'],['exportWorkpapers','workpaper-export'],['cancelWorkpaperExport','workpaper-export-cancel']
 ]);
 const BILLING_RPC=Object.freeze([
- ['getBillingAccess','billing-access'],['getBillingOverview','billing-overview'],['listBillingOrders','billing-orders'],
+ ['getBillingAccess','billing-access'],['getBillingOverview','billing-overview'],['listBillingOrders','billing-orders'],['getBillingOrder','billing-order-read'],
  ['createBillingOrder','billing-order-create'],['reconcileBillingOrder','billing-order-reconcile']
 ]);
 const BILLING_BATCH_RPC=Object.freeze([['reconcileBillingPage','billing-page-reconcile']]);

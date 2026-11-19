@@ -139,6 +139,12 @@
           </section>
           <section id="billing-orders-section" class="billing-section" aria-labelledby="billing-orders-heading" hidden>
             <div class="billing-actions billing-orders-heading"><h4 id="billing-orders-heading" tabindex="-1">团队年费订单</h4><button id="billing-orders-refresh" class="button" type="button">刷新订单</button></div>
+            <div id="billing-order-lookup" class="billing-order-lookup" hidden>
+              <div class="billing-toolbar"><div><label for="billing-order-lookup-id">按订单编号查询</label><input id="billing-order-lookup-id" type="text" maxlength="128" autocomplete="off" spellcheck="false" placeholder="粘贴完整订单编号" aria-describedby="billing-order-lookup-hint billing-order-lookup-message"></div><button id="billing-order-lookup-submit" class="button" type="button">查询订单</button></div>
+              <p id="billing-order-lookup-hint" class="identity-note"></p>
+              <p id="billing-order-lookup-message" class="identity-note" role="status" aria-live="polite" aria-atomic="true"></p>
+              <ul id="billing-order-lookup-result" class="billing-order-list" aria-label="订单编号查询结果"></ul>
+            </div>
             <div id="billing-batch-section" class="billing-batch" hidden>
               <div class="billing-actions">
                 <button id="billing-batch-start" class="button" type="button">批量核对订单</button>

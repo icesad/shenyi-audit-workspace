@@ -70,6 +70,43 @@ test('fixed billing paths and request bodies return only renderer-safe order fie
   ]);
 });
 
+test('single-order reads use one fixed GET route and retain the safe projected order',async()=>{
+  const {client,calls,responses}=fixture();
+  for(const [kind,collection,source] of [['annual','orders',ANNUAL_ORDER],['seat','seat-orders',SEAT_ORDER]]){
+    responses.push({simulation:true,order:source});
+    const {order}=await client.getBillingOrder({teamId:TEAM,kind,orderId:ID});
+    assert.equal(order.id,ID);
+    assert.equal(order.offer.product,source.offer.product);
+    assert.equal(order.offer.amountMinor,source.offer.amountMinor);
+    assert.equal(order.status,source.status);
+    for(const privateKey of ['actorId','merchantId','requestId'])assert.ok(!Object.hasOwn(order,privateKey));
+    const route='/api/teams/'+TEAM+'/billing/'+collection+'/'+ID;
+    assert.deepEqual(calls.at(-1),{route,options:undefined});
+    for(const suffix of ['/','?limit=20','?','/verify','\n'])assert.equal(isBillingRoute(route+suffix),false);
+  }
+  assert.equal(calls.length,2);
+  const input={teamId:TEAM,kind:'annual',orderId:ID};
+  for(const invalid of [
+    {...input,kind:undefined},{...input,kind:'seat-orders'},{...input,teamId:'team-b/orders'},
+    {...input,orderId:ID+'?limit=20'},{...input,orderId:ID.replace('-4000','-3000')},{...input,token:'extra'}
+  ])await assert.rejects(client.getBillingOrder(invalid),{code:'INVALID_INPUT'});
+  assert.equal(calls.length,2);
+});
+
+test('single-order reads reject mismatched team, order, product and mode',async()=>{
+  const {client,responses}=fixture();
+  const input={teamId:TEAM,kind:'annual',orderId:ID};
+  for(const payload of [
+    {simulation:false,order:ANNUAL_ORDER},
+    {simulation:true,order:{...ANNUAL_ORDER,teamId:'team-b'}},
+    {simulation:true,order:{...ANNUAL_ORDER,id:OPERATION}},
+    {simulation:true,order:SEAT_ORDER},
+  ]){
+    responses.push(payload);
+    await assert.rejects(client.getBillingOrder(input),{code:'INVALID_RESPONSE'});
+  }
+});
+
 test('managed billing overview carries only a scoped subscription and seat summary',async()=>{
   const {client,responses}=fixture();
   const overview={teamId:TEAM,simulation:false,subscription:OVERVIEW.subscription,seats:OVERVIEW.seats};
@@ -410,13 +447,16 @@ test('billing preload actions and guarded bridge channels are exact and have no 
       contents.mainFrame.url=APP_URL;
     }
     assert.equal(calls.length,0);
-    responses.push(ACCESS,RECONCILIATION_PAGE);
+    responses.push(ACCESS,RECONCILIATION_PAGE,{simulation:true,order:ANNUAL_ORDER});
     assert.deepEqual(await api.getBillingAccess(),{ok:true,value:ACCESS});
     assert.deepEqual(await api.reconcileBillingPage({teamId:TEAM,kind:'annual'}),{
       ok:true,value:{results:[RECONCILIATION_ROW],nextCursor:null},
     });
     assert.equal((await api.createBillingOrder({...SELECTION,signature:'extra'})).error.code,'INVALID_INPUT');
-    assert.equal(calls.length,2);
+    const lookup=await api.getBillingOrder({teamId:TEAM,kind:'annual',orderId:ID});
+    assert.equal(lookup.ok,true);
+    assert.equal(lookup.value.order.id,ID);
+    assert.equal(calls.length,3);
     assert.equal(api.invoke,undefined);assert.equal(api.billingSecret,undefined);
   }finally{dispose();assert.equal(handlers.size,0);}
 });
@@ -425,6 +465,7 @@ test('billing signed transport requires login and only forwards locally fixed er
   let count=0;
   const client=createTeamClient({fetchImpl:async()=>{count++;throw Error('Unexpected transport');}});
   await assert.rejects(client.getBillingAccess(),{code:'SIGN_IN_REQUIRED'});
+  await assert.rejects(client.getBillingOrder({teamId:TEAM,kind:'annual',orderId:ID}),{code:'SIGN_IN_REQUIRED'});
   await assert.rejects(client.reconcileBillingPage({teamId:TEAM,kind:'annual'}),{code:'SIGN_IN_REQUIRED'});
   await assert.rejects(client.getRefundIntakeAccess(),{code:'SIGN_IN_REQUIRED'});
   await assert.rejects(client.getRefundIntake({kind:'annual',orderId:ID}),{code:'SIGN_IN_REQUIRED'});
