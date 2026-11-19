@@ -258,3 +258,21 @@ node scripts/manage-windows-candidate-install.mjs launch `
 客户端保留当前 Windows 用户的资料目录和公开微信应用配置。启动入口清除调试、预览、代理和 TLS 配置覆盖，发现关闭 TLS 校验的设置时拒绝启动。只有明确配置为 `https://127.0.0.1` 的本地演练可以继承绝对路径指定的额外测试 CA。公网部署使用正式证书。
 
 M7S 在独立 Windows 安装中依次启动 `0.61.0`、签名演练版 `0.61.1` 和回滚后的 `0.61.0`。演练版包含已修复的采集界面和独立版本元数据。三个真实窗口均完成合成实习生登录，只显示获指派的任务。设备只在首次登录登记，升级与回滚后继续使用原密钥。回滚后的最高已接受版本仍为 `0.61.1`。此次使用测试发布签名和合成配置，正式版本更新与操作系统签名另按发行要求实测。
+
+### 为已安装的双签名版本创建快捷方式
+
+部署人员准备由其维护、普通用户可读和执行的启动工具、Node.js 24.15 或较新的 24.x 运行时、安装目录和独立信任配置。启动工具须保留仓库的相对目录结构。微信扫码配置使用受信团队服务的版本 2 配置文件。使用可信发布渠道交付的启动脚本，沿用终端的 PowerShell 执行策略。先按[双签名便携安装](#双签名便携安装)激活相应版本，再在指定的新位置生成 `.lnk`。 [团队 HTTPS 配置](TRUSTED_TEAM_HTTPS_CONTRACT.md)
+
+```powershell
+& 'D:/ShenyiDeploy/scripts/start-windows-managed-desktop.ps1' `
+  -NodePath 'D:/ShenyiRuntime/node.exe' `
+  -InstallationRoot 'D:/ShenyiInstall' `
+  -PublicKey 'D:/ShenyiTrust/update-ed25519.pub.pem' `
+  -PublisherSha256 $ShenyiPublisherSha256 `
+  -ServiceConfig 'D:/ShenyiTrust/team-service.json' `
+  -ShortcutPath 'D:/ShenyiShortcuts/Shenyi.lnk'
+```
+
+将 `$ShenyiPublisherSha256` 设为经独立确认的发布者证书 SHA-256 指纹。快捷方式写入前会读回核对目标和参数，保留已有同名文件。点击快捷方式后，系统 PowerShell 先清理继承的 Node、Electron、服务配置、代理及证书覆盖，再调用现有 `launch` 核验并启动活动版本。签名或配置检查失败时，界面提示联系部署人员。安装后的更新和回滚沿用同一快捷方式。创建命令只写指定 `.lnk`，快捷方式实际放置及目录权限由部署人员配置。 [Windows 快捷方式说明](https://learn.microsoft.com/en-us/troubleshoot/windows-client/admin-development/create-desktop-shortcut-with-wsh)
+
+命令行排查时省略 `-ShortcutPath` 可直接运行启动检查，查看原有 JSON 结果。进程创建回执之后仍须核对产品窗口、服务身份与实际登录。此快捷方式接入受管双签名发行路径，MSI 安装注册及正式签名产品的实机走查另行留证。
