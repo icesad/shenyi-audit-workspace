@@ -29,7 +29,7 @@ const ASSETS=Object.freeze({
   '/brand-shenyi.png':{file:path.join(__dirname,'../dist/brand-shenyi.png'),mime:'image/png'},
 });
 
-function serviceIndex(bytes,configuration,isolatedPreview=false){
+function serviceIndex(bytes,configuration,isolatedPreview=false,ownerReviewCheckout=false){
   const escapeAttribute=value=>value.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll("'",'&#39;').replaceAll('<','&lt;').replaceAll('>','&gt;');
   const values={'shenyi-team-service-mode':configuration.mode,'shenyi-team-service-origin':configuration.profile?.apiBase??API_BASE};
   let html=bytes.toString('utf8');
@@ -41,6 +41,11 @@ function serviceIndex(bytes,configuration,isolatedPreview=false){
   if(isolatedPreview){
     for(const [before,after]of [['本机合成演示</span>','独立合成候选预览</span>'],['<span id="service-mode-label">本机演示</span>','<span id="service-mode-label">独立候选预览</span>'],['使用合成账号和资料验证团队流程。','本窗口为独立合成候选预览；每次启动新建环境，关闭后合成资料保留。'],['账号：intern-a 或 assistant-a','账号：manager-a、partner-a、intern-a 或 assistant-a']]){if(html.split(before).length!==2)throw new Error('Isolated preview label unavailable');html=html.replace(before,after);}
   }
+  if(ownerReviewCheckout){
+    const marker='<section id="login-view"';
+    if(html.split(marker).length!==2)throw new Error('Owner checkout presentation unavailable');
+    html=html.replace(marker,'<div id="owner-review-checkout-notice" class="mode-notice"><span>独立官网账务走查</span><p>仅连接当前评审包新建的本地 HTTPS 合成环境。官网订单不收款；本窗口不用于真实客户资料或生产团队。</p></div>'+marker);
+  }
   return html;
 }
 
@@ -49,13 +54,23 @@ async function main() {
   if(isPackaged&&(Object.hasOwn(process.env,'SHENYI_DESKTOP_DATA_DIR')||app.commandLine.hasSwitch('user-data-dir'))){
     throw new Error('Packaged desktop cannot use a preview data directory');
   }
-  const isolatedPreview=await loadIsolatedPreviewConfiguration({env:process.env,isPackaged});
-  if(isolatedPreview){if(app.commandLine.getSwitchValue('user-data-dir')!==isolatedPreview.desktopDataDirectory)throw new Error('Isolated startup profile mismatch');app.setPath('sessionData',isolatedPreview.desktopDataDirectory);}
-  const serviceConfiguration=isolatedPreview?Object.freeze({mode:'local-preview',profile:null}):await loadTeamServiceConfiguration({env:process.env,isPackaged});
+  let ownerReviewCheckout=null,ownerReviewSupport=null,isolatedPreview=null,serviceConfiguration;
+  if(Object.hasOwn(process.env,'SHENYI_OWNER_REVIEW_WEBSITE_CHECKOUT')){
+    if(['ignore-certificate-errors','ignore-certificate-errors-spki-list','allow-insecure-localhost','disable-web-security'].some(name=>app.commandLine.hasSwitch(name)))throw new Error('Owner checkout cannot bypass TLS verification');
+    serviceConfiguration=await loadTeamServiceConfiguration({env:process.env,isPackaged});
+    ownerReviewSupport=require('./owner-review-checkout.cjs');
+    ownerReviewCheckout=await ownerReviewSupport.loadOwnerReviewCheckoutConfiguration({env:process.env,isPackaged,platform:process.platform,arch:process.arch,userDataDirectory:app.commandLine.getSwitchValue('user-data-dir'),profile:serviceConfiguration.profile});
+    if(!ownerReviewCheckout)throw new Error('Owner checkout activation unavailable');
+    app.setPath('sessionData',ownerReviewCheckout.desktopDataDirectory);
+  }else{
+    isolatedPreview=await loadIsolatedPreviewConfiguration({env:process.env,isPackaged});
+    if(isolatedPreview){if(app.commandLine.getSwitchValue('user-data-dir')!==isolatedPreview.desktopDataDirectory)throw new Error('Isolated startup profile mismatch');app.setPath('sessionData',isolatedPreview.desktopDataDirectory);}
+    serviceConfiguration=isolatedPreview?Object.freeze({mode:'local-preview',profile:null}):await loadTeamServiceConfiguration({env:process.env,isPackaged});
+  }
   const installedVault=isPackaged?resolveDeviceVaultDirectory({isPackaged}):null;
   // The packaged profile and vault share a per-machine root distinct from every preview.
   const dataRoot=installedVault?path.join(path.dirname(installedVault),'profile'):
-    isolatedPreview?.desktopDataDirectory||process.env.SHENYI_DESKTOP_DATA_DIR||(process.platform==='win32'?'D:/codex-temp/shenyi-desktop-preview':path.join(app.getPath('appData'),'ShenyiTeamPreview'));
+    ownerReviewCheckout?.desktopDataDirectory||isolatedPreview?.desktopDataDirectory||process.env.SHENYI_DESKTOP_DATA_DIR||(process.platform==='win32'?'D:/codex-temp/shenyi-desktop-preview':path.join(app.getPath('appData'),'ShenyiTeamPreview'));
   await fs.mkdir(dataRoot,{recursive:true});
   if(isPackaged)app.setPath('sessionData',dataRoot);
   app.setPath('userData',dataRoot);
@@ -69,15 +84,17 @@ async function main() {
   isolated.protocol.handle('shenyi',async request=>{
     const url=new URL(request.url), asset=ASSETS[url.pathname];
     if(request.method!=='GET'||url.hostname!=='app'||url.port||url.username||url.password||url.search||!asset)return new Response('Not found',{status:404});
-    try{const bytes=await fs.readFile(asset.file);return new Response(url.pathname==='/index.html'?serviceIndex(bytes,isolatedPreview?{mode:'local-preview',profile:isolatedPreview.profile}:serviceConfiguration,!!isolatedPreview):bytes,{headers:{'Content-Type':asset.mime,'Content-Security-Policy':CONTENT_SECURITY_POLICY,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'}});}catch{return new Response('Asset unavailable',{status:503});}
+    try{const bytes=await fs.readFile(asset.file);return new Response(url.pathname==='/index.html'?serviceIndex(bytes,isolatedPreview?{mode:'local-preview',profile:isolatedPreview.profile}:serviceConfiguration,!!isolatedPreview,!!ownerReviewCheckout):bytes,{headers:{'Content-Type':asset.mime,'Content-Security-Policy':CONTENT_SECURITY_POLICY,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'}});}catch{return new Response('Asset unavailable',{status:503});}
   });
   const wechatPolicy={appId:process.env.SHENYI_WECHAT_APP_ID,redirectUri:process.env.SHENYI_WECHAT_REDIRECT_URI};
-  const vault=createDeviceKeyVault({directory:installedVault??isolatedPreview?.deviceVaultDirectory??resolveDeviceVaultDirectory(),safeStorage});
-  const client=createTeamClient({baseUrl:API_BASE,...(serviceConfiguration.profile?{trustedService:serviceConfiguration.profile}:{}),...(isolatedPreview?{isolatedPreview:isolatedPreview.profile}:{}),wechatPolicy,openAuthorization:url=>shell.openExternal(url),openCheckoutExternal:url=>shell.openExternal(url),
+  const vault=createDeviceKeyVault({directory:installedVault??ownerReviewCheckout?.deviceVaultDirectory??isolatedPreview?.deviceVaultDirectory??resolveDeviceVaultDirectory(),safeStorage});
+  let ownerReviewWindows=null;
+  const client=createTeamClient({baseUrl:API_BASE,...(serviceConfiguration.profile?{trustedService:serviceConfiguration.profile}:{}),...(isolatedPreview?{isolatedPreview:isolatedPreview.profile}:{}),wechatPolicy,openAuthorization:url=>shell.openExternal(url),openCheckoutExternal:url=>ownerReviewCheckout?ownerReviewWindows.open(url):shell.openExternal(url),
     deviceIdentity:{vault,platform:process.platform,displayName:process.platform==='darwin'?'我的Mac电脑':'我的Windows电脑'}});
   const win=new BrowserWindow({width:1210,height:800,minWidth:840,minHeight:600,show:false,title:'审易 · 团队采集预览',backgroundColor:'#f5f6f2',
     webPreferences:{preload:path.join(__dirname,'preload.cjs'),session:isolated,nodeIntegration:false,nodeIntegrationInWorker:false,contextIsolation:true,sandbox:true,webSecurity:true,allowRunningInsecureContent:false,webviewTag:false,devTools:!app.isPackaged}});
-  if(isolatedPreview)win.on('page-title-updated',event=>event.preventDefault());
+  if(ownerReviewCheckout)ownerReviewWindows=ownerReviewSupport.createOwnerReviewCheckoutWindows({context:ownerReviewCheckout,parent:win,BrowserWindow,session});
+  if(isolatedPreview||ownerReviewCheckout)win.on('page-title-updated',event=>event.preventDefault());
   Menu.setApplicationMenu(null);
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   win.webContents.on('will-navigate',(event,url)=>{if(url!==APP_URL)event.preventDefault();});
@@ -89,15 +106,15 @@ async function main() {
   const pauseConnection=()=>client.pauseDeviceConnection();
   const resumeConnection=()=>{pauseConnection();checkConnection();};
   powerMonitor.on('suspend',pauseConnection);powerMonitor.on('resume',resumeConnection);
-  win.on('closed',()=>{clearInterval(heartbeat);powerMonitor.removeListener('suspend',pauseConnection);powerMonitor.removeListener('resume',resumeConnection);dispose();vault.dispose();app.quit();});
+  win.on('closed',()=>{ownerReviewWindows?.closeAll();clearInterval(heartbeat);powerMonitor.removeListener('suspend',pauseConnection);powerMonitor.removeListener('resume',resumeConnection);dispose();vault.dispose();app.quit();});
   app.on('second-instance',()=>{if(win.isMinimized())win.restore();win.show();win.focus();});
-  await win.loadURL(APP_URL);if(isolatedPreview)win.setTitle('审易 · 独立合成候选预览 · '+isolatedPreview.candidateId.slice(0,8));win.show();
+  await win.loadURL(APP_URL);if(isolatedPreview)win.setTitle('审易 · 独立合成候选预览 · '+isolatedPreview.candidateId.slice(0,8));if(ownerReviewCheckout)win.setTitle('审易 · 独立官网账务评审 · '+ownerReviewCheckout.candidateId.slice(0,8));win.show();
 }
 main().catch(error=>{
   console.error('审易团队客户端启动失败。请检查本机环境与配置。');
   if(app.isPackaged===true&&process.platform==='darwin'&&error?.code==='TEAM_SERVICE_CONFIGURATION_INVALID'){
     try{dialog.showErrorBox('审易无法启动','请联系管理员检查此电脑的团队服务配置。');}catch{}
   }
-  if(app.isPackaged===true||Object.hasOwn(process.env,'SHENYI_ISOLATED_PREVIEW_CONFIG'))app.exit(1);else app.quit();
+  if(app.isPackaged===true||Object.hasOwn(process.env,'SHENYI_ISOLATED_PREVIEW_CONFIG')||Object.hasOwn(process.env,'SHENYI_OWNER_REVIEW_WEBSITE_CHECKOUT'))app.exit(1);else app.quit();
 });
 app.on('window-all-closed',()=>app.quit());

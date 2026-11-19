@@ -47,6 +47,7 @@
     "desktop/material-preview/preview.css",
     "desktop/material-preview/preview.js",
     "desktop/my-device-client.cjs",
+    "desktop/owner-review-checkout.cjs",
     "desktop/preload.cjs",
     "desktop/project-materials-client.cjs",
     "desktop/project-materials.cjs",

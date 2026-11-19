@@ -24,6 +24,8 @@ node scripts/website-preview.mjs --build D:/codex-temp/shenyi-website-static
 
 ## 官网下单演练
 
+Windows 双人评审包完整解压后，双击 [Start-Team-Website-Checkout-Candidate.cmd](../Start-Team-Website-Checkout-Candidate.cmd)。用启动窗口显示的合成账号登录并绑定本轮电脑，再从「订阅与席位」打开专用官网窗口。关闭桌面应用后，本轮 HTTPS 服务停止。
+
 本团队技术管理员可在已绑定的客户端展开「订阅与席位」，点击「在官网生成合成订单」。官网显示团队、年费和席位，确认后生成一笔待处理的团队年费订单，并显示原订单编号。回到客户端刷新可核对订单。
 
 此演练由 `scripts/website-checkout-preview.mjs` 的 `startWebsiteCheckoutPreview({db, key, cert, billingSimulation})` 启动，官网订单页及团队 API 同在一个回环 HTTPS 地址。演练方须提供单独初始化的合成库（`team_database_metadata` 中 `website-checkout-demo=true`）、本机演练证书与密钥，以及一条合成年费报价和每席价格。仅在演练客户端使用工厂返回的 `profile`。配置 v3 包含 `apiBase`、`serverId` 和 `checkoutOrigin`，目前单独用于官网演练。微信扫码的 v2 配置保持原入口。
