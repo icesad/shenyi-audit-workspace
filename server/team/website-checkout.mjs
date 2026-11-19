@@ -18,6 +18,7 @@ const TTL_MS = 120_000;
 const SEAT_QUOTE_TTL_MS = 60_000;
 const MAX_OUTSTANDING = 256;
 const SEAT_PRODUCT = 'team-seat-addition';
+const ORDER_STATES = new Set(['pending','payment-verified','paid','closed']);
 const seatRoutes = new Map([
   [SEAT_CONTEXT,['handoff']],
   [SEAT_QUOTE,['handoff','offerId','offerRevision','quantity']],
@@ -126,18 +127,24 @@ function teamName(db,teamId) {
   return safeMemberText(profile?.name,teamId);
 }
 
+function receiptStatus(order) {
+  if (!ORDER_STATES.has(order.status)) conflict();
+  if (order.paymentException || (order.closure && order.status === 'payment-verified')) return 'payment-review';
+  return order.status;
+}
+
 function projectedOrder(order) {
-  if (order.status !== 'pending' || order.simulation !== true || order.offer.currency !== 'CNY' ||
+  if (order.simulation !== true || order.offer.currency !== 'CNY' ||
       !integer(order.renewalSeats?.selectedSeats)) conflict();
   return {id:order.id,amountMinor:order.offer.amountMinor,seats:order.renewalSeats.selectedSeats,
-    createdAt:order.createdAt,status:'pending',currency:'CNY'};
+    createdAt:order.createdAt,status:receiptStatus(order),currency:'CNY'};
 }
 
 function projectedSeatOrder(order) {
-  if (order.status !== 'pending' || order.simulation !== true || order.offer.product !== SEAT_PRODUCT ||
+  if (order.simulation !== true || order.offer.product !== SEAT_PRODUCT ||
       order.offer.currency !== 'CNY') conflict();
   return {id:order.id,amountMinor:order.offer.amountMinor,seats:order.quantity,createdAt:order.createdAt,
-    status:'pending',currency:'CNY',termEndsAt:order.termEndsAt,quoteExpiresAt:order.quoteExpiresAt};
+    status:receiptStatus(order),currency:'CNY',termEndsAt:order.termEndsAt,quoteExpiresAt:order.quoteExpiresAt};
 }
 
 function seatCheckout(path, body, state, options) {

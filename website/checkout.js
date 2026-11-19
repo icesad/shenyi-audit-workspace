@@ -8,8 +8,16 @@
   const submit = byId('create-order');
   const recover = byId('recover-context');
   const statusPanel = byId('status-panel');
+  const content = byId('checkout-content');
   const maxInteger = BigInt(Number.MAX_SAFE_INTEGER);
   const moneyInteger = (value, minimum = 0) => Number.isSafeInteger(value) && !Object.is(value, -0) && value >= minimum;
+  const orderStates = {
+    pending: '待处理（模拟）',
+    paid: '已到账（模拟）',
+    'payment-verified': '已核验，待到账（模拟）',
+    closed: '已关闭（模拟）',
+    'payment-review': '待复核（模拟）',
+  };
   let handoff = '';
   let context = null;
   let busy = false;
@@ -47,7 +55,8 @@
     return exact(order, ['id', 'amountMinor', 'seats', 'createdAt', 'status', 'currency']) &&
       typeof order.id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(order.id) &&
       moneyInteger(order.amountMinor, 1) && moneyInteger(order.seats) && moneyInteger(order.createdAt, 1) &&
-      order.createdAt <= 8_640_000_000_000_000 && order.status === 'pending' && order.currency === 'CNY';
+      order.createdAt <= 8_640_000_000_000_000 && typeof order.status === 'string' &&
+      Object.hasOwn(orderStates, order.status) && order.currency === 'CNY';
   }
 
   function validContext(value) {
@@ -112,23 +121,27 @@
   function renderOrder(order) {
     receipt = true;
     uncertain = false;
+    handoff = '';
+    const orderState = orderStates[order.status];
     form.hidden = true;
     byId('receipt-panel').hidden = false;
     byId('receipt-id').textContent = order.id;
+    byId('receipt-status').textContent = orderState;
     byId('receipt-seats').textContent = numberFormat.format(order.seats) + ' 席';
     byId('receipt-created').textContent = dateFormat.format(order.createdAt) + '（北京时间）';
     byId('receipt-amount').textContent = amount(order.amountMinor);
     byId('order-total').textContent = amount(order.amountMinor);
     byId('summary-seats').textContent = numberFormat.format(order.seats) + ' 席';
     byId('summary-note').textContent = '金额与席位来自已保存的原订单回执，不随当前目录变化。';
-    status('原订单已确认', '本次模拟订单已保存。请保留订单编号；本页不会发起收款或重复提交。');
+    status('原订单已确认', order.status === 'pending' ? '本次模拟订单已保存。请保留订单编号；本页不会发起收款或重复提交。' :
+      '原订单当前状态为' + orderState + '。可返回桌面核对团队账务。');
     controls();
   }
 
   function renderContext(value, recovered) {
     context = value;
     byId('team-title').textContent = value.teamName;
-    byId('checkout-content').hidden = false;
+    content.hidden = false;
     if (value.order) {
       renderOrder(value.order);
       return;
@@ -246,14 +259,16 @@
   });
 
   window.addEventListener('pagehide', () => {
+    if (closed) return;
     closed = true;
     handoff = '';
     context = null;
     if (activeController) activeController.abort();
+    busy = false;
     controls();
-  });
-  window.addEventListener('pageshow', (event) => {
-    if (event.persisted && closed) status('请从桌面重新打开', '本页授权已在离开页面时清除。请从审易桌面客户端重新打开订单页。');
+    content.hidden = true;
+    content.replaceChildren();
+    status('请从桌面重新打开', '本页授权已在离开页面时清除。请从审易桌面客户端重新打开订单页。');
   });
 
   if (handoff) loadContext();

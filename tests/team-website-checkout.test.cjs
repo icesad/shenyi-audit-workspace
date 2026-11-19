@@ -77,6 +77,49 @@ test('same browser intention is idempotent under concurrent posts and rejects ch
  assert.deepEqual(f.facts(),before);
 });
 
+test('annual checkout recovers a lost order response after a trusted settlement without changing the ledger',async t=>{
+ const f=await fixture(t);
+ const ticket=await f.ticket();
+ const created=await f.order(ticket);
+ assert.equal(created.status,201);
+ const original=created.data.order;
+ const {signSimulationPayment}=await source('billing-simulation.mjs');
+ const {body,signature}=signSimulationPayment({
+  protocol:'shenyi-simulation-payment-v1',merchantId:f.billingSimulation.merchantId,
+  eventId:randomUUID(),transactionId:randomUUID(),orderId:original.id,product:OFFER.product,
+  amountMinor:original.amountMinor,currency:'CNY',status:'succeeded',paidAt:f.clock.value,
+ },f.billingSimulation);
+ const notification=()=>new Request(SITE+'/api/billing/simulation/notifications',{
+  method:'POST',headers:{'Content-Type':'application/json','X-Shenyi-Simulation-Signature':signature},body,
+ });
+ isError(await f.dispatch(notification()),404,'NOT_FOUND');
+ assert.equal((await f.dispatch(notification(),{websiteCheckout:null})).status,200);
+ const {readAnnualOrder}=await source('billing-store.mjs');
+ assert.equal(readAnnualOrder(f.db,'team-a',original.id).status,'paid');
+
+ const settled=f.facts();
+ const originalRows=f.orderRows();
+ const changes=()=>f.db.prepare('SELECT total_changes() AS count').get().count;
+ const beforeLookup=changes();
+ const reopened=await f.context(ticket);
+ assert.equal(reopened.status,200,JSON.stringify(reopened.data));
+ assert.deepEqual(reopened.data.order,{...original,status:'paid'});
+ noPrivateFields(reopened.data,f.admin);
+ const retried=await f.order(ticket);
+ assert.equal(retried.status,201,JSON.stringify(retried.data));
+ assert.deepEqual(retried.data.order,reopened.data.order);
+ isError(await f.order(ticket,{selectedSeats:SEATS+1}),409,'WEBSITE_CHECKOUT_CONFLICT');
+ assert.equal(changes(),beforeLookup);
+
+ const otherTicket=await f.ticket();
+ assert.equal((await f.context(otherTicket)).data.order,null);
+ assert.equal((await f.api('/api/auth/logout',{method:'POST',session:f.admin,body:{}})).status,200);
+ isError(await f.context(ticket),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+ isError(await f.order(ticket),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+ assert.deepEqual(f.orderRows(),originalRows);
+ assert.deepEqual(f.facts(),settled);
+});
+
 test('website never accepts client prices, identities, currency or alternate seat-product fields',async t=>{
  const f=await fixture(t),ticket=await f.ticket(),before=f.facts(),orders=f.orderRows();
  for(const change of [{amountMinor:1},{merchantId:'another-merchant'},{actorId:'manager-a'},{teamId:'team-b'},{currency:'USD'},{quantity:1},{selectedSeats:-1},{selectedSeats:1.5}]){

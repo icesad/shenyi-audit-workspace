@@ -16,4 +16,4 @@
 
 `GET /api/auth/billing/access` 返回当前设备会话可操作的账务团队。`GET /api/teams/:teamId/billing/overview` 在一次读取中返回该团队的期限、席位和可用方案。带 `X-Shenyi-Billing-View: expiry-reminder-v1` 的账务概览请求在符合条件时会额外返回 `subscription.renewalReminderDays` 整数，范围为 1–30。服务端保持旧请求的响应字段，客户端也接受未返回该字段的旧服务。单笔查阅使用 `GET /api/teams/:teamId/billing/orders/:orderId` 或 `GET /api/teams/:teamId/billing/seat-orders/:orderId`。IPC 限定为查权限、查概览、列订单、查单笔、建单和核对订单，主进程校验参数及业务响应。受管服务提供只读概览，模拟订单操作由现有配置与授权单独控制。
 
-Windows 原生验收使用独立的 Electron 配置、合成账号和新建 SQLite，运行 `node desktop/billing-orders-smoke.cjs`。合成金额仅供流程测试。正式价格、真实支付和退款、官网收款入口及 macOS 原生验收仍待交付。
+Windows 原生验收使用独立的 Electron 配置、合成账号和新建 SQLite，运行 `node desktop/billing-orders-smoke.cjs`。合成金额仅供流程测试。正式下单和付款集中在官网。正式价格、商户接入、真实支付和退款及 macOS 原生验收仍待交付。 [官网下单演练](../website/README.md#官网下单演练)

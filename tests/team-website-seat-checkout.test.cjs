@@ -52,6 +52,37 @@ function noPrivate(value,admin){
  function visit(node){if(node&&typeof node==='object')for(const [key,part] of Object.entries(node)){assert.equal(denied.has(key),false,key);visit(part);}}visit(value);
 }
 
+async function settleSeatOrder(f,order){
+ const {signSimulationPayment,SEAT_PRODUCT}=await source('billing-simulation.mjs');
+ const {body,signature}=signSimulationPayment({
+  protocol:'shenyi-simulation-payment-v1',merchantId:f.billingSimulation.merchantId,
+  eventId:randomUUID(),transactionId:randomUUID(),orderId:order.id,product:SEAT_PRODUCT,
+  amountMinor:order.amountMinor,currency:'CNY',status:'succeeded',paidAt:f.clock.value,
+ },f.billingSimulation);
+ const notification=()=>new Request(SITE+'/api/billing/simulation/notifications',{
+  method:'POST',headers:{'Content-Type':'application/json','X-Shenyi-Simulation-Signature':signature},body,
+ });
+ error(await f.dispatch(notification()),404,'NOT_FOUND');
+ assert.equal((await f.dispatch(notification(),{websiteCheckout:null})).status,200);
+}
+
+async function assertRecoveredSeatOrder(f,ticket,quote,original,status){
+ const settled=f.facts();
+ const originalRows=f.orders();
+ const changes=()=>f.db.prepare('SELECT total_changes() AS count').get().count;
+ const beforeLookup=changes();
+ const reopened=await f.context(ticket);
+ assert.equal(reopened.status,200,JSON.stringify(reopened.data));
+ assert.deepEqual(reopened.data.order,{...original,status});
+ noPrivate(reopened.data,f.admin);
+ const retry=await f.create(ticket,quote.id);
+ assert.equal(retry.status,201,JSON.stringify(retry.data));
+ assert.deepEqual(retry.data.order,reopened.data.order);
+ assert.equal(changes(),beforeLookup);
+ assert.deepEqual(f.orders(),originalRows);
+ assert.deepEqual(f.facts(),settled);
+}
+
 test('seat context, independently rounded quote and immutable pending order preserve the exact term and all existing rights',async t=>{
  const f=await fixture(t),ticket=await f.ticket(),before=f.facts(),context=await f.context(ticket);
  assert.equal(context.status,200,JSON.stringify(context.data));assert.deepEqual(Object.keys(context.data).sort(),['offer','order','simulation','teamName','termEndsAt']);
@@ -64,6 +95,53 @@ test('seat context, independently rounded quote and immutable pending order pres
  assert.deepEqual((await f.context(ticket)).data.order,result.data.order);
  const raw=(await source('seat-order-store.mjs')).readSeatOrder(f.db,'team-a',result.data.order.id);assert.equal(raw.termRevision,1);assert.equal(raw.offer.amountMinor,7501);assert.equal(raw.status,'pending');assert.equal(raw.confirmedAt,null);assert.equal(raw.grant,null);
  assert.deepEqual(f.facts(),before);assert.equal(f.db.prepare('PRAGMA quick_check').get().quick_check,'ok');assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('seat checkout recovers a lost order response after trusted settlement without repricing or regranting',async t=>{
+ const f=await fixture(t);
+ const ticket=await f.ticket();
+ const quote=await f.q(ticket);
+ const created=await f.create(ticket,quote.id);
+ assert.equal(created.status,201);
+ const original=created.data.order;
+ await settleSeatOrder(f,original);
+ const {readSeatOrder}=await source('seat-order-store.mjs');
+ assert.equal(readSeatOrder(f.db,'team-a',original.id).status,'paid');
+ await assertRecoveredSeatOrder(f,ticket,quote,original,'paid');
+});
+
+test('seat checkout can recover its closed order then reports later verified money for review',async t=>{
+ const f=await fixture(t,{remaining:90000});
+ const ticket=await f.ticket();
+ const quote=await f.q(ticket);
+ const created=await f.create(ticket,quote.id);
+ assert.equal(created.status,201);
+ const original=created.data.order;
+ f.clock.value=original.quoteExpiresAt;
+ assert.ok(f.clock.value<ticket.expiresAt);
+ const {signSimulationOrderClosure}=await source('billing-order-closure.mjs');
+ const {SEAT_PRODUCT}=await source('billing-simulation.mjs');
+ const {body,signature}=signSimulationOrderClosure({
+  protocol:'shenyi-simulation-order-closure-v1',merchantId:f.billingSimulation.merchantId,
+  eventId:randomUUID(),orderId:original.id,product:SEAT_PRODUCT,amountMinor:original.amountMinor,
+  currency:'CNY',status:'closed',closedAt:f.clock.value,
+ },f.billingSimulation);
+ const request=new Request(SITE+'/api/billing/simulation/order-closures',{
+  method:'POST',headers:{'Content-Type':'application/json','X-Shenyi-Simulation-Signature':signature},body,
+ });
+ const trustedConfiguration={...f.billingSimulation,timeoutClosure:{annualTimeoutMs:1000}};
+ const closure=await f.dispatch(request,{websiteCheckout:null,billingSimulation:trustedConfiguration});
+ assert.equal(closure.status,200,JSON.stringify(closure.data));
+ const {readSeatOrder}=await source('seat-order-store.mjs');
+ assert.equal(readSeatOrder(f.db,'team-a',original.id).status,'closed');
+ await assertRecoveredSeatOrder(f,ticket,quote,original,'closed');
+
+ await settleSeatOrder(f,original);
+ const ledger=readSeatOrder(f.db,'team-a',original.id);
+ assert.equal(ledger.status,'payment-verified');
+ assert.equal(ledger.grant,null);
+ assert.ok(ledger.closure);
+ await assertRecoveredSeatOrder(f,ticket,quote,original,'payment-review');
 });
 
 test('seat and annual handoff scopes cannot be interchanged and a quote cannot be used by a different seat intention',async t=>{
