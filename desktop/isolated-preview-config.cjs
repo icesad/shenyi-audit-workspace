@@ -1,6 +1,6 @@
 'use strict';
 // Unpackaged synthetic previews only; production HTTPS validation stays separate.
-const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),{constants}=require('node:fs'),{randomUUID}=require('node:crypto');
+const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),{constants}=require('node:fs'),{randomUUID,X509Certificate}=require('node:crypto');
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const KIND='shenyi-isolated-preview-v1',ROOT_MARKER=JSON.stringify({schemaVersion:1,kind:'shenyi-isolated-preview-root'})+'\n',MAX=4096;
 const OWNER_REVIEW_RUNTIME_MARKER='{"schemaVersion":1,"kind":"shenyi-owner-review-windows-x64"}\n';
@@ -100,4 +100,40 @@ async function loadIsolatedPreviewConfiguration({env=process.env,isPackaged=fals
   if(text!==JSON.stringify({schemaVersion:1,kind:KIND,candidateId,...profile})+'\n')throw invalid();return Object.freeze({...p,profile});
  }catch{throw invalid();}
 }
-module.exports={OWNER_REVIEW_RUNTIME_MARKER,loadOwnerReviewRuntime,defaultIsolatedPreviewRoot,validateIsolatedPreviewProfile,prepareIsolatedPreviewDirectory,writeIsolatedPreviewConfiguration,loadIsolatedPreviewConfiguration};
+async function loadOwnerReviewManagedPilotConfiguration({env=process.env,isPackaged=false,platform=process.platform,arch=process.arch,userDataDirectory,profile,appRoot}={}){
+ try{
+  if(!env||typeof env!=='object')throw invalid();
+  const flag='SHENYI_OWNER_REVIEW_MANAGED_PILOT';if(!Object.hasOwn(env,flag))return null;
+  if(field(env,flag)!=='1'||isPackaged!==false||platform!=='win32'||arch!=='x64')throw invalid();
+  for(const name of ['SHENYI_ISOLATED_PREVIEW_CONFIG','SHENYI_TEAM_API','SHENYI_TEAM_REVIEW_DEMO','SHENYI_OWNER_REVIEW_WEBSITE_CHECKOUT','SHENYI_TEAM_BILLING_DEMO','SHENYI_TEAM_PILOT_DEMO'])if(Object.hasOwn(env,name))throw invalid();
+  if(Object.hasOwn(env,'NODE_TLS_REJECT_UNAUTHORIZED')&&field(env,'NODE_TLS_REJECT_UNAUTHORIZED')!=='1')throw invalid();
+  for(const name of ['NODE_OPTIONS','SSL_CERT_FILE','SSL_CERT_DIR','OPENSSL_CONF','OPENSSL_MODULES','NODE_USE_SYSTEM_CA','NODE_USE_ENV_PROXY','ELECTRON_DISABLE_SANDBOX'])if(Object.hasOwn(env,name))throw invalid();
+  if(process.argv.some(value=>/^--(?:ignore-certificate-errors(?:-spki-list)?|allow-insecure-localhost|disable-web-security|no-sandbox|disable-setuid-sandbox)(?:=|$)/.test(value)))throw invalid();
+  const portable=await loadOwnerReviewRuntime({appRoot,platform,arch});if(!portable)throw invalid();
+  const ownedPath=value=>{const full=absolute(value);if(!/^[A-Za-z]:[\\/]/.test(value)||value.slice(3).split(/[\\/]/).some(part=>/[:*?"<>|]|[. ]$|^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³])(?:\.|$)/i.test(part)))throw invalid();return full;};
+  const filename=ownedPath(field(env,'SHENYI_TEAM_SERVICE_CONFIG')),directory=path.dirname(filename),name=path.basename(directory),candidateId=name.slice('candidate-'.length),root=path.dirname(directory);
+  const inside=(parent,child)=>{const relative=path.relative(parent,child);return !path.isAbsolute(relative)&&relative!=='..'&&!relative.startsWith('..'+path.sep);};
+  if(path.basename(filename)!=='managed-pilot-service.json'||name!=='candidate-'+candidateId||!UUID.test(candidateId)||path.basename(root)!=='ShenyiManagedPilotReview'||inside(portable.appRoot,directory)||inside(APP_ROOT,directory))throw invalid();
+  await noLinks(root);await noLinks(directory);
+  if(await readRegular(path.join(root,'managed-pilot-review-root.json'),{singleLink:true})!=='{"schemaVersion":1,"kind":"shenyi-managed-pilot-review-root"}\n')throw invalid();
+  const descriptor=exact(profile,['schemaVersion','apiBase','serverId']),apiBase=descriptor.apiBase.value,serverId=descriptor.serverId.value,match=typeof apiBase==='string'&&/^https:\/\/127\.0\.0\.1:([1-9]\d{3,4})$/.exec(apiBase);
+  if(descriptor.schemaVersion.value!==1||typeof serverId!=='string'||!UUID.test(serverId)||!match||Number(match[1])<1024||Number(match[1])>65535||[8773,8774].includes(Number(match[1]))||new URL(apiBase).origin!==apiBase)throw invalid();
+  const trusted=Object.freeze({schemaVersion:1,apiBase,serverId}),configText=await readRegular(filename,{singleLink:true});if(configText!==JSON.stringify(trusted)+'\n')throw invalid();
+  const desktopDataDirectory=path.join(directory,'desktop-data'),localAppDataDirectory=path.join(directory,'local-app-data'),roamingAppDataDirectory=path.join(directory,'roaming-app-data'),temporaryDirectory=path.join(directory,'temp');
+  const deviceVaultDirectory=path.join(localAppDataDirectory,'ShenyiTeamPreview','device-vault'),caFile=path.join(directory,'managed-pilot-ca.pem'),databasePath=path.join(directory,'managed-owner','team.sqlite'),originalFile=path.join(directory,'managed-pilot-original.txt');
+  for(const [variable,expected]of [['SHENYI_DESKTOP_DATA_DIR',desktopDataDirectory],['LOCALAPPDATA',localAppDataDirectory],['APPDATA',roamingAppDataDirectory],['TEMP',temporaryDirectory],['TMP',temporaryDirectory],['TMPDIR',temporaryDirectory],['NODE_EXTRA_CA_CERTS',caFile]])if(!samePath(ownedPath(field(env,variable)),expected))throw invalid();
+  if(!samePath(ownedPath(userDataDirectory),desktopDataDirectory))throw invalid();
+  for(const required of [desktopDataDirectory,localAppDataDirectory,roamingAppDataDirectory,temporaryDirectory,path.dirname(databasePath)])await noLinks(required);
+  await noLinks(deviceVaultDirectory,true);
+  const receiptText=await readRegular(path.join(directory,'started.json'),{singleLink:true}),receipt=JSON.parse(receiptText);
+  exact(receipt,['schemaVersion','kind','candidateId','directory','databasePath','apiBase','serverId','desktopDataDirectory','deviceVaultDirectory','configFile','caFile','originalFile','originalBytes','originalSha256','tlsFingerprint256','tlsExpiresAt','launcherPid','startedAt','syntheticOnly','initialUsers','initialTeams','initialSeatGrants','externalSms','wechat','billingSimulation']);
+  if(receiptText!==JSON.stringify(receipt,null,2)+'\n'||receipt.schemaVersion!==1||receipt.kind!=='shenyi-owner-review-managed-pilot-started'||receipt.candidateId!==candidateId||receipt.apiBase!==apiBase||receipt.serverId!==serverId||receipt.syntheticOnly!==true||receipt.initialUsers!==1||receipt.initialTeams!==0||receipt.initialSeatGrants!==0||receipt.externalSms!==false||receipt.wechat!==false||receipt.billingSimulation!==false||receipt.originalBytes!==2048||typeof receipt.originalSha256!=='string'||!/^[a-f0-9]{64}$/.test(receipt.originalSha256)||typeof receipt.tlsFingerprint256!=='string'||!/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/.test(receipt.tlsFingerprint256)||!Number.isSafeInteger(receipt.launcherPid)||receipt.launcherPid<1||!Number.isSafeInteger(receipt.tlsExpiresAt))throw invalid();
+  for(const [key,expected]of Object.entries({directory,databasePath,desktopDataDirectory,deviceVaultDirectory,configFile:filename,caFile,originalFile}))if(!samePath(ownedPath(receipt[key]),expected))throw invalid();
+  const pem=await readRegular(caFile,{singleLink:true});if(!/^-----BEGIN CERTIFICATE-----\r?\n(?:[A-Za-z0-9+/=]+\r?\n)+-----END CERTIFICATE-----(?:\r?\n)?$/.test(pem))throw invalid();
+  const ca=new X509Certificate(pem),at=Date.now(),startsAt=ca.validFromDate.getTime(),endsAt=ca.validToDate.getTime(),startedAt=typeof receipt.startedAt==='string'?Date.parse(receipt.startedAt):NaN;
+  if(ca.ca!==true||ca.subject!==ca.issuer||!ca.verify(ca.publicKey)||ca.publicKey.asymmetricKeyType!=='ec'||ca.publicKey.asymmetricKeyDetails?.namedCurve!=='prime256v1'||ca.subjectAltName!==undefined||ca.keyUsage!==undefined||!Number.isFinite(startsAt)||!Number.isFinite(endsAt)||startsAt>at||endsAt<=at||endsAt-startsAt>8*60*60*1000+2*60*1000||endsAt<=startsAt||receipt.tlsExpiresAt!==endsAt||!Number.isFinite(startedAt)||new Date(startedAt).toISOString()!==receipt.startedAt||startedAt<startsAt||startedAt>at+60000)throw invalid();
+  await noLinks(directory);await noLinks(deviceVaultDirectory,true);
+  return Object.freeze({kind:'shenyi-owner-review-managed-pilot-v1',candidateId,directory,configFile:filename,caFile,databasePath,originalFile,desktopDataDirectory,deviceVaultDirectory,localAppDataDirectory,roamingAppDataDirectory,temporaryDirectory,profile:trusted});
+ }catch{throw invalid();}
+}
+module.exports={OWNER_REVIEW_RUNTIME_MARKER,loadOwnerReviewRuntime,defaultIsolatedPreviewRoot,validateIsolatedPreviewProfile,prepareIsolatedPreviewDirectory,writeIsolatedPreviewConfiguration,loadIsolatedPreviewConfiguration,loadOwnerReviewManagedPilotConfiguration};

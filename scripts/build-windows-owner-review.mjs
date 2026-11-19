@@ -17,6 +17,8 @@ const reviewFiles = new Map([
   ['scripts/team-isolated-preview.mjs', 'scripts/team-isolated-preview.mjs'],
   ['scripts/team-billing-preview-fixture.mjs', 'scripts/team-billing-preview-fixture.mjs'],
   ['scripts/team-pilot-preview-fixture.mjs', 'scripts/team-pilot-preview-fixture.mjs'],
+  ['scripts/team-managed-pilot-owner-review.mjs', 'scripts/team-managed-pilot-owner-review.mjs'],
+  ['scripts/owner-review-managed-pilot-service.mjs', 'scripts/owner-review-managed-pilot-service.mjs'],
   ['scripts/team-website-checkout-owner-review.mjs', 'scripts/team-website-checkout-owner-review.mjs'],
   ['scripts/owner-review-checkout-certificate.mjs', 'scripts/owner-review-checkout-certificate.mjs'],
   ['scripts/website-checkout-preview.mjs', 'scripts/website-checkout-preview.mjs'],
@@ -31,6 +33,7 @@ const reviewFiles = new Map([
   ['website/checkout-seats.js', 'website/checkout-seats.js'],
   ['website/README.md', 'website/README.md'],
   ['docs/PILOT_OWNER_REVIEW.md', 'docs/PILOT_OWNER_REVIEW.md'],
+  ['docs/PILOT_MANAGED_FIRST_TASK.md', 'docs/PILOT_MANAGED_FIRST_TASK.md'],
   ['docs/PILOT_WORKPAPER_REHEARSAL.md', 'docs/PILOT_WORKPAPER_REHEARSAL.md'],
   ['docs/TEAM_PILOT_REHEARSAL.md', 'docs/TEAM_PILOT_REHEARSAL.md'],
   ['docs/M5_LOCAL_ACCEPTANCE.md', 'docs/M5_LOCAL_ACCEPTANCE.md'],
@@ -38,6 +41,7 @@ const reviewFiles = new Map([
 ]);
 const launches = new Map([
   ['Start-Team-Pilot-Candidate.cmd', ['team-isolated-preview.mjs', '--pilot-demo']],
+  ['Start-Team-Managed-Pilot-Candidate.cmd', ['team-managed-pilot-owner-review.mjs']],
   ['Start-Team-Billing-Candidate.cmd', ['team-isolated-preview.mjs', '--billing-demo']],
   ['Start-Team-Website-Checkout-Candidate.cmd', ['team-website-checkout-owner-review.mjs']],
   ['Start-Website-Preview.cmd', ['website-preview.mjs', '--open']],
