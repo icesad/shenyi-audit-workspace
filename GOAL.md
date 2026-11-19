@@ -1,5 +1,9 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-20 M7BH macOS 正式 ZIP 接收核验
+
+新增 macOS 正式 ZIP 接收入口。跨平台核对可信 SHA-256、正式标识、版本和 Mach-O 架构。Mac 核验入口对同一私有副本展开后的应用调用 Apple 签名和公证检查。独立工具包从实际解包目录复验两种架构的完整合成 ZIP，通过 79 项相关回归。真实 Mac 的解包、Apple 签名、公证、Finder 和升级仍待验。Windows 一键沿用既有实测，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-macos-release-receipt-20261120/verification.json`。
+
 ## 2026-11-20 M7BG Linux 发布目录完整性复核
 
 Linux 签名暂存现在记录服务代码、生产依赖、目录和只读权限的摘要。激活在运行候选前和停服前分别复核，恢复时也比对已记录的摘要。隔离 Ubuntu 验证四种文件变动在停服前被拒，原样候选通过实际 systemd 切换和双路 HTTPS，SQLite 与合成原件保持。12 组 Python 验证和 49 项相关回归通过。Windows 一键沿用上轮实测，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-staging-integrity-20261120/verification.json`。

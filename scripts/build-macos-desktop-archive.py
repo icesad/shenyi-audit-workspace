@@ -21,6 +21,7 @@ from zipfile import BadZipFile, ZipFile, ZipInfo, ZIP_DEFLATED, ZIP_STORED
 SOURCE_APP = 'Electron.app'
 APP = 'Shenyi.app'
 BUNDLE_ID = 'invalid.shenyi.audit.candidate'
+APPLE_METADATA = '__MACOSX'
 RESOURCES = ('Contents', 'Resources')
 DEFAULT_APP = (SOURCE_APP, *RESOURCES, 'default_app.asar')
 PAYLOAD = (APP, *RESOURCES, 'app')
@@ -33,6 +34,7 @@ CHUNK = 1024 * 1024
 VERIFY_MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
 VERIFY_MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
 VERIFY_MAX_ENTRIES = 20000
+VERIFY_MAX_APPLEDOUBLE_BYTES = 16 * CHUNK
 
 
 def checked_parts(value, *, relative_link=False):
@@ -353,7 +355,52 @@ def verify_zip_envelope(handle, size):
     return count
 
 
-def candidate_inventory(archive, expected_count, archive_size):
+def verify_appledouble(archive, info):
+    if not 26 <= info.file_size <= VERIFY_MAX_APPLEDOUBLE_BYTES:
+        raise ValueError('Invalid Mac ZIP AppleDouble size')
+    with archive.open(info) as source:
+        header = source.read(26)
+        if len(header) != 26:
+            raise ValueError('Incomplete Mac ZIP AppleDouble header')
+        magic, version, count = struct.unpack('>II16xH', header)
+        table_end = 26 + 12 * count
+        if (magic, version) != (0x00051607, 0x00020000) or not 1 <= count <= 64 or table_end > info.file_size:
+            raise ValueError('Invalid Mac ZIP AppleDouble header')
+        table = source.read(12 * count)
+    if len(table) != 12 * count:
+        raise ValueError('Incomplete Mac ZIP AppleDouble table')
+    identifiers = set()
+    ranges = []
+    for entry, offset, size in struct.iter_unpack('>III', table):
+        if entry in {0, 1} or entry in identifiers or not table_end <= offset <= offset + size <= info.file_size:
+            raise ValueError('Invalid Mac ZIP AppleDouble entry')
+        identifiers.add(entry)
+        if size:
+            ranges.append((offset, offset + size))
+    end = table_end
+    for start, stop in sorted(ranges):
+        if start < end:
+            raise ValueError('Overlapping Mac ZIP AppleDouble entries')
+        end = stop
+
+
+def verify_release_metadata(archive, entries, nodes):
+    # Ditto may emit metadata for the root .app as well as its regular descendants.
+    for parts, (info, kind) in entries.items():
+        if parts[0] != APPLE_METADATA:
+            continue
+        if kind == 'directory':
+            if len(parts) == 1 or (parts[1] == APP and nodes.get(parts[1:]) == 'directory'):
+                continue
+        elif kind == 'file' and len(parts) > 1 and parts[-1].startswith('._'):
+            target = (*parts[1:-1], parts[-1][2:])
+            if target[0] == APP and nodes.get(target) in {'file', 'directory'}:
+                verify_appledouble(archive, info)
+                continue
+        raise ValueError('Mac ZIP AppleDouble entry does not match a regular app member')
+
+
+def candidate_inventory(archive, expected_count, archive_size, *, release=False):
     entries = {}
     links = {}
     total = 0
@@ -375,16 +422,26 @@ def candidate_inventory(archive, expected_count, archive_size):
         kind = {stat.S_IFREG: 'file', stat.S_IFLNK: 'symlink', stat.S_IFDIR: 'directory'}.get(mode)
         if kind is None or info.is_dir() != (kind == 'directory') or (kind == 'directory' and info.file_size):
             raise ValueError('Invalid Mac ZIP UNIX metadata')
-        if parts[0] != APP and (len(parts) != 1 or parts[0] not in VENDOR_NOTICES or kind != 'file'):
+        if release:
+            if (info.external_attr >> 16) & 0o7000 or info.flag_bits & ~0x080e:
+                raise ValueError('Unsupported Mac release ZIP permissions or flags')
+            if parts[0] not in {APP, APPLE_METADATA}:
+                raise ValueError('Unexpected Mac release ZIP root entry')
+            if parts[0] == APP and any(part.startswith('._') for part in parts[1:]):
+                raise ValueError('Unsequestered Mac release ZIP AppleDouble name')
+        elif parts[0] != APP and (len(parts) != 1 or parts[0] not in VENDOR_NOTICES or kind != 'file'):
             raise ValueError('Unexpected Mac ZIP root entry')
         if parts in entries:
             raise ValueError('Duplicate Mac ZIP entry')
         entries[parts] = (info, kind)
     nodes = path_inventory((parts, kind) for parts, (_, kind) in entries.items())
-    if (nodes.get((APP,)) != 'directory' or any(nodes.get((name,)) != 'file' for name in VENDOR_NOTICES) or
+    if (nodes.get((APP,)) != 'directory' or
+            (not release and any(nodes.get((name,)) != 'file' for name in VENDOR_NOTICES)) or
             nodes.get((APP, *RESOURCES, 'default_app.asar')) is not None or
             nodes.get((APP, 'Contents', 'MacOS', 'Electron')) is not None):
         raise ValueError('Incomplete or unbranded Mac desktop archive')
+    if release:
+        verify_release_metadata(archive, entries, nodes)
     for parts, (info, kind) in entries.items():
         if kind == 'symlink':
             if not 0 < info.file_size <= 4096 or parts[:len(PAYLOAD)] == PAYLOAD:
@@ -403,7 +460,7 @@ def unique_json(pairs):
     return result
 
 
-def verify_candidate_contents(archive, entries, nodes, arch, version):
+def verify_candidate_contents(archive, entries, nodes, arch, version, bundle_id=BUNDLE_ID):
     main = (APP, 'Contents')
     assert_executable(archive, entries, (*main, 'MacOS', 'Shenyi'), arch)
     framework = (*main, 'Frameworks', 'Electron Framework.framework', 'Versions', 'A')
@@ -412,10 +469,11 @@ def verify_candidate_contents(archive, entries, nodes, arch, version):
     for library in ('libffmpeg.dylib', 'libvk_swiftshader.dylib'):
         assert_executable(archive, entries, (*framework, 'Libraries', library), arch, expected_type=6)
     settings, _ = read_plist(archive, entries, (*main, 'Info.plist'))
-    if (settings.get('CFBundleIdentifier') != BUNDLE_ID or settings.get('CFBundleExecutable') != 'Shenyi' or
+    if (settings.get('CFBundleIdentifier') != bundle_id or settings.get('CFBundleExecutable') != 'Shenyi' or
             settings.get('CFBundleName') != 'Shenyi' or settings.get('CFBundlePackageType') != 'APPL' or
             settings.get('CFBundleShortVersionString') != version or settings.get('CFBundleVersion') != version):
-        raise ValueError('Mac application plist does not match the candidate version or identity')
+        raise ValueError('Mac application plist does not match the candidate version or identity'
+                         if bundle_id == BUNDLE_ID else 'Mac application plist does not match the release version or identity')
     package_info = require_file(entries, (*PAYLOAD, 'package.json'))
     if not 0 < package_info.file_size <= 16384:
         raise ValueError('Invalid application package metadata size')
@@ -443,15 +501,34 @@ def verify_candidate_contents(archive, entries, nodes, arch, version):
         assert_executable(archive, entries, (*root, 'Contents', 'MacOS', name), arch)
         helper, _ = read_plist(archive, entries, (*root, 'Contents', 'Info.plist'))
         helper_id = helper.get('CFBundleIdentifier')
-        if (not isinstance(helper_id, str) or not helper_id.startswith(BUNDLE_ID + '.') or
-                not re.fullmatch(r'(?:\.[a-zA-Z0-9_-]+)+', helper_id[len(BUNDLE_ID):]) or
+        if (not isinstance(helper_id, str) or not helper_id.startswith(bundle_id + '.') or
+                not re.fullmatch(r'(?:\.[a-zA-Z0-9_-]+)+', helper_id[len(bundle_id):]) or
                 helper.get('CFBundleExecutable') != name or helper.get('CFBundleName') != name):
             raise ValueError('Invalid branded Mac helper identity')
 
 
-def verify_archive(filename, arch, version):
+def hash_held_archive(handle, expected_size):
+    handle.seek(0)
+    digest = hashlib.sha256()
+    size = 0
+    while data := handle.read(CHUNK):
+        size += len(data)
+        if size > expected_size:
+            raise ValueError('Mac archive grew during verification')
+        digest.update(data)
+    if size != expected_size:
+        raise ValueError('Mac archive changed size during verification')
+    return digest.hexdigest()
+
+
+def verify_archive(filename, arch, version, *, bundle_id=BUNDLE_ID, expected_sha256=None):
     """Read ZIP and hash the same held file; never extract or execute its contents."""
     checked_version(version)
+    release = expected_sha256 is not None
+    if release and (not re.fullmatch(r'[0-9a-f]{64}', expected_sha256) or len(bundle_id) > 255 or
+                    bundle_id.lower() == BUNDLE_ID or not re.fullmatch(r'[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', bundle_id) or
+                    any(len(part) > 16 or int(part) > (1 << 53) - 1 for part in version.split('.'))):
+        raise ValueError('Expected an approved SHA-256, formal Bundle ID and valid version')
     if not filename.is_absolute() or filename.resolve(strict=True) != filename:
         raise ValueError('Expected a canonical absolute Mac archive path')
     listed = filename.lstat()
@@ -462,10 +539,15 @@ def verify_archive(filename, arch, version):
         initial = os.fstat(handle.fileno())
         if not unchanged(listed, initial, compare_ctime=os.name != 'nt'):
             raise ValueError('Mac archive changed before verification')
+        if release:
+            if not 22 <= initial.st_size <= VERIFY_MAX_ARCHIVE_BYTES:
+                raise ValueError('Mac desktop archive exceeds the bounded ZIP size')
+            if hash_held_archive(handle, initial.st_size) != expected_sha256:
+                raise ValueError('Mac release ZIP does not match the approved SHA-256')
         count = verify_zip_envelope(handle, initial.st_size)
         with ZipFile(handle) as archive:
-            entries, nodes, links = candidate_inventory(archive, count, initial.st_size)
-            verify_candidate_contents(archive, entries, nodes, arch, version)
+            entries, nodes, links = candidate_inventory(archive, count, initial.st_size, release=release)
+            verify_candidate_contents(archive, entries, nodes, arch, version, bundle_id)
             # Bounded streaming validates every local header, expansion length and CRC.
             for info, _ in entries.values():
                 consumed = 0
@@ -476,27 +558,28 @@ def verify_archive(filename, arch, version):
                             raise ValueError('Mac ZIP member exceeds its declared length')
                 if consumed != info.file_size:
                     raise ValueError('Mac ZIP member length differs from its declaration')
-        handle.seek(0)
-        digest = hashlib.sha256()
-        size = 0
-        while data := handle.read(CHUNK):
-            size += len(data)
-            if size > initial.st_size:
-                raise ValueError('Mac archive grew during verification')
-            digest.update(data)
+        digest = hash_held_archive(handle, initial.st_size)
         final = filename.lstat()
-        if (size != initial.st_size or not unchanged(initial, os.fstat(handle.fileno())) or
+        if ((release and digest != expected_sha256) or not unchanged(initial, os.fstat(handle.fileno())) or
                 not plain_entry(final) or not unchanged(listed, final) or filename.resolve(strict=True) != filename):
             raise ValueError('Mac archive changed during verification')
-    return {'archiveEntries': len(entries), 'symlinks': len(links),
-            'appFiles': sum(kind == 'file' and parts[:len(PAYLOAD)] == PAYLOAD for parts, (_, kind) in entries.items()),
-            'bundleIdentifier': BUNDLE_ID, 'archiveSha256': digest.hexdigest(), 'archiveBytes': size}
+    result = {'archiveEntries': len(entries), 'symlinks': len(links),
+              'appFiles': sum(kind == 'file' and parts[:len(PAYLOAD)] == PAYLOAD for parts, (_, kind) in entries.items()),
+              'bundleIdentifier': bundle_id, 'archiveSha256': digest, 'archiveBytes': initial.st_size}
+    if release:
+        result.update(format='shenyi-macos-release-zip', arch=arch, version=version)
+    return result
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    verify_only = len(sys.argv) > 1 and sys.argv[1] == '--verify'
-    if verify_only:
+    mode = sys.argv[1] if len(sys.argv) > 1 else None
+    verify_only = mode in {'--verify', '--verify-release'}
+    if mode == '--verify-release':
+        parser.add_argument('--verify-release', required=True, type=Path)
+        parser.add_argument('--bundle-id', required=True)
+        parser.add_argument('--sha256', required=True, metavar='HEX')
+    elif verify_only:
         parser.add_argument('--verify', required=True, type=Path)
     else:
         parser.add_argument('electron_archive', type=Path)
@@ -506,8 +589,13 @@ def main():
     parser.add_argument('version')
     args = parser.parse_args()
     try:
-        result = (verify_archive(args.verify, args.arch, args.version) if verify_only else
-                  build(args.electron_archive, args.payload_dir, args.output_zip, args.arch, args.version))
+        if mode == '--verify-release':
+            result = verify_archive(args.verify_release, args.arch, args.version,
+                                    bundle_id=args.bundle_id, expected_sha256=args.sha256)
+        elif verify_only:
+            result = verify_archive(args.verify, args.arch, args.version)
+        else:
+            result = build(args.electron_archive, args.payload_dir, args.output_zip, args.arch, args.version)
     except (OSError, ValueError, BadZipFile, plistlib.InvalidFileException) as error:
         print(f'Mac desktop archive {"verification" if verify_only else "build"} failed: {error}', file=sys.stderr)
         return 1

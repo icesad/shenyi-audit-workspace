@@ -25,12 +25,18 @@ function invalidArguments() {
   fail('INVALID_ARGUMENTS', '请指定绝对 .app 路径、发行 Team ID、正式 Bundle ID、三段版本号及 arm64 或 x64。');
 }
 
-function validate({ app, teamId, bundleId, version, arch }) {
-  if (!path.isAbsolute(app ?? '') || path.extname(app) !== '.app' || /[\u0000-\u001f\u007f]/.test(app) ||
-      !/^[A-Z0-9]{10}$/.test(teamId ?? '') || !/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(bundleId ?? '') ||
-      bundleId.length > 255 || bundleId.toLowerCase() === candidateId ||
-      !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(version ?? '') ||
-      !version.split('.').every(part => Number.isSafeInteger(Number(part))) || !architectures.has(arch)) invalidArguments();
+export function hasMacosReleaseIdentity({ teamId, bundleId, version, arch }) {
+  return typeof teamId === 'string' && /^[A-Z0-9]{10}$/.test(teamId) &&
+    typeof bundleId === 'string' && bundleId.length <= 255 && bundleId.toLowerCase() !== candidateId &&
+    /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(bundleId) &&
+    typeof version === 'string' && /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(version) &&
+    version.split('.').every(part => Number.isSafeInteger(Number(part))) && architectures.has(arch);
+}
+
+function validate(expected) {
+  const { app } = expected;
+  if (typeof app !== 'string' || !path.isAbsolute(app) || path.extname(app) !== '.app' ||
+      /[\u0000-\u001f\u007f]/.test(app) || !hasMacosReleaseIdentity(expected)) invalidArguments();
 }
 
 function parse(args) {
