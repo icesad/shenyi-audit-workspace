@@ -18,6 +18,26 @@ test('remote profile is canonical, copied, exactly shaped and frozen',()=>{
   }
 });
 
+test('version 2 adds only a public WeChat AppID and requires a standard HTTPS domain', async t=>{
+  const profile={...PROFILE,schemaVersion:2,apiBase:'https://team.example.invalid',wechatAppId:'wx0123456789abcdef'};
+  const f=await fixture(t,JSON.stringify({...profile,apiBase:profile.apiBase+'/'}));
+  const {profile:loaded}=await loadTeamServiceConfiguration({env:f.env,isPackaged:false});
+  assert.deepEqual(loaded,profile);
+  assert.ok(Object.isFrozen(loaded));
+  for(const apiBase of ['https://localhost','https://team.example.invalid:8443','https://127.0.0.1','https://[::1]',
+    'https://team.example.invalid.','https://team_test.example.invalid','https://team..invalid','https://'+('a'.repeat(64))+'.invalid']){
+    assert.throws(()=>validateTrustedTeamService({...profile,apiBase}),invalid);
+  }
+  for(const wechatAppId of [undefined,'wx-short','wx0123456789abcdef ','WX0123456789abcdef',null,['wx0123456789abcdef']]){
+    assert.throws(()=>validateTrustedTeamService({...profile,wechatAppId}),invalid);
+  }
+  assert.throws(()=>validateTrustedTeamService({...profile,schemaVersion:1}),invalid);
+  assert.throws(()=>validateTrustedTeamService({...profile,appSecret:'unexpected-field'}),invalid);
+  assert.throws(()=>validateTrustedTeamService({...profile,redirectUri:profile.apiBase+'/api/auth/wechat/callback'}),invalid);
+  await fs.writeFile(f.filename,JSON.stringify(profile).replace(',"wechatAppId":',',"wechat\\u0041ppId":"wxAAAAAAAAAAAAAAAA","wechatAppId":'));
+  await assert.rejects(loadTeamServiceConfiguration({env:f.env,isPackaged:false}),invalid);
+});
+
 test('remote profile rejects URL rewriting, credentials, path/query/fragment and nonstring values',()=>{
   const urls=['http://team.example.invalid','https://team.example.invalid/path','https://team.example.invalid//','https://team.example.invalid?','https://team.example.invalid#','https://team.example.invalid/?x=1','https://a:b@team.example.invalid','https://@team.example.invalid','HTTPS://team.example.invalid','https://TEAM.example.invalid','https://team.example.invalid:443','https://team.example.invalid/../','https:\\team.example.invalid',' https://team.example.invalid','https://team.example.invalid\n','https://team.example.invalid\u0085','https://team.example.invalid\ud800','https://team.example.invalid/a%2fb',null,1,['https://team.example.invalid'],{toString(){throw Error('must not coerce');}}];
   for(const apiBase of urls)assert.throws(()=>validateTrustedTeamService({...PROFILE,apiBase}),invalid);

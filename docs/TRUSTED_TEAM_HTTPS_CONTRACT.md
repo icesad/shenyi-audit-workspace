@@ -12,7 +12,7 @@
 
 ## 固定客户端配置
 
-仅主进程读取受信配置。使用环境变量显式指定时，`SHENYI_TEAM_SERVICE_CONFIG` 必须是**本机绝对路径**，拒绝 UNC、设备命名空间、相对和无盘 Windows 路径。打开普通文件后有界读取最多 16 KiB + 1，超过 16 KiB 即拒绝。文件为严格 UTF-8 JSON，拒绝包括转义同名键在内的重复键，精确三个键如下。
+仅主进程读取受信配置。使用环境变量显式指定时，`SHENYI_TEAM_SERVICE_CONFIG` 必须是**本机绝对路径**，拒绝 UNC、设备命名空间、相对和无盘 Windows 路径。打开普通文件后有界读取最多 16 KiB + 1，超过 16 KiB 即拒绝。文件为严格 UTF-8 JSON，拒绝包括转义同名键在内的重复键。账号密码配置使用三个字段的版本 1。
 
 ```json
 {"schemaVersion":1,"apiBase":"https://team.example.invalid","serverId":"11111111-1111-4111-8111-111111111111"}
@@ -24,11 +24,21 @@
 
 远程拒绝禁用 TLS 校验的环境，`NODE_TLS_REJECT_UNAUTHORIZED` 只允许未设置或为 `1`。显式配置的独立演练可在自有 Node 或 Electron 子进程使用测试 CA。macOS 系统配置采用下节的信任规则。
 
-新helper `desktop/team-service-config.cjs` 公开内部函数：`validateTrustedTeamService(value)` 返回冻结的精确三键remote profile；`loadTeamServiceConfiguration({env,isPackaged})`异步返回冻结 `{mode:'local-preview',profile:null}` 或 `{mode:'remote-https',profile}`。profile来自可信部署配置不是网络JSON。`createTeamClient`新增私有参数 `trustedService`；未提供时原baseUrl限制保持，有profile时baseUrl不得另指目标、必须有有效deviceIdentity。API_BASE原导出和值保持，不把构造器选项透传preload。
+主进程内部的 `desktop/team-service-config.cjs` 提供 `validateTrustedTeamService(value)`，返回冻结的受信配置；`loadTeamServiceConfiguration({env,isPackaged})`异步返回冻结 `{mode:'local-preview',profile:null}` 或 `{mode:'remote-https',profile}`。profile来自可信部署配置不是网络JSON。`createTeamClient`新增私有参数 `trustedService`；未提供时原baseUrl限制保持，有profile时baseUrl不得另指目标、必须有有效deviceIdentity。API_BASE原导出和值保持，不把构造器选项透传preload。
+
+### 微信扫码的版本 2 配置
+
+受管服务取得微信网站应用授权并启用扫码后，可将公开 AppID 写入桌面配置。使用四个字段的版本 2。
+
+```json
+{"schemaVersion":2,"apiBase":"https://team.example.invalid","serverId":"11111111-1111-4111-8111-111111111111","wechatAppId":"wx0123456789abcdef"}
+```
+
+部署时替换示例地址、实例 UUID 和 AppID。版本 2 的 HTTPS 源地址须使用标准端口和合法域名，AppID 采用 `wx` 加 16 个 ASCII 字母或数字。客户端以该 AppID 和同一源下的 `/api/auth/wechat/callback` 校验授权地址。版本 2 以配置文件为准。版本 1 仍支持原微信环境变量。扫码入口同时要求服务端公布微信能力。AppSecret 继续保存在服务端，配置文件的其他字段仍严格校验。
 
 ### 已打包 macOS 客户端的系统配置
 
-M7Y 为 Finder 启动固定使用 `/Library/Application Support/ShenyiTeamDesktop/team-service.json`。管理员按[macOS 部署步骤](MACOS_DESKTOP_CANDIDATE.md#从-finder-启动已配置客户端)部署同一份三键配置。专用目录和文件应由 `root:wheel` 持有，分别设置为 `0755` 和 `0644`。启动使用普通账号。系统父目录、专用目录和配置文件须对该账号无实际写权限，包含 ACL 权限。
+M7Y 为 Finder 启动固定使用 `/Library/Application Support/ShenyiTeamDesktop/team-service.json`。管理员按[macOS 部署步骤](MACOS_DESKTOP_CANDIDATE.md#从-finder-启动已配置客户端)部署符合上文的版本 1 或版本 2 配置。专用目录和文件应由 `root:wheel` 持有，分别设置为 `0755` 和 `0644`。启动使用普通账号。系统父目录、专用目录和配置文件须对该账号无实际写权限，包含 ACL 权限。
 
 专用目录存在时，程序只使用固定文件，忽略环境变量 `SHENYI_TEAM_SERVICE_CONFIG` 指定的路径。若 `SHENYI_TEAM_API` 已设置，须与系统配置中的源地址一致。专用目录、配置文件或权限校验失败会显示原生错误并在发起网络连接前退出。只有专用目录完全不存在且系统父目录通过安全检查时，才可在独立测试 Mac 以原有环境变量显式提供测试配置。
 

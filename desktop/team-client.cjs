@@ -298,7 +298,8 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     }
   }
   const managedWechat=trustedService!==undefined;
-  const browserPolicy=managedWechat&&wechatPolicy?.redirectUri!==trusted.url('/api/auth/wechat/callback')?undefined:wechatPolicy;
+  const configuredPolicy=trusted?.wechatPolicy??wechatPolicy;
+  const browserPolicy=managedWechat&&configuredPolicy?.redirectUri!==trusted.url('/api/auth/wechat/callback')?undefined:configuredPolicy;
   wechat=createWechatLogin({policy:browserPolicy,openAuthorization,request,now,error:failure,getGeneration:()=>generation,isSignedIn:()=>!!token,
     cancelRemote:(route,body)=>detachedPost(route,body),revokeTemporary,
     ...(managedWechat?{linkWithDevice:linkWechatOnBoundDevice}:{}),

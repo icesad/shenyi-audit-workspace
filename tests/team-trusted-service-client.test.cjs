@@ -45,6 +45,31 @@ test('late minted token cleanup probes fixed service and does not mutate newer a
 test('late wrong-service minted token is never sent in detached logout',async t=>{const f=await fixture(t),c=f.client();const entered=deferred(),release=deferred();let held=false;f.state.after=async(call,r)=>{if(!held&&call.route==='/api/auth/login'){held=true;entered.resolve();await release.promise;return changed(r,call.url,{header:null});}return r;};const stale=f.login(c);await entered.promise;await f.enroll(c,'assistant-a');release.resolve();await assert.rejects(stale,{code:'SESSION_CHANGED'});assert.equal(f.calls.filter(call=>call.route==='/api/auth/logout').length,0);assert.equal((await c.getSession()).account.id,'assistant-a');});
 test('detached cleanup rejects changed service without resending late token',async t=>{const f=await fixture(t),c=f.client();const entered=deferred(),release=deferred();let held=false,block=false;f.state.after=async(call,r)=>{if(!held&&call.route==='/api/auth/login'){held=true;entered.resolve();await release.promise;block=true;}else if(block&&probe(call))return changed(r,call.url,{header:null});return r;};const stale=f.login(c);await entered.promise;await f.enroll(c,'assistant-a');const epoch=c.getDeviceStatus().epoch;release.resolve();await assert.rejects(stale,{code:'SESSION_CHANGED'});assert.equal(f.calls.filter(call=>call.route==='/api/auth/logout').length,0);assert.equal(c.getDeviceStatus().epoch,epoch);assert.equal(c.getDeviceStatus().state,'ready');});
 test('phone credentials and detached WeChat cancellation share fixed origin and probe',async t=>{const f=await fixture(t),c=f.client();await c.loginPhone({phone:'13800000011',password:PASSWORD});await c.logout();await c.startWechatLogin();const start=f.calls.findIndex(call=>call.route==='/api/auth/wechat/transactions');assert.ok(probe(f.calls[start-1]));await c.cancelWechatLogin();const cancel=f.calls.findIndex(call=>call.route.endsWith('/cancel'));assert.ok(probe(f.calls[cancel-1]));for(const call of f.calls)assert.equal(new URL(call.url).origin,ORIGIN);});
+test('a version 2 profile enables the managed WeChat browser flow without environment policy', async t=>{
+  const f=await fixture(t);
+  const profile={...f.profile,schemaVersion:2,wechatAppId:POLICY.appId};
+  for(const wechatPolicy of [undefined,{appId:'wxAAAAAAAAAAAAAAAA',redirectUri:'https://stale.invalid/api/auth/wechat/callback'}]){
+    const client=f.client({trustedService:{...profile},wechatPolicy});
+    const methods=await client.getAuthMethods();
+    assert.equal(methods.methods.wechat,true);
+    assert.equal(methods.desktopWechatReady,true);
+    assert.equal(Object.hasOwn(methods,'wechatAppId'),false);
+    await client.startWechatLogin();
+    const opened=new URL(f.opened.at(-1));
+    assert.equal(opened.searchParams.get('appid'),POLICY.appId);
+    assert.equal(opened.searchParams.get('redirect_uri'),POLICY.redirectUri);
+    await client.cancelWechatLogin();
+  }
+  assert.equal(f.opened.length,2);
+});
+
+test('a version 2 profile refuses an authorization for a different AppID instead of falling back', async t=>{
+  const f=await fixture(t);
+  const client=f.client({trustedService:{...f.profile,schemaVersion:2,wechatAppId:'wxAAAAAAAAAAAAAAAA'}});
+  await assert.rejects(client.startWechatLogin(),{code:'INVALID_RESPONSE'});
+  assert.deepEqual(f.opened,[]);
+});
+
 test('probe network loss pauses existing business and performs no mutation',async t=>{const f=await fixture(t),c=f.client();await f.enroll(c);f.state.offline=true;const before=f.calls.length;await assert.rejects(c.upload({teamId:'team-a',taskId:'task-a',revision:0},{filename:'x.txt',bytes:Buffer.from('x')}),e=>e.code==='SERVICE_UNAVAILABLE'&&!e.message.includes('private TLS diagnostic')&&!e.message.includes('结果未确认'));assert.equal(c.getDeviceStatus().state,'paused');assert.equal(f.calls.length,before+1);assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_task_submissions').get().n,0);});
 test('committed mutation transport loss remains unknown and is never replayed',async t=>{const f=await fixture(t),c=f.client();await f.enroll(c);f.state.after=call=>{if(call.route.endsWith('/submissions'))throw Error('committed transport failure');};await assert.rejects(c.upload({teamId:'team-a',taskId:'task-a',revision:0},{filename:'committed.txt',bytes:Buffer.from('x')}),e=>e.code==='SERVICE_UNAVAILABLE'&&/结果未确认/.test(e.message));assert.equal(c.getDeviceStatus().state,'paused');assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_task_submissions').get().n,1);assert.equal(f.calls.filter(call=>call.route.endsWith('/submissions')).length,1);});
 test('probe keeps 1 MiB cap and upload validation keeps original 12 MiB cap',async t=>{const f=await fixture(t),c=f.client();await f.enroll(c);let before=f.calls.length;await assert.rejects(c.upload({teamId:'team-a',taskId:'task-a',revision:0},{filename:'large.bin',bytes:new Uint8Array(MAX_FILE_BYTES+1)}));assert.equal(f.calls.length,before);f.state.after=(call,r)=>probe(call)?changed(r,call.url,{body:' '.repeat(1024*1024+1)}):r;before=f.calls.length;await assert.rejects(tasks(c),{code:'SERVICE_UNAVAILABLE'});assert.equal(f.calls.length,before+1);});

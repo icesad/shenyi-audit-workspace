@@ -1,4 +1,8 @@
-# 当前状态 · M8B Windows 双人走查入口复验
+# 当前状态 · M7AG 受管客户端微信配置
+
+## 2026-11-19 M7AG 受管客户端微信配置
+
+受信团队配置新增版本 2，在原 HTTPS 源地址和实例 UUID 之外接收公开微信 AppID。客户端从同一源生成固定回调，继续核对服务端微信能力及授权 URL。版本 1 兼容原环境变量，版本 2 以文件为准。配置验证沿用 macOS 系统目录保护和 TLS 检查。205 项关联测试和额外 7 项独立合成检查通过。Windows Electron 对隔离受管 HTTPS 服务实测四种配置情况，记录两次正确的合成浏览器调用，实际微信平台未连接。重建 Apple 芯片与 Intel 候选，两包的三个相关运行文件逐字节匹配，使用临时 Ed25519 密钥完成交接验签。两条 Windows 独立团队一键入口均已复验，旧预览前后观察一致。Mac 实机、Apple 正式签名公证、官方微信应用授权与联调、生产上线仍待验。未加入 main、未推送、未上线。 [受信配置说明](TRUSTED_TEAM_HTTPS_CONTRACT.md#微信扫码的版本-2-配置) 证据位于 `D:/codex-temp/shenyi-m7-managed-wechat-profile-20261119/verification.json`。
 
 ## 2026-11-19 M8B Windows 双人走查入口复验
 

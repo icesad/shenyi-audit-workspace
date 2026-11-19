@@ -64,7 +64,7 @@ function mountedFixture({ platform = 'darwin', absent = false, managed = JSON.st
       };
     },
   };
-  const dependencies = { 'node:fs/promises': filesystem, 'node:fs': { constants: flags }, 'node:path': path.posix };
+  const dependencies = { 'node:fs/promises': filesystem, 'node:fs': { constants: flags }, 'node:path': path.posix, 'node:net': require('node:net') };
   const module = { exports: {} };
   vm.runInNewContext(source, { module, require: name => dependencies[name], process: { platform, env: {} }, Buffer, TextDecoder, URL });
   return { entries, load: module.exports.loadTeamServiceConfiguration, lookedUp, opens, readOnly };
@@ -81,6 +81,19 @@ test('packaged Mac defaults to the protected site profile and never opens a comp
   assert.equal(result.mode, 'remote-https');
   assert.deepEqual(f.opens, [[configPath, flags.O_NOFOLLOW | flags.O_NONBLOCK]]);
   assert.ok(parents.every(name => f.readOnly.includes(name)));
+});
+
+test('a packaged Mac can load a version 2 WeChat profile from the protected Finder path', async () => {
+  const profile = {...configured, schemaVersion: 2, wechatAppId: 'wx0123456789abcdef'};
+  const f = mountedFixture({managed: JSON.stringify(profile)});
+  const result = await f.load({env: {}, isPackaged: true});
+  assert.equal(JSON.stringify(result.profile), JSON.stringify(profile));
+  assert.ok(Object.isFrozen(result.profile));
+  assert.deepEqual(f.opens, [[configPath, flags.O_NOFOLLOW | flags.O_NONBLOCK]]);
+
+  const incomplete = mountedFixture({managed: JSON.stringify({...configured, schemaVersion: 2})});
+  await assert.rejects(incomplete.load({env: {SHENYI_TEAM_SERVICE_CONFIG: alternate}, isPackaged: true}), failure);
+  assert.deepEqual(incomplete.opens, [[configPath, flags.O_NOFOLLOW | flags.O_NONBLOCK]]);
 });
 
 test('an absent directory permits explicit test configuration only under a trusted parent on packaged Mac', async () => {

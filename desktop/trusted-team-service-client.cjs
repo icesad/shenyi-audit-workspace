@@ -33,6 +33,10 @@ function createTrustedTeamServiceTransport({profile,fetchImpl,boundedBytes,error
       methodsIdentity(data);check();
     }finally{if(response?.body&&!response.bodyUsed)void response.body.cancel().catch(()=>{});}
   }
-  return Object.freeze({url,responseIdentity,methodsIdentity,probe});
+  const wechatPolicy=trusted.schemaVersion===2?Object.freeze({
+    appId:trusted.wechatAppId,
+    redirectUri:url('/api/auth/wechat/callback'),
+  }):undefined;
+  return Object.freeze({url,responseIdentity,methodsIdentity,probe,wechatPolicy});
 }
 module.exports={createTrustedTeamServiceTransport};
