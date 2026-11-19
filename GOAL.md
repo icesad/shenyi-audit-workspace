@@ -1,5 +1,9 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-20 M7BI Windows 正式 MSI 接收核验
+
+新增 Windows 正式 MSI 接收入口，核对同一临时副本的可信摘要、安装器签名、时间戳、审易发行结构及管理提取后的内层双签名。Windows 实测拒绝未签名、签名有效但结构不符和过宽目录权限三种输入。合成外签通过时实际提取并核对 2,005 个内层发行文件，产品注册保持。85 项相关回归通过。正式已签审易 MSI、系统安装升级和卸载仍待验。Windows 一键沿用既有实测，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-windows-msi-receipt-20261120/verification.json`。
+
 ## 2026-11-20 M7BH macOS 正式 ZIP 接收核验
 
 新增 macOS 正式 ZIP 接收入口。跨平台核对可信 SHA-256、正式标识、版本和 Mach-O 架构。Mac 核验入口对同一私有副本展开后的应用调用 Apple 签名和公证检查。独立工具包从实际解包目录复验两种架构的完整合成 ZIP，通过 79 项相关回归。真实 Mac 的解包、Apple 签名、公证、Finder 和升级仍待验。Windows 一键沿用既有实测，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-macos-release-receipt-20261120/verification.json`。

@@ -215,6 +215,20 @@ node scripts/windows-candidate-authenticode.mjs verify-msi --msi $finalMsi --msi
 
 结构检查只读核对 x64、机器级安装、版本目录、文件和组件映射、内嵌 CAB 及两套受限执行序列，并拒绝额外安装表或嵌入变换。保留 `sourcePolicyVerified` 回执。此命令不调用 `msiexec`，签名及时间戳仍由上面的 `verify-msi` 单独核验。 [微软的 MSI 签名说明](https://learn.microsoft.com/en-us/windows/desktop/Msi/digital-signatures-and-windows-installer)
 
+### 接收正式 MSI 并核对内层发布
+
+接收人员也可在 Windows 用同一条命令验收外层和内层发布，并保存一份回执。参数使用可信发布记录中的最终 MSI SHA-256、发布者叶证书 SHA-256、发行版本和独立取得的 Ed25519 公钥。已接受版本从本机安装台账取得，首次台账为空时填 `0.0.0`。Node 使用 24.15 或更新的 24.x。
+
+```powershell
+node scripts/check-windows-release-msi.mjs `
+  --msi $finalMsi --msi-sha256 $approvedMsiSha256 --publisher-sha256 $publisherSha256 `
+  --public-key $trustedEd25519PublicKey --version $releaseVersion --installed-version $installedVersion
+```
+
+该命令核对同一独立临时副本的摘要、Authenticode、时间戳和审易 MSI 结构。外层校验全部通过后，Windows Installer 用 `/a` 生成临时管理映像。工具在该映像核对清单、发行文件、Ed25519 签名和程序签名，核对载荷数量、大小与版本一致后给出回执。回执含两层摘要、发布者、ProductCode、PackageCode、版本及 `systemInstallPerformed: false`。完成后清理本次临时目录。 [Windows Installer 管理提取](https://learn.microsoft.com/en-us/windows/win32/msi/administrative-installation)
+
+临时目录默认建在本机用户主目录。可用 `--scratch-root` 指定已有的受保护本地目录。工具先核对祖先目录的所有者和变更权限，再为新目录关闭权限继承，仅允许当前用户、SYSTEM 和本机管理员访问。父目录允许其他人员删除或改权时，在读取 MSI 之前拒绝。
+
 审易正式证书和已签名 MSI 就绪后，仍须在独立 Windows 终端验证安装注册、有效权限、升级、回滚和卸载。macOS 实机安装、签名和公证另按对应发行流程验收。
 
 ### 受管服务窗口验收
