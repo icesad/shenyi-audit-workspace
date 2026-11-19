@@ -32,6 +32,24 @@ node scripts/start-team-service.mjs --config 'D:/shenyi-service/service.json'
 
 启动成功输出一行 `ready` JSON，包含实际监听地址、配置 origin 和服务实例 UUID。`GET /health` 提供进程存活状态，`GET /ready` 复核本地库可用性。常规停止信号为 `SIGINT`、`SIGTERM`，Windows 还支持 `SIGBREAK`。 [Node.js HTTPS 服务接口](https://nodejs.org/api/https.html#httpscreateserveroptions-requestlistener)
 
+### 首队试点就绪检查
+
+在计划开通首个试点的主机上，用实际运行服务的本机账号和同一配置执行以下检查。将示例替换为该环境的配置文件绝对路径。
+
+```sh
+node scripts/start-team-service.mjs --check-pilot-readiness --config /etc/shenyi-team/service.json
+```
+
+退出码 `0` 和 `{"event":"pilot-ready"}` 表示本机已通过启动配置、TLS、短信配置、开通与激活结构、试点审批结构和审核员资格检查。至少一位有效审核员须有已验证手机号，且同时具备团队开通与试点审批权限。随后按正常流程登录审核账号和绑定电脑。命令只读打开 SQLite，结束时关闭连接，期间无需启动监听器或发送短信。供应商真实送达、负责人确认和试点授权按各自流程验收。
+
+| 错误码 | 核对项 |
+| --- | --- |
+| `MANAGED_PILOT_SMS_REQUIRED` | 为首管理员与员工激活准备有效的短信配置。 |
+| `MANAGED_PILOT_SCHEMA_NOT_READY` | 核对当前库的开通、激活、试点结构及有效版本。 |
+| `MANAGED_PILOT_REVIEWER_NOT_READY` | 核对已验证手机号、账号状态及两项独立审核权限。 |
+
+普通服务启动和 Linux 版本切换继续按 `--check-startup` 验收。首次试点按本节另行记录结果。 [团队开通与试点流程](MANUAL_TEAM_ONBOARDING.md#受管服务首个试点)
+
 ## 首位产品负责人
 
 操作者先在线下核验负责人的身份及本人手机号。指定仓库之外尚未创建的本机子目录，通过 UTF-8 标准输入传入 `displayName`、`phone`、`password` 和 `verifiedOutOfBand`。核验完成后才将 `verifiedOutOfBand` 设为 `true`。

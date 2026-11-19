@@ -17,6 +17,9 @@ const configCode = 'MANAGED_SERVICE_CONFIGURATION_INVALID';
 const messages = {
   [configCode]: '服务配置无效。请检查配置格式、本机文件路径及监听地址。',
   MANAGED_DATABASE_NOT_READY: '指定数据库未通过服务启动检查。',
+  MANAGED_PILOT_SMS_REQUIRED: '首队试点需要先配置用于账号激活的短信服务。',
+  MANAGED_PILOT_SCHEMA_NOT_READY: '指定数据库缺少首队试点所需的开通、激活或审批结构。',
+  MANAGED_PILOT_REVIEWER_NOT_READY: '首队试点需要一名手机号已验证且具备开通和试点审批权限的有效审核员。',
   MANAGED_TLS_INVALID: '证书和私钥无法用于配置的 HTTPS 地址。',
   MANAGED_SMS_INVALID: '短信服务配置无效。请检查独立配置文件及模板。',
   MANAGED_WECHAT_INVALID: '微信扫码服务配置无效。请检查独立配置文件、应用和回调域名。',
@@ -180,18 +183,22 @@ function databaseReadinessOptions({ reviewedRecovery = false, wechatProfile }) {
   return { reviewedRecovery, wechatEnabled: wechatProfile !== undefined };
 }
 
-async function checkManagedDatabase(configuration) {
+async function checkManagedDatabase(configuration, examine) {
   const { database, serverId } = configuration;
   const code = 'MANAGED_DATABASE_NOT_READY';
   let readonly;
   try {
-    const entry = await existingFile(database, code);
-    readonly = new DatabaseSync(sqliteExistingFileUri(database, 'ro'), { readOnly: true, timeout: 5000 });
-    assertManagedDatabaseReady(readonly, serverId, databaseReadinessOptions(configuration));
-    if (path.relative(path.toNamespacedPath(database), readonly.location()) || !sameFile(entry, await existingFile(database, code))) fail(code);
+    let entry;
+    try {
+      entry = await existingFile(database, code);
+      readonly = new DatabaseSync(sqliteExistingFileUri(database, 'ro'), { readOnly: true, timeout: 5000 });
+      assertManagedDatabaseReady(readonly, serverId, databaseReadinessOptions(configuration));
+      if (path.relative(path.toNamespacedPath(database), readonly.location()) || !sameFile(entry, await existingFile(database, code))) fail(code);
+    } catch {
+      fail(code);
+    }
+    examine?.(readonly);
     return entry;
-  } catch {
-    fail(code);
   } finally {
     readonly?.close();
   }
@@ -250,13 +257,19 @@ async function main(args) {
     console.log(JSON.stringify({ event: 'database-ready' }));
     return;
   }
-  if (args.length === 3 && args[0] === '--check-startup' && args[1] === '--config') {
+  const firstPilot = args[0] === '--check-pilot-readiness';
+  if (args.length === 3 && (args[0] === '--check-startup' || firstPilot) && args[1] === '--config') {
     await withManagedServiceInputs(args[2], async (configuration, inputs) => {
       const { checkManagedServiceStartup } = await import('../server/team/managed-service.mjs');
-      await checkManagedDatabase(configuration);
+      if (firstPilot) {
+        const { assertManagedFirstPilotReady } = await import('../server/team/managed-first-pilot-readiness.mjs');
+        await checkManagedDatabase(configuration, db => assertManagedFirstPilotReady(db, inputs));
+      } else {
+        await checkManagedDatabase(configuration);
+      }
       checkManagedServiceStartup(inputs);
     });
-    console.log(JSON.stringify({ event: 'startup-ready' }));
+    console.log(JSON.stringify({ event: firstPilot ? 'pilot-ready' : 'startup-ready' }));
     return;
   }
   if (args.length !== 2 || args[0] !== '--config') fail(configCode);

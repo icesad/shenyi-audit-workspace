@@ -213,6 +213,17 @@ function runPreflightCli(filename, guard, mode) {
     {windowsHide:true,timeout:15000,maxBuffer:65536},(error,stdout,stderr)=>resolve({error,stdout,stderr})));
 }
 
+async function startupNetworkGuard(directory) {
+  const guard = path.join(directory, 'no-startup-network.cjs');
+  await fs.writeFile(guard, `'use strict';
+const forbidden=()=>{process.stderr.write('unexpected network');process.exit(97);};
+require('node:net').Server.prototype.listen=forbidden;
+require('node:net').Socket.prototype.connect=forbidden;
+globalThis.fetch=forbidden;
+`,{flag:'wx'});
+  return guard;
+}
+
 async function databasePreflightCli(f,configuration,expectedCode) {
   await fs.writeFile(f.filename,JSON.stringify(configuration));
   const sources=['../scripts/start-team-service.mjs','../server/team/managed-database-readiness.mjs','../server/team/managed-service.mjs'].map(name=>path.resolve(__dirname,name));
@@ -317,13 +328,7 @@ test('startup CLI validates TLS, opt-in providers and database with no writes or
   const valid=createOwnerReviewCheckoutCertificate();
   const expired=createOwnerReviewCheckoutCertificate({now:()=>Date.now()-86_400_000});
   const {configuration}=f;
-  const guard=path.join(f.directory,'no-startup-network.cjs');
-  await fs.writeFile(guard, `'use strict';
-const forbidden=()=>{process.stderr.write('unexpected network');process.exit(97);};
-require('node:net').Server.prototype.listen=forbidden;
-require('node:net').Socket.prototype.connect=forbidden;
-globalThis.fetch=forbidden;
-`,{flag:'wx'});
+  const guard=await startupNetworkGuard(f.directory);
 
   async function check(profile, code) {
     await fs.writeFile(f.filename, JSON.stringify(profile));
@@ -369,4 +374,75 @@ globalThis.fetch=forbidden;
   const withWechat={...withSms,apiBase:'https://login.shenyi.example',wechatProfile:path.join(f.directory,'wechat.json')};
   await fs.writeFile(withWechat.wechatProfile,JSON.stringify({schemaVersion:1,provider:'wechat-open-platform',appSecret:'synthetic-only'}));
   await check(withWechat,'MANAGED_WECHAT_INVALID');
+});
+
+test('first pilot preflight requires local SMS, activation schema and an eligible reviewer while ordinary startup remains available', async t => {
+  const f = await databasePreflightFixture(t);
+  const guard = await startupNetworkGuard(f.directory);
+  const {createOwnerReviewCheckoutCertificate} = await import('../scripts/owner-review-checkout-certificate.mjs');
+  const {hashPassword} = await import('../server/team/passwords.mjs');
+  const {key,cert} = createOwnerReviewCheckoutCertificate();
+  const {configuration} = f;
+  const smsProfile = path.join(f.directory,'sms.json');
+  await fs.writeFile(configuration.tlsCertificate,cert);
+  await fs.writeFile(configuration.tlsKey,key);
+  await fs.writeFile(smsProfile,JSON.stringify({schemaVersion:1, provider:'aliyun', accessKeyId:'synthetic-key',
+    accessKeySecret:'synthetic-only', phonePepper:Buffer.alloc(32,42).toString('base64url'), signName:'合成测试',
+    templates:{bind:'SMS_1001',reset:'SMS_1002',activate:'SMS_1003','first-admin':'SMS_1004'}}));
+
+  async function check({mode='--check-pilot-readiness', code} = {}) {
+    const before = await preflightFileFacts(f.directory);
+    const {error,stdout,stderr} = await runPreflightCli(f.filename,guard,mode);
+    if (code) {
+      assert.equal(error?.code,1,stderr);
+      assert.equal(stdout,'');
+      const report = JSON.parse(stderr);
+      assert.deepEqual(Object.keys(report).sort(),['code','event','message']);
+      assert.equal(report.event,'error');
+      assert.equal(report.code,code);
+      assert.doesNotMatch(stderr,/pilot-reviewer|13800138000|synthetic-only|PRIVATE KEY|\.json/);
+    } else {
+      assert.equal(error,null,stderr);
+      assert.equal(stderr,'');
+      assert.deepEqual(JSON.parse(stdout),{event:mode==='--check-startup'?'startup-ready':'pilot-ready'});
+    }
+    assert.deepEqual(await preflightFileFacts(f.directory),before);
+  }
+
+  await fs.writeFile(f.filename,JSON.stringify(configuration));
+  await check({mode:'--check-startup'});
+  await check({code:'MANAGED_PILOT_SMS_REQUIRED'});
+  await fs.writeFile(f.filename,JSON.stringify({...configuration,smsProfile}));
+  await check({code:'MANAGED_PILOT_SCHEMA_NOT_READY'});
+  function edit(operation) {
+    const db = new DatabaseSync(configuration.database);
+    try { operation(db); } finally { db.close(); }
+  }
+  const pilotSchema = await fs.readFile(path.resolve(__dirname,'../server/team/pilot-approval-schema.sql'),'utf8');
+  const passwordHash = await hashPassword('SyntheticOnly!2026');
+  edit(db => {
+    db.exec(pilotSchema);
+    db.prepare("INSERT INTO team_users (user_id,status) VALUES ('pilot-reviewer','active')").run();
+    db.prepare("INSERT INTO team_credentials(user_id,username,display_name,password_hash) VALUES ('pilot-reviewer','pilot-reviewer','合成审核员',?)").run(passwordHash);
+    db.prepare("INSERT INTO team_platform_reviewers(user_id,permission,status) VALUES ('pilot-reviewer','team.provision','active')").run();
+    db.prepare("INSERT INTO team_pilot_approval_reviewers(user_id,permission,status) VALUES ('pilot-reviewer','team.pilot.approve','active')").run();
+  });
+  await check({code:'MANAGED_PILOT_REVIEWER_NOT_READY'});
+  edit(db => db.prepare("INSERT INTO team_phone_credentials(user_id,phone,verified_at) VALUES ('pilot-reviewer','+8613800138000',?)").run(Date.now()));
+  edit(db => db.exec("UPDATE team_credentials SET password_hash='invalid-format' WHERE user_id='pilot-reviewer'"));
+  await check({code:'MANAGED_PILOT_REVIEWER_NOT_READY'});
+  edit(db => db.prepare("UPDATE team_credentials SET password_hash=? WHERE user_id='pilot-reviewer'").run(passwordHash));
+  await check();
+  let activitySchema;
+  edit(db => {
+    activitySchema = db.prepare("SELECT sql FROM main.sqlite_schema WHERE name='team_activity'").get().sql;
+    db.exec('DROP TABLE team_activity');
+  });
+  await check({code:'MANAGED_PILOT_SCHEMA_NOT_READY'});
+  edit(db => db.exec(activitySchema));
+  edit(db => db.exec("UPDATE team_pilot_approval_reviewers SET status='revoked',revision=2"));
+  await check({code:'MANAGED_PILOT_REVIEWER_NOT_READY'});
+  edit(db => db.exec('DROP TRIGGER pilot_approval_no_update'));
+  await check({code:'MANAGED_PILOT_SCHEMA_NOT_READY'});
+  await check({mode:'--check-startup'});
 });
