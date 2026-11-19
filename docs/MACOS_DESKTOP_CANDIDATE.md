@@ -53,7 +53,7 @@ foreach ($arch in 'arm64', 'x64') {
 
 ## 从 Finder 启动已配置客户端
 
-已打包的 macOS 客户端从 `/Library/Application Support/ShenyiTeamDesktop/team-service.json` 读取由管理员部署的团队服务配置。内容沿用[受信 HTTPS 配置契约](TRUSTED_TEAM_HTTPS_CONTRACT.md#固定客户端配置)，基础配置包含配置版本、HTTPS 源地址和实例 UUID。启用受管微信时，使用版本 2 写入已批准的公开 AppID，Finder 启动即可读取。部署人员先核对源地址和实例，使用受控、不含凭据的 JSON 文件。系统配置目录由 `root:wheel` 持有，权限为 `0755`，配置文件同属 `root:wheel`，权限为 `0644`。 [Apple 应用支持文件位置说明](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPFileSystem/Articles/WhereToPutFiles.html)
+已打包的 macOS 客户端从 `/Library/Application Support/ShenyiTeamDesktop/team-service.json` 读取由管理员部署的团队服务配置。基础配置包含配置版本、HTTPS 源地址和实例 UUID。启用受管微信时，使用版本 2 写入已批准的公开 AppID。若同时启用官网订单，使用[版本 4 受信配置](TRUSTED_TEAM_HTTPS_CONTRACT.md#同时启用微信与官网订单的版本-4-配置)，并填写独立的官网 origin。部署人员先核对源地址和实例，使用受控且无凭据的 JSON 文件。系统配置目录由 `root:wheel` 持有，权限为 `0755`，配置文件同属 `root:wheel`，权限为 `0644`。 [Apple 应用支持文件位置说明](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPFileSystem/Articles/WhereToPutFiles.html)
 
 首次部署时，由管理员替换示例中的源路径后运行。示例只创建审易专用目录及其配置文件。Apple 系统父目录沿用机器原有权限。普通运行账号对系统父目录、审易专用目录和配置文件均须无实际写权限，包括通过 ACL 获得的权限。
 

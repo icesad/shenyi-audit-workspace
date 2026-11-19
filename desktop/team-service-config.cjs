@@ -8,6 +8,9 @@ const MAX_CONFIGURATION_BYTES=16*1024;
 const CONFIGURATION_KEYS=Object.freeze(['schemaVersion','apiBase','serverId']);
 const WECHAT_CONFIGURATION_KEYS=Object.freeze([...CONFIGURATION_KEYS,'wechatAppId']);
 const CHECKOUT_CONFIGURATION_KEYS=Object.freeze([...CONFIGURATION_KEYS,'checkoutOrigin']);
+const COMBINED_CONFIGURATION_KEYS=Object.freeze([...WECHAT_CONFIGURATION_KEYS,'checkoutOrigin']);
+const PROFILE_FIELDS=new Map([[1,CONFIGURATION_KEYS],[2,WECHAT_CONFIGURATION_KEYS],
+  [3,CHECKOUT_CONFIGURATION_KEYS],[4,COMBINED_CONFIGURATION_KEYS]]);
 const MAC_MANAGED_PARENTS=Object.freeze(['/','/Library','/Library/Application Support']);
 const MAC_MANAGED_DIRECTORY='/Library/Application Support/ShenyiTeamDesktop';
 const MAC_MANAGED_FILE=MAC_MANAGED_DIRECTORY+'/team-service.json';
@@ -19,14 +22,18 @@ function invalid(){
   return error;
 }
 
+function isManagedDnsOrigin(url){
+  return !url.port&&!isIP(url.hostname)&&url.hostname.length<=253&&url.hostname.includes('.')&&
+    url.hostname.split('.').every(label=>/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
+}
+
 function validateTrustedTeamService(value){
   try{
     if(!value||typeof value!=='object'||Object.getPrototypeOf(value)!==Object.prototype)throw invalid();
     const keys=Reflect.ownKeys(value),fields=Object.getOwnPropertyDescriptors(value);
     const schemaVersion=fields.schemaVersion?.value;
-    if(schemaVersion!==1&&schemaVersion!==2&&schemaVersion!==3)throw invalid();
-    const expected=schemaVersion===3?CHECKOUT_CONFIGURATION_KEYS:schemaVersion===2?WECHAT_CONFIGURATION_KEYS:CONFIGURATION_KEYS;
-    if(keys.length!==expected.length||expected.some(key=>!Object.hasOwn(fields,key)||!Object.hasOwn(fields[key],'value')||fields[key].enumerable!==true))throw invalid();
+    const expected=PROFILE_FIELDS.get(schemaVersion);
+    if(!expected||keys.length!==expected.length||expected.some(key=>!Object.hasOwn(fields,key)||!Object.hasOwn(fields[key],'value')||fields[key].enumerable!==true))throw invalid();
     const apiBase=fields.apiBase.value,serverId=fields.serverId.value;
     if(typeof apiBase!=='string'||typeof serverId!=='string')throw invalid();
     if(!apiBase.isWellFormed()||/[\x00-\x20\x7f-\x9f\\]/.test(apiBase))throw invalid();
@@ -34,18 +41,17 @@ function validateTrustedTeamService(value){
     if(url.protocol!=='https:'||!url.hostname||url.username||url.password||url.pathname!=='/'||url.search||url.hash||!(apiBase===url.origin||apiBase===url.origin+'/'))throw invalid();
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(serverId))throw invalid();
     const profile={schemaVersion,apiBase:url.origin,serverId};
-    if(schemaVersion===2){
+    if(expected.includes('wechatAppId')){
       const wechatAppId=fields.wechatAppId.value;
-      if(typeof wechatAppId!=='string'||!/^wx[A-Za-z0-9]{16}$/.test(wechatAppId)||
-        url.port||isIP(url.hostname)||url.hostname.length>253||!url.hostname.includes('.')||
-        !url.hostname.split('.').every(label=>/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)))throw invalid();
+      if(typeof wechatAppId!=='string'||!/^wx[A-Za-z0-9]{16}$/.test(wechatAppId)||!isManagedDnsOrigin(url))throw invalid();
       profile.wechatAppId=wechatAppId;
     }
-    if(schemaVersion===3){
+    if(expected.includes('checkoutOrigin')){
       const checkoutOrigin=fields.checkoutOrigin.value;
       if(typeof checkoutOrigin!=='string'||!checkoutOrigin.isWellFormed()||/[\x00-\x20\x7f-\x9f\\]/.test(checkoutOrigin))throw invalid();
       const checkout=new URL(checkoutOrigin);
       if(checkout.protocol!=='https:'||!checkout.hostname||checkout.username||checkout.password||checkout.pathname!=='/'||checkout.search||checkout.hash||checkoutOrigin!==checkout.origin)throw invalid();
+      if(schemaVersion===4&&(!isManagedDnsOrigin(checkout)||checkout.origin===url.origin))throw invalid();
       profile.checkoutOrigin=checkout.origin;
     }
     return Object.freeze(profile);

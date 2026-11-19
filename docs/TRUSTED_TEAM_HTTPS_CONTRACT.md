@@ -18,7 +18,7 @@
 {"schemaVersion":1,"apiBase":"https://team.example.invalid","serverId":"11111111-1111-4111-8111-111111111111"}
 ```
 
-这是格式样例，不是已部署地址。schemaVersion固定1；apiBase必须规范HTTPS origin（可有末尾单个/再规范化），无userinfo/path前缀/query/fragment、控制符、反斜线或隐式转换；serverId必须小写UUIDv4字符串。拒未知字段（含CA、证书私钥、密码、TLS跳验、代理、redirect）、数组/原型/getter/Symbol字段。配置不含凭证，目标origin和UUID由有权部署者核定，不允许renderer或业务参数覆盖。
+版本 1 的示例使用三个字段。`apiBase` 必须为规范 HTTPS origin，可用一个末尾斜线并在加载时规范化。拒绝凭据、路径前缀、查询、片段、控制符、反斜线和隐式转换。`serverId` 必须是小写 UUIDv4。配置拒绝未知字段、数组、异常原型、getter 和 Symbol，包括任何自带 CA、私钥、密码、代理、重定向或跳过 TLS 校验的字段。部署人员确定受信 origin 和 UUID，界面和业务参数均无覆盖入口。
 
 无该配置且未打包时保留原local-preview。`SHENYI_TEAM_API`仅作兼容一致性检查：无profile仅允许原API_BASE；有profile如提供该变量须与profile origin相同，冲突/显式空值拒绝，不静默回退。打包运行必须有remote profile；不存在或无效在创建profile/vault/窗口和发送网络前失败关闭。加载一次后冻结，本进程不热切换服务。
 
@@ -36,9 +36,19 @@
 
 部署时替换示例地址、实例 UUID 和 AppID。版本 2 的 HTTPS 源地址须使用标准端口和合法域名，AppID 采用 `wx` 加 16 个 ASCII 字母或数字。客户端以该 AppID 和同一源下的 `/api/auth/wechat/callback` 校验授权地址。版本 2 以配置文件为准。版本 1 仍支持原微信环境变量。扫码入口同时要求服务端公布微信能力。AppSecret 继续保存在服务端，配置文件的其他字段仍严格校验。
 
+### 同时启用微信与官网订单的版本 4 配置
+
+团队 API 和官网分别部署在获准的 HTTPS 域名时，使用这五个字段。两个地址须为不同的标准端口 HTTPS origin，且都使用合法域名。`checkoutOrigin` 采用精确的 origin 写法，末尾无 `/`。以下域名仅用于展示格式。
+
+```json
+{"schemaVersion":4,"apiBase":"https://team.example.invalid","serverId":"11111111-1111-4111-8111-111111111111","wechatAppId":"wx0123456789abcdef","checkoutOrigin":"https://checkout.example.invalid"}
+```
+
+客户端用配置中的 AppID 校验微信授权地址，只接受团队 API 的 `/api/auth/wechat/callback`。客户端使用持钥请求向团队 API 取得下单授权，只在配置的官网打开年费或增购订单页。两个入口各自依赖服务端启用的能力。旧版配置按原规则处理，Windows 官网评审一键继续使用独立版本 3 回环配置。实际微信应用和正式商户接入另行验收。
+
 ### 已打包 macOS 客户端的系统配置
 
-M7Y 为 Finder 启动固定使用 `/Library/Application Support/ShenyiTeamDesktop/team-service.json`。管理员按[macOS 部署步骤](MACOS_DESKTOP_CANDIDATE.md#从-finder-启动已配置客户端)部署符合上文的版本 1 或版本 2 配置。专用目录和文件应由 `root:wheel` 持有，分别设置为 `0755` 和 `0644`。启动使用普通账号。系统父目录、专用目录和配置文件须对该账号无实际写权限，包含 ACL 权限。
+M7Y 为 Finder 启动固定使用 `/Library/Application Support/ShenyiTeamDesktop/team-service.json`。管理员按[macOS 部署步骤](MACOS_DESKTOP_CANDIDATE.md#从-finder-启动已配置客户端)部署受信配置。仅配置团队 API 时使用版本 1，另启微信时使用版本 2，微信与官网订单并用时使用版本 4。专用目录和文件应由 `root:wheel` 持有，分别设置为 `0755` 和 `0644`。启动使用普通账号。系统父目录、专用目录和配置文件须对该账号无实际写权限，包含 ACL 权限。
 
 专用目录存在时，程序只使用固定文件，忽略环境变量 `SHENYI_TEAM_SERVICE_CONFIG` 指定的路径。若 `SHENYI_TEAM_API` 已设置，须与系统配置中的源地址一致。专用目录、配置文件或权限校验失败会显示原生错误并在发起网络连接前退出。只有专用目录完全不存在且系统父目录通过安全检查时，才可在独立测试 Mac 以原有环境变量显式提供测试配置。
 

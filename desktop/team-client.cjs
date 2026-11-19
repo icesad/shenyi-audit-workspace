@@ -139,7 +139,8 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   if(trustedService!==undefined&&isolatedPreview!==undefined)throw failure('INVALID_SERVER','团队服务配置不能混用。');
   const trusted=isolatedPreview!==undefined?createIsolatedPreviewTransport({profile:isolatedPreview,fetchImpl,boundedBytes,error:failure}):trustedService===undefined?null:createTrustedTeamServiceTransport({profile:trustedService,fetchImpl,boundedBytes,error:failure});
   if(trusted&&(!deviceIdentity||!['win32','darwin'].includes(deviceIdentity.platform)||!deviceIdentity.vault||!['getPublicIdentity','signChallenge','signRequest'].every(name=>typeof deviceIdentity.vault[name]==='function')))throw failure('DEVICE_VAULT_UNAVAILABLE','受信团队服务需要系统保护的设备密钥。');
-  const checkoutOrigin=trustedService===undefined?null:validateTrustedTeamService(trustedService).checkoutOrigin??null;
+  const checkoutProfile=trustedService===undefined?null:validateTrustedTeamService(trustedService);
+  const checkoutOrigin=checkoutProfile&&Object.hasOwn(checkoutProfile,'checkoutOrigin')?checkoutProfile.checkoutOrigin:null;
   const requestUrl=route=>trusted?trusted.url(route):API_BASE+route;
   let token = null, current = null, generation = 0,wechat,device,replacement,workpaperClient;
   const projectMigrationInvalidators=new Set();

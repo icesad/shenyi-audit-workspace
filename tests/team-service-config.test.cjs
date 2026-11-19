@@ -126,3 +126,89 @@ test('version 3 pins a canonical HTTPS checkout origin without changing version 
   assert.throws(()=>validateTrustedTeamService({...PROFILE,checkoutOrigin:profile.checkoutOrigin}),invalid);
   let reads=0;const accessor={...profile};Object.defineProperty(accessor,'checkoutOrigin',{enumerable:true,get(){reads++;return profile.checkoutOrigin;}});assert.throws(()=>validateTrustedTeamService(accessor),invalid);assert.equal(reads,0);
 });
+
+const combinedProfile=Object.freeze({
+  schemaVersion:4,
+  apiBase:'https://team.example.invalid',
+  serverId:PROFILE.serverId,
+  wechatAppId:'wx0123456789abcdef',
+  checkoutOrigin:'https://checkout.example.invalid',
+});
+
+test('version 4 loads exactly both managed capabilities with frozen independent origins',async t=>{
+  const input={...combinedProfile,apiBase:combinedProfile.apiBase+'/'};
+  const checked=validateTrustedTeamService(input);
+  assert.deepEqual(checked,combinedProfile);
+  assert.notEqual(checked,input);
+  assert.ok(Object.isFrozen(checked));
+
+  const f=await fixture(t,JSON.stringify(input));
+  const env={...f.env,SHENYI_TEAM_API:combinedProfile.apiBase,NODE_TLS_REJECT_UNAUTHORIZED:'1'};
+  const loaded=await loadTeamServiceConfiguration({env,isPackaged:process.platform==='win32'});
+  assert.deepEqual(loaded,{mode:'remote-https',profile:combinedProfile});
+  assert.ok(Object.isFrozen(loaded)&&Object.isFrozen(loaded.profile));
+  await assert.rejects(loadTeamServiceConfiguration({
+    env:{...env,SHENYI_TEAM_API:combinedProfile.checkoutOrigin},
+    isPackaged:process.platform==='win32',
+  }),invalid);
+});
+
+test('version 4 denies nonstandard origins and requires two different canonical HTTPS domain names',()=>{
+  const nonstandard=[
+    'http://team.example.invalid','https://localhost','https://127.0.0.1','https://[::1]',
+    'https://team.example.invalid:8443','https://team.example.invalid:443',
+    'https://TEAM.example.invalid','https://team_example.invalid','https://team..invalid',
+    'https://team.example.invalid.','https://'+('a'.repeat(64))+'.invalid',
+    'https://'+Array(5).fill('a'.repeat(63)).join('.'),
+    'https://example.invalid/extra','https://example.invalid?','https://example.invalid/#',
+    'https://a:b@example.invalid','https://@example.invalid',null,['https://example.invalid'],
+  ];
+  for(const field of ['apiBase','checkoutOrigin']){
+    for(const origin of nonstandard){
+      assert.throws(()=>validateTrustedTeamService({...combinedProfile,[field]:origin}),invalid,
+        field+' '+JSON.stringify(origin));
+    }
+  }
+  for(const input of [
+    {...combinedProfile,checkoutOrigin:combinedProfile.checkoutOrigin+'/'},
+    {...combinedProfile,checkoutOrigin:combinedProfile.apiBase},
+    {...combinedProfile,apiBase:combinedProfile.apiBase+'/',checkoutOrigin:combinedProfile.apiBase},
+  ])assert.throws(()=>validateTrustedTeamService(input),invalid);
+});
+
+test('version 4 requires all five fields without allowing extra, accessor or duplicate fields',async t=>{
+  for(const field of Object.keys(combinedProfile)){
+    const incomplete={...combinedProfile};
+    delete incomplete[field];
+    assert.throws(()=>validateTrustedTeamService(incomplete),invalid,field);
+  }
+  for(const schemaVersion of [1,2,3,5,'4']){
+    assert.throws(()=>validateTrustedTeamService({...combinedProfile,schemaVersion}),invalid);
+  }
+  for(const extra of [{appSecret:'unexpected-field'},{redirectUri:'https://checkout.example.invalid/callback'}]){
+    assert.throws(()=>validateTrustedTeamService({...combinedProfile,...extra}),invalid);
+  }
+  for(const wechatAppId of ['wx-short','WX0123456789abcdef','wx0123456789abcdef ',{}]){
+    assert.throws(()=>validateTrustedTeamService({...combinedProfile,wechatAppId}),invalid);
+  }
+  let getterReads=0;
+  for(const key of ['checkoutOrigin','wechatAppId']){
+    const accessor={...combinedProfile};
+    Object.defineProperty(accessor,key,{enumerable:true,get(){getterReads++;return combinedProfile[key];}});
+    assert.throws(()=>validateTrustedTeamService(accessor),invalid);
+  }
+  assert.equal(getterReads,0);
+
+  const body=JSON.stringify(combinedProfile);
+  const f=await fixture(t);
+  const duplicates=[
+    ['wechatAppId','wechat\\u0041ppId','wxAAAAAAAAAAAAAAAA'],
+    ['checkoutOrigin','checkout\\u004frigin','https://other.example.invalid'],
+  ];
+  for(const [key,escaped,v] of duplicates){
+    const saved=body.replace('"'+key+'":','"'+escaped+'":'+JSON.stringify(v)+',"'+key+'":');
+    assert.deepEqual(JSON.parse(saved),combinedProfile);
+    await fs.writeFile(f.filename,saved);
+    await assert.rejects(loadTeamServiceConfiguration({env:f.env,isPackaged:false}),invalid);
+  }
+});

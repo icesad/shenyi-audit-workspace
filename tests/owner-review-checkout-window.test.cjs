@@ -3,6 +3,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const {EventEmitter}=require('node:events'),{randomUUID,createHash,X509Certificate}=require('node:crypto');
 const helper=require('../desktop/owner-review-checkout.cjs');
 const {OWNER_REVIEW_RUNTIME_MARKER}=require('../desktop/isolated-preview-config.cjs');
+const {loadTeamServiceConfiguration}=require('../desktop/team-service-config.cjs');
 const NOW=Date.UTC(2030,0,1,0,1),CODE=Buffer.alloc(32,27).toString('base64url'),ORIGIN='https://127.0.0.1:43321';
 const STOREFRONT='https://127.0.0.1:43322';
 // Public certificates only; private keys used to generate these fixtures were never written.
@@ -118,6 +119,22 @@ test('both listener roles reject reserved or noncanonical loopback origins even 
    await assert.rejects(f.load({profile}),invalid);
   }
  }
+});
+
+test('the Windows owner-review checkout loader refuses a valid combined managed profile',async t=>{
+ const f=await fixture(t);
+ assert.equal((await f.load()).profile.schemaVersion,3);
+ const profile={
+  schemaVersion:4,
+  apiBase:'https://team.example.invalid',
+  serverId:f.profile.serverId,
+  wechatAppId:'wx0123456789abcdef',
+  checkoutOrigin:'https://checkout.example.invalid',
+ };
+ await fs.writeFile(f.config,JSON.stringify(profile)+'\n');
+ const loaded=await loadTeamServiceConfiguration({env:f.env});
+ assert.deepEqual(loaded.profile,profile);
+ await assert.rejects(f.load({profile:loaded.profile}),invalid);
 });
 
 test('checkout windows have separate nonpersistent sessions and no desktop preload or privileged web settings',async t=>{

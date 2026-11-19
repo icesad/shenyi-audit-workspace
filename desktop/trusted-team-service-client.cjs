@@ -57,7 +57,7 @@ function createTrustedTeamServiceTransport({profile,fetchImpl,boundedBytes,error
       check();callerSignal?.throwIfAborted();
     }
   }
-  const wechatPolicy=trusted.schemaVersion===2?Object.freeze({
+  const wechatPolicy=Object.hasOwn(trusted,'wechatAppId')?Object.freeze({
     appId:trusted.wechatAppId,
     redirectUri:url('/api/auth/wechat/callback'),
   }):undefined;

@@ -96,6 +96,26 @@ test('a packaged Mac can load a version 2 WeChat profile from the protected Find
   assert.deepEqual(incomplete.opens, [[configPath, flags.O_NOFOLLOW | flags.O_NONBLOCK]]);
 });
 
+test('the protected Finder profile accepts combined capabilities and never substitutes the alternate path', async () => {
+  const profile = {
+    ...configured,
+    schemaVersion: 4,
+    wechatAppId: 'wx0123456789abcdef',
+    checkoutOrigin: 'https://checkout.example',
+  };
+  const env = { SHENYI_TEAM_SERVICE_CONFIG: alternate, SHENYI_TEAM_API: profile.apiBase };
+  const f = mountedFixture({ managed: JSON.stringify({ ...profile, apiBase: profile.apiBase + '/' }) });
+  const result = await f.load({ env, isPackaged: true });
+  assert.equal(result.mode, 'remote-https');
+  assert.deepEqual({ ...result.profile }, profile);
+  assert.ok(Object.isFrozen(result.profile));
+  assert.deepEqual(f.opens, [[configPath, flags.O_NOFOLLOW | flags.O_NONBLOCK]]);
+
+  const invalid = mountedFixture({ managed: JSON.stringify({ ...profile, checkoutOrigin: profile.apiBase }) });
+  await assert.rejects(invalid.load({ env, isPackaged: true }), failure);
+  assert.deepEqual(invalid.opens, [[configPath, flags.O_NOFOLLOW | flags.O_NONBLOCK]]);
+});
+
 test('an absent directory permits explicit test configuration only under a trusted parent on packaged Mac', async () => {
   const f = mountedFixture({ absent: true });
   const env = { SHENYI_TEAM_SERVICE_CONFIG: alternate };
