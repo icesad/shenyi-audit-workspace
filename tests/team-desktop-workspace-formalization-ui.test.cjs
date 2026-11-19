@@ -51,6 +51,51 @@ async function chooseSource(f){f.click('workspace-formalization-source-open');aw
 function formalProof(f){for(const k of ['business-confirmed','confirmed']){f.id('workspace-formalization-'+k).checked=true;f.fire('workspace-formalization-'+k,'change');}f.id('workspace-formalization-password').value='  Exact owner password!  ';f.fire('workspace-formalization-password','input');}
 const confirmations=f=>f.calls.filter(c=>c.name==='confirmWorkspaceFormalization'),receiptReads=f=>f.calls.filter(c=>c.name==='getWorkspaceFormalizationReceipt');
 
+test('successful task creation refreshes collection formalization after its own POST while retaining the write lock',async t=>{
+ const post=deferred(),formalRead=deferred(),events=[],taskId='44444444-4444-4444-8444-444444444444';
+ let f,createdTask=null,postCompleted=false,formalReads=0;
+ f=formalFixture(t,{
+  createProjectTask:async input=>{
+   await post.promise;
+   createdTask={id:taskId,title:input.title,instructions:input.instructions,status:'open',revision:0};
+   f.setProject({revision:f.project().revision+1});postCompleted=true;events.push('task-post-completed');
+   return ok({task:createdTask,revision:f.project().revision});
+  },
+  listProjectTasks:async()=>ok({tasks:createdTask?[createdTask]:[],hasMore:false}),
+  getWorkspaceFormalization:async()=>{
+   if(++formalReads>1){
+    assert.equal(postCompleted,true,'the formalization refresh must follow the successful task POST');
+    events.push('formalization-refresh-started');
+    await formalRead.promise;
+   }
+   return ok({teamId:'team-a',projectId:W,projectRevision:f.project().revision,canConfirm:true,confirmation:null});
+  }
+ });
+ t.after(()=>{post.resolve();formalRead.resolve();});
+ await openW(f);
+ const taskReads=count(f,'listProjectTasks'),memberReads=count(f,'listProjectMembers');
+ assert.equal(formalReads,1);assert.equal(f.id('project-task-title').disabled,false);
+ createProof(f,'创建成功的合成采集任务','仅用于同一写操作完成后的读取刷新');
+ f.fire('project-task-create-form','submit');
+ assert.equal(count(f,'createProjectTask'),1);assert.equal(f.id('project-task-title').disabled,true);
+ post.resolve();
+ await until(()=>!!f.d.querySelector('#project-tasks-list [data-task-id="'+taskId+'"]')&&(formalReads===2||!f.id('project-access-detail-refresh').disabled));
+ assert.match(f.d.querySelector('#project-tasks-list [data-task-id="'+taskId+'"] strong').textContent,/创建成功的合成采集任务/);
+ assert.equal(count(f,'listProjectTasks'),taskReads+1);assert.equal(count(f,'listProjectMembers'),memberReads+1);
+ assert.equal(formalReads,2,'a successful task POST must not skip its own formalization GET as if the refresh failed');
+ assert.deepEqual(events,['task-post-completed','formalization-refresh-started']);
+ for(const id of ['project-task-title','project-task-create','project-access-refresh','project-access-detail-refresh','workspace-formalization-source-open','workspace-formalization-confirm'])assert.equal(f.id(id).disabled,true,id+' must stay locked until the post-write read finishes');
+ f.fire('project-task-create-form','submit');
+ assert.equal(count(f,'createProjectTask'),1,'an empty duplicate submit during formalization refresh must not dispatch another POST');
+ formalRead.resolve();
+ await until(()=>!f.id('project-access-detail-refresh').disabled);
+ assert.equal(count(f,'createProjectTask'),1);assert.equal(count(f,'confirmWorkspaceFormalization'),0);
+ assert.match(f.id('project-task-create-message').textContent,/任务已创建。请打开该任务的下方分工，明确指派/);
+ assert.doesNotMatch(f.id('project-task-create-message').textContent,/刷新未确认/);
+ assert.match(f.id('project-access-message').textContent,/任务已创建。请打开该任务的下方分工，明确指派/);
+ assert.equal(f.id('project-task-title').disabled,false);
+});
+
 test('normal owner sees private source W/Q differences and explicitly confirms without granting material access',async t=>{const f=formalFixture(t);await openW(f);assert.equal(count(f,'getWorkspaceFormalization'),1);assert.equal(f.id('workspace-formalization-source-open').disabled,false);await chooseSource(f);const text=f.id('workspace-formalization-source-summary').textContent;for(const value of [W,Q,'名称不同','首次中标','立项引用中标','来源保存时最新中标','106.00','非最终项目金额','磁盘后续修改'])assert.ok(text.includes(value),value);assert.equal(f.id('workspace-formalization-source-summary').querySelector('img'),null);assert.equal(f.id('workspace-formalization-confirm').disabled,true);formalProof(f);f.fire('workspace-formalization-form','submit');await until(()=>f.id('workspace-formalization-message').textContent.includes('已业务确认'));const input=confirmations(f)[0].input;assert.deepEqual(Object.keys(input).sort(),['businessConfirmed','confirmed','currentPassword','handle','projectId','projectRevision','sourceSha256','teamId']);assert.equal(input.projectRevision,10);assert.equal(input.currentPassword,'  Exact owner password!  ');assert.equal(input.businessConfirmed,true);assert.equal(input.confirmed,true);assert.match(f.id('project-access-status').textContent,/已业务确认正式立项/);assert.doesNotMatch(f.id('workspace-formalization-status').textContent,/尚未(?:业务)?确认/);assert.match(f.id('workspace-formalization-status').textContent,/已有负责人业务确认/);assert.equal(f.id('collection-workspace-materials-locked').hidden,true);assert.match(f.id('collection-workspace-materials-locked').textContent,/须另行明确授予.*五项权限.*不自动授权/);assert.equal(f.id('project-materials-panel').hidden,true);assert.equal(f.id('workspace-formalization-password').value,'');assert.equal(f.id('workspace-formalization-source-summary').textContent,'');assert.match(f.id('workspace-formalization-receipt-summary').textContent,/非专业审计签审/);assert.equal(ledgerLegacyFormCount(f.d),22);assert.equal(ledgerLegacySecretCount(f.d),27);});
 test('active collection reader cannot infer owner confirmation authority from read or role',async t=>{const f=formalFixture(t,{}, {canManageAccess:false,canCreateTask:false});await openW(f);assert.equal(count(f,'getWorkspaceFormalization'),0);assert.equal(f.id('workspace-formalization-section').hidden,true);f.click('workspace-formalization-source-open');f.fire('workspace-formalization-form','submit');assert.equal(count(f,'chooseWorkspaceFormalizationSource'),0);assert.equal(confirmations(f).length,0);});
 test('frozen owner gets read-only existing confirmation but cannot choose or confirm',async t=>{const r=formalReceipt(),f=explicitSourceReadFixture(t,{getWorkspaceFormalization:async()=>ok({teamId:'team-a',projectId:W,projectRevision:11,canConfirm:false,confirmation:r})},{status:'frozen',revision:11,canManageAccess:false,canCreateTask:false,businessConfirmed:true});await openW(f);assert.equal(count(f,'getWorkspaceFormalization'),1);assert.equal(f.id('workspace-formalization-section').hidden,false);assert.match(f.id('workspace-formalization-receipt-summary').textContent,/旧正式来源Q/);assert.equal(f.id('workspace-formalization-source-open').disabled,true);assert.equal(f.id('workspace-formalization-confirm').disabled,true);});
