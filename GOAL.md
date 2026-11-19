@@ -1,5 +1,9 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-20 M7BK Linux 停服前启动预检
+
+Linux 切换在停服前使用候选代码检查 SQLite、TLS 证书和私钥，以及已配置的短信和微信。隔离 Ubuntu 实测两种错误输入均保留现有服务和两路 HTTPS。恢复合成配置后，原签名候选通过真实 systemd 切换，旧版本及合成原件保留。76 项 Node 回归和 16 项 Python 测试通过。本轮验收 Linux，Windows 一键沿用前轮实测。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-linux-startup-preflight-20261120/verification.json`。
+
 ## 2026-11-20 M8U Windows 受管试点评审长路径
 
 修复 Windows 新团队评审在较长用户数据目录下无法创建合成负责人的问题。旧包在 263 字符数据库路径启动失败，新包用同一用户数据目录，从含空格的解包目录实际启动，完成负责人登录、首次绑机和退出。解压后的接收校验通过，活动会话和租约均清零。同组 578 项回归在较长测试目录通过。真实试点及负责人签收仍待验。未合入 main、未推送、未发布。证据见 `D:/codex-temp/shenyi-m8-managed-pilot-path-20261120/verification.json`。

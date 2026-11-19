@@ -1,4 +1,8 @@
-# 当前状态 · Windows 受管试点评审长路径
+# 当前状态 · Linux 停服前启动预检
+
+## 2026-11-20 M7BK Linux 停服前启动预检
+
+Linux 切换在停服前使用候选代码检查 SQLite、TLS 证书和私钥，以及已配置的短信和微信。隔离 Ubuntu 实测两种错误输入均保留现有服务和两路 HTTPS。恢复合成配置后，原签名候选通过真实 systemd 切换，旧版本及合成原件保留。76 项 Node 回归和 16 项 Python 测试通过。本轮验收 Linux，Windows 一键沿用前轮实测。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-linux-startup-preflight-20261120/verification.json`。
 
 ## 2026-11-20 M8U Windows 受管试点评审长路径
 
