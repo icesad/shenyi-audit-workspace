@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fileFacts, loadBuildInventory, prepareDesktopCandidatePayload, publishWindowsCandidateDirectory, resolveBuildOutput, verifyElectronArchive } from './build-windows-desktop-candidate.mjs';
+import { verifyWindowsOwnerReview } from './verify-windows-owner-review.mjs';
 import previewConfiguration from '../desktop/isolated-preview-config.cjs';
 import workpaperInputs from './owner-review-workpaper-inputs.cjs';
 
@@ -14,6 +15,7 @@ const nodeDirectory = 'node-v' + nodeVersion + '-win-x64';
 // https://nodejs.org/dist/v24.22.1/SHASUMS256.txt
 const nodeZipSha256 = 'd2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5';
 const reviewFiles = new Map([
+  ['scripts/verify-windows-owner-review.mjs', 'scripts/verify-windows-owner-review.mjs'],
   ['scripts/team-isolated-preview.mjs', 'scripts/team-isolated-preview.mjs'],
   ['scripts/team-billing-preview-fixture.mjs', 'scripts/team-billing-preview-fixture.mjs'],
   ['scripts/team-pilot-preview-fixture.mjs', 'scripts/team-pilot-preview-fixture.mjs'],
@@ -81,7 +83,7 @@ async function listFiles(directory, prefix = '') {
   return files.sort();
 }
 
-function commandFile([script, flag]) {
+function commandFile([script, flag], { verifier = false } = {}) {
   return [
     '@echo off',
     'setlocal DisableDelayedExpansion',
@@ -90,10 +92,11 @@ function commandFile([script, flag]) {
     'set "NODE_OPTIONS="',
     'set "NODE_PATH="',
     'set "NODE_V8_COVERAGE="',
+    ...(verifier ? ['set "NODE_DISABLE_COMPILE_CACHE=1"'] : []),
     'set "PATH=%SystemRoot%\\System32;%SystemRoot%"',
     '"%~dp0runtime\\node\\node.exe" "%~dp0scripts\\' + script + '"' + (flag === undefined ? '' : ' ' + flag),
     'set "REVIEW_EXIT=%errorlevel%"',
-    'if not "%REVIEW_EXIT%"=="0" pause',
+    verifier ? 'pause' : 'if not "%REVIEW_EXIT%"=="0" pause',
     'exit /b %REVIEW_EXIT%',
     '',
   ].join('\r\n');
@@ -185,6 +188,8 @@ async function build({ nodeArchive, electronArchive, npmCache, output }) {
     for (const [filename, command] of launches) {
       await writeFile(path.join(bundle, filename), commandFile(command), { flag: 'wx' });
     }
+    await writeFile(path.join(bundle, 'Verify-Owner-Review.cmd'),
+      commandFile(['verify-windows-owner-review.mjs'], { verifier: true }), { flag: 'wx' });
     await writeFile(path.join(bundle, 'owner-review-runtime.json'), previewConfiguration.OWNER_REVIEW_RUNTIME_MARKER, { flag: 'wx' });
 
     const files = {};
@@ -199,6 +204,7 @@ async function build({ nodeArchive, electronArchive, npmCache, output }) {
     };
     const manifestName = 'owner-review-manifest.json';
     await writeFile(path.join(bundle, manifestName), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
+    await verifyWindowsOwnerReview(bundle);
     if (!samePath(working, path.dirname(await realpath(nodeScratch))) || !samePath(nodeScratch, await realpath(nodeScratch))) {
       throw new Error('解包临时目录位置发生变化。');
     }

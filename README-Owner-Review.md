@@ -1,6 +1,14 @@
 # 审易 Windows 双人评审包
 
-本包用于产品负责人和米老师在 Windows x64 上走查合成资料。将 ZIP 完整解压到可写、路径较短的本机目录，例如 `D:\ShenyiReview`。Node.js 和 Electron 已随包提供，解压后即可启动。请保留目录结构。
+本包用于产品负责人和米老师在 Windows x64 上走查合成资料。先使用可信交付记录中的 SHA-256 核对收到的 ZIP。将 ZIP 完整解压到可写、路径较短的本机目录，例如 `D:\ShenyiReview`，并保留目录结构。Node.js 和 Electron 已随包提供。
+
+## 接收校验
+
+1. 在 PowerShell 中运行 `Get-FileHash -Algorithm SHA256 -LiteralPath 'D:\下载\Shenyi-Owner-Review-Win-x64.zip'`，将路径换成实际收到的文件。核对输出与交付记录的 ZIP 摘要一致，再解压到新目录。
+2. 双击解压目录中的 `Verify-Owner-Review.cmd`。看到「评审包校验通过」后，记下文件数和清单 SHA-256，再开始走查。校验逐一读取清单内文件，核对字节数和摘要，拦截缺件、多余文件及目录链接。校验会跳过本机演练目录 `review-runs` 的内容。
+3. 校验失败时保留屏幕提示和原 ZIP，先核对下载摘要，再从已核对的 ZIP 重新解压到空目录。
+
+## 走查入口
 
 | 走查项目 | 双击入口 | 重点 |
 | --- | --- | --- |
@@ -26,4 +34,4 @@
 - [订阅与退款受理演练](docs/M5_LOCAL_ACCEPTANCE.md)
 - [官网预览说明](website/README.md)
 
-核对交付时可使用 `owner-review-manifest.json` 中的字节数和 SHA-256。保留接收时的原 ZIP，演练产生的 `review-runs` 留在解压目录。
+保留接收时的原 ZIP，演练产生的 `review-runs` 留在解压目录。
