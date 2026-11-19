@@ -1346,7 +1346,15 @@
   byId('employee-invitation-form').addEventListener('submit',async event=>{
     event.preventDefault();if(busy||invitationWorking||invitationMutationPending()||!invitationAllowed||!invitationPageLoaded)return;const c=invitationContext(),job={actor:c.actor},input={teamId:c.target,phone:byId('invitation-phone').value,role:byId('invitation-role').value};invitationMutation=job;invitationWorking=true;clearIssuedInvitation();updateOnboardingControls();
     try{const value=await invitationCall('createEmployeeInvitation',input,c);if(!currentInvitationView(c))return;byId('invitation-phone').value='';if(!await refreshInvitationList(c,[null])||!currentInvitationView(c))return;byId('issued-invitation-description').textContent=value.phoneMasked+' · '+labels[value.role]+' · 团队 '+value.teamId+' · 有效至 '+new Date(value.expiresAt).toLocaleString('zh-CN');byId('issued-invitation-code').value=value.invitationCode;byId('issued-invitation').hidden=false;message('invitation-message','邀请已创建，未发送消息。已返回首页；请核对后自行转交本次邀请码。');}
-    catch{if(currentInvitationView(c))resetInvitations();}
+    catch(error){
+      if(!currentInvitationView(c))return;
+      const notice=error?.code==='SEAT_CAPACITY_EXHAUSTED'?'可用席位已用完。请核对待激活邀请和当前席位。':
+        error?.code==='SUBSCRIPTION_WRITE_UNAVAILABLE'?'当前订阅不可创建邀请。请在订阅与席位中核对当前状态。':'';
+      if(!notice){resetInvitations();return;}
+      byId('invitation-phone').value='';
+      try{if(await refreshInvitationList(c,[null])&&currentInvitationView(c))message('invitation-message',notice,true);}
+      catch{if(currentInvitationView(c))resetInvitations();}
+    }
     finally{if(invitationMutation===job)invitationMutation=null;if(c.at===invitationEpoch)invitationWorking=false;updateOnboardingControls();}
   });
   function closeInvitationPage(){invitationEpoch++;invitationWorking=false;invitationPanelOpen=false;clearIssuedInvitation();clearInvitationPage();byId('invitation-phone').value='';byId('invitation-role').value='intern';message('invitation-message','');updateOnboardingControls();}

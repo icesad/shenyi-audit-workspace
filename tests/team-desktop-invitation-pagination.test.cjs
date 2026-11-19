@@ -62,3 +62,81 @@ test('same existing invitation channel passes only page arguments from its exact
   for(const foreign of [{sender:{},senderFrame:mainFrame},{sender:webContents,senderFrame:{url:APP_URL}},{sender:webContents,senderFrame:{url:'https://untrusted.invalid'}}])assert.equal((await handler(foreign,arg)).error.code,'UNTRUSTED_SENDER');
   assert.equal(seen.length,1);dispose();assert.equal(handlers.size,0);
 });
+
+// Actual strict synthetic app verifies each Ed25519 request before the optional
+// response projection below. No real SMS, external service or live accounts.
+async function signedInvitationFixture(t){
+  const {sign,randomUUID}=require('node:crypto');
+  const proof=require('../shared/device-proof.cjs');
+  const {createBusinessRoleFixture,PASSWORD,keyPair,source}=require('./helpers/business-role-fixture.cjs');
+  const f=await createBusinessRoleFixture(t),{handleTeamApplicationRequest}=await source('application-api.mjs');
+  const key=keyPair(),fingerprint=proof.parsePublicKey(key.encoded).fingerprint;
+  const calls=[],state={after:null};
+  const vault={async getPublicIdentity(){return {publicKey:key.encoded,fingerprint};},
+    async signChallenge(fields){return sign(null,proof.challengeBytes(fields),key.privateKey).toString('base64url');},
+    async signRequest(fields){return sign(null,proof.requestProofBytes(fields),key.privateKey).toString('base64url');}};
+  const client=createTeamClient({deviceIdentity:{vault,platform:'win32'},now:()=>f.clock.value,
+    fetchImpl:async(url,options)=>{
+      const request=new Request(url,options),route=new URL(url).pathname;
+      const answer=await handleTeamApplicationRequest(request,{db:f.db,now:()=>f.clock.value,
+        identityProviders:{deviceProofRequired:true},subscriptionEnforcement:'team-management-v1',seatCapacityEnforcement:'invitation-reservations-v1'});
+      const call={route,method:options.method,status:answer.status,headers:options.headers};calls.push(call);
+      return state.after?state.after(call,answer):answer;
+    }});
+  await client.login({username:'administrator-demo',password:PASSWORD});
+  await client.enrollDevice({displayName:'Synthetic invitation computer',currentPassword:PASSWORD,confirmed:true});
+  assert.equal(client.getDeviceStatus().state,'ready');
+  t.after(()=>client.clearSession());
+  const invite=()=>client.createEmployeeInvitation({teamId:'team-a',phone:'+8613800098001',role:'intern'});
+  const invitations=()=>['team_invitations','team_employee_invitations','team_operator_employee_invitations'].map(table=>f.db.prepare('SELECT COUNT(*) n FROM '+table).get().n);
+  const enableFullCapacity=async()=>{
+    const {recordSubscriptionTerm,countActiveBusinessSeats}=await source('subscription-store.mjs');
+    const {recordSeatCapacityGrant}=await source('seat-capacity-store.mjs');
+    const at=f.clock.value,interval={teamId:'team-a',startsAt:at-1000,endsAt:at+86400000,sourceRef:'synthetic-invitation-full-capacity'};
+    recordSubscriptionTerm(f.db,{...interval,operationId:randomUUID(),expectedRevision:0},{now:()=>at});
+    const seats=countActiveBusinessSeats(f.db,'team-a');assert.ok(seats>0);
+    recordSeatCapacityGrant(f.db,{...interval,grantId:randomUUID(),seats},{now:()=>at});
+  };
+  return {...f,client,calls,state,invite,invitations,enableFullCapacity};
+}
+
+test('signed real subscription and capacity denials retain their precise safe invitation codes without creating an invitation',async t=>{
+  const f=await signedInvitationFixture(t),before=f.invitations();
+  await assert.rejects(f.invite,error=>error.code==='SUBSCRIPTION_WRITE_UNAVAILABLE'&&error.status===402&&error.message==='本次邀请未创建，请核对团队订阅与席位。');
+  assert.equal(f.calls.at(-1).status,402);assert.deepEqual(f.invitations(),before);
+  assert.equal(f.client.getDeviceStatus().state,'ready');
+  await f.enableFullCapacity();
+  await assert.rejects(f.invite,error=>error.code==='SEAT_CAPACITY_EXHAUSTED'&&error.status===409&&error.message==='本次邀请未创建，请核对团队订阅与席位。');
+  assert.equal(f.calls.at(-1).status,409);assert.deepEqual(f.invitations(),before);
+  assert.equal(f.client.getDeviceStatus().state,'ready');
+  assert.equal((await f.client.getSession()).account.id,'administrator-demo');
+  const posts=f.calls.filter(call=>call.route==='/api/teams/team-a/employee-invitations'&&call.method==='POST');
+  assert.equal(posts.length,2);
+  for(const call of posts)for(const name of ['Authorization','X-Shenyi-Device-Lease','X-Shenyi-Device-Nonce','X-Shenyi-Device-Signature'])assert.ok(call.headers[name]);
+});
+
+test('safe invitation mapping requires exact signed POST path and matched status plus code; other errors remain generic',async t=>{
+  const f=await signedInvitationFixture(t),before=f.invitations();
+  const remoteMessage='Synthetic untrusted provider message must never reach the renderer';
+  for(const [status,code,expected]of [
+    [402,'SUBSCRIPTION_WRITE_UNAVAILABLE','SUBSCRIPTION_WRITE_UNAVAILABLE'],
+    [409,'SEAT_CAPACITY_EXHAUSTED','SEAT_CAPACITY_EXHAUSTED'],
+    [402,'SEAT_CAPACITY_EXHAUSTED','HTTP_402'],
+    [409,'SUBSCRIPTION_WRITE_UNAVAILABLE','HTTP_409'],
+    [409,'UNRELATED_CONFLICT','HTTP_409'],
+    [402,'UNRELATED_CONFLICT','HTTP_402'],
+    [403,'SEAT_CAPACITY_EXHAUSTED','HTTP_403'],
+  ]){
+    f.state.after=(call,answer)=>call.route==='/api/teams/team-a/employee-invitations'&&call.method==='POST'?Response.json({error:{code,message:remoteMessage}},{status}):answer;
+    await assert.rejects(f.invite,error=>error.code===expected&&error.status===status&&!error.message.includes(remoteMessage));
+    assert.equal(f.calls.at(-1).status,402,'The real underlying request was verified and denied before its synthetic response projection');
+    assert.equal(f.client.getDeviceStatus().state,'ready');assert.deepEqual(f.invitations(),before);
+  }
+  f.state.after=(call,answer)=>call.route.startsWith('/api/teams/')?Response.json({error:{code:'SEAT_CAPACITY_EXHAUSTED',message:remoteMessage}},{status:409}):answer;
+  await assert.rejects(()=>f.client.listEmployeeInvitations({teamId:'team-a'}),{code:'HTTP_409'});
+  await assert.rejects(()=>f.client.revokeEmployeeInvitation({teamId:'team-a',invitationId:'synthetic-absent-invitation'}),{code:'HTTP_409'});
+  assert.deepEqual(f.invitations(),before);
+  const legacy=await fixture(()=>Response.json({error:{code:'SUBSCRIPTION_WRITE_UNAVAILABLE',message:remoteMessage}},{status:402}));
+  await assert.rejects(()=>legacy.client.createEmployeeInvitation({teamId:'team-a',phone:'+8613800098002',role:'intern'}),{code:'HTTP_402'});
+  assert.equal(legacy.calls.at(-1).options.headers['X-Shenyi-Device-Signature'],undefined);
+});

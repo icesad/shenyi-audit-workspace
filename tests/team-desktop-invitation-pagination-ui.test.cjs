@@ -99,3 +99,47 @@ for(const operation of ['create','revoke']){
 test('explicit refresh returns home and clears the displayed one-time code without another create',async t=>{
  const f=fixture(t);await f.login();await f.open();await f.createInvitation();assert.equal(f.id('issued-invitation-code').value,CODE);assert.match(f.id('invitation-refresh').textContent,/首页.*清除邀请码/);f.click('invitation-refresh');assert.equal(f.id('issued-invitation-code').value,'');await until(()=>!f.id('invitation-refresh').disabled);assert.equal(lists(f).at(-1).input.after,undefined);assert.equal(count(f,'createEmployeeInvitation'),1);assert.match(f.id('invitation-service-status').textContent,/短信激活服务尚未开通/);
 });
+
+for(const [code,notice]of [['SEAT_CAPACITY_EXHAUSTED','可用席位已用完。请核对待激活邀请和当前席位。'],['SUBSCRIPTION_WRITE_UNAVAILABLE','当前订阅不可创建邀请。请在订阅与席位中核对当前状态。']]){
+ test('explicit '+code+' preserves the reachable first page after fresh permission and list reads',async t=>{
+  const f=fixture(t);await f.login();await f.open();await f.createInvitation();
+  const original=f.rows['team-a'][0],total=f.rows['team-a'].length,accessBefore=count(f,'getInvitationAccess'),listBefore=lists(f).length,callBefore=f.calls.length;
+  f.handlers.create=async()=>fail(code);f.id('invitation-phone').value='13900139000';f.id('invitation-role').value='assistant';f.submit();f.submit();
+  await until(()=>f.id('invitation-message').textContent===notice&&!f.id('invitation-create').disabled);
+  assert.equal(count(f,'createEmployeeInvitation'),2);assert.equal(count(f,'getInvitationAccess'),accessBefore+1);assert.equal(lists(f).length,listBefore+1);
+  assert.deepEqual(f.calls.slice(callBefore).map(call=>call.name),['createEmployeeInvitation','getInvitationAccess','listEmployeeInvitations']);
+  assert.equal(f.id('employee-invitations-panel').hidden,false);assert.equal(f.id('employee-invitations-panel').open,true);
+  assert.equal(f.id('issued-invitation-code').value,'');assert.equal(f.id('issued-invitation').hidden,true);assert.equal(f.id('invitation-phone').value,'');
+  assert.equal(f.id('employee-invitation-list').children.length,50);assert.ok(f.id('employee-invitation-list').textContent.includes(original.phoneMasked));assert.equal(f.rows['team-a'].length,total);assert.equal(original.status,'pending');
+  assert.equal(lists(f).at(-1).input.after,undefined);assert.match(f.id('invitation-page-status').textContent,/第 1 页/);assert.equal(count(f,'revokeEmployeeInvitation'),0);
+ });
+ test('explicit '+code+' cannot preserve stale invitations if fresh permission was removed',async t=>{
+  const f=fixture(t);await f.login();await f.open();await f.createInvitation();const listBefore=lists(f).length,accessBefore=count(f,'getInvitationAccess');
+  f.handlers.create=async()=>{f.allow(false);return fail(code);};f.id('invitation-phone').value='13900139000';f.submit();
+  await until(()=>f.id('employee-invitations-panel').hidden);cleared(f);
+  assert.equal(count(f,'createEmployeeInvitation'),2);assert.equal(count(f,'getInvitationAccess'),accessBefore+1);assert.equal(lists(f).length,listBefore);assert.equal(f.id('workspace-view').hidden,false);
+ });
+}
+
+test('a failed list recheck after capacity denial hides the old page and never retries the create',async t=>{
+ const f=fixture(t);await f.login();await f.open();await f.createInvitation();const listBefore=lists(f).length;
+ f.handlers.create=async()=>fail('SEAT_CAPACITY_EXHAUSTED');f.handlers.list=async()=>fail('HTTP_503');f.id('invitation-phone').value='13900139000';f.submit();
+ await until(()=>f.id('employee-invitations-panel').hidden);cleared(f);assert.equal(count(f,'createEmployeeInvitation'),2);assert.equal(lists(f).length,listBefore+1);assert.equal(f.id('invitation-message').textContent,'');
+});
+
+test('a late capacity refusal cannot overwrite a different team or trigger old-team revalidation',async t=>{
+ const f=fixture(t);await f.login();await f.open();const gate=deferred();f.handlers.create=()=>gate.promise;
+ f.id('invitation-phone').value='13900139000';f.submit();await until(()=>count(f,'createEmployeeInvitation')===1);
+ f.team('team-b');await until(()=>f.id('employee-invitation-list').textContent.includes(row('team-b',900).phoneMasked));
+ const listBefore=lists(f).length,accessBefore=count(f,'getInvitationAccess');gate.resolve(fail('SEAT_CAPACITY_EXHAUSTED'));await until(()=>!f.id('invitation-create').disabled);
+ assert.equal(f.id('invitation-team').value,'team-b');assert.equal(f.id('employee-invitations-panel').hidden,false);assert.equal(f.id('issued-invitation-code').value,'');assert.equal(f.id('invitation-message').textContent,'');
+ assert.equal(lists(f).length,listBefore);assert.equal(count(f,'getInvitationAccess'),accessBefore);assert.equal(count(f,'createEmployeeInvitation'),1);
+});
+
+test('unknown submission results remain closed and are not treated as explicit capacity refusals',async t=>{
+ for(const code of ['HTTP_409','HTTP_503','SERVICE_UNAVAILABLE']){
+  const f=fixture(t);await f.login();await f.open();await f.createInvitation();const listBefore=lists(f).length,accessBefore=count(f,'getInvitationAccess');
+  f.handlers.create=async()=>fail(code);f.id('invitation-phone').value='13900139000';f.submit();await until(()=>f.id('employee-invitations-panel').hidden);cleared(f);
+  assert.equal(count(f,'createEmployeeInvitation'),2);assert.equal(lists(f).length,listBefore);assert.equal(count(f,'getInvitationAccess'),accessBefore);
+ }
+});

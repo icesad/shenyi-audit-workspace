@@ -223,6 +223,11 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
         if(['DEVICE_PROOF_REQUIRED','DEVICE_BODY_MISMATCH','DEVICE_REQUEST_REPLAY','DEVICE_PROOF_LIMIT','DEVICE_STATE_CHANGED'].includes(code)){if(!linking)device.pause();throw failure(code,'设备业务状态需要重新在线核验；已发操作请先核对结果。',response.status);}
         const safeBillingMessage=billing?billingErrorMessage(response.status,code):undefined;
         if(safeBillingMessage)throw failure(code,safeBillingMessage,response.status);
+        const invitationRejected=(response.status===402&&code==='SUBSCRIPTION_WRITE_UNAVAILABLE')||
+          (response.status===409&&code==='SEAT_CAPACITY_EXHAUSTED');
+        if(invitationRejected&&method==='POST'&&/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/employee-invitations$/.test(route)){
+          throw failure(code,'本次邀请未创建，请核对团队订阅与席位。',response.status);
+        }
       }
       // Do not forward arbitrary provider messages, stack traces, or response bodies.
       throw failure(`HTTP_${response.status}`, response.status === 503 && unavailableMessage ? unavailableMessage : messagesOverride?.[response.status]||messages[response.status] || '团队服务暂时无法完成操作。', response.status);
