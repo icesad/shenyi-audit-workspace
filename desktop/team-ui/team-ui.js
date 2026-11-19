@@ -1297,8 +1297,18 @@
     finally{if(at===activationEpoch){activationWorking=false;updateOnboardingControls();}}
   }
   function clearIssuedInvitation(){byId('issued-invitation').hidden=true;byId('issued-invitation-description').textContent='';byId('issued-invitation-code').value='';}
+  function showIssuedInvitation(value){
+    byId('issued-invitation-description').textContent=value.phoneMasked+' · '+labels[value.role]+' · 团队 '+value.teamId+' · 有效至 '+new Date(value.expiresAt).toLocaleString('zh-CN');
+    byId('issued-invitation-code').value=value.invitationCode;
+    byId('issued-invitation').hidden=false;
+  }
   function clearInvitationPage(reset=true){invitationPageRows=[];invitationNextCursor=null;invitationPageLoaded=false;if(reset)invitationCursors=[null];byId('employee-invitation-list').replaceChildren();byId('invitation-page-status').textContent='';}
-  function resetInvitations(close=true){invitationEpoch++;invitationWorking=false;invitationAllowed=false;invitationPanelOpen=false;byId('employee-invitations-panel').hidden=true;if(close)byId('employee-invitations-panel').open=false;clearIssuedInvitation();byId('invitation-phone').value='';byId('invitation-role').value='intern';clearInvitationPage();message('invitation-message','');updateOnboardingControls();return invitationEpoch;}
+  function resetInvitations(close=true){
+    invitationEpoch++;invitationWorking=false;invitationAllowed=false;
+    const panel=byId('employee-invitations-panel');panel.hidden=true;if(close)panel.open=false;
+    invitationPanelOpen=panel.open;
+    clearIssuedInvitation();byId('invitation-phone').value='';byId('invitation-role').value='intern';clearInvitationPage();message('invitation-message','');updateOnboardingControls();return invitationEpoch;
+  }
   function invitationMutationPending(){return !!invitationMutation&&sameAccountSessionsActor(invitationMutation.actor);}
   function invitationContext(){return {at:invitationEpoch,target:invitationTeamId,actor:accountSessionsActor(),device:deviceUiEpoch,main:session?.device?.epoch,open:byId('employee-invitations-panel').open};}
   function currentInvitationView(c){return c.at===invitationEpoch&&sameAccountSessionsActor(c.actor)&&invitationTeamId===c.target&&c.device===deviceUiEpoch&&c.main===session?.device?.epoch&&deviceBusinessReady(session?.device)&&deviceBusinessReady()&&(!c.open||byId('employee-invitations-panel').open);}
@@ -1311,7 +1321,24 @@
     for(const item of items){const row=el('li'),description=el('div');description.append(el('strong',item.phoneMasked+' · '+labels[item.role]+' · '+words[item.status]),el('small','有效至 '+new Date(item.expiresAt).toLocaleString('zh-CN')));row.append(description);if(item.status==='pending'){const revoke=el('button','撤销','button');revoke.type='button';revoke.addEventListener('click',()=>revokeInvitation(item.invitationId));row.append(revoke);}list.append(row);}
     byId('invitation-page-status').textContent='第 '+invitationCursors.length+' 页 · 本页 '+items.length+' 条';updateOnboardingControls();
   }
-  async function refreshInvitationList(c,cursors){clearInvitationPage(false);updateOnboardingControls();const permission=await invitationCall('getInvitationAccess',{teamId:c.target},c);if(permission?.canInvite!==true){resetInvitations();return false;}const after=cursors.at(-1),value=await invitationCall('listEmployeeInvitations',{teamId:c.target,limit:50,...(after?{after}:{})},c),page=invitationPage(value,c,cursors);if(!currentInvitationView(c))return false;invitationCursors=cursors;invitationPageRows=page.items.slice();invitationNextCursor=page.next;invitationPageLoaded=true;invitationAllowed=true;byId('employee-invitations-panel').hidden=false;renderInvitations(invitationPageRows);return true;}
+  async function refreshInvitationList(c,cursors,issued=null){
+    clearInvitationPage(issued!==null);updateOnboardingControls();
+    const permission=await invitationCall('getInvitationAccess',{teamId:c.target},c);
+    if(permission?.canInvite!==true){resetInvitations();return false;}
+    const after=cursors.at(-1);
+    let value;
+    try{value=await invitationCall('listEmployeeInvitations',{teamId:c.target,limit:50,...(after?{after}:{})},c);}
+    catch(error){
+      if(!issued||!c.open||!currentInvitationView(c)||!['HTTP_429','HTTP_503'].includes(error?.code))throw error;
+      showIssuedInvitation(issued);
+      message('invitation-message','邀请已创建，未发送消息。列表暂未刷新。请先核对并复制本次邀请码，再刷新邀请记录。');
+      return false;
+    }
+    const page=invitationPage(value,c,cursors);
+    if(!currentInvitationView(c))return false;
+    invitationCursors=cursors;invitationPageRows=page.items.slice();invitationNextCursor=page.next;invitationPageLoaded=true;invitationAllowed=true;
+    byId('employee-invitations-panel').hidden=false;renderInvitations(invitationPageRows);return true;
+  }
   async function loadInvitationAccess(){
     const at=resetInvitations(false);
     if(!session||!invitationTeamId||!['getInvitationAccess','listEmployeeInvitations','createEmployeeInvitation','revokeEmployeeInvitation'].every(name=>typeof api?.[name]==='function'))return;
@@ -1362,7 +1389,14 @@
   byId('activation-cancel').addEventListener('click',()=>{const submitted=activationWorking&&!!activationChallenge;resetActivation(true,true);if(submitted)message('login-message','已清除输入；已提交的激活可能已完成，可用手机号登录核对。');});
   byId('employee-invitation-form').addEventListener('submit',async event=>{
     event.preventDefault();if(busy||invitationWorking||invitationMutationPending()||!invitationAllowed||!invitationPageLoaded)return;const c=invitationContext(),job={actor:c.actor},input={teamId:c.target,phone:byId('invitation-phone').value,role:byId('invitation-role').value};invitationMutation=job;invitationWorking=true;clearIssuedInvitation();updateOnboardingControls();
-    try{const value=await invitationCall('createEmployeeInvitation',input,c);if(!currentInvitationView(c))return;byId('invitation-phone').value='';if(!await refreshInvitationList(c,[null])||!currentInvitationView(c))return;byId('issued-invitation-description').textContent=value.phoneMasked+' · '+labels[value.role]+' · 团队 '+value.teamId+' · 有效至 '+new Date(value.expiresAt).toLocaleString('zh-CN');byId('issued-invitation-code').value=value.invitationCode;byId('issued-invitation').hidden=false;message('invitation-message','邀请已创建，未发送消息。已返回首页；请核对后自行转交本次邀请码。');}
+    try{
+      const value=await invitationCall('createEmployeeInvitation',input,c);
+      if(!currentInvitationView(c))return;
+      byId('invitation-phone').value='';
+      if(!await refreshInvitationList(c,[null],value)||!currentInvitationView(c))return;
+      showIssuedInvitation(value);
+      message('invitation-message','邀请已创建，未发送消息。已返回首页；请核对后自行转交本次邀请码。');
+    }
     catch(error){
       if(!currentInvitationView(c))return;
       const notice=error?.code==='SEAT_CAPACITY_EXHAUSTED'?'可用席位已用完。请核对待激活邀请和当前席位。':

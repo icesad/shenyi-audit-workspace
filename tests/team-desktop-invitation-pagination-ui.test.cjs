@@ -52,6 +52,57 @@ test('create from a later page sends once, returns home and retains only the new
  const f=fixture(t);await f.login();await f.open();await f.navigation('invitation-next',2);await f.createInvitation();assert.equal(count(f,'createEmployeeInvitation'),1);assert.equal(lists(f).at(-1).input.after,undefined);assert.match(f.id('invitation-page-status').textContent,/第 1 页/);assert.equal(f.id('issued-invitation-code').value,CODE);assert.equal(f.id('invitation-phone').value,'');assert.match(f.id('invitation-message').textContent,/未发送消息/);assert.ok(!f.id('employee-invitation-list').textContent.includes(CODE));assert.deepEqual([...f.id('invitation-role').options].map(x=>x.value),['intern','assistant']);
  await f.navigation('invitation-next',2);assert.equal(f.id('issued-invitation-code').value,'');assert.equal(count(f,'createEmployeeInvitation'),1);
 });
+for(const code of ['HTTP_429','HTTP_503']){
+ test('confirmed invitation stays available when only the history read returns '+code,async t=>{
+  const f=fixture(t);await f.login();await f.open();await f.navigation('invitation-next',2);
+  const oldRevoke=f.id('employee-invitation-list').querySelector('button'),after=f.calls.length;
+  f.handlers.list=async()=>fail(code);
+  await f.createInvitation();
+  assert.deepEqual(f.calls.slice(after).map(call=>call.name),['createEmployeeInvitation','getInvitationAccess','listEmployeeInvitations']);
+  assert.equal(f.rows['team-a'][0].invitationId,'created-1');
+  assert.equal(f.rows['team-a'][0].status,'pending');
+  assert.equal(f.id('employee-invitations-panel').open,true);
+  assert.equal(f.id('issued-invitation-code').value,CODE);
+  assert.equal(f.id('invitation-phone').value,'');
+  assert.match(f.id('invitation-message').textContent,/邀请已创建.*列表.*先.*邀请码/);
+  assert.equal(f.id('employee-invitation-list').children.length,0);
+  assert.equal(f.id('invitation-page-status').textContent,'');
+  for(const control of ['invitation-create','invitation-prev','invitation-next'])assert.equal(f.id(control).disabled,true);
+  f.submit();oldRevoke.click();
+  assert.equal(count(f,'createEmployeeInvitation'),1);
+  assert.equal(count(f,'revokeEmployeeInvitation'),0);
+  f.handlers.list=null;f.click('invitation-refresh');
+  assert.equal(f.id('issued-invitation-code').value,'');
+  await until(()=>!f.id('invitation-create').disabled&&f.id('invitation-page-status').textContent.startsWith('第 1 页'));
+  assert.ok(f.id('employee-invitation-list').textContent.includes(f.rows['team-a'][0].phoneMasked));
+  assert.equal(count(f,'createEmployeeInvitation'),1);
+ });
+}
+
+test('a created invitation is withheld when the follow-up scope or response cannot be verified',async t=>{
+ for(const scenario of [
+  {access:ok({canInvite:false})}, {access:fail('HTTP_503')},
+  {history:fail('HTTP_404')}, {history:ok({invitations:[row('team-b',1)],nextCursor:null})}
+ ]){
+  const f=fixture(t);await f.login();await f.open();
+  if(scenario.access)f.handlers.access=async()=>scenario.access;
+  if(scenario.history)f.handlers.list=async()=>scenario.history;
+  f.id('invitation-phone').value=PHONE;f.submit();
+  await until(()=>f.id('employee-invitations-panel').hidden);cleared(f);
+  assert.equal(f.rows['team-a'][0].status,'pending');
+  assert.equal(count(f,'createEmployeeInvitation'),1);
+ }
+});
+
+test('collapsing an already open and refreshed panel clears the retained receipt',async t=>{
+ const f=fixture(t);await f.login();await f.open();
+ const before=lists(f).length;f.click('invitation-refresh');
+ await until(()=>lists(f).length>before&&!f.id('invitation-create').disabled);
+ f.handlers.list=async()=>fail('HTTP_429');await f.createInvitation();
+ assert.equal(f.id('issued-invitation-code').value,CODE);
+ f.id('employee-invitations-panel').open=false;await settle();cleared(f);
+ assert.equal(count(f,'createEmployeeInvitation'),1);
+});
 test('revoke sends one mutation then refreshes the current page using its same opaque cursor',async t=>{
  const f=fixture(t);await f.login();await f.open();await f.navigation('invitation-next',2);const button=f.id('employee-invitation-list').querySelector('button');button.click();button.click();await until(()=>f.id('employee-invitation-list').textContent.includes('已撤销')&&!f.id('invitation-refresh').disabled);assert.equal(count(f,'revokeEmployeeInvitation'),1);assert.equal(lists(f).at(-1).input.after,cursor('team-a',50));assert.match(f.id('invitation-page-status').textContent,/第 2 页/);assert.equal(f.id('employee-invitation-list').children.length,50);
 });
