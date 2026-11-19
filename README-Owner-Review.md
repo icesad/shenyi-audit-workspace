@@ -14,12 +14,13 @@
 | --- | --- | --- |
 | 采集和核对 | `Start-Team-Pilot-Candidate.cmd` | 依次检查实习生、助理、经理和合伙人的任务与资料范围。 |
 | 新团队首份采集 | `Start-Team-Managed-Pilot-Candidate.cmd` | 从只含产品负责人的新库走通审批、人员激活、采集任务及只读核对。 |
+| 新团队四职级走查 | `Start-Team-Managed-Pilot-Candidate.cmd` | 另起一轮，批准四席试点并激活四名员工，核对各职级的任务、项目授权和原件范围。 |
 | 底稿迁入和导出 | `Start-Team-Pilot-Candidate.cmd` | 使用 `review-inputs` 中同一来源的两个合成文件，核对已保存填写、冻结及导出。 |
 | 订阅和席位 | `Start-Team-Billing-Candidate.cmd` | 检查年费、增购、按订单号查询、恢复兑现及退款受理。所有收款回执均为合成。 |
 | 官网年费与增购下单 | `Start-Team-Website-Checkout-Candidate.cmd` | 从桌面打开专用官网窗口，核对年费和增购报价，创建待处理模拟订单，再回桌面核对同一订单编号。此入口不收款、不兑现权益。 |
 | 官网口径 | `Start-Website-Preview.cmd` | 在浏览器核对产品描述、下载与购买入口表述。 |
 
-桌面账号和合成密码显示在启动窗口。每次启动使用独立演练编号、合成数据库和电脑绑定配置。新团队入口在当前用户的 `%LOCALAPPDATA%\ShenyiManagedPilotReview` 下保留本轮文件，具体目录和原件位置由启动窗口显示。其他桌面入口的记录位于解压目录下的 `review-runs`。请在同一次启动中完成相关角色的登出和登录。关闭桌面应用即停止对应合成服务。静态官网走查结束后，可在其启动窗口按 Ctrl+C 停止预览。
+本轮登录信息显示在启动窗口。新团队走查中的首管理员和员工在激活时自行设置演练密码。每次启动使用独立演练编号、合成数据库和电脑绑定配置。新团队入口在当前用户的 `%LOCALAPPDATA%\ShenyiManagedPilotReview` 下保留本轮文件，具体目录和原件位置由启动窗口显示。其他桌面入口的记录位于解压目录下的 `review-runs`。请在同一次启动中完成相关角色的登出和登录。关闭桌面应用即停止对应合成服务。静态官网走查结束后，可在其启动窗口按 Ctrl+C 停止预览。
 
 官网下单请使用启动窗口显示的合成技术管理员账号，按提示登录并绑定本轮电脑。在“订阅与席位”中分别打开官网年订阅和增购入口。专用官网窗口使用独立的本机 HTTPS 地址，关闭它后可回到同轮桌面刷新对应类型的订单。增购先取得服务端报价，修改数量需重新报价，再明确确认建单。“报价确认截止”与回执中的“订单锁价截止”分别显示。提交结果未确认时先使用官网的只读核对，或回桌面查原订单。
 
@@ -29,7 +30,7 @@
 
 - [双人评审单](docs/PILOT_OWNER_REVIEW.md)
 - [资料采集演练](docs/TEAM_PILOT_REHEARSAL.md)
-- [新团队首份采集演练](docs/PILOT_MANAGED_FIRST_TASK.md)
+- [新团队首份采集和四职级走查](docs/PILOT_MANAGED_FIRST_TASK.md)
 - [合成底稿演练](docs/PILOT_WORKPAPER_REHEARSAL.md)
 - [订阅与退款受理演练](docs/M5_LOCAL_ACCEPTANCE.md)
 - [官网预览说明](website/README.md)

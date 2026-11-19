@@ -16,7 +16,15 @@ const {loadOwnerReviewRuntime}=configuration;
 const {resolveDeviceVaultDirectory}=deviceDirectories;
 const PACKAGE_ROOT=path.resolve(fileURLToPath(new URL('../',import.meta.url)));
 const ROOT_MARKER='{"schemaVersion":1,"kind":"shenyi-managed-pilot-review-root"}\n';
-const PHONE=Object.freeze({ownerPhone:'+8613800000991',adminPhone:'+8613800000992',assistantPhone:'+8613800000993',internPhone:'+8613800000994'});
+const PHONE=Object.freeze({
+ ownerPhone:'+8613800000991',
+ adminPhone:'+8613800000992',
+ assistantPhone:'+8613800000993',
+ internPhone:'+8613800000994',
+ managerCandidatePhone:'+8613800000996',
+ partnerCandidatePhone:'+8613800000997',
+});
+const EMPLOYEE_PHONES=new Set([PHONE.assistantPhone,PHONE.internPhone,PHONE.managerCandidatePhone,PHONE.partnerCandidatePhone]);
 const samePath=(a,b)=>a.toLowerCase()===b.toLowerCase();
 const within=(parent,child)=>{const rel=path.relative(parent,child);return !path.isAbsolute(rel)&&rel!=='..'&&!rel.startsWith('..'+path.sep);};
 const sha=value=>createHash('sha256').update(value).digest('hex');
@@ -126,7 +134,8 @@ export async function createOwnerReviewManagedPilot(options={}){
   await releaseReservation();phase='start-production-managed-loopback-listener';pepper=randomBytes(32);
   const sms=Object.freeze({async send(value){
    check(!stopping&&value&&typeof value.code==='string'&&/^\d{6}$/.test(value.code));
-   check(value.purpose==='first-admin'&&value.phone===PHONE.adminPhone||value.purpose==='activate'&&[PHONE.assistantPhone,PHONE.internPhone].includes(value.phone));
+   check((value.purpose==='first-admin'&&value.phone===PHONE.adminPhone)||
+     (value.purpose==='activate'&&EMPLOYEE_PHONES.has(value.phone)));
    await onVerificationCode(Object.freeze({purpose:value.purpose,phone:value.phone,code:value.code}));
   }});
   service=await startManagedTeamServer({db,apiBase,port,serverId,key:certificate.key,cert:certificate.cert,sms,phonePepper:pepper});pepper.fill(0);

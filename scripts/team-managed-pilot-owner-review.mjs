@@ -54,11 +54,13 @@ async function launch() {
       schemaVersion: 1, candidateId: run.candidateId, desktopPid: desktop.pid,
     })+'\n', {flag: 'wx', mode: 0o600});
 
-    const {ownerPhone, ownerPassword, adminPhone, assistantPhone, internPhone} = run.credentials;
+    const {ownerPhone, ownerPassword, adminPhone, assistantPhone, internPhone,
+      managerCandidatePhone, partnerCandidatePhone} = run.credentials;
     console.log('审易 · 受管试点演练。请使用本轮合成资料。');
     console.log('合成产品负责人 '+ownerPhone);
     console.log('本轮负责人密码 '+ownerPassword);
     console.log('合成首管理员 '+adminPhone+'，合成助理 '+assistantPhone+'，合成实习生 '+internPhone+'。');
+    console.log('四席演练另有两名候选员工 '+managerCandidatePhone+'（拟任经理）、'+partnerCandidatePhone+'（拟任合伙人），均先按助理邀请。');
     console.log('需要验证码时，请查看本窗口对应号码的新消息。');
     console.log('本轮演练目录 '+run.directory);
     console.log('本轮合成原件 '+run.originalFile);
