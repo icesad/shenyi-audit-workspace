@@ -76,6 +76,12 @@ Windows运行根目录 `Start-Team-Review-Preview.cmd`。审核合成账号 `rev
 
 2026-11-19 的隔离 Windows 走查从只有产品负责人的受管库开始，核对了两席预留转启用、第三份邀请被拒绝、职级变更沿用原设备，以及同项目未指派任务返回 404。实习生通过 Windows 文件选择器提交一份 2,048 字节的合成原件，经理的预览正文、源文件和数据库原件长度及 SHA-256 一致。四个账号正常退出，关停后只读核对会话、租约和库完整性。供应商短信、真实组织及获准试点须在对应环境验收。 [验收状态](STATUS.md#2026-11-19-m8l-windows-新团队首份采集)
 
+### 试点到期时
+
+试点到期以服务端记录的结束时刻为准。技术管理员可刷新「订阅与席位」查看“团队试点 · 已到期”。此时再发邀请会收到订阅状态提示。项目经理的新建任务停止，应用提示联系团队管理员核对期限。原有项目权限仍用于查阅历史、预览提交和导出已选原件。到期本身不使已登录、仍有效的设备会话退出。
+
+在 Windows 隔离受管服务中，以短时合成试点跨越实际结束时刻。两类写入各一次返回 402，已授权历史的原件和已有业务、权益记录通过独立只读核对。正式续费和商户收款按上线验收办理。 [验收状态](STATUS.md#2026-11-19-m8o-windows-受管试点自然到期)
+
 ## 早期 M2 验证记录
 
 相关测试：`tests/team-provisioning-core.test.cjs`、`team-provisioning-adversarial.test.cjs`、`team-provisioning-demo.test.cjs`、`team-desktop-provisioning-client.test.cjs`、`team-desktop-provisioning-ui.test.cjs`；精确数量以根目录[进度](../进度.md)为准。

@@ -223,6 +223,10 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
         if(['DEVICE_PROOF_REQUIRED','DEVICE_BODY_MISMATCH','DEVICE_REQUEST_REPLAY','DEVICE_PROOF_LIMIT','DEVICE_STATE_CHANGED'].includes(code)){if(!linking)device.pause();throw failure(code,'设备业务状态需要重新在线核验；已发操作请先核对结果。',response.status);}
         const safeBillingMessage=billing?billingErrorMessage(response.status,code):undefined;
         if(safeBillingMessage)throw failure(code,safeBillingMessage,response.status);
+        if(response.status===402&&code==='SUBSCRIPTION_WRITE_UNAVAILABLE'&&method==='POST'&&
+          /^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/projects\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/tasks$/.test(route)){
+          throw failure(code,'新建任务已暂停。请联系团队管理员核对试点或订阅状态。已有资料仍可按原权限查阅或导出。',response.status);
+        }
         const invitationRejected=(response.status===402&&code==='SUBSCRIPTION_WRITE_UNAVAILABLE')||
           (response.status===409&&code==='SEAT_CAPACITY_EXHAUSTED');
         if(invitationRejected&&method==='POST'&&/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/employee-invitations$/.test(route)){

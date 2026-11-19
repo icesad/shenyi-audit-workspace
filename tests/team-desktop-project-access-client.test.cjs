@@ -1,11 +1,11 @@
 'use strict';
-const test=require('node:test'),assert=require('node:assert/strict'),{sign}=require('node:crypto');
+const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID,sign}=require('node:crypto');
 const {createTeamClient}=require('../desktop/team-client.cjs'),proof=require('../shared/device-proof.cjs'),replacementProof=require('../shared/device-replacement-proof.cjs');
-const {createProjectAccessFixture,PASSWORD,keyPair,digest}=require('./helpers/project-access-fixture.cjs');
+const {createProjectAccessFixture,PASSWORD,keyPair,digest,source}=require('./helpers/project-access-fixture.cjs');
 const deferred=()=>{let resolve;return {promise:new Promise(r=>resolve=r),resolve:value=>resolve(value)};};
 async function fixture(t,options={}){
- const f=await createProjectAccessFixture(t,options),calls=[],transport={after:null};
- function client(){const key=keyPair(),fingerprint=proof.parsePublicKey(key.encoded).fingerprint,vault={async getPublicIdentity(){return {publicKey:key.encoded,fingerprint};},async signChallenge(fields){return sign(null,proof.challengeBytes(fields),key.privateKey).toString('base64url');},async signRequest(fields){return sign(null,proof.requestProofBytes(fields),key.privateKey).toString('base64url');},async signReplacementChallenge(fields){return sign(null,replacementProof.replacementChallengeBytes(fields),key.privateKey).toString('base64url');}};const c=createTeamClient({deviceIdentity:{vault,platform:'win32'},now:()=>f.clock.value,fetchImpl:async(url,settings)=>{const call={route:new URL(url).pathname,query:new URL(url).searchParams,method:settings.method,body:settings.body,headers:settings.headers};calls.push(call);let response=await f.dispatch(new Request(url,settings));if(transport.after)response=await transport.after(call,response)||response;return response;}});return {c,key,fingerprint};}
+ const f=await createProjectAccessFixture(t,options),calls=[],transport={dispatch:f.dispatch,after:null};
+ function client(){const key=keyPair(),fingerprint=proof.parsePublicKey(key.encoded).fingerprint,vault={async getPublicIdentity(){return {publicKey:key.encoded,fingerprint};},async signChallenge(fields){return sign(null,proof.challengeBytes(fields),key.privateKey).toString('base64url');},async signRequest(fields){return sign(null,proof.requestProofBytes(fields),key.privateKey).toString('base64url');},async signReplacementChallenge(fields){return sign(null,replacementProof.replacementChallengeBytes(fields),key.privateKey).toString('base64url');}};const c=createTeamClient({deviceIdentity:{vault,platform:'win32'},now:()=>f.clock.value,fetchImpl:async(url,settings)=>{const call={route:new URL(url).pathname,query:new URL(url).searchParams,method:settings.method,body:settings.body,headers:settings.headers};calls.push(call);let response=await transport.dispatch(new Request(url,settings));if(transport.after)response=await transport.after(call,response)||response;return response;}});return {c,key,fingerprint};}
  const login=(c,user)=>c.login({username:user,password:PASSWORD}),enroll=async(c,user)=>{await login(c,user);return c.enrollDevice({displayName:'合成 '+user+' 电脑',currentPassword:PASSWORD,confirmed:true});};const owner=client(),delegate=client(),junior=client();await enroll(owner.c,'manager-a');await enroll(delegate.c,'partner-a');await enroll(junior.c,'intern-a');
  const project=()=>owner.c.getProject({teamId:'team-a',projectId:'project-a'}),member=async()=> (await owner.c.listProjectMembers({teamId:'team-a',projectId:'project-a'})).members.find(value=>value.id==='partner-a');
  const grant=async(flags={read:true,manage:false,review:true},extra={})=>{const p=(await project()).project,target=await member();return owner.c.changeProjectAccess({teamId:'team-a',projectId:'project-a',revision:p.revision,userId:target.id,memberRevision:target.revision,...flags,currentPassword:PASSWORD,confirmed:true,...extra});};
@@ -19,6 +19,49 @@ test('without trusted sidecar registration no legacy project is fabricated or di
 test('grant input requires confirmation, valid flag relations, exact IDs and positive project revision',async t=>{const f=await fixture(t),p=(await f.project()).project,m=await f.member(),base={teamId:'team-a',projectId:'project-a',revision:p.revision,userId:m.id,memberRevision:m.revision,read:true,manage:false,review:true,currentPassword:PASSWORD,confirmed:true};for(const change of [{confirmed:false},{revision:0},{revision:Number.MAX_SAFE_INTEGER},{read:false,manage:true},{read:false,review:true},{memberRevision:-1},{url:'http://invalid/'}])await assert.rejects(f.owner.c.changeProjectAccess({...base,...change}),{code:'INVALID_INPUT'});assert.equal(posts(f,'/access'),0);});
 test('main strips grant confirmation and uses the actual new project revision',async t=>{const f=await fixture(t),before=(await f.project()).project.revision,result=await f.grant();assert.equal(result.changed,true);assert.ok(result.revision>before);assert.equal(result.revision,f.revision());const body=JSON.parse(f.calls.find(call=>call.method==='POST'&&call.route.endsWith('/access')).body);assert.deepEqual(Object.keys(body).sort(),['currentPassword','manage','memberRevision','read','review','revision','userId']);assert.equal(body.currentPassword,PASSWORD);assert.equal((await f.project()).project.canManageAccess,true);});
 test('new task gets a server UUID and version zero, preserves CR/LF/Tab, and requires a later explicit junior assignment',async t=>{const f=await fixture(t),before=(await f.project()).project.revision,created=await f.create();assert.match(created.task.id,/^[a-f0-9]{8}-[a-f0-9]{4}-4/);assert.equal(created.task.revision,0);assert.equal(created.task.status,'open');assert.equal(created.task.instructions,'第一行\r\n\t第二行');assert.ok(created.revision>before);assert.equal((await f.junior.c.listTasks({teamId:'team-a'})).tasks.some(task=>task.id===created.task.id),false);const body=JSON.parse(f.calls.find(call=>call.method==='POST'&&call.route.endsWith('/tasks')).body);assert.deepEqual(Object.keys(body).sort(),['instructions','revision','title']);await f.owner.c.assignTask({teamId:'team-a',taskId:created.task.id,revision:0,userId:'intern-a'});assert.equal((await f.junior.c.listTasks({teamId:'team-a'})).tasks.some(task=>task.id===created.task.id),true);const original=Buffer.from('New task actual upload'),submission=await f.junior.c.upload({teamId:'team-a',taskId:created.task.id,revision:1},{filename:'new-task.bin',bytes:original});const records=await f.owner.c.listProjectSubmissions({teamId:'team-a',projectId:'project-a',taskId:created.task.id});assert.equal(records.submissions[0].id,submission.submission.id);assert.equal(records.submissions[0].submittedBy.id,'intern-a');});
+test('expired signed task creation reports subscription guidance and preserves the current project', async t => {
+ const f = await fixture(t);
+ const {recordSubscriptionTerm} = await source('subscription-store.mjs');
+ const {handleTeamApplicationRequest} = await source('application-api.mjs');
+ const endsAt = f.clock.value + 10000;
+ recordSubscriptionTerm(f.db, {
+  teamId:'team-a', operationId:randomUUID(), expectedRevision:0,
+  startsAt:f.clock.value-1000, endsAt, sourceRef:'synthetic-task-expiry',
+ }, {now:()=>f.clock.value});
+ f.transport.dispatch = request => handleTeamApplicationRequest(request, {
+  db:f.db, now:()=>f.clock.value, identityProviders:{deviceProofRequired:true},
+  subscriptionEnforcement:'team-management-v1',
+ });
+ const created = await f.create();
+ assert.equal(created.task.status,'open');
+ f.clock.value = endsAt;
+ const before = await f.owner.c.listProjectTasks({teamId:'team-a',projectId:'project-a'});
+ const project = await f.project();
+ const start = f.calls.length;
+ await assert.rejects(f.create({title:'到期后不应写入的合成任务'}), {
+  code:'SUBSCRIPTION_WRITE_UNAVAILABLE', status:402,
+  message:'新建任务已暂停。请联系团队管理员核对试点或订阅状态。已有资料仍可按原权限查阅或导出。',
+ });
+ const requests = f.calls.slice(start).filter(call=>call.method==='POST');
+ assert.equal(requests.length,1);
+ assert.equal(requests[0].route,'/api/teams/team-a/projects/project-a/tasks');
+ const headers = new Headers(requests[0].headers);
+ for (const header of ['authorization','x-shenyi-device-lease','x-shenyi-device-nonce','x-shenyi-device-signature']) assert.ok(headers.has(header));
+ assert.equal(f.owner.c.getDeviceStatus().state,'ready');
+ assert.equal((await f.owner.c.getSession()).account.id,'manager-a');
+ assert.deepEqual(await f.project(),project);
+ assert.deepEqual(await f.owner.c.listProjectTasks({teamId:'team-a',projectId:'project-a'}),before);
+
+ f.transport.after = (call,response) => {
+  if (call.method!=='POST' || !call.route.endsWith('/tasks')) return response;
+  assert.equal(response.status,402);
+  return Response.json({error:{code:'OTHER_ERROR',message:'upstream private detail'}},{status:402});
+ };
+ await assert.rejects(f.create({title:'未识别的支付状态'}), {
+  code:'HTTP_402',status:402,message:'团队服务暂时无法完成操作。',
+ });
+ assert.deepEqual(await f.owner.c.listProjectTasks({teamId:'team-a',projectId:'project-a'}),before);
+});
 test('task title 160 and safe instructions 4000 codepoint limits are distinct from project title 300',async t=>{const f=await fixture(t),longTitle='项'.repeat(300);f.db.prepare("UPDATE team_projects SET title=? WHERE team_id='team-a' AND project_id='project-a'").run(longTitle);assert.equal((await f.project()).project.title,longTitle);await assert.rejects(f.create({title:'任'.repeat(161)}),{code:'INVALID_INPUT'});await assert.rejects(f.create({instructions:'\0hidden'}),{code:'INVALID_INPUT'});await assert.rejects(f.create({instructions:'x\u200b'}),{code:'INVALID_INPUT'});const value=await f.create({title:'  正常任务  ',instructions:'\t缩进\r\n保留尾换行\n'});assert.equal(value.task.title,'正常任务');assert.equal(value.task.instructions,'\t缩进\r\n保留尾换行\n');});
 test('project review history is independent and leaves the old owner-only submission history unchanged',async t=>{const f=await fixture(t),up=await uploaded(f),own=await f.owner.c.getSubmissions({teamId:'team-a',taskId:'task-a'});assert.deepEqual(own.submissions,[]);assert.equal((await f.junior.c.getSubmissions({teamId:'team-a',taskId:'task-a'})).submissions.length,1);const value=await f.owner.c.listProjectSubmissions({teamId:'team-a',projectId:'project-a',taskId:'task-a'});assert.equal(value.submissions.length,1);assert.deepEqual(Object.keys(value.submissions[0]).sort(),['attachmentId','byteLength','createdAt','filename','id','sha256','submittedBy']);assert.deepEqual(Object.keys(value.submissions[0].submittedBy).sort(),['displayName','id']);assert.equal(value.submissions[0].sha256,digest(up.bytes));assert.equal((await f.owner.c.getProjectSubmissionFile(up.input)).bytes.length,up.bytes.length);assert.deepEqual(await f.owner.c.authorizeProjectSubmissionDownload(up.input),{canDownload:true});});
 test('manage and old attachment grants never substitute for independent read-plus-review authorization',async t=>{const f=await fixture(t),up=await uploaded(f);f.db.prepare("INSERT INTO team_attachment_grants(team_id,attachment_id,user_id,status) VALUES ('team-a',?,'partner-a','active')").run(up.item.attachmentId);assert.equal((await f.delegate.c.getProject({teamId:'team-a',projectId:'project-a'})).project.canCreateTask,true);assert.equal((await f.delegate.c.getProject({teamId:'team-a',projectId:'project-a'})).project.canReview,false);await assert.rejects(f.delegate.c.listProjectSubmissions({teamId:'team-a',projectId:'project-a',taskId:'task-a'}),{code:'HTTP_404'});await assert.rejects(f.delegate.c.getProjectSubmissionFile(up.input),{code:'HTTP_404'});assert.equal((await f.delegate.c.download({teamId:'team-a',taskId:'task-a',attachmentId:up.item.attachmentId})).bytes.length,up.bytes.length);});
