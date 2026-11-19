@@ -1,11 +1,14 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { execFile } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { test } = require('node:test');
+const { pathToFileURL } = require('node:url');
+const { promisify } = require('node:util');
 
 const root = path.resolve(__dirname, '..');
 const inventory = require('../scripts/windows-desktop-candidate-files.json');
@@ -83,4 +86,41 @@ test('output refuses existing targets and checkout paths including aliases', asy
   assert.equal(await resolveBuildOutput(newFolder, checkout), newFolder);
   assert.equal(await fs.readFile(path.join(existing, 'preserve.txt'), 'utf8'), 'existing');
   assert.deepEqual(await fs.readdir(checkout), []);
+});
+
+test('Windows publication preserves a file created just before the native move', { skip: process.platform !== 'win32' }, async t => {
+  const directory = await fixture(t);
+  const staging = path.join(directory, 'staging');
+  const destination = path.join(directory, 'candidate');
+  await fs.mkdir(staging);
+  await fs.writeFile(path.join(staging, 'manifest.txt'), 'complete payload');
+  const builder = pathToFileURL(path.join(root, 'scripts/build-windows-desktop-candidate.mjs')).href;
+  const child = String.raw`
+    const assert = require('node:assert/strict');
+    const childProcess = require('node:child_process');
+    const fs = require('node:fs/promises');
+    const { syncBuiltinESMExports } = require('node:module');
+    const { promisify } = require('node:util');
+    const [builder, staging, destination] = process.argv.slice(1);
+    const execute = childProcess.execFile;
+    const run = promisify(execute);
+    let attempts = 0;
+    const observed = (...args) => execute(...args);
+    observed[promisify.custom] = async (command, args, options) => {
+      if (options.env?.SHENYI_MOVE_DESTINATION) {
+        attempts++;
+        await fs.writeFile(destination, 'competing file', { flag: 'wx' });
+      }
+      return run(command, args, options);
+    };
+    childProcess.execFile = observed;
+    syncBuiltinESMExports();
+    import(builder).then(async ({ publishWindowsCandidateDirectory }) => {
+      await assert.rejects(publishWindowsCandidateDirectory(staging, destination), error => [80, 183].includes(error.win32Code));
+      assert.equal(attempts, 1);
+    }).catch(error => { console.error(error); process.exitCode = 1; });
+  `;
+  await promisify(execFile)(process.execPath, ['-e', child, builder, staging, destination], { windowsHide: true, timeout: 15_000 });
+  assert.equal(await fs.readFile(destination, 'utf8'), 'competing file');
+  assert.equal(await fs.readFile(path.join(staging, 'manifest.txt'), 'utf8'), 'complete payload');
 });

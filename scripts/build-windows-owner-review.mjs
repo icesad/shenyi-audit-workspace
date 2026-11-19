@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 import { constants } from 'node:fs';
-import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, rmdir, writeFile } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, rmdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { fileFacts, loadBuildInventory, prepareDesktopCandidatePayload, resolveBuildOutput, verifyElectronArchive } from './build-windows-desktop-candidate.mjs';
+import { fileFacts, loadBuildInventory, prepareDesktopCandidatePayload, publishWindowsCandidateDirectory, resolveBuildOutput, verifyElectronArchive } from './build-windows-desktop-candidate.mjs';
 import previewConfiguration from '../desktop/isolated-preview-config.cjs';
 import workpaperInputs from './owner-review-workpaper-inputs.cjs';
 
@@ -129,21 +128,6 @@ async function serverWorkpaperAssets() {
   return files;
 }
 
-async function publishDirectory(bundle, output, working) {
-  // A Windows filesystem provider may briefly still hold the newly written directory.
-  for (const wait of [0, 250, 750]) {
-    if (wait) await delay(wait);
-    if (!samePath(bundle, await realpath(bundle)) || !samePath(working, await realpath(working)) ||
-        !samePath(output, await resolveBuildOutput(output))) throw new Error('便携评审输出路径发生变化。');
-    try {
-      await rename(bundle, output);
-      return;
-    } catch (error) {
-      if (!['EPERM', 'EACCES', 'EBUSY'].includes(error.code) || wait === 750) throw error;
-    }
-  }
-}
-
 async function build({ nodeArchive, electronArchive, npmCache, output }) {
   if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('请在 Windows x64 上构建便携评审包。');
   const destination = await resolveBuildOutput(output);
@@ -206,7 +190,7 @@ async function build({ nodeArchive, electronArchive, npmCache, output }) {
       throw new Error('解包临时目录位置发生变化。');
     }
     await rm(nodeScratch, { recursive: true });
-    await publishDirectory(bundle, destination, working);
+    await publishWindowsCandidateDirectory(bundle, destination, working);
     await rmdir(working).catch(() => {});
     return { output: destination, manifest: path.join(destination, manifestName), files: Object.keys(files).length };
   } catch (error) {

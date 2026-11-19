@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const run = promisify(execFile);
@@ -15,6 +16,17 @@ const defaultApp = 'resources/default_app.asar';
 const samePath = (a, b) => path.relative(a, b) === '';
 const archiveHashPattern = /^[a-f0-9]{64}$/;
 const npmPackageName = /^(?:@[a-z0-9-]+\/)?[a-z0-9][a-z0-9._-]*$/;
+const windowsPowerShell = String.raw`\\?\GLOBALROOT\SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`;
+const moveDirectoryCommand = `
+$ErrorActionPreference = 'Stop'
+try {
+  [System.IO.Directory]::Move($env:SHENYI_MOVE_SOURCE, $env:SHENYI_MOVE_DESTINATION)
+} catch {
+  $number = $_.Exception.GetBaseException().HResult -band 65535
+  [Console]::Error.WriteLine('SHENYI_DIRECTORY_MOVE_ERROR:' + $number)
+  exit 1
+}
+`;
 
 async function json(file) {
   return JSON.parse(await readFile(file, 'utf8'));
@@ -47,6 +59,62 @@ export async function resolveBuildOutput(output, checkout = root) {
   if (inside(canonicalRoot, destination)) throw new Error('输出目录的实际位置必须位于仓库外。');
   await absent(destination);
   return destination;
+}
+
+export async function resolveSystemPowerShell() {
+  const executable = await realpath(windowsPowerShell);
+  const cwd = path.dirname(executable);
+  const systemDirectory = path.resolve(cwd, '..', '..');
+  const windowsDirectory = path.dirname(systemDirectory);
+  return { executable, cwd, systemDirectory,
+    env: { SystemRoot: windowsDirectory, windir: windowsDirectory, Path: systemDirectory, PSModulePath: path.join(cwd, 'Modules') } };
+}
+
+async function moveDirectoryExclusive(shell, source, destination) {
+  const env = { ...shell.env, SHENYI_MOVE_SOURCE: path.toNamespacedPath(source),
+    SHENYI_MOVE_DESTINATION: path.toNamespacedPath(destination) };
+  try {
+    await run(shell.executable, ['-NoProfile', '-NonInteractive', '-Command', moveDirectoryCommand],
+      { env, cwd: shell.cwd, maxBuffer: 64 * 1024, timeout: 10_000, windowsHide: true });
+  } catch (error) {
+    const nativeError = /^SHENYI_DIRECTORY_MOVE_ERROR:(\d+)$/.exec(error.stderr?.trim());
+    if (error.code !== 1 || !nativeError) throw error;
+    const win32Code = Number(nativeError[1]);
+    throw Object.assign(new Error(`Windows 无法发布候选目录（Win32 ${win32Code}）。`, { cause: error }), { win32Code });
+  }
+}
+
+async function directoryIdentity(directory) {
+  const entry = await lstat(directory, { bigint: true });
+  if (!entry.isDirectory() || !samePath(directory, await realpath(directory))) {
+    throw new Error('候选输出路径在打包过程中发生变化。');
+  }
+  return [entry.dev, entry.ino];
+}
+
+export async function publishWindowsCandidateDirectory(staging, destination, working = staging) {
+  const shell = await resolveSystemPowerShell();
+  const directories = [...new Set([staging, working, path.dirname(destination)])];
+  const identities = await Promise.all(directories.map(directoryIdentity));
+  const retryDelays = [0, 250, 750];
+  // A Windows filesystem provider may briefly hold the completed directory.
+  for (const [attempt, wait] of retryDelays.entries()) {
+    if (wait) await delay(wait);
+    const current = await Promise.all(directories.map(directoryIdentity));
+    if (current.some(([dev, ino], index) => dev !== identities[index][0] || ino !== identities[index][1]) ||
+        !samePath(destination, await resolveBuildOutput(destination))) {
+      throw new Error('候选输出路径在打包过程中发生变化。');
+    }
+    try {
+      await moveDirectoryExclusive(shell, staging, destination);
+    } catch (error) {
+      if (![5, 32, 33].includes(error.win32Code) || attempt === retryDelays.length - 1) throw error;
+      continue;
+    }
+    const [dev, ino] = await directoryIdentity(destination);
+    if (dev !== identities[0][0] || ino !== identities[0][1]) throw new Error('发布后的候选目录身份不匹配。');
+    return;
+  }
 }
 
 export async function fileFacts(file) {
@@ -224,14 +292,10 @@ export async function buildWindowsDesktopCandidate({ electronArchive, npmCache, 
       sourceFileCount: inventory.sourceFiles.length, productionPackageCount: inventory.production.length, files,
     };
     await writeJson(path.join(staging, manifestFile), manifest);
-    if (!samePath(staging, await realpath(staging)) || !samePath(path.dirname(destination), await realpath(path.dirname(destination)))) {
-      throw new Error('候选输出路径在打包过程中发生变化。');
-    }
-    await absent(destination);
-    await rename(staging, destination);
+    await publishWindowsCandidateDirectory(staging, destination);
     return { output: destination, manifest: path.join(destination, manifestFile), files: entries.length };
   } catch (error) {
-    throw new Error(`${error.message} 中间文件保留于 ${staging}`);
+    throw new Error(`${error.message} 中间文件保留于 ${staging}`, { cause: error });
   }
 }
 

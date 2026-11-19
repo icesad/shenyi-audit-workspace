@@ -6,7 +6,7 @@ import { copyFile, lstat, mkdir, mkdtemp, readFile, realpath, rename, writeFile 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { fileFacts, resolveBuildOutput } from './build-windows-desktop-candidate.mjs';
+import { fileFacts, resolveBuildOutput, resolveSystemPowerShell } from './build-windows-desktop-candidate.mjs';
 import { readWindowsCandidateManifest, signedWindowsCandidateStatus, verifyWindowsCandidateInventory } from './verify-windows-candidate-inventory.mjs';
 import { verifyWindowsCandidate } from './windows-candidate-signature.mjs';
 import { detachedSignatureFiles } from './detached-release-signature.mjs';
@@ -135,16 +135,7 @@ try {
 finally { $file.Dispose() }
 `;
 
-const windowsTrustExecutable = String.raw`\\?\GLOBALROOT\SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`;
-
-export async function resolveSystemPowerShell() {
-  const executable = await realpath(windowsTrustExecutable);
-  const cwd = path.dirname(executable);
-  const systemDirectory = path.resolve(cwd, '..', '..');
-  const windowsDirectory = path.dirname(systemDirectory);
-  return { executable, cwd, systemDirectory,
-    env: { SystemRoot: windowsDirectory, windir: windowsDirectory, Path: systemDirectory, PSModulePath: path.join(cwd, 'Modules') } };
-}
+export { resolveSystemPowerShell };
 
 async function verifyEmbeddedSignature(filename, publisherCertificateSha256, expected, { msi = false } = {}) {
   const changed = msi ? 'AUTHENTICODE_MSI_MISMATCH' : 'AUTHENTICODE_BUNDLE_INVALID';

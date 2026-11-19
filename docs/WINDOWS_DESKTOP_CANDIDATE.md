@@ -15,6 +15,8 @@ node scripts/build-windows-desktop-candidate.mjs `
 
 构建核验 Electron 官方归档 SHA-256，按清单复制客户端源码，并从锁文件离线安装生产依赖。产出的 `candidate-manifest.json` 记录归档固定版本、候选状态及清单之外每个文件的大小和 SHA-256。进入签名发行阶段后，还需独立校验发布签名。 [Electron 官方打包说明](https://www.electronjs.org/docs/latest/tutorial/application-distribution/)
 
+桌面候选和双人评审包使用同一发布步骤。构建完成后，系统 PowerShell 调用 Windows 目录移动把暂存目录发布到目标。若目标名已被占用，保留目标和暂存目录。遇到临时占用类错误最多再尝试两次，并在每次移动前复核目录身份及目标是否仍空缺。最终失败时，命令返回错误和保留的暂存路径。 [Windows 目录移动规则](https://learn.microsoft.com/en-us/dotnet/api/system.io.directory.move?view=netframework-4.8.1)
+
 ## 启动
 
 以下方法用于直接启动未安装的本地候选。已安装的双签名候选按[双签名便携安装](#双签名便携安装)启动。可信团队服务配置由部署人员在包目录之外准备。直接启动未安装候选时，将配置的绝对路径作为 `SHENYI_TEAM_SERVICE_CONFIG` 传给 `Shenyi.exe`。该文件包含 `schemaVersion`、团队服务的 HTTPS 源地址 `apiBase`，以及部署时确定的服务实例 UUID `serverId`。客户端根据正常证书链校验 HTTPS，并在公开认证能力读取后核验实例，再使用登录凭据。 [服务配置约定](TRUSTED_TEAM_HTTPS_CONTRACT.md)
