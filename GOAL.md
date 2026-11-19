@@ -1,5 +1,9 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-19 M8S 团队开通审核分页
+
+开通列表超过 50 条时可翻页。在实际 Windows 和隔离受管 HTTPS 上，从第二页批准一支较早的合成团队，独立数据库核对一次试点、期限和两席授权。311 项关联测试、独立复核及新版 Windows 受管试点一键通过。真实试点、双方签收、双平台正式发行、真实收款和国内上线仍待验收。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m8-provisioning-pages-20261119/verification.json`。
+
 ## 2026-11-19 M7BD 官网 HTTPS 和内容回退
 
 已形成官网静态 HTTPS 交接包。隔离 Ubuntu 验证两个独立域名、仅三项官网资源、继续可用的团队 API，以及官网内容切换、回退和关闭。最终轮 47 项 HTTP 检查、4 次 Nginx 配置检查，71 项关联回归及独立复核通过。真实域名、证书、生产 HTTPS、下载和正式付款仍待对应验收。本轮未复验 Windows 一键，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-website-https-20261119/verification.json`。

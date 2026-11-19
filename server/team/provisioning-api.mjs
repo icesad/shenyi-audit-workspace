@@ -22,6 +22,25 @@ function sameActor(db,request,userId,at){const actor=authenticated(db,request,at
 function reviewer(db,userId){const row=platformReviewer(db,userId);if(!row)deny();return row;}
 function sameReviewer(before,after){return !!after&&before.revision===after.revision&&before.credential_revision===after.credential_revision&&before.password_hash===after.password_hash;}
 function requestView(row,pilot){return {id:row.request_id,teamId:row.team_id,teamName:row.team_name,phoneMasked:mask(row.admin_phone),status:row.status,revision:row.revision,createdAt:row.created_at,expiresAt:row.expires_at,...(pilot===undefined?{}:{pilot})};}
+const PROVISIONING_PAGE_SIZE=50;
+function listProvisioningRequests(db,url,pilot){
+  const after=url.searchParams.get('after');
+  if(url.search&&(url.searchParams.size!==1||after===null||!ID.test(after)))invalid();
+  const maxRows=PROVISIONING_PAGE_SIZE+1;
+  let rows;
+  if(after===null){
+    rows=db.prepare('SELECT * FROM team_provisioning_requests ORDER BY created_at DESC,request_id DESC LIMIT ?').all(maxRows);
+  }else{
+    const anchor=db.prepare('SELECT created_at FROM team_provisioning_requests WHERE request_id=?').get(after);
+    if(!anchor)invalid();
+    rows=db.prepare(`SELECT * FROM team_provisioning_requests WHERE (created_at,request_id)<(?,?)
+      ORDER BY created_at DESC,request_id DESC LIMIT ?`).all(anchor.created_at,after,maxRows);
+  }
+  const requests=rows.slice(0,PROVISIONING_PAGE_SIZE).map(row=>requestView(row,pilot?.(row)));
+  if(rows.length>PROVISIONING_PAGE_SIZE)return json({requests,nextCursor:requests.at(-1).id});
+  // Older clients expect the original shape for an unpaged result.
+  return json(after===null?{requests}:{requests,nextCursor:null});
+}
 function record(db,row,actor,action,at){db.prepare('INSERT INTO team_provisioning_events VALUES (?,?,?,?,?,?)').run(randomUUID(),row.request_id,actor,action,row.revision,at);}
 function liveTicket(db,code,phone,at){
   if(!opaque(code))deny();
@@ -59,7 +78,7 @@ export async function handleTeamProvisioningRequest(request,{db,now=Date.now,ide
   const administration=path==='/api/auth/team-administration';
   const first=/^\/api\/auth\/first-administrator\/(preview|challenges|activate)$/.exec(path);
   if(!base&&!access&&!review&&!administration&&!first)return null;
-  if(url.search)invalid();
+  if(url.search&&(!base||request.method!=='GET'))invalid();
   if(base||access||review||administration){
     const actor=authenticated(db,request,now());
     if(access){if(request.method!=='GET')return method('GET');return json({canReview:!!platformReviewer(db,actor.userId)});}
@@ -76,7 +95,7 @@ export async function handleTeamProvisioningRequest(request,{db,now=Date.now,ide
     const pilotOptions={...serviceOptions,now,identityProviders};
     if(base&&request.method==='GET'){
       const pilot=pilotApprovalReader(db,actor.userId,pilotOptions);
-      return json({requests:db.prepare('SELECT * FROM team_provisioning_requests ORDER BY created_at DESC,request_id DESC LIMIT 50').all().map(row=>requestView(row,pilot?.(row)))});
+      return listProvisioningRequests(db,url,pilot);
     }
     if(request.method!=='POST')return method(base?'GET, POST':'POST');
     consume(db,'team-provisioning:'+digest(actor.userId),now(),15*60000,20);

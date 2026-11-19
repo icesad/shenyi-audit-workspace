@@ -152,7 +152,12 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('recovery-review-list',arg=>{noArgs(arg);return client.listRecoveryReviewRequests();});
   handle('recovery-review-decide',arg=>client.reviewRecoveryReviewRequest(input(arg,['requestId','decision','revision','currentPassword'])));
   handle('team-review-access',arg=>{noArgs(arg);return client.getTeamProvisioningAccess();});
-  handle('team-review-list',arg=>{noArgs(arg);return client.listTeamProvisioningRequests();});
+  handle('team-review-list',arg=>{
+    if(arg===undefined)return client.listTeamProvisioningRequests();
+    const paging=input(arg,['after']);
+    if(!Object.hasOwn(paging,'after')||typeof paging.after!=='string'||!ID.test(paging.after))throw new ClientError('INVALID_INPUT','团队审核翻页位置无效，请重新读取。');
+    return client.listTeamProvisioningRequests(paging);
+  });
   handle('team-review-create',arg=>client.createTeamProvisioningRequest(input(arg,['teamName','adminPhone'])));
   handle('team-review-decide',arg=>client.reviewTeamProvisioningRequest(input(arg,['requestId','decision','revision','currentPassword','endsAt','seats'])));
   handle('team-administration',arg=>{noArgs(arg);return client.getTeamAdministration();});

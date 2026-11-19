@@ -23,7 +23,7 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   listRecoveryReviewRequests:()=>invoke('recovery-review-list'),
   reviewRecoveryReviewRequest:proof=>invoke('recovery-review-decide',proof),
   getTeamProvisioningAccess:()=>invoke('team-review-access'),
-  listTeamProvisioningRequests:()=>invoke('team-review-list'),
+  listTeamProvisioningRequests:page=>invoke('team-review-list',page),
   createTeamProvisioningRequest:request=>invoke('team-review-create',request),
   reviewTeamProvisioningRequest:proof=>invoke('team-review-decide',proof),
   getTeamAdministration:()=>invoke('team-administration'),

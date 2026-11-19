@@ -181,3 +181,64 @@ test('confirmed pilot result remains displayed when the following list refresh f
 test('pilot approval remains single-flight across close and reopening and clears discarded fields',async t=>{
   const wait=deferred();let row=pilotRequest();const f=fixture(t,{listTeamProvisioningRequests:async()=>safe({requests:[row]}),reviewTeamProvisioningRequest:()=>wait.promise});await login(f);await openReview(f);reviewerProof(f);fillPilot(f);const button=pilotButton(f);button.click();button.click();assert.equal(count(f,'reviewTeamProvisioningRequest'),1);assert.equal(f.id('team-pilot-ends-'+REQUEST.id).disabled,true);f.id('team-provisioning-panel').querySelector('summary').click();assert.equal(f.id('team-provisioning-list').children.length,0);assert.equal(f.id('team-provisioning-password').value,'');f.id('team-provisioning-panel').querySelector('summary').click();await until(()=>f.id('team-provisioning-message').textContent.includes('仍在处理中'));assert.equal(count(f,'reviewTeamProvisioningRequest'),1);row=pilotRequest({revision:4,pilot:{startsAt:Date.now(),endsAt:PILOT_END_AT,seats:4}});wait.resolve(safe({request:row}));await until(()=>f.id('team-provisioning-list').textContent.includes('试点已批准'));assert.equal(pilotButton(f),null);assert.equal(f.id('team-provisioning-password').value,'');assert.equal(f.id('issued-first-admin-code').value,'');
 });
+
+test('older pilot can be approved on the next page and its fresh receipt stays on that page',async t=>{
+  const first=Array.from({length:50},(_,i)=>({...REQUEST,id:'newer-'+i,teamName:'较新申请 '+i}));
+  const boundary=first.at(-1).id;
+  let older=pilotRequest({teamName:'较早已开通团队'});
+  const f=fixture(t,{
+    listTeamProvisioningRequests:async input=>input?.after===boundary?safe({requests:[older],nextCursor:null}):safe({requests:first,nextCursor:boundary}),
+    reviewTeamProvisioningRequest:async input=>{
+      older={...older,revision:4,pilot:{startsAt:Date.now(),endsAt:input.endsAt,seats:input.seats}};
+      return safe({request:older});
+    },
+  });
+  await login(f);await openReview(f);
+  assert.equal(f.id('team-provisioning-list').children.length,50);
+  assert.equal(f.id('team-provisioning-prev').disabled,true);
+  assert.equal(pilotButton(f),null);
+  reviewerProof(f);
+  const staleApprove=f.id('team-provisioning-list').querySelector('[data-decision="approve"]');
+  assert.equal(staleApprove.disabled,false);
+  f.click('team-provisioning-next');
+  assert.equal(f.id('team-provisioning-password').value,'');
+  await until(()=>!f.id('team-provisioning-password').disabled&&f.id('team-provisioning-page-status').textContent==='第 2 页 · 本页 1 条');
+  assert.deepEqual({...f.calls.findLast(call=>call.name==='listTeamProvisioningRequests').arg},{after:boundary});
+  assert.equal(f.id('team-provisioning-next').disabled,true);
+  assert.equal(f.id('team-provisioning-prev').disabled,false);
+  reviewerProof(f);staleApprove.click();
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),0);
+  fillPilot(f);pilotButton(f).click();
+  await until(()=>f.id('team-provisioning-message').textContent.includes('试点已批准'));
+  assert.equal(f.calls.find(call=>call.name==='reviewTeamProvisioningRequest').arg.requestId,REQUEST.id);
+  assert.equal(f.calls.findLast(call=>call.name==='listTeamProvisioningRequests').arg.after,boundary);
+  assert.match(f.id('team-provisioning-list').textContent,/较早已开通团队.*试点已批准/);
+  f.click('team-provisioning-prev');
+  await until(()=>!f.id('team-provisioning-next').disabled&&f.id('team-provisioning-page-status').textContent==='第 1 页 · 本页 50 条');
+  assert.equal(f.calls.findLast(call=>call.name==='listTeamProvisioningRequests').arg,undefined);
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+  assert.deepEqual(f.writes,[]);
+});
+
+test('opening another page clears a confirmed first administrator credential before the next read',async t=>{
+  const boundary=REQUEST.id, pending=deferred();
+  const f=fixture(t,{
+    listTeamProvisioningRequests:async input=>input?.after?pending.promise:safe({requests:[REQUEST],nextCursor:boundary}),
+  });
+  await login(f);await openReview(f);reviewerProof(f);
+  f.id('team-provisioning-list').querySelector('[data-decision="approve"]').click();
+  await until(()=>!f.id('team-provisioning-next').disabled&&!f.id('issued-first-admin').hidden);
+  assert.equal(f.id('issued-first-admin-code').value,CODE);
+  const summary=f.id('team-provisioning-panel').querySelector('summary');
+  f.click('team-provisioning-next');
+  assert.equal(f.id('issued-first-admin-code').value,'');
+  assert.equal(f.id('team-provisioning-list').children.length,0);
+  assert.equal(f.id('team-provisioning-create').disabled,true);
+  summary.click();summary.click();
+  await until(()=>!f.id('team-provisioning-next').disabled);
+  pending.resolve(fail('SIGN_IN_REQUIRED','stale read'));await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(f.id('workspace-view').hidden,false);
+  assert.equal(f.id('team-provisioning-page-status').textContent,'第 1 页 · 本页 1 条');
+  assert.equal(f.id('issued-first-admin-code').value,'');
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+});

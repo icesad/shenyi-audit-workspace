@@ -500,9 +500,25 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
       if(data?.signedOut!==true)throw failure('INVALID_RESPONSE','无法确认密码恢复结果，请使用新密码登录核对。');clear();return {signedOut:true};
     },
     async getTeamProvisioningAccess(){const data=await provisioningRequest('/api/operations/team-requests/access');if(typeof data?.canReview!=='boolean')throw failure('INVALID_RESPONSE','团队审核权限状态无效。');return {canReview:data.canReview};},
-    async listTeamProvisioningRequests(){
-      const data=await provisioningRequest('/api/operations/team-requests');if(!Array.isArray(data?.requests)||data.requests.length>50)throw failure('INVALID_RESPONSE','团队审核列表格式无效。');
-      const requests=data.requests.map(provisioningView);if(new Set(requests.map(item=>item.id)).size!==requests.length)throw failure('INVALID_RESPONSE','团队审核列表格式无效。');return {requests};
+    async listTeamProvisioningRequests(input){
+      let after;
+      if(input!==undefined){
+        exactKeys(input,['after']);
+        if(!Object.hasOwn(input,'after')||typeof input.after!=='string'||!ID.test(input.after))throw failure('INVALID_INPUT','团队审核翻页位置无效，请重新读取。');
+        after=input.after;
+      }
+      const route='/api/operations/team-requests'+(after===undefined?'':'?after='+encodeURIComponent(after));
+      const data=await provisioningRequest(route);
+      if(!Array.isArray(data?.requests)||data.requests.length>50)throw failure('INVALID_RESPONSE','团队审核列表格式无效。');
+      const requests=data.requests.map(provisioningView),ids=new Set(requests.map(item=>item.id));
+      if(ids.size!==requests.length||ids.has(after))throw failure('INVALID_RESPONSE','团队审核列表格式无效。');
+      if(!Object.hasOwn(data,'nextCursor')){
+        if(after!==undefined)throw failure('INVALID_RESPONSE','团队审核翻页结果无法确认，请重新读取。');
+        return {requests};
+      }
+      const nextCursor=data.nextCursor;
+      if(nextCursor!==null&&(typeof nextCursor!=='string'||nextCursor!==requests.at(-1)?.id))throw failure('INVALID_RESPONSE','团队审核翻页结果无法确认，请重新读取。');
+      return {requests,nextCursor};
     },
     async createTeamProvisioningRequest(input){
       exactKeys(input,['teamName','adminPhone']);const teamName=teamNameInput(input.teamName),data=await provisioningRequest('/api/operations/team-requests',{method:'POST',body:{teamName,adminPhone:phoneInput(input.adminPhone)}}),view=provisioningView(data?.request);

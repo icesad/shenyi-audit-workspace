@@ -128,6 +128,47 @@ test('input/body/origin/method/query boundaries prevent extra privilege or unacc
 test('request list is bounded, ordered and private; team administration exposes only own operator teams',async t=>{
   const f=await fixture(t);for(let n=0;n<55;n++)f.db.prepare("INSERT INTO team_provisioning_requests(request_id,team_id,team_name,admin_phone,status,created_by,created_at) VALUES (?,?,?,?,'pending','reviewer-test',?)").run(randomUUID(),randomUUID(),'合成'+n,PHONE,f.now+n);const r=await call(f,BASE,{method:'GET',token:f.reviewer});assert.equal(r.data.requests.length,50);assert.equal(r.data.requests[0].teamName,'合成54');assert.ok(!r.raw.includes(PHONE));assert.deepEqual((await call(f,'/api/auth/team-administration',{method:'GET',token:f.manager})).data,{teams:[]});assert.deepEqual((await call(f,'/api/auth/team-administration',{method:'GET',token:f.reviewer})).data,{teams:[]});
 });
+test('review queue continues across tied timestamps and ignores intervening newer applications',async t=>{
+  const f=await fixture(t);
+  const insert=f.db.prepare(`INSERT INTO team_provisioning_requests
+    (request_id,team_id,team_name,admin_phone,status,created_by,created_at,token_hash,credential_fingerprint)
+    VALUES(?,?,?,?,'pending','reviewer-test',?,?,?)`);
+  const ids=Array.from({length:105},(_,index)=>'request-'+String(index).padStart(3,'0'));
+  const privateHash=digest('synthetic review credential');
+  for(const id of ids)insert.run(id,randomUUID(),'合成'+id,PHONE,f.now,id===ids[0]?privateHash:null,id===ids[0]?privateHash:null);
+  const listing=after=>call(f,BASE+(after?'?after='+after:''),{method:'GET',token:f.reviewer});
+  const first=await listing();assert.equal(first.status,200);
+  const firstIds=first.data.requests.map(row=>row.id);
+  assert.deepEqual(firstIds,ids.slice(55).reverse());assert.equal(first.data.nextCursor,ids[55]);
+  insert.run('new-request',randomUUID(),'新合成申请',PHONE,f.now+1,null,null);
+  const before=f.db.prepare('SELECT * FROM team_provisioning_requests ORDER BY request_id').all();
+  const second=await listing(first.data.nextCursor);assert.equal(second.status,200);
+  const secondIds=second.data.requests.map(row=>row.id);
+  assert.deepEqual(secondIds,ids.slice(5,55).reverse());assert.equal(second.data.nextCursor,ids[5]);
+  const third=await listing(second.data.nextCursor);assert.equal(third.status,200);
+  assert.equal(third.data.nextCursor,null);assert.deepEqual([...firstIds,...secondIds,...third.data.requests.map(row=>row.id)],[...ids].reverse());
+  for(const page of [first,second,third])for(const value of [PHONE,privateHash,'token_hash','credential_fingerprint','invitationCode'])assert.ok(!page.raw.includes(value));
+  assert.equal((await listing()).data.requests[0].id,'new-request');
+  assert.deepEqual((await listing(ids[0])).data,{requests:[],nextCursor:null});
+  assert.deepEqual(f.db.prepare('SELECT * FROM team_provisioning_requests ORDER BY request_id').all(),before);
+  assert.equal(count(f,'team_provisioning_events'),0);
+});
+test('only authorized list reads accept a single known review cursor',async t=>{
+  const f=await fixture(t),request=await create(f);
+  const query='?after='+request.id;
+  for(const suffix of ['?after=','?after=%2F','?after=missing-id',query+'&after='+request.id,query+'&all=1','?all=1']){
+    const options={method:'GET'};
+    assert.equal((await call(f,BASE+suffix,{...options,token:f.reviewer})).status,400);
+    assert.equal((await call(f,BASE+suffix,{...options,token:f.manager})).status,404);
+    assert.equal((await call(f,BASE+suffix,options)).status,401);
+  }
+  assert.equal((await call(f,BASE+query,{method:'GET',token:f.manager})).status,404);
+  assert.deepEqual((await call(f,BASE,{method:'GET',token:f.reviewer})).data,{requests:[request]});
+  for(const route of [BASE,BASE+'/'+request.id+'/review',FIRST+'/preview'])assert.equal((await call(f,route+query,{token:f.reviewer,body:{}})).status,400);
+  for(const route of [BASE+'/access','/api/auth/team-administration'])assert.equal((await call(f,route+query,{method:'GET',token:f.reviewer})).status,400);
+  assert.equal(count(f,'team_provisioning_requests'),1);
+  assert.equal(count(f,'team_provisioning_events'),1);
+});
 test('additive initializer preserves original rows and SQL definitions and refuses unmarked customer data',async t=>{
   const f=await fixture(t),ticket=await approve(f),{initializeTeamDatabase}=await load('database.mjs'),before=f.db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name").all(),requests=f.db.prepare('SELECT * FROM team_provisioning_requests').all();initializeTeamDatabase(f.db);initializeTeamDatabase(f.db);assert.deepEqual(f.db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name").all(),before);assert.deepEqual(f.db.prepare('SELECT * FROM team_provisioning_requests').all(),requests);assert.equal(f.db.prepare('SELECT token_hash FROM team_provisioning_requests').get().token_hash,digest(ticket.invitationCode));assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(),[]);
   const other=new DatabaseSync(':memory:');try{other.exec('CREATE TABLE customer_data(original BLOB)');assert.throws(()=>initializeTeamDatabase(other),/isolated/);assert.deepEqual(other.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all().map(row=>row.name),['customer_data']);}finally{other.close();}

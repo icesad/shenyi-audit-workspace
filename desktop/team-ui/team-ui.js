@@ -26,6 +26,7 @@
   let passwordChangeEpoch=0,passwordChangeMutation=null;
   let firstAdminEpoch=0,firstAdminWorking=false,firstAdminPreview=null,firstAdminChallenge=null,firstAdminMutation=null;
   let provisioningEpoch=0,provisioningAllowed=false,provisioningWorking=false,provisioningRows=[],provisioningMutation=null,provisioningPanelOpened=false;
+  let provisioningCursors=[null],provisioningNextCursor=null;
   let administrationTeams=[],invitationTeamId='';
   let recoveryEpoch=0,recoveryWorking=false,recoveryChallenge=null,recoveryMutation=null,recoveryRequest=null;
   let recoveryReviewMode=false,recoveryReviewAvailable=false,recoveryReviewStatusEpoch=0,recoveryReviewReceipt=null,recoveryReviewSubmission=null;
@@ -389,10 +390,10 @@
     byId('account-sessions-password').value='';byId('account-sessions-count').textContent='';byId('account-sessions-list').replaceChildren();message('account-sessions-message','');
     if(close)byId('account-sessions-panel').open=false;updateAccountSessionsControls();
   }
-  async function accountSessionsCall(name,arg,actor){
+  async function accountSessionsCall(name,arg,actor,viewCurrent=null){
     const result=await api[name](arg);
     // A previous account's late 401 or signedOut must not clear a newer login.
-    if(!sameAccountSessionsActor(actor))throw {code:'STALE_ACCOUNT_SESSIONS'};
+    if(!sameAccountSessionsActor(actor)||viewCurrent&&!viewCurrent())throw {code:'STALE_ACCOUNT_SESSIONS'};
     if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message',result.error.message||'登录已失效，请重新登录。',true);}throw result?.error||{message:'登录会话操作未完成，请刷新后重试。'};}
     return result.value;
   }
@@ -670,14 +671,21 @@
   function updateProvisioningControls(){
     const ready=!!session&&provisioningAllowed&&provisioningApiReady()&&byId('team-provisioning-panel').open,locked=busy||provisioningWorking||provisioningPending();
     for(const id of ['team-provisioning-name','team-provisioning-phone','team-provisioning-create','team-provisioning-password','team-provisioning-refresh'])byId(id).disabled=!ready||locked;
+    byId('team-provisioning-prev').disabled=!ready||locked||provisioningCursors.length===1;
+    byId('team-provisioning-next').disabled=!ready||locked||!provisioningNextCursor;
+    byId('team-provisioning-pagination').hidden=provisioningCursors.length===1&&!provisioningNextCursor;
     for(const input of byId('team-provisioning-list').querySelectorAll('input'))input.disabled=!ready||locked;
     for(const button of byId('team-provisioning-list').querySelectorAll('button')){
       const row=button.closest('[data-request-id]'),item=provisioningRows.find(value=>value.id===row?.dataset.requestId);
       button.disabled=!ready||locked||!byId('team-provisioning-password').value||button.dataset.decision==='approve-pilot'&&(!item||!provisioningPilotFields(item));
     }
   }
+  function clearProvisioningPage(){
+    provisioningRows=[];provisioningNextCursor=null;
+    byId('team-provisioning-list').replaceChildren();byId('team-provisioning-page-status').textContent='';
+  }
   function resetProvisioning(close=true,hide=true){
-    provisioningEpoch++;provisioningWorking=false;provisioningRows=[];for(const id of ['team-provisioning-name','team-provisioning-phone','team-provisioning-password'])byId(id).value='';clearIssuedFirstAdmin();byId('team-provisioning-list').replaceChildren();message('team-provisioning-message','');
+    provisioningEpoch++;provisioningWorking=false;provisioningCursors=[null];clearProvisioningPage();for(const id of ['team-provisioning-name','team-provisioning-phone','team-provisioning-password'])byId(id).value='';clearIssuedFirstAdmin();message('team-provisioning-message','');
     if(hide){provisioningAllowed=false;byId('team-provisioning-panel').hidden=true;}if(close){provisioningPanelOpened=false;byId('team-provisioning-panel').open=false;}updateProvisioningControls();
   }
   function currentProvisioningView(at,actor){return at===provisioningEpoch&&sameAccountSessionsActor(actor)&&provisioningAllowed;}
@@ -703,15 +711,29 @@
     }
     updateProvisioningControls();
   }
-  async function refreshProvisioning(at,actor){const value=await accountSessionsCall('listTeamProvisioningRequests',undefined,actor);if(!currentProvisioningView(at,actor))return;provisioningRows=value.requests;renderProvisioning();}
+  async function refreshProvisioning(at,actor,cursors=provisioningCursors){
+    const after=cursors.at(-1),current=()=>currentProvisioningView(at,actor);
+    const value=await accountSessionsCall('listTeamProvisioningRequests',after===null?undefined:{after},actor,current);
+    if(!current())return;
+    const next=value.nextCursor??null;
+    if(next!==null&&(next!==value.requests.at(-1)?.id||cursors.includes(next)))throw {code:'INVALID_RESPONSE'};
+    provisioningRows=value.requests;provisioningCursors=cursors;provisioningNextCursor=next;
+    byId('team-provisioning-page-status').textContent='第 '+cursors.length+' 页 · 本页 '+provisioningRows.length+' 条';
+    renderProvisioning();
+  }
   async function loadProvisioningAccess(){
     resetProvisioning();if(!session||!provisioningApiReady())return;const at=provisioningEpoch,actor=accountSessionsActor();
+    provisioningWorking=true;updateProvisioningControls();
     try{const value=await accountSessionsCall('getTeamProvisioningAccess',undefined,actor);if(at!==provisioningEpoch||!sameAccountSessionsActor(actor)||value.canReview!==true)return;provisioningAllowed=true;byId('team-provisioning-panel').hidden=false;await refreshProvisioning(at,actor);}
-    catch{if(at===provisioningEpoch&&sameAccountSessionsActor(actor))resetProvisioning();}finally{updateProvisioningControls();}
+    catch{if(at===provisioningEpoch&&sameAccountSessionsActor(actor))resetProvisioning();}
+    finally{if(at===provisioningEpoch){provisioningWorking=false;updateProvisioningControls();}}
   }
-  async function loadProvisioning(){
-    if(!session||!provisioningAllowed||busy||provisioningWorking||provisioningPending()||!byId('team-provisioning-panel').open)return;const at=provisioningEpoch,actor=accountSessionsActor();provisioningWorking=true;updateProvisioningControls();
-    try{await refreshProvisioning(at,actor);if(currentProvisioningView(at,actor))message('team-provisioning-message','请核对申请和指定管理员手机号后，再填写当前密码选择审核操作。');}
+  async function loadProvisioning(cursors=provisioningCursors,replacePage=false){
+    if(!session||!provisioningAllowed||busy||provisioningWorking||provisioningPending()||!byId('team-provisioning-panel').open)return;
+    const at=++provisioningEpoch,actor=accountSessionsActor();provisioningWorking=true;
+    if(replacePage){byId('team-provisioning-password').value='';clearIssuedFirstAdmin();clearProvisioningPage();}
+    updateProvisioningControls();
+    try{await refreshProvisioning(at,actor,cursors);if(currentProvisioningView(at,actor))message('team-provisioning-message','请核对申请和指定管理员手机号后，再填写当前密码选择审核操作。');}
     catch(error){if(currentProvisioningView(at,actor)){resetProvisioning();message('workspace-message',error.message||'审核权限或记录无法确认，请重新登录核对。',true);}}
     finally{if(currentProvisioningView(at,actor)){provisioningWorking=false;updateProvisioningControls();}}
   }
@@ -719,13 +741,13 @@
     event.preventDefault();if(!session||!provisioningAllowed||busy||provisioningWorking||provisioningPending()||!byId('team-provisioning-panel').open)return;
     const input={teamName:byId('team-provisioning-name').value,adminPhone:byId('team-provisioning-phone').value};if(!input.teamName.trim()||!input.adminPhone.trim()){message('team-provisioning-message','请填写团队名称和指定首管理员手机号。',true);return;}
     const at=provisioningEpoch,actor=accountSessionsActor(),operation={actor};provisioningMutation=operation;clearIssuedFirstAdmin();updateProvisioningControls();message('team-provisioning-message','正在录入待审申请…');let committed=false;
-    try{await accountSessionsCall('createTeamProvisioningRequest',input,actor);committed=true;if(!currentProvisioningView(at,actor)||!byId('team-provisioning-panel').open)return;byId('team-provisioning-name').value='';byId('team-provisioning-phone').value='';await refreshProvisioning(at,actor);if(currentProvisioningView(at,actor))message('team-provisioning-message','待审申请已录入，尚未批准或开通团队。');}
+    try{await accountSessionsCall('createTeamProvisioningRequest',input,actor);committed=true;if(!currentProvisioningView(at,actor)||!byId('team-provisioning-panel').open)return;byId('team-provisioning-name').value='';byId('team-provisioning-phone').value='';await refreshProvisioning(at,actor,[null]);if(currentProvisioningView(at,actor))message('team-provisioning-message','待审申请已录入，尚未批准或开通团队。');}
     catch(error){if(currentProvisioningView(at,actor))message('team-provisioning-message',committed?'申请已录入，但记录刷新失败，请刷新核对。':passwordChangeUncertain(error)?'未能确认录入结果，请刷新审核记录后核对，避免重复录入。':error.message||'录入未通过，请核对。',true);}
     finally{if(provisioningMutation===operation)provisioningMutation=null;if(sameAccountSessionsActor(actor)){byId('team-provisioning-password').value='';updateProvisioningControls();if(at!==provisioningEpoch&&byId('team-provisioning-panel').open)void loadProvisioning();}}
   }
   async function reviewProvisioning(item,decision,button){
-    if(!session||!provisioningAllowed||busy||provisioningWorking||provisioningPending()||!byId('team-provisioning-panel').open)return;
-    const pilot=decision==='approve-pilot';if(pilot&&(!provisioningRows.includes(item)||item.status!=='activated'||!Object.hasOwn(item,'pilot')||item.pilot!==null))return;
+    if(!session||!provisioningAllowed||busy||provisioningWorking||provisioningPending()||!byId('team-provisioning-panel').open||!provisioningRows.includes(item))return;
+    const pilot=decision==='approve-pilot';if(pilot&&(item.status!=='activated'||!Object.hasOwn(item,'pilot')||item.pilot!==null))return;
     const currentPassword=byId('team-provisioning-password').value;if(!currentPassword){message('team-provisioning-message','请先核对申请并填写审核账号当前密码。',true);return;}
     const pilotFields=pilot?provisioningPilotFields(item):null;if(pilot&&!pilotFields){message('team-provisioning-message','请填写有效的北京时间试点截止时间和正整数员工席位；截止时间须晚于现在。',true);return;}
     const trackFocus=pilot&&button===document.activeElement;
@@ -762,7 +784,9 @@
   function closeProvisioning(){provisioningPanelOpened=false;const submitted=provisioningPending();resetProvisioning(false,false);if(submitted&&session)message('workspace-message','已清除审核输入与凭据；已提交的请求仍可能完成，请刷新审核记录核对。');}
   byId('team-provisioning-panel').querySelector('summary').addEventListener('click',()=>{if(byId('team-provisioning-panel').open)closeProvisioning();else provisioningPanelOpened=true;});
   byId('team-provisioning-panel').addEventListener('toggle',()=>{if(byId('team-provisioning-panel').open){provisioningPanelOpened=true;if(provisioningPending())message('team-provisioning-message','审核请求仍在处理中，请稍候核对。');else void loadProvisioning();updateProvisioningControls();}else if(provisioningPanelOpened)closeProvisioning();});
-  byId('team-provisioning-password').addEventListener('input',updateProvisioningControls);byId('team-provisioning-password').addEventListener('keydown',event=>{if(event.key==='Enter')event.preventDefault();});byId('team-provisioning-form').addEventListener('submit',event=>void createProvisioning(event));byId('team-provisioning-refresh').addEventListener('click',()=>void loadProvisioning());
+  byId('team-provisioning-password').addEventListener('input',updateProvisioningControls);byId('team-provisioning-password').addEventListener('keydown',event=>{if(event.key==='Enter')event.preventDefault();});byId('team-provisioning-form').addEventListener('submit',event=>void createProvisioning(event));byId('team-provisioning-refresh').addEventListener('click',()=>void loadProvisioning([null],true));
+  byId('team-provisioning-prev').addEventListener('click',()=>{if(provisioningCursors.length>1)void loadProvisioning(provisioningCursors.slice(0,-1),true);});
+  byId('team-provisioning-next').addEventListener('click',()=>{if(provisioningNextCursor)void loadProvisioning([...provisioningCursors,provisioningNextCursor],true);});
   function recoveryReviewsApiReady(){return ['getRecoveryReviewAccess','listRecoveryReviewRequests','reviewRecoveryReviewRequest'].every(name=>typeof api?.[name]==='function');}
   function recoveryReviewsPending(){return !!recoveryReviewsMutation&&sameAccountSessionsActor(recoveryReviewsMutation.actor);}
   function currentRecoveryReviews(at,actor){return at===recoveryReviewsEpoch&&sameAccountSessionsActor(actor)&&recoveryReviewsAllowed;}

@@ -42,6 +42,41 @@ test('list and own-team DTOs reject duplicates, oversized lists and unmasked num
   const own={teamId:'team-own',teamName:'本人管理团队'},f=fixture(()=>json({teams:[{...own,role:'partner',fullProjects:['secret'],phone:'13800138000'}]}));await login(f);assert.deepEqual(await f.client.getTeamAdministration(),{teams:[own]});
   const g=fixture(()=>json({teams:[own,own]}));await login(g);await assert.rejects(()=>g.client.getTeamAdministration(),e=>e.code==='INVALID_RESPONSE');
 });
+test('provisioning pagination keeps bare first-page requests and forwards only the last-row cursor',async()=>{
+  const older={...REQUEST,id:'request-older'};
+  const route=API_BASE+'/api/operations/team-requests';
+  const f=fixture(url=>url===route
+    ?json({requests:[{...REQUEST,adminPhone:'13800138000'}],nextCursor:REQUEST.id,token:TOKEN})
+    :json({requests:[older],nextCursor:null}));
+  await login(f);
+  assert.deepEqual(await f.client.listTeamProvisioningRequests(),{requests:[REQUEST],nextCursor:REQUEST.id});
+  assert.equal(f.calls.at(-1).url,route);
+  assert.deepEqual(await f.client.listTeamProvisioningRequests({after:REQUEST.id}),{requests:[older],nextCursor:null});
+  assert.equal(f.calls.at(-1).url,route+'?after='+REQUEST.id);
+  assert.equal(f.calls.at(-1).options.method,'GET');
+  assert.equal(f.calls.at(-1).options.headers.Authorization,'Bearer '+TOKEN);
+  assert.equal(f.calls.at(-1).options.body,undefined);
+});
+test('provisioning pagination rejects invalid boundaries and unexpected input before dispatch',async()=>{
+  const older={...REQUEST,id:'request-older'};
+  const f=fixture(()=>json({}));await login(f);const before=f.calls.length;
+  for(const input of [{},null,[],{after:undefined},{after:'not an id'},{after:'a'.repeat(129)},{after:REQUEST.id,teamId:'team-a'}]){
+    await assert.rejects(()=>f.client.listTeamProvisioningRequests(input),{code:'INVALID_INPUT'});
+  }
+  assert.equal(f.calls.length,before);
+  for(const data of [
+    {requests:[older]},
+    {requests:[older],nextCursor:1},
+    {requests:[older],nextCursor:'wrong-cursor'},
+    {requests:[older,REQUEST],nextCursor:REQUEST.id},
+    {requests:[REQUEST,older],nextCursor:older.id},
+    {requests:[],nextCursor:older.id},
+    {requests:[older,older],nextCursor:older.id}
+  ]){
+    const malformed=fixture(()=>json(data));await login(malformed);
+    await assert.rejects(()=>malformed.client.listTeamProvisioningRequests({after:REQUEST.id}),{code:'INVALID_RESPONSE'});
+  }
+});
 test('first-admin preview and SMS challenge strip secrets and never send a bearer',async()=>{
   const f=fixture(url=>url.endsWith('/preview')?json({...PREVIEW,invitationCode:INVITE,phone:'13800138000',token:TOKEN}):json({challengeId:'challenge-a',expiresAt:1800000300000,code:'123456',providerSecret:'hidden'}));
   assert.deepEqual(await f.client.previewFirstAdministrator({invitationCode:INVITE,phone:'13800138000'}),PREVIEW);assert.deepEqual(await f.client.requestFirstAdministratorActivation({invitationCode:INVITE,phone:'13800138000'}),{challengeId:'challenge-a',expiresAt:1800000300000});for(const call of f.calls){assert.equal(call.options.headers.Authorization,undefined);assert.deepEqual(JSON.parse(call.options.body),{invitationCode:INVITE,phone:'13800138000'});}
@@ -66,6 +101,19 @@ test('all eight new IPC methods enforce trusted main-frame origin and exact argu
   const dispose=registerDesktopBridge({ipcMain:{handle:(name,fn)=>handlers.set(name,fn),removeHandler:name=>handlers.delete(name)},window:{webContents},client,dialog:{}});assert.equal(ledgerOldChannelNames(handlers).length,123);
   for(const name of ['team-review-access','team-review-list','team-review-create','team-review-decide','team-administration','first-admin-preview','first-admin-challenge','first-admin-complete'])for(const event of [{sender:{},senderFrame:mainFrame},{sender:webContents,senderFrame:{url:APP_URL}},{sender:webContents,senderFrame:{url:'https://evil.invalid'}}])assert.equal((await handlers.get('shenyi:'+name)(event,{})).error.code,'UNTRUSTED_SENDER');
   const event={sender:webContents,senderFrame:mainFrame};assert.equal((await handlers.get('shenyi:team-review-access')(event,{userId:'victim'})).ok,false);assert.equal((await handlers.get('shenyi:team-review-create')(event,{teamName:'合成团队',adminPhone:'13800138000',role:'partner'})).ok,false);assert.equal(calls,0);assert.deepEqual(await handlers.get('shenyi:team-review-access')(event),{ok:true,value:{canReview:true}});assert.equal(calls,1);dispose();assert.equal(handlers.size,0);
+});
+
+test('the provisioning list IPC forwards the optional cursor and blocks other argument shapes',async()=>{
+  const handlers=new Map(),mainFrame={url:APP_URL},webContents={mainFrame},calls=[];
+  const client={clearSession(){},async listTeamProvisioningRequests(...args){calls.push(args);return {requests:[]};}};
+  const dispose=registerDesktopBridge({ipcMain:{handle:(name,fn)=>handlers.set(name,fn),removeHandler:name=>handlers.delete(name)},window:{webContents},client,dialog:{}});
+  try{
+    const list=handlers.get('shenyi:team-review-list'),event={sender:webContents,senderFrame:mainFrame};
+    assert.equal((await list(event)).ok,true);
+    assert.equal((await list(event,{after:REQUEST.id})).ok,true);
+    for(const input of [{},null,{after:null},{after:REQUEST.id,teamId:'other-team'}])assert.equal((await list(event,input)).ok,false);
+    assert.deepEqual(calls,[[],[{after:REQUEST.id}]]);
+  }finally{dispose();}
 });
 
 
