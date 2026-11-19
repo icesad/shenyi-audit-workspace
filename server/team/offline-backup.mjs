@@ -1,11 +1,12 @@
 // Local operator tools for offline SQLite snapshots and restore rehearsals.
 import path from 'node:path';
 import os from 'node:os';
-import {fileURLToPath,pathToFileURL} from 'node:url';
+import {fileURLToPath} from 'node:url';
 import {constants} from 'node:fs';
 import * as fs from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
 import {DatabaseSync,backup} from 'node:sqlite';
+import {sqliteExistingFileUri} from './sqlite-existing-file.mjs';
 import {SealedEnvelopeError,decryptBackupEnvelope,encryptBackupEnvelope,readBackupEnvelope,writeEnvelopeBytes} from './sealed-backup-envelope.mjs';
 import {assertManagedDatabaseReady,MANAGED_REHEARSAL_MARKER} from './managed-database-readiness.mjs';
 
@@ -90,7 +91,7 @@ async function hashFile(filename,code='BUNDLE_INVALID'){
  }catch(error){if(error instanceof OfflineBackupError)throw error;fail(code);}finally{await handle?.close();}
 }
 function readDatabase(filename,{immutable=false}={}){
- const source=immutable?pathToFileURL(filename).href+'?mode=ro&immutable=1':filename;
+ const source=sqliteExistingFileUri(filename,'ro',{immutable});
  const db=new DatabaseSync(source,{readOnly:true,enableForeignKeyConstraints:true,allowExtension:false,timeout:5000});
  try{db.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;');return db;}catch(error){db.close();throw error;}
 }
@@ -165,7 +166,7 @@ async function normalizeOwnedSnapshot(filename){
  // or manual sidecar deletion participates in this operation.
  const entry=await regular(filename,'BUNDLE_INVALID');let db;
  try{
-  db=new DatabaseSync(filename,{readOnly:false,enableForeignKeyConstraints:true,allowExtension:false,timeout:5000});db.exec('PRAGMA trusted_schema=OFF;');
+  db=new DatabaseSync(sqliteExistingFileUri(filename,'rw'),{enableForeignKeyConstraints:true,allowExtension:false,timeout:5000});db.exec('PRAGMA trusted_schema=OFF;');
   const previous=db.prepare('PRAGMA journal_mode').get().journal_mode;
   const before=previous==='delete'?null:inventory(db);
   if(db.prepare('PRAGMA journal_mode=DELETE').get().journal_mode!=='delete')fail('BUNDLE_INVALID');
@@ -256,7 +257,7 @@ async function copySnapshot(sourceDb,target,onProgress){
     if(result&&typeof result.then==='function'){progressFailed=true;void Promise.resolve(result).catch(()=>{});}
    }catch{progressFailed=true;}
   };
-  const copiedPages=await backup(sourceDb,target,{progress:reportProgress});
+  const copiedPages=await backup(sourceDb,sqliteExistingFileUri(target,'rw'),{progress:reportProgress});
   // Node reports intermediate batches but may omit a final native callback.
   // Completion is observed from its resolved total-page count, never a timer.
   reportProgress({remainingPages:0,totalPages:copiedPages});
@@ -552,7 +553,7 @@ async function checkSealedDirectory(directory) {
 
 async function markManagedRehearsal(owned,original,mode){
  await assertInspectedFile(owned.filename,original);
- const db=new DatabaseSync(pathToFileURL(owned.filename).href+'?mode=rw',{enableForeignKeyConstraints:true,allowExtension:false,timeout:5000});
+ const db=new DatabaseSync(sqliteExistingFileUri(owned.filename,'rw'),{enableForeignKeyConstraints:true,allowExtension:false,timeout:5000});
  try{
   db.exec('PRAGMA trusted_schema=OFF;');
   identity(db,mode);

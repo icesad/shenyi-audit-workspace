@@ -24,6 +24,8 @@
 
 `apiBase` 为规范 HTTPS origin，使用主机及可选端口，尾部无需斜杠。直接连接本地演练时，origin 的端口与 `listenPort` 使用同一个值。配置、数据库、证书和私钥使用不同的本机绝对文件路径。私钥路径与连接配置仅由运维端持有。 [SQLite 现有文件打开模式](https://www.sqlite.org/uri.html#urimode)
 
+Windows 仍填写带盘符的普通本地绝对路径。数据库预检、启动预检和正式启动会在内部处理 SQLite 长路径，沿用现有文件和实例核验。已用包含中文、空格、`#` 和 `%` 的 326 字符合成路径验收。受管库加密备份、比对和恢复演练使用同样的路径写法。 [受管库加密备份](TEAM_OFFLINE_BACKUP.md#受管库加密备份)
+
 ```powershell
 node scripts/start-team-service.mjs --config 'D:/shenyi-service/service.json'
 ```

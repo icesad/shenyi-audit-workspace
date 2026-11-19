@@ -1,5 +1,9 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-20 M7BL Windows 受管库长路径
+
+Windows 受管服务及离线加密工具支持较长的本机数据库路径。实际服务在 268 字符路径完成两项预检、HTTPS 登录、退出和正常停机。离线加密备份、比对及恢复三条命令通过，300 字符恢复库完整并保留隔离标记。隔离 Ubuntu 同样通过启动预检和离线命令。51 项服务、38 项备份回归通过。Windows 桌面一键沿用上一轮记录。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-windows-managed-db-20261120/verification.json`。
+
 ## 2026-11-20 M7BK Linux 停服前启动预检
 
 Linux 切换在停服前使用候选代码检查 SQLite、TLS 证书和私钥，以及已配置的短信和微信。隔离 Ubuntu 实测两种错误输入均保留现有服务和两路 HTTPS。恢复合成配置后，原签名候选通过真实 systemd 切换，旧版本及合成原件保留。76 项 Node 回归和 16 项 Python 测试通过。本轮验收 Linux，Windows 一键沿用前轮实测。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-linux-startup-preflight-20261120/verification.json`。

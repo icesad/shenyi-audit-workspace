@@ -3,10 +3,11 @@ import { constants } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { assertManagedDatabaseReady } from '../server/team/managed-database-readiness.mjs';
 import { createAliyunSms } from '../server/team/aliyun-sms.mjs';
 import { createWechatOpenPlatform } from '../server/team/wechat-open-platform.mjs';
+import { sqliteExistingFileUri } from '../server/team/sqlite-existing-file.mjs';
 
 const checkout = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fields = ['schemaVersion', 'database', 'apiBase', 'serverId', 'listenPort', 'tlsCertificate', 'tlsKey'];
@@ -185,9 +186,9 @@ async function checkManagedDatabase(configuration) {
   let readonly;
   try {
     const entry = await existingFile(database, code);
-    readonly = new DatabaseSync(pathToFileURL(database).href + '?mode=ro', { readOnly: true, timeout: 5000 });
+    readonly = new DatabaseSync(sqliteExistingFileUri(database, 'ro'), { readOnly: true, timeout: 5000 });
     assertManagedDatabaseReady(readonly, serverId, databaseReadinessOptions(configuration));
-    if (path.relative(database, readonly.location()) || !sameFile(entry, await existingFile(database, code))) fail(code);
+    if (path.relative(path.toNamespacedPath(database), readonly.location()) || !sameFile(entry, await existingFile(database, code))) fail(code);
     return entry;
   } catch {
     fail(code);
@@ -202,8 +203,8 @@ async function openManagedDatabase(configuration) {
   const entry = await checkManagedDatabase(configuration);
   let writable;
   try {
-    writable = new DatabaseSync(pathToFileURL(database).href + '?mode=rw', { timeout: 5000 });
-    if (path.relative(database, writable.location()) || !sameFile(entry, await existingFile(database, code))) fail(code);
+    writable = new DatabaseSync(sqliteExistingFileUri(database, 'rw'), { timeout: 5000 });
+    if (path.relative(path.toNamespacedPath(database), writable.location()) || !sameFile(entry, await existingFile(database, code))) fail(code);
     return writable;
   } catch {
     writable?.close();

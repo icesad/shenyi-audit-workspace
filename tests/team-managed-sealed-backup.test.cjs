@@ -61,6 +61,49 @@ test('managed sealed round trip distinguishes authenticated snapshot from isolat
   await assert.rejects(createManagedSealedBackup({sourceDatabase:relocated,serverId,keyFile,outputRoot}), {code:'SOURCE_INVALID'});
 });
 
+test('Windows managed sealed backup, comparison and rehearsal preserve data at long paths', {skip:process.platform!=='win32'}, async t => {
+  const {createManagedSealedBackup,rehearseManagedSealedRestore} = await import('../server/team/offline-backup.mjs');
+  const {MANAGED_REHEARSAL_MARKER,assertManagedDatabaseReady} = await import('../server/team/managed-database-readiness.mjs');
+  const {dir,sourceDatabase,serverId,keyFile} = await fixture();
+  t.after(async () => {
+    assert.equal(await fs.realpath(dir),dir);
+    await fs.rm(dir,{recursive:true});
+  });
+  function longDirectory(label) {
+    const prefix = path.join(dir,`${label} 长路径 % # & `);
+    return prefix + 'x'.repeat(Math.max(1,267-prefix.length));
+  }
+  const sourceDirectory = longDirectory('source');
+  const outputRoot = longDirectory('output');
+  const longSource = path.join(sourceDirectory,'source.sqlite');
+  await fs.mkdir(sourceDirectory);
+  await fs.copyFile(sourceDatabase,longSource);
+  const originalBytes = await fs.readFile(longSource);
+
+  const sealed = await createManagedSealedBackup({sourceDatabase:longSource,serverId,keyFile,outputRoot});
+  assert.ok(longSource.length>260 && sealed.archivePath.length>260);
+  assert.equal(path.dirname(sealed.directory),outputRoot);
+  assert.deepEqual(await fs.readdir(sealed.directory),['snapshot.sealed']);
+  const comparison = await compareWithoutWrites({sourceDatabase:longSource,bundleDirectory:sealed.directory,serverId,keyFile});
+  assert.equal(comparison.status,'match');
+  assert.equal(comparison.schemaMatches,true);
+
+  const rehearsal = await rehearseManagedSealedRestore({bundleDirectory:sealed.directory,serverId,keyFile,outputRoot});
+  assert.ok(rehearsal.databasePath.length>260);
+  assert.equal(path.dirname(rehearsal.directory),outputRoot);
+  assert.deepEqual((await fs.readdir(rehearsal.directory)).sort(),['rehearsal.json','snapshot.sqlite']);
+  assert.equal(rehearsal.authenticatedSnapshotSha256,sealed.authenticatedSnapshotSha256);
+  assert.notEqual(rehearsal.databaseSha256,rehearsal.authenticatedSnapshotSha256);
+  assert.deepEqual(await fs.readFile(longSource),originalBytes);
+  const db = new DatabaseSync(path.toNamespacedPath(rehearsal.databasePath),{readOnly:true});
+  try {
+    assert.equal(db.prepare('PRAGMA quick_check').get().quick_check,'ok');
+    assert.equal(db.prepare("SELECT status FROM teams WHERE team_id='synthetic-team'").get().status,'active');
+    assert.equal(db.prepare('SELECT value FROM team_database_metadata WHERE name=?').get(MANAGED_REHEARSAL_MARKER).value,'1');
+    assert.throws(() => assertManagedDatabaseReady(db,serverId),{code:'MANAGED_DATABASE_NOT_READY'});
+  } finally { db.close(); }
+});
+
 test('failed managed capture does not leave a plaintext staging file or a successful bundle', async () => {
   const {createManagedSealedBackup} = await import('../server/team/offline-backup.mjs');
   const {sourceDatabase,serverId,keyFile,outputRoot} = await fixture();

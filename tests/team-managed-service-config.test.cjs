@@ -9,14 +9,21 @@ const { execFile } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { DatabaseSync } = require('node:sqlite');
 
-async function fixture() {
-  const directory = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'shenyi-managed-config-'));
+async function fixture({longPath = false} = {}) {
+  const temporaryRoot = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'shenyi-managed-config-'));
+  let directory = temporaryRoot;
+  if (longPath) {
+    const parent = path.join(temporaryRoot, '审易数据库 # %23 %00');
+    const prefix = path.join(parent, '团队资料-');
+    directory = prefix + 'x'.repeat(Math.max(1, 280 - prefix.length));
+    await fs.mkdir(directory, {recursive:true});
+  }
   const filename = path.join(directory, 'service.json');
   const configuration = {
     schemaVersion: 1, database: path.join(directory, 'team.sqlite'), apiBase: 'https://127.0.0.1:9443',
     serverId: randomUUID(), listenPort: 9443, tlsCertificate: path.join(directory, 'server.pem'), tlsKey: path.join(directory, 'server-key.pem'),
   };
-  return { directory, filename, configuration };
+  return { temporaryRoot, directory, filename, configuration };
 }
 
 test('managed config accepts only an exact HTTPS profile and distinct absolute external paths', async () => {
@@ -165,12 +172,12 @@ test('managed readiness requires recovery epoch triggers and challenge bindings 
   assert.throws(() => assertManagedDatabaseReady(db, serverId, enabled), notReady);
 });
 
-async function databasePreflightFixture(t) {
-  const value = await fixture();
-  t.after(() => fs.rm(value.directory, {recursive:true,force:true}));
+async function databasePreflightFixture(t, options) {
+  const value = await fixture(options);
+  t.after(() => fs.rm(value.temporaryRoot, {recursive:true,force:true}));
   const {initializeTeamDatabase} = await import('../server/team/database.mjs');
   const {deviceServerId} = await import('../server/team/device-policy.mjs');
-  const db = new DatabaseSync(value.configuration.database);
+  const db = new DatabaseSync(path.toNamespacedPath(value.configuration.database));
   try {
     initializeTeamDatabase(db);
     value.configuration.serverId = deviceServerId(db);
@@ -201,7 +208,8 @@ async function preflightFileFacts(directory) {
 
 function runPreflightCli(filename, guard, mode) {
   return new Promise(resolve=>execFile(process.execPath,
-    ['--disable-warning=ExperimentalWarning','--require',guard,path.resolve(__dirname,'../scripts/start-team-service.mjs'),mode,'--config',filename],
+    ['--disable-warning=ExperimentalWarning','--require',guard,path.resolve(__dirname,'../scripts/start-team-service.mjs'),
+      ...(mode ? [mode] : []),'--config',filename],
     {windowsHide:true,timeout:15000,maxBuffer:65536},(error,stdout,stderr)=>resolve({error,stdout,stderr})));
 }
 
@@ -261,6 +269,46 @@ test('database-only CLI rejects an absent database and wrong instance without cr
   const f=await databasePreflightFixture(t);
   await databasePreflightCli(f,{...f.configuration,database:path.join(f.directory,'absent.sqlite')},'MANAGED_DATABASE_NOT_READY');
   await databasePreflightCli(f,{...f.configuration,serverId:randomUUID()},'MANAGED_DATABASE_NOT_READY');
+});
+
+test('managed CLI opens long Windows SQLite paths and cannot recreate a vanished database', {skip:process.platform!=='win32'}, async t => {
+  const f = await databasePreflightFixture(t, {longPath:true});
+  const {database,tlsCertificate,tlsKey} = f.configuration;
+  assert.ok(database.length > 280);
+  await databasePreflightCli(f, f.configuration);
+  await databasePreflightCli(f, {...f.configuration,serverId:randomUUID()}, 'MANAGED_DATABASE_NOT_READY');
+  await fs.writeFile(f.filename, JSON.stringify({...f.configuration,database:path.toNamespacedPath(database)}));
+  const invalid = await runPreflightCli(f.filename,f.guard,'--check-database');
+  assert.equal(invalid.error?.code,1,invalid.stderr);
+  assert.equal(JSON.parse(invalid.stderr).code,'MANAGED_SERVICE_CONFIGURATION_INVALID');
+
+  const {createOwnerReviewCheckoutCertificate} = await import('../scripts/owner-review-checkout-certificate.mjs');
+  const {key,cert} = createOwnerReviewCheckoutCertificate();
+  await fs.writeFile(tlsCertificate,cert);
+  await fs.writeFile(tlsKey,key);
+  await fs.writeFile(f.filename,JSON.stringify(f.configuration));
+
+  // Remove the fixture after the real read-only check, just before SQLite opens for writes.
+  const displaced = path.join(f.directory, 'displaced.sqlite');
+  const guard = path.join(f.directory, 'displace-database.cjs');
+  await fs.writeFile(guard, `'use strict';
+const sqlite = require('node:sqlite');
+const fs = require('node:fs');
+sqlite.DatabaseSync = class extends sqlite.DatabaseSync {
+  constructor(filename, options) {
+    if (!options.readOnly) fs.renameSync(${JSON.stringify(database)}, ${JSON.stringify(displaced)});
+    super(filename, options);
+  }
+};
+require('node:module').syncBuiltinESMExports();
+`);
+  const original = await fs.readFile(database);
+  const result = await runPreflightCli(f.filename,guard);
+  assert.equal(result.error?.code,1,result.stderr);
+  assert.equal(result.stdout,'');
+  assert.equal(JSON.parse(result.stderr).code,'MANAGED_DATABASE_NOT_READY');
+  await assert.rejects(fs.stat(database),{code:'ENOENT'});
+  assert.deepEqual(await fs.readFile(displaced),original);
 });
 
 test('startup CLI validates TLS, opt-in providers and database with no writes or network', async t => {
