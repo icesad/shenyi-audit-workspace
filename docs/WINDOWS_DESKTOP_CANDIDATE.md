@@ -142,6 +142,18 @@ node $installTool apply `
 node $installTool rollback --root $installRoot --public-key $publisherKey --publisher-sha256 $publisherSha256
 ```
 
+### 恢复中断的 Windows 安装
+
+安装或升级进程异常退出，目录仍提示 `INSTALL_BUSY` 时，可以用同一套发行工具和信任配置执行 `recover`。Windows 会独占打开现有锁。安装进程或另一恢复进程仍持有锁时，命令返回 `INSTALL_BUSY`，保留现场。
+
+```powershell
+node $installTool recover --root $installRoot --public-key $publisherKey --publisher-sha256 $publisherSha256
+```
+
+恢复先核对已提交的状态和可用发行包，再清理未发布的安装状态临时文件。活动版本、上一版记录、历史发行目录和最高已接受版本保持原样。首次安装尚未提交状态时，恢复只清除遗留锁和临时状态，随后可重试安装。已无锁时返回 `recovered: false`。
+
+回执 `verifiedRelease: active` 表示已核验活动版，可继续用 `resolve-launch` 检查入口。若仅上一版通过核验，回执为 `verifiedRelease: previous`，由操作员另行执行 `rollback`。遇到公钥或发布者指纹不符、无法核验的状态或异常目录项时，保留锁供检查。 [Windows 文件共享规则](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
+
 ### Windows MSI 发布来源
 
 在 Windows 用 `build-windows-release-msi.mjs` 将 `schemaVersion: 2` 双签名候选制作成 MSI。使用独立配置的 Ed25519 公钥与发布者叶证书 DER 字节的 SHA-256 指纹。输出使用仓库和输入候选目录之外的绝对 `.msi` 路径，父目录须已存在，输出文件须尚未创建。

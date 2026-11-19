@@ -321,6 +321,60 @@ test('resolve-launch refuses an existing installation lock and leaves its bytes 
   assert.deepEqual(await installationFacts(f.options.root),before);
 });
 
+test('native recovery waits for a closed installation handle and preserves committed state', {
+  skip: process.platform !== 'win32' && 'Windows sharing semantics are required',
+}, async t => {
+  const { spawn } = require('node:child_process');
+  const { once } = require('node:events');
+  const f = await installedFixture();
+  const { recoverWindowsInstallation, resolveWindowsLaunch } = await import('../scripts/windows-candidate-install-core.mjs');
+  const lock = path.join(f.options.root, '.install.lock');
+  const state = path.join(f.options.root, 'state.json');
+  const pending = path.join(f.options.root, '.state.pending-db9e2a82-37b9-43a5-bbe9-fd2b1a49e5ef');
+  const committed = await fs.readFile(state);
+  const pendingBytes = Buffer.from('interrupted unpublished state');
+  await fs.writeFile(pending, pendingBytes, { flag: 'wx' });
+
+  const script = [
+    "const fs = require('node:fs');",
+    "const lock = fs.openSync(process.argv[1], 'wx');",
+    "process.send('held');",
+    "setInterval(() => fs.fstatSync(lock), 250);",
+  ].join('\n');
+  const owner = spawn(process.execPath, ['-e', script, lock], {
+    windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+  });
+  const ownerExited = once(owner, 'exit');
+  t.after(async () => {
+    if (owner.exitCode === null && owner.signalCode === null) owner.kill('SIGKILL');
+    await ownerExited;
+  });
+  const [ready] = await once(owner, 'message', { signal: AbortSignal.timeout(10000) });
+  assert.equal(ready, 'held');
+  await assert.rejects(recoverWindowsInstallation(f.options), { code: 'INSTALL_BUSY' });
+  assert.deepEqual(await fs.readFile(pending), pendingBytes);
+  assert.deepEqual(await fs.readFile(state), committed);
+  assert.equal(owner.kill('SIGKILL'), true);
+  await ownerExited;
+  assert.equal((await fs.stat(lock)).size, 0);
+
+  const wrongKey = path.join(f.directory, 'recovery-wrong-public.pem');
+  await fs.writeFile(wrongKey, generateKeyPairSync('ed25519').publicKey.export({ format: 'pem', type: 'spki' }), { flag: 'wx' });
+  await assert.rejects(recoverWindowsInstallation({ ...f.options, publicKey: wrongKey }), { code: 'INSTALL_KEY_MISMATCH' });
+  assert.deepEqual(await fs.readFile(pending), pendingBytes);
+  assert.deepEqual(await fs.readFile(state), committed);
+  assert.equal((await fs.stat(lock)).size, 0);
+
+  const recovered = await recoverWindowsInstallation(f.options);
+  assert.deepEqual(recovered, { recovered: true, activeVersion: '0.61.0', highestVersion: '0.61.0',
+    previousVersion: null, verifiedRelease: 'active', removedPendingStates: 1 });
+  assert.deepEqual(await fs.readFile(state), committed);
+  await assert.rejects(fs.lstat(pending), { code: 'ENOENT' });
+  await assert.rejects(fs.lstat(lock), { code: 'ENOENT' });
+  assert.equal((await resolveWindowsLaunch(f.options)).version, '0.61.0');
+  assert.deepEqual(await recoverWindowsInstallation(f.options), { recovered: false });
+});
+
 test('resolve-launch rejects corrupted retained signature, manifest and payload without repairing them', async () => {
   const f = await installedFixture();
   const { resolveWindowsLaunch } = await import('../scripts/windows-candidate-install-core.mjs');

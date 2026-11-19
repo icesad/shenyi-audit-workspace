@@ -1,15 +1,21 @@
+import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
+import { once } from 'node:events';
 import { constants } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { parseCandidateVersion, readWindowsCandidateManifest } from './verify-windows-candidate-inventory.mjs';
 import { verifyWindowsCandidate } from './windows-candidate-signature.mjs';
-import { verifyWindowsCandidateRelease } from './windows-candidate-authenticode.mjs';
+import { resolveSystemPowerShell, verifyWindowsCandidateRelease } from './windows-candidate-authenticode.mjs';
+import { detachedSignatureFiles, keyFingerprint } from './detached-release-signature.mjs';
 
 const checkout = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const recoveryHelper = fileURLToPath(new URL('./hold-windows-install-recovery.ps1', import.meta.url));
 const stateKind = 'shenyi-windows-portable-installation';
 const stateName = 'state.json';
+const pendingPrefix = '.state.pending-';
 const lockName = '.install.lock';
 const directoryName = 'releases';
 const signatureName = 'signature.ed25519';
@@ -27,6 +33,8 @@ const messages = {
   INSTALL_ROOT_INVALID: '安装演练目录无效。请选择仓库和源文件之外的本机目录。',
   INSTALL_STATE_INVALID: '安装演练状态或已记录的候选无法核验。',
   INSTALL_BUSY: '安装演练目录正在使用，或有未处理的锁。',
+  INSTALL_RECOVERY_FAILED: 'Windows 未能确认安装锁的恢复结果。',
+  INSTALL_RECOVERY_WINDOWS_REQUIRED: '请在 Windows 上恢复中断的安装。',
   ROLLBACK_UNAVAILABLE: '当前没有可回退的上一版记录。',
   INSTALL_PUBLISH_FAILED: '本次安装演练未完成，未切换活动版本。',
   INSTALL_KEY_MISMATCH: '所提供的公钥与此安装演练目录绑定的发布者不一致。',
@@ -148,8 +156,9 @@ async function locked(input, exclusions, create, action) {
     if (Object.hasOwn(messages, error?.code) || error?.code === 'VERIFICATION_KEY_INVALID' || /^(?:CANDIDATE|AUTHENTICODE)_[A-Z_]+$/.test(error?.code ?? '')) throw error;
     fail('INSTALL_PUBLISH_FAILED');
   } finally {
-    await lock.close().catch(() => {});
+    // Keep the live lock handle until its own directory entry is retired.
     if (lockIdentity) await unlinkOwned(lockPath, lockIdentity);
+    await lock.close().catch(() => {});
   }
 }
 
@@ -187,12 +196,16 @@ function parseState(bytes) {
   return value;
 }
 
-async function readInstallation(context, allowEmpty) {
+async function readInstallation(context, allowEmpty, recoveryPending) {
   try {
-    if (context.lockPath) await checkLock(context);
+    if (recoveryPending) await checkRootIdentity(context);
+    else if (context.lockPath) await checkLock(context);
     else await checkIdleInstallation(context);
-    const names = await fs.readdir(context.root);
-    if (!context.lockPath && names.includes(lockName)) fail('INSTALL_BUSY');
+    let names = await fs.readdir(context.root);
+    if (recoveryPending) {
+      if (!names.includes(lockName)) fail('INSTALL_BUSY');
+      names = names.filter(name => !recoveryPending.has(name));
+    } else if (!context.lockPath && names.includes(lockName)) fail('INSTALL_BUSY');
     if (!names.includes(stateName)) {
       if (allowEmpty && names.length === 1 && names[0] === lockName) return null;
       fail('INSTALL_STATE_INVALID');
@@ -216,7 +229,7 @@ async function checkExpectedState(context, expected) {
 
 async function publishState(context, previous, state) {
   const filename = path.join(context.root, stateName);
-  const temporary = path.join(context.root, '.state.pending-' + randomUUID());
+  const temporary = path.join(context.root, pendingPrefix + randomUUID());
   const expected = canonical(state);
   let pending, identity;
   try {
@@ -415,6 +428,109 @@ export async function resolveWindowsLaunch({ root, publicKey, publisherSha256 })
   await checkIdleInstallation(context);
   if (!sameFile(previous.stat, current.stat) || !previous.bytes.equals(current.bytes)) fail('INSTALL_BUSY');
   return result(current.state, location);
+}
+
+async function withWindowsRecoveryHandle(lockPath, recover) {
+  const windows = await resolveSystemPowerShell().catch(() => fail('INSTALL_RECOVERY_FAILED'));
+  let complete;
+  const finished = new Promise(resolve => { complete = resolve; });
+  const child = execFile(windows.executable, ['-NoProfile', '-NonInteractive', '-File', recoveryHelper, '-LockPath', lockPath],
+    { cwd: windows.cwd, env: windows.env, windowsHide: true, maxBuffer: 16 * 1024 },
+    (error, stdout) => complete({ error, stdout }));
+  const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+  child.stdin.on('error', () => {});
+  const greeting = once(lines, 'line', { signal: AbortSignal.timeout(60_000) }).then(([line]) => line);
+  const parseStatus = line => {
+    try { return JSON.parse(line).status; }
+    catch { fail('INSTALL_RECOVERY_FAILED'); }
+  };
+  function assertHeld() {
+    if (child.exitCode !== null || child.signalCode !== null) fail('INSTALL_RECOVERY_FAILED');
+  }
+  try {
+    const first = await Promise.race([greeting, finished.then(({ stdout }) => stdout.trim())])
+      .catch(() => {
+        child.kill();
+        fail('INSTALL_RECOVERY_FAILED');
+      });
+    const status = parseStatus(first);
+    if (status !== 'held') {
+      const { error } = await finished;
+      if (error) fail('INSTALL_RECOVERY_FAILED');
+      if (status === 'missing') return { recovered: false };
+      if (status === 'busy') fail('INSTALL_BUSY');
+      if (status === 'invalid') fail('INSTALL_STATE_INVALID');
+      fail('INSTALL_RECOVERY_FAILED');
+    }
+    assertHeld();
+    const result = await recover(assertHeld);
+    assertHeld();
+    child.stdin.end('commit\n');
+    const { error, stdout } = await finished;
+    const replies = stdout.trim().split(/\r?\n/);
+    if (error || replies.length !== 2 || parseStatus(replies[1]) !== 'cleared') fail('INSTALL_RECOVERY_FAILED');
+    return { recovered: true, ...result };
+  } finally {
+    if (!child.stdin.writableEnded) child.stdin.end('abort\n');
+    lines.close();
+    await finished;
+  }
+}
+
+async function interruptedStateFiles(context) {
+  await checkRootIdentity(context);
+  const pending = new Map();
+  for (const name of await fs.readdir(context.root)) {
+    if (!name.startsWith(pendingPrefix) || !uuid.test(name.slice(pendingPrefix.length))) continue;
+    const file = path.join(context.root, name);
+    const stat = await fileStat(file, 'INSTALL_STATE_INVALID').catch(() => fail('INSTALL_STATE_INVALID'));
+    if (stat.size > BigInt(stateLimit)) fail('INSTALL_STATE_INVALID');
+    pending.set(name, stat);
+  }
+  return pending;
+}
+
+async function verifyRecoverableRelease(context, state, key) {
+  if (!state?.active) return null;
+  try {
+    await verifyRetained(context, state, state.active, key);
+    return 'active';
+  } catch (error) {
+    if (!state.previous || !/^(?:INSTALL_STATE_INVALID|CANDIDATE_[A-Z_]+|AUTHENTICODE_[A-Z_]+)$/.test(error.code ?? '')) throw error;
+    await verifyRetained(context, state, state.previous, key);
+    return 'previous';
+  }
+}
+
+export async function recoverWindowsInstallation({ root, publicKey, publisherSha256 }) {
+  if (process.platform !== 'win32') fail('INSTALL_RECOVERY_WINDOWS_REQUIRED');
+  const key = localPath(publicKey);
+  const publisher = publisherPin(publisherSha256);
+  const context = await prepareRoot(root, [key], false);
+  return withWindowsRecoveryHandle(path.join(context.root, lockName), async assertHeld => {
+    const pending = await interruptedStateFiles(context);
+    const previous = await readInstallation(context, true, pending);
+    const state = previous?.state;
+    if (state) requirePublisher(state, publisher);
+    const trustedKey = await detachedSignatureFiles(fail).readEd25519Key(key, context.root, false);
+    if (state && keyFingerprint(trustedKey) !== state.publicKeySha256) fail('INSTALL_KEY_MISMATCH');
+    const verifiedRelease = await verifyRecoverableRelease(context, state, key);
+
+    const current = await readInstallation(context, true, pending);
+    if (previous ? !current || !current.bytes.equals(previous.bytes) || !sameFile(current.stat, previous.stat) : current !== null) {
+      fail('INSTALL_STATE_INVALID');
+    }
+    for (const [name, expected] of pending) {
+      const file = path.join(context.root, name);
+      await checkRootIdentity(context);
+      const actual = await fileStat(file, 'INSTALL_STATE_INVALID').catch(() => fail('INSTALL_STATE_INVALID'));
+      if (!sameFile(expected, actual)) fail('INSTALL_STATE_INVALID');
+      assertHeld();
+      await fs.unlink(file).catch(() => fail('INSTALL_RECOVERY_FAILED'));
+    }
+    return { activeVersion: state?.active?.version ?? null, highestVersion: state?.highestVersion ?? null,
+      previousVersion: state?.previous?.version ?? null, verifiedRelease, removedPendingStates: pending.size };
+  });
 }
 
 export async function rollbackWindowsInstallation({ root, publicKey, publisherSha256 }) {

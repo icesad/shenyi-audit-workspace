@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { realpath } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import teamService from '../desktop/team-service-config.cjs';
-import { applyWindowsCandidate, inspectWindowsInstallation, resolveWindowsLaunch, rollbackWindowsInstallation } from './windows-candidate-install-core.mjs';
+import { applyWindowsCandidate, inspectWindowsInstallation, recoverWindowsInstallation, resolveWindowsLaunch, rollbackWindowsInstallation } from './windows-candidate-install-core.mjs';
 
 const operations = new Map([
   ['apply', { action: applyWindowsCandidate, fields: { '--root': 'root', '--bundle': 'bundle', '--signature': 'signature', '--public-key': 'publicKey' } }],
@@ -12,13 +12,16 @@ const operations = new Map([
   ['resolve-launch', { action: resolveWindowsLaunch, fields: { '--root': 'root', '--public-key': 'publicKey' } }],
   ['launch', { action: launchWindowsCandidate, fields: { '--root': 'root', '--public-key': 'publicKey', '--service-config': 'serviceConfig' } }],
   ['rollback', { action: rollbackWindowsInstallation, fields: { '--root': 'root', '--public-key': 'publicKey' } }],
+  ['recover', { action: recoverWindowsInstallation, fields: { '--root': 'root', '--public-key': 'publicKey' } }],
 ]);
 
 const messages = {
-  INVALID_ARGUMENTS: '请提供完整的安装、核验、启动定位或回滚参数。',
+  INVALID_ARGUMENTS: '请提供完整的安装、核验、启动定位、回滚或恢复参数。',
   INSTALL_ROOT_INVALID: '安装目录必须是仓库和候选包之外的专用本地目录。',
   INSTALL_STATE_INVALID: '无法确认安装状态或已授权的版本。',
   INSTALL_BUSY: '安装目录正在执行其他操作，或上次操作需要检查。',
+  INSTALL_RECOVERY_FAILED: 'Windows 未能确认安装锁的恢复结果。',
+  INSTALL_RECOVERY_WINDOWS_REQUIRED: '请在 Windows 上恢复中断的安装。',
   INSTALL_PUBLISH_FAILED: '安装或回滚未能完成，请检查本机安装状态。',
   ROLLBACK_UNAVAILABLE: '当前没有可回滚的上一版。',
   CANDIDATE_MANIFEST_INVALID: 'Windows 候选清单不符合约定。',
