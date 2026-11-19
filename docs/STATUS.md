@@ -1,4 +1,8 @@
-# 当前状态 · Windows 桌面原单走查
+# 当前状态 · Windows 官网一键评审包
+
+## 2026-11-20 M5X Windows 官网一键评审包
+
+按现有构建流程生成 Windows x64 合成评审包，解压校验 2,481 个载荷、246 个当前源码文件和 29 条本地链接。实际从全新解压目录运行官网一键，绑定设备并创建合成年费和增购订单。两份旧授权自然到期后从桌面打开同号官网回执，金额一致、建单控件隐藏。十二张账务相关表保持一致，退出后两路 HTTPS 关闭。此版可供双方审阅，58 项包装相关回归及 125 项功能回归通过。评审 ZIP 位于 `C:/Users/icesa/Documents/ShenyiM5ReceiptNative1120/release-accepted/Shenyi-Owner-Review-Win-x64.zip`。证据见 `C:/Users/icesa/Documents/ShenyiM5ReceiptNative1120/verification-packaged.json`。
 
 ## 2026-11-20 M5W Windows 桌面原单走查
 

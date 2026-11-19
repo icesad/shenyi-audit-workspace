@@ -1,5 +1,9 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-20 M5X Windows 官网一键评审包
+
+按现有构建流程生成 Windows x64 合成评审包，解压校验 2,481 个载荷、246 个当前源码文件和 29 条本地链接。实际从全新解压目录运行官网一键，绑定设备并创建合成年费和增购订单。两份旧授权自然到期后从桌面打开同号官网回执，金额一致、建单控件隐藏。十二张账务相关表保持一致，退出后两路 HTTPS 关闭。此版可供双方审阅，58 项包装相关回归及 125 项功能回归通过。评审 ZIP 位于 `C:/Users/icesa/Documents/ShenyiM5ReceiptNative1120/release-accepted/Shenyi-Owner-Review-Win-x64.zip`。证据见 `C:/Users/icesa/Documents/ShenyiM5ReceiptNative1120/verification-packaged.json`。
+
 ## 2026-11-20 M5W Windows 桌面原单走查
 
 在 Windows Electron 运行 5f3401c 正常桌面入口，使用独立账户和合成库首次绑机，并在双路 HTTPS 官网各创建一张年费单和增购单。关闭网页并等两份旧授权实际到期，从桌面订单列表重开年费回执，从订单编号查询重开增购回执。两笔原单的编号、金额、状态与席位相符，查阅只调用两个回执接口，十二张订单、支付及权益相关表保持一致。125 项回归通过。引导测试器使用隔离 Electron 窗口打开官网。当前提交的一键评审包待重建复验。证据见 `C:/Users/icesa/Documents/ShenyiM5ReceiptNative1120/verification.json`。
