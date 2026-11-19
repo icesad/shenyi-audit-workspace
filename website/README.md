@@ -4,7 +4,7 @@
 
 ## 本机查看
 
-Windows 可双击 [Start-Website-Preview.cmd](../Start-Website-Preview.cmd)，也可在仓库根目录运行下列命令。打开终端显示的 `http://127.0.0.1:<port>/`。关闭命令窗口或按 `Ctrl+C` 即停止服务。
+Windows 可双击根目录的 [Start-Website-Preview.cmd](../Start-Website-Preview.cmd)。打开终端显示的 `http://127.0.0.1:<port>/`。关闭命令窗口或按 `Ctrl+C` 即停止服务。使用仓库源码时，也可在仓库根目录运行下列命令。
 
 ```text
 node scripts/website-preview.mjs
@@ -24,4 +24,6 @@ node scripts/website-preview.mjs --build D:/codex-temp/shenyi-website-static
 
 ## 发布前核对
 
-此版可供本机审阅。Windows 能力口径来自[桌面候选](../desktop/brand-spec.md)及[合成账务验收](../docs/M5_LOCAL_ACCEPTANCE.md)。macOS 原生、签名安装、账号及订单入口、价格与退款条款、运营主体及备案信息仍待正式确认或验收。官网和客户端将使用同一套订单与权益服务，具体收款入口由产品负责人决定。国内资源与手续依照[商业化路线图](../docs/COMMERCIALIZATION_ROADMAP.md)逐项推进。
+本机审阅时，可对照四角色采集演练和合成账务验收核对官网说法。 [采集演练](../docs/TEAM_PILOT_REHEARSAL.md) · [账务验收](../docs/M5_LOCAL_ACCEPTANCE.md)
+
+正式发布前，仍须核对 macOS 实机、签名安装、账号及订单入口、价格与退款条款、运营主体及国内上线手续。官网和客户端将使用同一套订单与权益服务，具体收款入口由产品负责人决定。试点条件以及双方负责的评审事项见随包评审单。 [双人评审单](../docs/PILOT_OWNER_REVIEW.md)

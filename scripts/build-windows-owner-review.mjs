@@ -25,7 +25,7 @@ const reviewFiles = new Map([
   ['docs/PILOT_OWNER_REVIEW.md', 'docs/PILOT_OWNER_REVIEW.md'],
   ['docs/TEAM_PILOT_REHEARSAL.md', 'docs/TEAM_PILOT_REHEARSAL.md'],
   ['docs/M5_LOCAL_ACCEPTANCE.md', 'docs/M5_LOCAL_ACCEPTANCE.md'],
-  ['docs/PORTABLE_OWNER_REVIEW.md', 'README-Owner-Review.md'],
+  ['README-Owner-Review.md', 'README-Owner-Review.md'],
 ]);
 const launches = new Map([
   ['Start-Team-Pilot-Candidate.cmd', ['team-isolated-preview.mjs', '--pilot-demo']],

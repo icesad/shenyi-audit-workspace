@@ -4,7 +4,7 @@
 
 ## 启动和账号
 
-Windows 双击仓库根目录的 [Start-Team-Pilot-Candidate.cmd](../Start-Team-Pilot-Candidate.cmd)。也可在仓库根目录运行以下命令。Node.js 需使用 24.15 以上的 24.x，Electron 按[桌面运行说明](../desktop/README.md#本机运行)准备。
+Windows 评审包完整解压后，双击根目录的 [Start-Team-Pilot-Candidate.cmd](../Start-Team-Pilot-Candidate.cmd)。从仓库源码启动时，先按 `desktop/README.md` 准备 Electron，再用 Node.js 24.15 以上的 24.x 在仓库根目录运行以下命令。
 
 ```sh
 node scripts/team-isolated-preview.mjs --pilot-demo
