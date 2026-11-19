@@ -138,7 +138,20 @@ journalctl -u shenyi-team-monitor.service -n 30 --no-pager
 
 ## 变更与回滚
 
-停机变更前先停止接入新业务并等待进行中的上传和导出完成。备份代码版本、配置和数据库，确认上一版本可读取当前库。启用新版本时先停受管服务，再在同一文件系统中移动实际发布目录到 `current`，先测本机 TLS 就绪，再测代理和一条正常业务操作。证书更新后重启受管服务以加载后端密钥，重新校验并按目标环境流程加载 Nginx。
+停机变更前先停止接入新业务并等待进行中的上传和导出完成。备份代码版本、配置和数据库，核对候选与上一版本均兼容当前库。候选已签名并完成暂存后，在获准窗口用同一可信渠道预置 `scripts/activate-linux-release.py`，以发布管理员身份执行。使用支持 `renameat2` 原子目录交换的 Linux 文件系统，`current` 和候选均使用同一文件系统上的实际目录。 [Linux 目录交换](https://man7.org/linux/man-pages/man2/rename.2.html)
+
+```sh
+/usr/bin/python3 -I /opt/shenyi-team/release-tools/scripts/activate-linux-release.py \
+  --revision "$release" --archive-sha256 "$approved_archive_sha256" --same-schema
+```
+
+`--same-schema` 确认本次切换已核对数据库兼容性。命令沿用暂存锁，核对审批归档摘要、候选回执和只读权限。启动候选后，使用上一版的探针检查两路 HTTPS、实例和进程。原有磁盘和证书临近阈值的提示可保留，新增提示或必要检查失败会停止变更。隔离环境可显式提供 `--edge-ca` 读取受信的边缘 CA，生产公有证书通常使用系统信任。 [systemd 服务状态与重启计数](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html)
+
+返回 `0` 时，旧版保存在 `previous-$release`。候选启动或探针失败且旧版已恢复时返回 `2`，候选保留在 `failed-$release`。两种结果均写入 `activation-$release.json`。返回 `1` 或进程意外退出时，在发布根核对结案回执及 `/opt/shenyi-team/.shenyi-activation.json`。未结案记录及其中的目录设备号和 inode 用于定位当前落位。遇到存储故障或无法证明已安全停服时，核对受管单元、进程、目录和实际库后再处置。SQLite 与配置保留在各自的原路径。
+
+核对一条获准的正常业务操作后再恢复接入。证书更新后重启受管服务以加载后端密钥，重新校验并按目标环境流程加载 Nginx。
+
+隔离 Ubuntu 验证了错误审批摘要在停服前被拒绝。模拟 systemd 启动失败后，原目录恢复，旧版重新启动并通过双路 HTTPS，故障候选留存。另一份测试密钥签名的候选随后成功启用，旧版目录保留。三个 systemd 调用标识各异，Nginx、配置和 SQLite 文件身份及字节保持。
 
 在隔离 Ubuntu 中使用真实 `current` 目录演练 `705b159 → 0b7e1c8 → 705b159`。每次先停受管服务，确认边缘接口返回 502，移动实体目录后重新启动并复核两路 HTTPS。三个服务进程的启动标识各异，两版发布文件按各自归档逐一比对。已有技术管理员以同一设备绑定读取订阅，分别收到无提醒字段、7 天、无提醒字段。已有采集账号以原设备绑定读回 2 KiB 合成原件，原件 SHA-256、SQLite 文件标识和架构、21 张业务表摘要保持一致。最终离线检查通过，虚拟机正常关机。此轮保留现有数据库，覆盖同库架构的应用版本回滚。涉及架构或数据迁移时，先证明上一版本能读取并正确处理迁移后的库。
 

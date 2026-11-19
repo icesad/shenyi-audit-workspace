@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""Activate an already-staged, schema-compatible release on a managed Linux host."""
+
+import argparse
+import ctypes
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+
+
+ROOT = Path('/opt/shenyi-team')
+CURRENT = ROOT / 'current'
+NODE = ROOT / 'node/bin/node'
+CONFIG = Path('/etc/shenyi-team/service.json')
+BACKEND_CA = Path('/etc/nginx/shenyi-team/backend-ca.pem')
+UNIT = 'shenyi-team.service'
+UNIT_PATH = '/etc/systemd/system/shenyi-team.service'
+JOURNAL = ROOT / '.shenyi-activation.json'
+SYSTEMCTL = Path('/usr/bin/systemctl')
+HEALTH_KEYS = {
+    'backendReadiness', 'backendIdentity', 'publicIdentity', 'publicReadinessHidden', 'publicHealthHidden',
+    'backendCertificate', 'publicCertificate', 'tlsKeySeparation', 'databaseVolume',
+}
+ADVISORY_KEYS = {'backendCertificate', 'publicCertificate', 'databaseVolume'}
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def owned_path(path, kind, readonly=False):
+    value = path.lstat()
+    require(path.resolve(strict=True) == path and kind(value.st_mode) and value.st_uid == 0
+            and not value.st_mode & (0o222 if readonly else 0o022), f'Untrusted deployment path: {path}')
+    return value
+
+
+def identity(value):
+    return [value.st_dev, value.st_ino]
+
+
+def read_file(path, limit):
+    with path.open('rb') as handle:
+        data = handle.read(limit + 1)
+    require(len(data) <= limit, f'Unexpected metadata size: {path}')
+    return data
+
+
+def configuration_stamp():
+    owned_path(CONFIG, stat.S_ISREG)
+    source = read_file(CONFIG, 64 * 1024)
+    current = json.loads(source)
+    database = Path(current['database'])
+    info = database.lstat()
+    require(database.is_absolute() and database.resolve(strict=True) == database and stat.S_ISREG(info.st_mode),
+            'The active service must use a real SQLite file.')
+    return {'configSha256': hashlib.sha256(source).hexdigest(), 'databaseIdentity': identity(info)}
+
+
+def run(command, timeout, env):
+    return subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=env)
+
+
+def service(args, env, timeout=15):
+    result = run([SYSTEMCTL, '--no-pager', *args, UNIT], timeout, env)
+    require(result.returncode == 0, f'systemd {args[0]} failed.')
+    return result.stdout
+
+
+def service_status(env):
+    fields = ('LoadState', 'ActiveState', 'MainPID', 'ControlPID', 'InvocationID', 'Job',
+              'User', 'FragmentPath', 'WorkingDirectory')
+    status = dict(line.split('=', 1) for line in service(['show', *[f'--property={field}' for field in fields]], env)
+                  .splitlines() if '=' in line)
+    require(status.get('LoadState') == 'loaded' and status.get('FragmentPath') == UNIT_PATH
+            and status.get('User') == 'shenyi-team' and status.get('WorkingDirectory') == str(CURRENT),
+            'Unexpected team-service unit, working directory or account.')
+    return status
+
+
+def process_status(env):
+    status = service_status(env)
+    pid = int(status.get('MainPID', 0))
+    invocation = status.get('InvocationID', '')
+    require(status.get('ActiveState') == 'active' and pid > 0 and re.fullmatch(r'[0-9a-f]{32}', invocation),
+            'The team service does not have an active invocation.')
+    real_root = identity((Path('/proc') / str(pid) / 'cwd').stat())
+    real_node = identity((Path('/proc') / str(pid) / 'exe').stat())
+    require(real_root == identity(CURRENT.stat()) and real_node == identity(NODE.stat()),
+            'The active process does not match the expected release and runtime.')
+    return pid, invocation
+
+
+def stopped(status):
+    return (status.get('ActiveState') in {'inactive', 'failed'} and status.get('MainPID') == '0'
+            and status.get('ControlPID') == '0' and status.get('Job', '') in {'', '0', '/'})
+
+
+def stop_service(env):
+    service(['stop'], env, timeout=75)
+    require(stopped(service_status(env)),
+            'The service did not stop cleanly. Preserve the release paths for review.')
+
+
+def restart_previous(env):
+    result = run([SYSTEMCTL, '--no-pager', 'reset-failed', UNIT], 15, env)
+    # systemd may unload this inactive unit after the completed stop job.
+    unloaded = f'Failed to reset failed state of unit {UNIT}: Unit {UNIT} not loaded.'
+    require(result.returncode == 0 or result.stderr.strip() == unloaded,
+            'Could not reset the stopped team-service failure state.')
+    service(['start'], env, timeout=45)
+    return 'cleared' if result.returncode == 0 else 'already-unloaded'
+
+
+def health_check(env, prior_warnings, limit, probe_root=CURRENT):
+    deadline = time.monotonic() + limit
+    while time.monotonic() < deadline:
+        try:
+            process = process_status(env)
+            check = run([NODE, probe_root / 'scripts/check-team-service.mjs', '--config', CONFIG,
+                         '--backend-ca', BACKEND_CA], 15, env)
+            report = json.loads(check.stdout)
+            checks = report['checks']
+            warnings = {name for name, row in checks.items() if row['status'] == 'warning'}
+            statuses = {row['status'] for row in checks.values()}
+            require(checks.keys() == HEALTH_KEYS and statuses <= {'pass', 'warning'} and warnings <= ADVISORY_KEYS
+                    and (prior_warnings is None or warnings <= prior_warnings)
+                    and (check.returncode, report['status']) == ((2, 'warning') if warnings else (0, 'healthy'))
+                    and process == process_status(env), 'Required dual HTTPS checks failed.')
+            return report, warnings, process
+        except (ValueError, KeyError, TypeError, AttributeError, OSError, subprocess.TimeoutExpired):
+            time.sleep(1)
+    raise ValueError('The service failed the dual HTTPS readiness check.')
+
+
+def record(path, data, root_fd):
+    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', prefix='.shenyi-activation-', dir=ROOT,
+                                    delete=False) as file:
+        json.dump(data, file)
+        file.write('\n')
+        file.flush()
+        os.fsync(file.fileno())
+    os.replace(file.name, path)
+    os.fsync(root_fd)
+
+
+def rename_operation():
+    rename = ctypes.CDLL(None, use_errno=True).renameat2
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    return rename
+
+
+def rename_entry(rename, root_fd, source, target, flags):
+    if rename(root_fd, os.fsencode(source.name), root_fd, os.fsencode(target.name), flags) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), str(source))
+
+
+def validate_stage(staged, revision, archive_sha, root_device):
+    info = owned_path(staged, stat.S_ISDIR, readonly=True)
+    require(info.st_dev == root_device, 'The staged release must be on the release filesystem.')
+    path = staged / '.shenyi-stage-receipt.json'
+    owned_path(path, stat.S_ISREG, readonly=True)
+    receipt = json.loads(read_file(path, 16 * 1024))
+    require(receipt['ok'] is True and receipt['offline'] is True and receipt['stageDir'] == str(staged)
+            and receipt['archive']['revision'] == revision and receipt['archive']['sha256'] == archive_sha,
+            'The staged receipt does not match the approved revision and archive digest.')
+    lock = staged / 'package-lock.json'
+    owned_path(lock, stat.S_ISREG, readonly=True)
+    require(hashlib.sha256(read_file(lock, 16 * 1024 * 1024)).hexdigest() == receipt['packageLockSha256'],
+            'The staged lockfile has changed.')
+    for directory, directories, files in os.walk(staged, followlinks=False):
+        for child in directories:
+            owned_path(Path(directory) / child, stat.S_ISDIR, readonly=True)
+        for file in files:
+            listed = owned_path(Path(directory) / file, stat.S_ISREG, readonly=True)
+            require(listed.st_nlink == 1, 'The staged release contains a linked file.')
+    return identity(info)
+
+
+def activate(args, root_fd, env):
+    revision = args.revision
+    staged = ROOT / f'staged-{revision}'
+    previous = ROOT / f'previous-{revision}'
+    failed = ROOT / f'failed-{revision}'
+    history = ROOT / f'activation-{revision}.json'
+    require(all(not os.path.lexists(path) for path in (JOURNAL, previous, failed, history)),
+            'An activation record, retained directory or unfinished change already exists.')
+    root_device = os.fstat(root_fd).st_dev
+    prior = owned_path(CURRENT, stat.S_ISDIR, readonly=True)
+    require(prior.st_dev == root_device, 'The active release must be on the release filesystem.')
+    old_identity = identity(prior)
+    new_identity = validate_stage(staged, revision, args.archive_sha256, root_device)
+    rename = rename_operation()
+    stamp = configuration_stamp()
+    owned_path(CURRENT / 'scripts/check-team-service.mjs', stat.S_ISREG, readonly=True)
+    _, warnings, baseline = health_check(env, prior_warnings=None, limit=15)
+    report = {'revision': revision, 'archiveSha256': args.archive_sha256, 'oldDirectoryIdentity': old_identity,
+              'newDirectoryIdentity': new_identity, 'baselinePid': baseline[0], 'baselineInvocation': baseline[1],
+              'baselineWarningChecks': sorted(warnings), **stamp}
+    record(JOURNAL, {**report, 'status': 'stopping-current'}, root_fd)
+
+    try:
+        stop_service(env)
+        require(configuration_stamp() == stamp, 'Configuration or SQLite file identity changed during the window.')
+        record(JOURNAL, {**report, 'status': 'exchanging-directories'}, root_fd)
+        rename_entry(rename, root_fd, CURRENT, staged, flags=2)  # RENAME_EXCHANGE
+    except (ValueError, OSError, subprocess.TimeoutExpired):
+        if (identity(CURRENT.stat()) == old_identity and identity(staged.stat()) == new_identity
+                and configuration_stamp() == stamp and stopped(service_status(env))):
+            restart_previous(env)
+            health_check(env, prior_warnings=warnings, limit=55)
+        raise
+
+    try:
+        os.fsync(root_fd)
+        record(JOURNAL, {**report, 'status': 'starting-candidate'}, root_fd)
+        service(['start'], env, timeout=45)
+        # Use the previous trusted release's check even while the new version is running.
+        health, _, active = health_check(env, prior_warnings=warnings, limit=55, probe_root=staged)
+        require(configuration_stamp() == stamp and active[1] != baseline[1],
+                'The new invocation or unchanged data path could not be verified.')
+    except (ValueError, OSError, subprocess.TimeoutExpired) as cause:
+        report['candidateFailure'] = str(cause)
+        try:
+            record(JOURNAL, {**report, 'status': 'restoring-current'}, root_fd)
+        except OSError:
+            # The pre-exchange record already identifies both directories.
+            pass
+        stop_service(env)
+        require(configuration_stamp() == stamp and identity(CURRENT.stat()) == new_identity
+                and identity(staged.stat()) == old_identity, 'Deployment state changed. Review the retained directories.')
+        rename_entry(rename, root_fd, CURRENT, staged, flags=2)
+        os.fsync(root_fd)
+        report['rollbackResetState'] = restart_previous(env)
+        health, _, active = health_check(env, prior_warnings=warnings, limit=55)
+        require(configuration_stamp() == stamp and active[1] != baseline[1],
+                'The restored invocation or unchanged data path could not be verified.')
+        rename_entry(rename, root_fd, staged, failed, flags=1)  # RENAME_NOREPLACE
+        status, retained = 'rolled-back', failed
+    else:
+        rename_entry(rename, root_fd, staged, previous, flags=1)
+        status, retained = 'activated', previous
+
+    result = {**report, 'status': status, 'currentPid': active[0], 'currentInvocation': active[1],
+              'retainedDirectory': str(retained), 'health': health}
+    record(JOURNAL, result, root_fd)
+    rename_entry(rename, root_fd, JOURNAL, history, flags=1)
+    os.fsync(root_fd)
+    return result
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument('--revision', required=True)
+    parser.add_argument('--archive-sha256', required=True)
+    parser.add_argument('--same-schema', action='store_true', required=True)
+    parser.add_argument('--edge-ca', type=Path)
+    args = parser.parse_args()
+    try:
+        require(os.geteuid() == 0 and re.fullmatch(r'[0-9a-f]{40}', args.revision)
+                and re.fullmatch(r'[0-9a-f]{64}', args.archive_sha256),
+                'Run as the release administrator with the approved revision and SHA-256.')
+        for directory in (ROOT, *ROOT.parents, NODE.parent, NODE.parent.parent):
+            owned_path(directory, stat.S_ISDIR)
+        for path in (NODE, CONFIG, BACKEND_CA, Path(UNIT_PATH)):
+            owned_path(path, stat.S_ISREG)
+        env = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}
+        if args.edge_ca:
+            require(args.edge_ca.is_absolute(), 'Use an absolute trusted edge CA path.')
+            owned_path(args.edge_ca, stat.S_ISREG)
+            env['NODE_EXTRA_CA_CERTS'] = str(args.edge_ca)
+        root_fd = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            fcntl.flock(root_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            result = activate(args, root_fd, env)
+        finally:
+            os.close(root_fd)
+        print(json.dumps(result))
+        return 0 if result['status'] == 'activated' else 2
+    except (ValueError, OSError, AttributeError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        print(json.dumps({'status': 'failed', 'message': str(error)}), file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())
