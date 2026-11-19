@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { fileFacts, resolveBuildOutput } from './build-windows-desktop-candidate.mjs';
 import { readWindowsCandidateManifest, signedWindowsCandidateStatus, verifyWindowsCandidateInventory } from './verify-windows-candidate-inventory.mjs';
 import { verifyWindowsCandidate } from './windows-candidate-signature.mjs';
+import { detachedSignatureFiles } from './detached-release-signature.mjs';
 
 const executableName = 'Shenyi.exe';
 const manifestName = 'candidate-manifest.json';
@@ -21,6 +22,8 @@ const messages = {
   AUTHENTICODE_EXECUTABLE_MISMATCH: '外签 EXE 和原构建 EXE 的内容或证书表布局不符。',
   AUTHENTICODE_UNTRUSTED: 'Windows 未确认内嵌 Authenticode 签名、时间戳或指定发布者证书。',
   AUTHENTICODE_BUNDLE_INVALID: '发行包状态、文件清单或 Ed25519 发布签名无效。',
+  AUTHENTICODE_MSI_INVALID: '请提供指定位置的有效 Windows MSI 文件。',
+  AUTHENTICODE_MSI_MISMATCH: '最终 MSI 的文件摘要不符合经确认的 SHA-256，或文件在核验期间发生变化。',
   AUTHENTICODE_OUTPUT_INVALID: '请在两个输入及仓库之外使用尚未存在的输出目录。',
   AUTHENTICODE_OPERATION_FAILED: 'Windows Authenticode 发行操作未完成。',
 };
@@ -100,9 +103,9 @@ async function executableBytes(input) {
 const authenticodeProbe = `
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSHOME 'Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1')
-$file = [IO.File]::Open($env:SHENYI_RELEASE_EXE, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+$file = [IO.File]::Open($env:SHENYI_RELEASE_FILE, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
 try {
-  $sig = Microsoft.PowerShell.Security\\Get-AuthenticodeSignature -LiteralPath $env:SHENYI_RELEASE_EXE
+  $sig = Microsoft.PowerShell.Security\\Get-AuthenticodeSignature -LiteralPath $env:SHENYI_RELEASE_FILE
   $sha = [System.Security.Cryptography.SHA256]::Create()
   try {
     $fileHash = [BitConverter]::ToString($sha.ComputeHash($file)).Replace('-', '').ToLowerInvariant()
@@ -110,7 +113,24 @@ try {
     if ($sig.SignerCertificate) { $hash = [BitConverter]::ToString($sha.ComputeHash($sig.SignerCertificate.RawData)).Replace('-', '').ToLowerInvariant() }
   }
   finally { $sha.Dispose() }
-  [pscustomobject]@{ status = [string]$sig.Status; type = [string]$sig.SignatureType; timestamp = ($null -ne $sig.TimeStamperCertificate); certificateSha256 = $hash; fileSha256 = $fileHash; bytes = $file.Length } | ConvertTo-Json -Compress
+  $result = [ordered]@{ status = [string]$sig.Status; type = [string]$sig.SignatureType; timestamp = ($null -ne $sig.TimeStamperCertificate); certificateSha256 = $hash; fileSha256 = $fileHash; bytes = $file.Length }
+  if ($env:SHENYI_VERIFY_MSI -eq '1' -and $result.status -eq 'Valid' -and $result.type -eq 'Authenticode' -and $result.timestamp -and
+      $hash -eq $env:SHENYI_EXPECTED_SIGNER -and $fileHash -eq $env:SHENYI_EXPECTED_MSI) {
+    $installer = $null
+    $database = $null
+    $result['msiDatabase'] = $false
+    try {
+      $installer = New-Object -ComObject WindowsInstaller.Installer
+      $database = $installer.OpenDatabase($env:SHENYI_RELEASE_FILE, 0)
+      $result['msiDatabase'] = ($null -ne $database)
+    }
+    catch {}
+    finally {
+      if ($null -ne $database) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($database) }
+      if ($null -ne $installer) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer) }
+    }
+  }
+  [pscustomobject]$result | ConvertTo-Json -Compress
 }
 finally { $file.Dispose() }
 `;
@@ -126,20 +146,25 @@ export async function resolveSystemPowerShell() {
     env: { SystemRoot: windowsDirectory, windir: windowsDirectory, Path: systemDirectory, PSModulePath: path.join(cwd, 'Modules') } };
 }
 
-async function verifyEmbeddedSignature(filename, publisherCertificateSha256, expected) {
-  if (!expected || !sameFacts(await fileFacts(filename), expected)) fail('AUTHENTICODE_BUNDLE_INVALID');
+async function verifyEmbeddedSignature(filename, publisherCertificateSha256, expected, { msi = false } = {}) {
+  const changed = msi ? 'AUTHENTICODE_MSI_MISMATCH' : 'AUTHENTICODE_BUNDLE_INVALID';
+  const readFacts = () => fileFacts(filename).catch(() => fail(changed));
+  if (!expected || !sameFacts(await readFacts(), expected)) fail(changed);
   let result;
   try {
     // Resolve the OS binary through Windows itself and give the verifier only its OS and input paths.
     const shell = await resolveSystemPowerShell();
+    const env = { ...shell.env, SHENYI_RELEASE_FILE: filename };
+    if (msi) Object.assign(env, { SHENYI_VERIFY_MSI: '1', SHENYI_EXPECTED_SIGNER: publisherCertificateSha256, SHENYI_EXPECTED_MSI: expected.sha256 });
     const { stdout } = await run(shell.executable, ['-NoProfile', '-NonInteractive', '-Command', authenticodeProbe],
-      { env: { ...shell.env, SHENYI_RELEASE_EXE: filename }, cwd: shell.cwd, maxBuffer: 64 * 1024, timeout: 60_000, windowsHide: true });
+      { env, cwd: shell.cwd, maxBuffer: 64 * 1024, timeout: 60_000, windowsHide: true });
     result = JSON.parse(stdout);
   } catch { fail('AUTHENTICODE_UNTRUSTED'); }
   if (result?.status !== 'Valid' || result.type !== 'Authenticode' || result.timestamp !== true ||
       result.certificateSha256 !== publisherCertificateSha256) fail('AUTHENTICODE_UNTRUSTED');
   if (!sameFacts({ sha256: result.fileSha256, bytes: result.bytes }, expected) ||
-      !sameFacts(await fileFacts(filename), expected)) fail('AUTHENTICODE_BUNDLE_INVALID');
+      !sameFacts(await readFacts(), expected)) fail(changed);
+  if (msi && result.msiDatabase !== true) fail('AUTHENTICODE_MSI_INVALID');
 }
 
 function sameFacts(observed, expected) {
@@ -152,6 +177,10 @@ function sameIdentity(left, right) {
 
 function trustedPublisher(value) {
   if (process.platform !== 'win32') fail('AUTHENTICODE_WINDOWS_REQUIRED');
+  return trustedDigest(value);
+}
+
+function trustedDigest(value) {
   if (typeof value !== 'string' || !/^[a-f0-9]{64}$/i.test(value) || value.length !== 64) fail('INVALID_ARGUMENTS');
   return value.toLowerCase();
 }
@@ -219,11 +248,38 @@ export async function verifyWindowsCandidateRelease(options) {
   return { ...verified, offline: false, publisherCertificateSha256: publisher, osSignatureVerified: true };
 }
 
+export async function verifyWindowsReleaseMsi(options) {
+  const publisherCertificateSha256 = trustedPublisher(options['--publisher-sha256']);
+  const sha256 = trustedDigest(options['--msi-sha256']);
+  const invalid = 'AUTHENTICODE_MSI_INVALID';
+  const filename = detachedSignatureFiles(fail).localPath(options['--msi'], invalid);
+  if (!/\.msi$/i.test(path.basename(filename))) fail(invalid);
+
+  async function readState(code) {
+    try {
+      const state = await lstat(filename, { bigint: true });
+      if (!state.isFile() || state.size === 0n || path.relative(filename, await realpath(filename))) fail(code);
+      return state;
+    } catch { fail(code); }
+  }
+
+  const changed = 'AUTHENTICODE_MSI_MISMATCH';
+  const before = await readState(invalid);
+  const expected = await fileFacts(filename).catch(() => fail(changed));
+  if (expected.sha256 !== sha256 || BigInt(expected.bytes) !== before.size) fail(changed);
+  await verifyEmbeddedSignature(filename, publisherCertificateSha256, expected, { msi: true });
+  const after = await readState(changed);
+  if (['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs'].some(key => before[key] !== after[key])) fail(changed);
+  return { file: filename, ...expected, publisherCertificateSha256,
+    installerOsSignatureVerified: true, timestampVerified: true, installerDatabaseVerified: true };
+}
+
 async function main(args) {
   const [command, ...rest] = args;
   const common = ['--bundle', '--publisher-sha256'];
   const required = command === 'finalize' ? [...common, '--signed-exe', '--output'] :
-    command === 'verify' ? [...common, '--signature', '--public-key', '--installed-version'] : [];
+    command === 'verify' ? [...common, '--signature', '--public-key', '--installed-version'] :
+    command === 'verify-msi' ? ['--msi', '--publisher-sha256', '--msi-sha256'] : [];
   if (!required.length || rest.length !== 2 * required.length) fail('INVALID_ARGUMENTS');
   const options = Object.create(null);
   for (let index = 0; index < rest.length; index += 2) {
@@ -231,7 +287,8 @@ async function main(args) {
     if (!required.includes(name) || Object.hasOwn(options, name) || !value || value.startsWith('--')) fail('INVALID_ARGUMENTS');
     options[name] = value;
   }
-  const result = await (command === 'finalize' ? finalize(options) : verifyWindowsCandidateRelease(options));
+  const runCommand = command === 'finalize' ? finalize : command === 'verify' ? verifyWindowsCandidateRelease : verifyWindowsReleaseMsi;
+  const result = await runCommand(options);
   console.log(JSON.stringify({ ok: true, operation: command, ...result }));
 }
 

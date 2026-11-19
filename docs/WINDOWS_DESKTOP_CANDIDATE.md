@@ -178,9 +178,19 @@ node scripts/manage-windows-candidate-install.mjs apply `
   --signature (Join-Path $releaseSource 'signature.ed25519')
 ```
 
-### 后续发行验证
+### 外签后核验最终 MSI
 
-当前 MSI 候选本身尚未签名。正式分发前需为 `.msi` 添加经批准的 Authenticode 签名，在实际 Windows 终端验证安装注册、权限、升级和卸载。正式发布者证书、真实正式版本升级与回滚，以及 macOS 实机安装、签名和公证，仍需各自验收。
+构建器产出的 MSI 由发行人员另行添加经批准的 Authenticode 签名及时间戳。保留构建回执和包内双签名核验记录，并由发行人员通过可信渠道交付**签名完成后的 MSI SHA-256**。发布者证书的 DER SHA-256 指纹同样由可信渠道取得。 [Windows Installer 数字签名](https://learn.microsoft.com/en-us/windows/win32/msi/digital-signatures-and-windows-installer)
+
+```powershell
+$finalMsi = 'D:\release-lab\shenyi-0.61.0-win-x64-signed.msi'
+$approvedMsiSha256 = (Get-Content -Raw -LiteralPath 'D:\trusted-config\shenyi-0.61.0-msi-sha256.txt').Trim()
+node scripts/windows-candidate-authenticode.mjs verify-msi --msi $finalMsi --msi-sha256 $approvedMsiSha256 --publisher-sha256 $publisherSha256
+```
+
+核验成功时输出最终文件的 SHA-256、字节数、发布者指纹，以及 Windows Authenticode、时间戳和只读 MSI 数据库检查结果。命令不启动安装器。Windows 可以按系统配置检查证书信任。交付方保存这份回执和构建阶段的包内双签名回执。 [Windows Installer 只读数据库模式](https://learn.microsoft.com/en-us/windows/win32/msi/installer-opendatabase)
+
+审易正式证书和已签名 MSI 就绪后，仍须在独立 Windows 终端验证安装注册、有效权限、升级、回滚和卸载。macOS 实机安装、签名和公证另按对应发行流程验收。
 
 ### 受管服务窗口验收
 

@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { execFile } = require('node:child_process');
+const { createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -51,6 +52,20 @@ test('Windows Installer reproduces the authored release source in an unregistere
   await unregistered();
   const file = path.join(outputDirectory, 'shenyi-release.msi');
   assert.equal(report.msiPath, file);
+  const before = await fs.readFile(file);
+  const digest = createHash('sha256').update(before).digest('hex');
+  const verifier = path.resolve(__dirname, '../scripts/windows-candidate-authenticode.mjs');
+  const verify = (filename, hash, extra = []) => run(process.execPath, [
+    verifier, 'verify-msi', '--msi', filename, '--msi-sha256', hash, '--publisher-sha256', 'a'.repeat(64), ...extra,
+  ], processOptions);
+  const rejected = code => error => error.code === 1 && JSON.parse(error.stderr).code === code;
+  await assert.rejects(verify(file, digest), rejected('AUTHENTICODE_UNTRUSTED'));
+  await assert.rejects(verify(file, '0'.repeat(64)), rejected('AUTHENTICODE_MSI_MISMATCH'));
+  await assert.rejects(verify(path.basename(file), digest), rejected('AUTHENTICODE_MSI_INVALID'));
+  await assert.rejects(verify(path.join(outputDirectory, 'shenyi-release.exe'), digest), rejected('AUTHENTICODE_MSI_INVALID'));
+  await assert.rejects(verify(file, digest, ['--msi', file]), rejected('INVALID_ARGUMENTS'));
+  assert.deepEqual(await fs.readFile(file), before);
+  await unregistered();
   const args = windowsMsiAdministrativeArguments(file, extractDirectory, path.join(directory, 'msiexec.log'));
   await run(path.join(windows.systemDirectory, 'msiexec.exe'), args, { ...processOptions, windowsVerbatimArguments: true });
   assert.deepEqual((await fs.readdir(extractDirectory)).sort(), ['bundle', 'shenyi-release.msi', 'signature.ed25519']);

@@ -1,4 +1,8 @@
-# 当前状态 · M5O 桌面按订单号查阅
+# 当前状态 · M7AH 外签后的 Windows MSI 核验
+
+## 2026-11-19 M7AH 外签后的 Windows MSI 核验
+
+发行工具新增 `verify-msi`。输入经确认的最终 MSI 摘要及发布者证书指纹，使用 Windows 核对 Authenticode 签名、时间戳及只读 MSI 数据库，输出核验回执。真实签名正例使用 Node.js 官方 MSI。独立实测 2 个通过、4 个按预期拒绝，涵盖路径含空格和单引号、错误摘要、错误发布者、未签名审易 MSI，以及改扩展名的已签名 EXE。产品注册状态保持，原便携双签名核验仍通过。24 项关联测试通过。最新 Windows x64 待签名候选已重建，首次发布目录重命名返回 EPERM，核对暂存文件后完成原目录移动，2005 个包文件及 8 个客户端源文件核对通过。本轮未重跑桌面一键。审易正式签名 MSI、目标 Windows 安装注册／升级／卸载、Mac 实机及生产上线仍待验。未合入 main、未推送、未上线。 证据位于 `D:/codex-temp/shenyi-m7-final-msi-verification-20261119/verification.json`。 [Windows 发行说明](WINDOWS_DESKTOP_CANDIDATE.md#外签后核验最终-msi)
 
 ## 2026-11-19 M5O 桌面按订单号查阅
 
