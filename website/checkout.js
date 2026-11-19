@@ -181,7 +181,7 @@
     try {
       const response = await fetch(path, {
         method: 'POST', headers: {'Content-Type': 'application/json', Accept: 'application/json'},
-        body: JSON.stringify(body), signal: controller.signal, credentials: 'same-origin',
+        body: JSON.stringify(body), signal: controller.signal, credentials: 'omit',
         redirect: 'error', cache: 'no-store', referrerPolicy: 'no-referrer',
       });
       if (!response.ok) {

@@ -3,11 +3,11 @@
 // OS certificate installation, external network, or existing review run is used.
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),https=require('node:https');
-const {execFile}=require('node:child_process'),{X509Certificate,createPrivateKey,createHash}=require('node:crypto');
+const {execFile}=require('node:child_process'),{X509Certificate,createPrivateKey,createHash,randomBytes}=require('node:crypto');
 const {DatabaseSync}=require('node:sqlite'),{pathToFileURL}=require('node:url');
 const {OWNER_REVIEW_RUNTIME_MARKER}=require('../desktop/isolated-preview-config.cjs');
 const ROOT=path.resolve(__dirname,'..'),DAY=86400000;
-const BASE=process.platform==='win32'?'D:/codex-temp/shenyi-m8-website-owner-review-20261119/independent/test-temp':path.join(os.tmpdir(),'shenyi-owner-website-tests');
+const BASE=process.platform==='win32'?'D:/codex-temp/shenyi-m5-split-checkout-20261120/test-temp':path.join(os.tmpdir(),'shenyi-owner-website-tests');
 const WINDOWS={skip:process.platform!=='win32'||process.arch!=='x64'};
 const moduleAt=name=>import(pathToFileURL(path.join(ROOT,'scripts',name)).href);
 const digest=value=>createHash('sha256').update(value).digest('hex');
@@ -37,6 +37,33 @@ function request(url,{ca,method='GET',headers={},body,servername}={}){
   });
   req.setTimeout(5000,()=>req.destroy(new Error('Owned HTTPS request timed out')));req.on('error',reject);req.end(body);
  });
+}
+async function tlsMaterial(certificateFile,caFile){
+ const [certPem,ca]=await Promise.all([fs.readFile(certificateFile,'utf8'),fs.readFile(caFile,'utf8')]);
+ assert.doesNotMatch(certPem,/PRIVATE KEY/);assert.doesNotMatch(ca,/PRIVATE KEY/);
+ const cert=new X509Certificate(certPem),root=new X509Certificate(ca);
+ assert.equal(cert.verify(root.publicKey),true);
+ return {ca,cert,root,fingerprint:cert.fingerprint256};
+}
+function assertBrowserResponse(response){
+ assert.equal(response.headers['x-shenyi-server-id'],undefined);
+ assert.equal(response.headers['access-control-allow-origin'],undefined);
+ assert.equal(response.headers['access-control-allow-credentials'],undefined);
+}
+async function previewFixture(t){
+ const [{createOwnerReviewCheckoutCertificate},{startWebsiteCheckoutPreview},{initializeTeamDatabase}]=await Promise.all([
+  moduleAt('owner-review-checkout-certificate.mjs'),moduleAt('website-checkout-preview.mjs'),import('../server/team/database.mjs'),
+ ]);
+ const db=new DatabaseSync(':memory:');
+ let run;
+ t.after(async()=>{try{await run?.close();}finally{db.close();}});
+ initializeTeamDatabase(db);
+ db.prepare('INSERT INTO team_database_metadata VALUES (?,?)').run('website-checkout-demo','true');
+ const api=createOwnerReviewCheckoutCertificate(),shop=createOwnerReviewCheckoutCertificate();
+ const billingSimulation={mode:'simulation-v1',merchantId:'legacy-website-test',signingKey:randomBytes(32),
+  offers:[{id:'annual-demo',revision:1,product:'team-annual-renewal',amountMinor:128000,currency:'CNY'}],annualSeatUnitAmountMinor:20000};
+ const start=async overrides=>run=await startWebsiteCheckoutPreview({db,key:api.key,cert:api.cert,billingSimulation,...overrides});
+ return {start,api,shop,db};
 }
 async function parentFixture(t){
  await fs.mkdir(BASE,{recursive:true});const parent=await fs.mkdtemp(path.join(await fs.realpath(BASE),"package ' space-")),runs=[];
@@ -72,29 +99,39 @@ test('review TLS chain has an eight-hour P-256 pathLen-zero CA and a signed serv
  assert.throws(()=>createOwnerReviewCheckoutCertificate({now:()=>NaN}));
 });
 
-test('portable factory owns two isolated HTTPS runs, rejects foreign certificates and closes only the selected service',WINDOWS,async t=>{
+test('portable factory isolates API and storefront TLS identities, routes, and shutdown per run',WINDOWS,async t=>{
  const f=await parentFixture(t),{createOwnerReviewWebsiteCheckout}=await moduleAt('team-website-checkout-owner-review.mjs');
  const at=Date.now(),appRoot=await f.app(),a=await createOwnerReviewWebsiteCheckout({appRoot,now:()=>at});f.runs.push(a);
  const b=await createOwnerReviewWebsiteCheckout({appRoot,now:()=>at});f.runs.push(b);
- assert.notEqual(a.candidateId,b.candidateId);assert.notEqual(a.address.port,b.address.port);assert.notEqual(a.profile.serverId,b.profile.serverId);
+ assert.notEqual(a.candidateId,b.candidateId);assert.notEqual(a.profile.serverId,b.profile.serverId);
  assert.notEqual(a.desktopDataDirectory,b.desktopDataDirectory);assert.notEqual(a.deviceVaultDirectory,b.deviceVaultDirectory);
- const certA=await fs.readFile(a.certificateFile,'utf8'),certB=await fs.readFile(b.certificateFile,'utf8');assert.notEqual(certA,certB);
- const caA=await fs.readFile(a.caFile,'utf8'),caB=await fs.readFile(b.caFile,'utf8');assert.notEqual(caA,caB);
- assert.equal(new X509Certificate(certA).verify(new X509Certificate(caA).publicKey),true);
- assert.equal(new X509Certificate(certA).verify(new X509Certificate(caB).publicKey),false);
- const pinA=new X509Certificate(certA).fingerprint256;
+ assert.equal(new Set([a.address,a.checkoutAddress,b.address,b.checkoutAddress].map(address=>address.port)).size,4);
+ const [apiA,shopA,apiB,shopB]=await Promise.all([
+  tlsMaterial(a.certificateFile,a.caFile),tlsMaterial(a.storefrontCertificateFile,a.storefrontCaFile),
+  tlsMaterial(b.certificateFile,b.caFile),tlsMaterial(b.storefrontCertificateFile,b.storefrontCaFile),
+ ]);
+ const identities=[apiA,shopA,apiB,shopB];
+ assert.equal(new Set(identities.map(identity=>identity.fingerprint)).size,4);
+ assert.equal(new Set(identities.map(identity=>identity.root.fingerprint256)).size,4);
+ for(const leaf of identities)for(const issuer of identities)assert.equal(leaf.cert.verify(issuer.root.publicKey),leaf===issuer);
  const databaseBefore=new Map();
- for(const run of [a,b]){
-  assert.equal(run.address.host,'127.0.0.1');assert.match(run.address.url,/^https:\/\/127\.0\.0\.1:\d+$/);assert.equal([8773,8774,10139].includes(run.address.port),false);
+ for(const [run,api,shop] of [[a,apiA,shopA],[b,apiB,shopB]]){
+  for(const address of [run.address,run.checkoutAddress]){
+   assert.equal(address.host,'127.0.0.1');assert.equal(address.url,`https://127.0.0.1:${address.port}`);
+   assert.ok(address.port>0&&address.port<=65535);assert.equal([8773,8774,10139].includes(address.port),false);
+  }
   assert.equal(path.dirname(run.directory),path.join(appRoot,'review-runs'));assert.equal(path.basename(run.directory),'candidate-'+run.candidateId);
-  assert.deepEqual(Object.keys(run.profile).sort(),['apiBase','checkoutOrigin','schemaVersion','serverId']);assert.equal(run.profile.schemaVersion,3);assert.equal(run.profile.checkoutOrigin,run.address.url);assert.equal(run.profile.apiBase,run.address.url);
-  assert.equal(path.basename(run.configFile),'checkout-service.json');assert.equal(path.basename(run.certificateFile),'checkout-tls.pem');
-  assert.equal(path.basename(run.caFile),'checkout-ca.pem');
+  assert.deepEqual(Object.keys(run.profile).sort(),['apiBase','checkoutOrigin','schemaVersion','serverId']);assert.equal(run.profile.schemaVersion,3);
+  assert.equal(run.profile.apiBase,run.address.url);assert.equal(run.profile.checkoutOrigin,run.checkoutAddress.url);
+  for(const [file,name] of [[run.configFile,'checkout-service.json'],[run.certificateFile,'checkout-tls.pem'],
+    [run.caFile,'checkout-ca.pem'],[run.storefrontCertificateFile,'storefront-tls.pem'],[run.storefrontCaFile,'storefront-ca.pem']]){
+   assert.equal(file,path.join(run.directory,name));
+  }
   assert.deepEqual(JSON.parse(await fs.readFile(run.configFile,'utf8')),run.profile);
-  const started=JSON.parse(await fs.readFile(path.join(run.directory,'started.json'),'utf8'));assert.equal(started.candidateId,run.candidateId);assert.equal(started.apiBase,run.address.url);assert.equal(started.launcherPid,process.pid);
-  assert.equal(started.tlsFingerprint256,new X509Certificate(await fs.readFile(run.certificateFile)).fingerprint256);
-  assert.equal((await fs.readFile(run.certificateFile,'utf8')).includes('PRIVATE KEY'),false);
-  assert.equal((await fs.readFile(run.caFile,'utf8')).includes('PRIVATE KEY'),false);
+  const started=JSON.parse(await fs.readFile(path.join(run.directory,'started.json'),'utf8'));
+  assert.equal(started.candidateId,run.candidateId);assert.equal(started.launcherPid,process.pid);
+  assert.equal(started.apiBase,run.address.url);assert.equal(started.checkoutOrigin,run.checkoutAddress.url);
+  assert.equal(started.tlsFingerprint256,api.fingerprint);assert.equal(started.checkoutTlsFingerprint256,shop.fingerprint);
   const dbFile=path.join(run.directory,'team-demo.sqlite'),db=new DatabaseSync(dbFile,{readOnly:true});
   try{
    assert.equal(db.prepare("SELECT value FROM team_database_metadata WHERE name='website-checkout-demo'").get().value,'true');
@@ -106,25 +143,107 @@ test('portable factory owns two isolated HTTPS runs, rejects foreign certificate
   }finally{db.close();}
   databaseBefore.set(run.directory,digest(await fs.readFile(dbFile)));
  }
- const methods=await request(a.address.url+'/api/auth/methods',{ca:caA});assert.equal(methods.status,200);assert.equal(methods.authorized,true);assert.equal(methods.fingerprint,pinA);
+ const apiOrigin=a.address.url,shopOrigin=a.checkoutAddress.url,methodsPath='/api/auth/methods';
+ const methods=await request(apiOrigin+methodsPath,{ca:apiA.ca});
+ assert.equal(methods.status,200);assert.equal(methods.authorized,true);assert.equal(methods.fingerprint,apiA.fingerprint);
+ assert.equal(methods.headers['x-shenyi-server-id'],a.profile.serverId);
  const body=JSON.parse(methods.bytes);assert.equal(body.mode,'local-preview');assert.equal(body.deviceBinding.required,true);assert.equal(body.deviceBinding.serverId,a.profile.serverId);
  assert.equal(body.methods.phoneVerification,false);
- await assert.rejects(request(a.address.url+'/api/auth/methods',{ca:caB}),e=>/^(DEPTH_|CERT_|UNABLE_|SELF_SIGNED_|ERR_TLS_)/.test(e.code));
- await assert.rejects(request(a.address.url+'/api/auth/methods'),e=>/^(DEPTH_|CERT_|UNABLE_|SELF_SIGNED_|ERR_TLS_)/.test(e.code));
- await assert.rejects(request(a.address.url+'/api/auth/methods',{ca:caA,servername:'localhost'}),{code:'ERR_TLS_CERT_ALTNAME_INVALID'});
- const hostDenied=await request(a.address.url+'/',{ca:caA,servername:'',headers:{Host:'untrusted.invalid'}});
- assert.equal(hostDenied.authorized,true);assert.equal(hostDenied.fingerprint,pinA);assert.equal(hostDenied.status,403);
- for(const route of ['/checkout/','/checkout/seats/']){
-  const response=await request(a.address.url+route,{ca:caA});assert.equal(response.status,200);assert.equal(response.headers['cache-control'],'no-store');assert.equal(response.headers['referrer-policy'],'no-referrer');assert.match(response.headers['content-security-policy'],/connect-src 'self'/);
+ for(const [origin,route,identity,otherOrigin,wrongIdentities] of [
+  [apiOrigin,methodsPath,apiA,shopOrigin,[shopA,apiB,shopB]],
+  [shopOrigin,'/checkout/',shopA,apiOrigin,[apiA,apiB,shopB]],
+ ]){
+  for(const ca of [undefined,...wrongIdentities.map(wrong=>wrong.ca)]){
+   await assert.rejects(request(origin+route,{ca}),e=>/^(DEPTH_|CERT_|UNABLE_|SELF_SIGNED_|ERR_TLS_)/.test(e.code));
+  }
+  await assert.rejects(request(origin+route,{ca:identity.ca,servername:'localhost'}),{code:'ERR_TLS_CERT_ALTNAME_INVALID'});
+  for(const Host of ['untrusted.invalid',new URL(otherOrigin).host]){
+   const response=await request(origin+route,{ca:identity.ca,servername:'',headers:{Host}});
+   assert.equal(response.authorized,true);assert.equal(response.fingerprint,identity.fingerprint);assert.equal(response.status,403);
+   assert.equal(JSON.parse(response.bytes).error.code,'HOST_DENIED');
+  }
  }
- for(const route of ['/checkout-service.json','/checkout-tls.pem','/checkout-ca.pem','/team-demo.sqlite','/started.json'])assert.equal((await request(a.address.url+route,{ca:caA})).status,404);
- for(const suffix of ['notifications','payment-exceptions','order-closures'])assert.equal((await request(a.address.url+'/api/billing/simulation/'+suffix,{ca:caA,method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,404);
+ for(const route of ['/','/checkout/','/checkout/seats/','/assets/brand-shenyi.png']){
+  const response=await request(shopOrigin+route,{ca:shopA.ca});assert.equal(response.status,200);
+  assert.equal(response.authorized,true);assert.equal(response.fingerprint,shopA.fingerprint);assertBrowserResponse(response);
+  assert.equal(response.headers['cache-control'],'no-store');assert.equal(response.headers['referrer-policy'],'no-referrer');
+  assert.match(response.headers['content-security-policy'],/connect-src 'self'/);
+  const apiResponse=await request(apiOrigin+route,{ca:apiA.ca});assert.equal(apiResponse.status,404);assert.equal(apiResponse.bytes.length,0);
+ }
+ const contextPaths=['/api/website-checkout/context','/api/website-checkout/seat-context'];
+ for(const route of contextPaths){
+  const post=(origin,headers={})=>({method:'POST',headers:{'Content-Type':'application/json',Origin:origin,...headers},body:JSON.stringify({handoff:'a'.repeat(43)})});
+  for(const origin of [apiOrigin,shopOrigin]){
+   const response=await request(apiOrigin+route,{ca:apiA.ca,...post(origin)});
+   assert.equal(response.status,404);assert.equal(response.bytes.length,0);assert.equal(response.headers['cache-control'],'no-store');
+  }
+  const response=await request(shopOrigin+route,{ca:shopA.ca,...post(shopOrigin)});
+  assert.equal(response.status,403);assert.equal(JSON.parse(response.bytes).error.code,'WEBSITE_HANDOFF_UNAVAILABLE');assertBrowserResponse(response);
+  const wrongOrigin=await request(shopOrigin+route,{ca:shopA.ca,...post(apiOrigin)});
+  assert.equal(wrongOrigin.status,403);assert.equal(JSON.parse(wrongOrigin.bytes).error.code,'WEBSITE_ORIGIN_REQUIRED');assertBrowserResponse(wrongOrigin);
+  for(const header of [{Authorization:'Bearer synthetic'},{Cookie:'test=synthetic'},{'X-Shenyi-Device-Id':'synthetic'}]){
+   const credentialDenied=await request(shopOrigin+route,{ca:shopA.ca,...post(shopOrigin,header)});
+   assert.equal(credentialDenied.status,403);assert.equal(credentialDenied.bytes.length,0);assertBrowserResponse(credentialDenied);
+  }
+  const preflight=await request(shopOrigin+route,{ca:shopA.ca,method:'OPTIONS',headers:{Origin:apiOrigin,'Access-Control-Request-Method':'POST'}});
+  assert.equal(preflight.status,405);assertBrowserResponse(preflight);
+ }
+ for(const [method,route] of [['GET',methodsPath],['POST','/api/auth/login'],['GET','/api/teams/team-a/billing/overview'],
+   ['POST','/api/teams/team-a/billing/website-handoff'],['POST','/api/teams/team-a/billing/website-seat-handoff']]){
+  const response=await request(shopOrigin+route,{ca:shopA.ca,method,headers:{Origin:apiOrigin}});
+  assert.equal(response.status,404);assert.equal(response.bytes.length,0);assertBrowserResponse(response);
+ }
+ for(const [origin,identity] of [[apiOrigin,apiA],[shopOrigin,shopA]]){
+  for(const route of ['/checkout-service.json','/checkout-tls.pem','/checkout-ca.pem','/storefront-tls.pem','/storefront-ca.pem','/team-demo.sqlite','/started.json']){
+   assert.equal((await request(origin+route,{ca:identity.ca})).status,404);
+  }
+  for(const suffix of ['notifications','payment-exceptions','order-closures']){
+   assert.equal((await request(origin+'/api/billing/simulation/'+suffix,{ca:identity.ca,method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,404);
+  }
+ }
  assert.equal(digest(await fs.readFile(path.join(a.directory,'team-demo.sqlite'))),databaseBefore.get(a.directory));
  await a.close();await a.close();assert.equal(a.server.listening,false);assert.equal(b.server.listening,true);
  assert.equal(JSON.parse(await fs.readFile(path.join(a.directory,'closed.json'),'utf8')).candidateId,a.candidateId);
- await assert.rejects(request(a.address.url+'/api/auth/methods',{ca:caA}),{code:'ECONNREFUSED'});
- assert.equal((await request(b.address.url+'/api/auth/methods',{ca:caB})).status,200);
- assert.equal(digest(await fs.readFile(path.join(a.directory,'team-demo.sqlite'))),databaseBefore.get(a.directory));
+ await assert.rejects(request(apiOrigin+methodsPath,{ca:apiA.ca}),{code:'ECONNREFUSED'});
+ await assert.rejects(request(shopOrigin+'/checkout/',{ca:shopA.ca}),{code:'ECONNREFUSED'});
+ const otherMethods=await request(b.address.url+methodsPath,{ca:apiB.ca}),otherShop=await request(b.checkoutAddress.url+'/checkout/',{ca:shopB.ca});
+ assert.equal(otherMethods.status,200);assert.equal(otherMethods.fingerprint,apiB.fingerprint);
+ assert.equal(otherShop.status,200);assert.equal(otherShop.fingerprint,shopB.fingerprint);
+ for(const run of [a,b])assert.equal(digest(await fs.readFile(path.join(run.directory,'team-demo.sqlite'))),databaseBefore.get(run.directory));
+});
+
+test('the preview helper still serves its single-origin synthetic fixture when checkout TLS is omitted',async t=>{
+ const {start,api}=await previewFixture(t),run=await start();
+ assert.equal(run.checkoutAddress,undefined);
+ assert.equal(run.profile.apiBase,run.address.url);assert.equal(run.profile.checkoutOrigin,run.address.url);
+ for(const route of ['/api/auth/methods','/checkout/','/checkout/seats/']){
+  const response=await request(run.address.url+route,{ca:api.ca});
+  assert.equal(response.status,200);assert.equal(response.authorized,true);assert.equal(response.fingerprint,api.fingerprint256);
+ }
+});
+
+test('preview startup validates identity and rolls back a partially started split listener',async t=>{
+ const {start,api,shop,db}=await previewFixture(t),listening=[];
+ const nativeListen=https.Server.prototype.listen;
+ const observe=t.mock.method(https.Server.prototype,'listen',function(...args){
+  this.once('listening',()=>listening.push({server:this,...this.address()}));
+  return nativeListen.apply(this,args);
+ });
+ try{
+  await assert.rejects(start({checkoutTLS:api}),/Separate checkout TLS credentials/);
+  assert.equal(listening.length,0);
+  await assert.rejects(start({checkoutTLS:shop,key:shop.key}),{code:'ERR_OSSL_X509_KEY_VALUES_MISMATCH'});
+  assert.equal(listening.length,1);
+  const [{address,port}]=listening;
+  assert.equal(address,'127.0.0.1');
+  await assert.rejects(request(`https://${address}:${port}/checkout/`,{ca:shop.ca}),{code:'ECONNREFUSED'});
+  db.prepare('UPDATE team_database_metadata SET value=? WHERE name=?').run('invalid-test-identity','device-server-id');
+  await assert.rejects(start(),/Invalid device server identity/);
+  assert.equal(listening.length,1,'a rejected legacy startup must never bind a port');
+ }finally{
+  observe.mock.restore();
+  for(const {server} of listening)if(server.listening)await new Promise(resolve=>server.close(resolve));
+ }
 });
 
 test('portable website service rejects absent or malformed runtime markers before creating a review run',WINDOWS,async t=>{

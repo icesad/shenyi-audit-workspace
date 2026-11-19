@@ -40,7 +40,7 @@ async function seedCheckout(db, at) {
   });
 }
 
-/** Create one portable Windows review run with its own DB, device store and ephemeral TLS identity. */
+/** Create one portable Windows review run with its own DB, device store and ephemeral TLS identities. */
 export async function createOwnerReviewWebsiteCheckout({appRoot,now=Date.now}={}) {
   assertNode24();
   const portable = await loadOwnerReviewRuntime({appRoot});
@@ -50,42 +50,41 @@ export async function createOwnerReviewWebsiteCheckout({appRoot,now=Date.now}={}
   const configFile = path.join(directory,'checkout-service.json');
   const certificateFile = path.join(directory,'checkout-tls.pem');
   const caFile = path.join(directory,'checkout-ca.pem');
+  const storefrontCertificateFile = path.join(directory,'storefront-tls.pem');
+  const storefrontCaFile = path.join(directory,'storefront-ca.pem');
   let db, service;
-  async function stopService() {
-    if (service) {
-      const closed = service.close();
-      service.server.closeAllConnections();
-      await closed;
-    }
-  }
   try {
     await mkdir(desktopDataDirectory,{mode:0o700});
     db = new DatabaseSync(path.join(directory,'team-demo.sqlite'));
     initializeTeamDatabase(db);
     await seedCheckout(db,now());
     const {cert,ca,key,fingerprint256,expiresAt} = createOwnerReviewCheckoutCertificate({now});
+    const storefront = createOwnerReviewCheckoutCertificate({now});
     await writeNew(certificateFile,cert);
     await writeNew(caFile,ca);
-    service = await startWebsiteCheckoutPreview({db,key,cert,now,billingSimulation:{
+    await writeNew(storefrontCertificateFile,storefront.cert);
+    await writeNew(storefrontCaFile,storefront.ca);
+    service = await startWebsiteCheckoutPreview({db,key,cert,checkoutTLS:{key:storefront.key,cert:storefront.cert},now,billingSimulation:{
       mode:'simulation-v1',merchantId:'owner-review-checkout',signingKey:randomBytes(32),
       offers:[{id:'annual-demo',revision:1,product:'team-annual-renewal',amountMinor:128_000,currency:'CNY'}],
       annualSeatUnitAmountMinor:20_000,
       seatOffer:{id:'seat-demo',revision:1,annualUnitAmountMinor:20_000,currency:'CNY'},
     }});
-    const {profile,server,address} = service;
+    const {profile,server,address,checkoutAddress} = service;
     await writeNew(configFile,JSON.stringify(profile)+'\n');
     await record(directory,'started.json',{schemaVersion:1,kind:'shenyi-owner-review-website-checkout',
       candidateId,directory,desktopDataDirectory,deviceVaultDirectory,apiBase:profile.apiBase,serverId:profile.serverId,
-      tlsFingerprint256:fingerprint256,tlsExpiresAt:expiresAt,launcherPid:process.pid,startedAt:new Date().toISOString()});
+      checkoutOrigin:profile.checkoutOrigin,tlsFingerprint256:fingerprint256,tlsExpiresAt:expiresAt,
+      checkoutTlsFingerprint256:storefront.fingerprint256,launcherPid:process.pid,startedAt:new Date().toISOString()});
     let closing;
     const close = () => closing ??= (async() => {
-      try { await stopService(); } finally { db.close(); }
+      try { await service.close(); } finally { db.close(); }
       await record(directory,'closed.json',{schemaVersion:1,candidateId,closedAt:new Date().toISOString()});
     })();
     return Object.freeze({directory,candidateId,desktopDataDirectory,deviceVaultDirectory,configFile,certificateFile,caFile,
-      profile,server,address,close});
+      storefrontCertificateFile,storefrontCaFile,profile,server,address,checkoutAddress,close});
   } catch (error) {
-    try { await stopService(); } finally { db?.close(); }
+    try { await service?.close(); } finally { db?.close(); }
     await record(directory,'startup-failed.json',{schemaVersion:1,candidateId,code:'CHECKOUT_STARTUP_FAILED',
       failedAt:new Date().toISOString()});
     throw error;
@@ -111,6 +110,7 @@ async function launch() {
     console.log('审易 · 官网下单演练。请使用演练账号登录并绑定当前电脑。');
     console.log('合成账号 '+BILLING_PREVIEW_ADMIN+'，合成密码 '+BILLING_PREVIEW_PASSWORD+'。');
     console.log('本机地址 '+run.address.url+'，本次演练记录 '+run.directory);
+    console.log('官网演练地址 '+run.checkoutAddress.url);
     console.log('打开「订阅与席位」走查官网年费和增购。本次演练无收款，关闭桌面窗口即停止服务。');
     let failed = false;
     child.once('error',()=>{failed=true;});

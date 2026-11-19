@@ -48,6 +48,7 @@ function fixture(t, kind, status, {revoked = false, deferRecovery = false} = {})
   let recoverySignal;
   const delayedRecovery = deferRecovery ? Promise.withResolvers() : null;
   w.fetch = async (url, request) => {
+    assert.equal(request.credentials, 'omit');
     calls.push({url, method:request.method, body:JSON.parse(request.body), fragment:w.location.hash});
     if (url === contextPath) {
       if (stored && revoked) return Response.json({error:{code:'WEBSITE_HANDOFF_UNAVAILABLE'}}, {status:403});
