@@ -1,5 +1,9 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-20 M8W 受管预检与首件采集贯通
+
+从只有一名负责人、没有团队的新合成库开始，以实际受管服务入口执行 --check-pilot-readiness。预检只读并保持文件摘要，随后用同一配置和同一库启动 HTTPS。最新版评审包的 Windows 桌面文件经摘要核对后以正常入口连接，走完开通、首管理员激活、试点两席、员工调职、指派和原生文件选择。经理只读预览的 2,048 字节原件与数据库、源文件一致，实习生直接读取未指派任务返回 404。212 项回归通过。证据见 `C:/Users/icesa/Documents/ShenyiM8PilotJoined1120/verification.json`。
+
 ## 2026-11-20 M5X Windows 官网一键评审包
 
 按现有构建流程生成 Windows x64 合成评审包，解压校验 2,481 个载荷、246 个当前源码文件和 29 条本地链接。实际从全新解压目录运行官网一键，绑定设备并创建合成年费和增购订单。两份旧授权自然到期后从桌面打开同号官网回执，金额一致、建单控件隐藏。十二张账务相关表保持一致，退出后两路 HTTPS 关闭。此版可供双方审阅，58 项包装相关回归及 125 项功能回归通过。评审 ZIP 位于 `C:/Users/icesa/Documents/ShenyiM5ReceiptNative1120/release-accepted/Shenyi-Owner-Review-Win-x64.zip`。证据见 `C:/Users/icesa/Documents/ShenyiM5ReceiptNative1120/verification-packaged.json`。
