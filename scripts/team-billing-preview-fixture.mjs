@@ -139,7 +139,7 @@ export async function prepareBillingPreview(db,{now=Date.now}={}){
     now:()=>at,renewalSeats:{unitAmountMinor:billingSimulation.annualSeatUnitAmountMinor},
     closeAfterMs:billingSimulation.timeoutClosure.annualTimeoutMs,
   });
-  const seatOrder=at=>createSeatOrderWithinTransaction(db,{...orderRequest(),offer:seatOffer,quantity:2},{now:()=>at});
+  const seatOrder=(at,quantity=2)=>createSeatOrderWithinTransaction(db,{...orderRequest(),offer:seatOffer,quantity},{now:()=>at});
   const refundOrderTime=referenceTime-3*HOUR;
   const refundPaymentTime=refundOrderTime+1000;
   const refundSeat=transaction(db,()=>{
@@ -158,8 +158,13 @@ export async function prepareBillingPreview(db,{now=Date.now}={}){
     timedOutAnnual:annualOrder(referenceTime-2*HOUR),
     annualRenewal:annualOrder(referenceTime),
     seatAddition:seatOrder(referenceTime),
+    recordedPaymentSeat:seatOrder(referenceTime-1000,1),
   }));
-  billingSimulation.lookupPayment=previewGateway(orders,refundPayment,billingSimulation,now);
+  const {recordedPaymentSeat,...gatewayOrders}=orders;
+  const recordedEnvelope=signSimulationPayment(paymentReceipt(recordedPaymentSeat,referenceTime),billingSimulation);
+  const recordedPayment=verifySimulationPaymentEnvelope(recordedEnvelope.body,recordedEnvelope.signature,billingSimulation);
+  recordVerifiedSeatPayment(db,recordedPayment,{now:()=>referenceTime});
+  billingSimulation.lookupPayment=previewGateway(gatewayOrders,refundPayment,billingSimulation,now);
   const cases=Object.fromEntries(Object.entries(orders).map(([name,order])=>[
     name,Object.freeze({kind:order.offer.product===SEAT_PRODUCT?'seat':'annual',orderId:order.id}),
   ]));

@@ -34,8 +34,8 @@ test('billing and ordinary isolated launchers own separate ports, descriptors, c
   await assert.rejects(fs.access(path.join(ordinary.context.directory,'billing-demo-cases.json')),{code:'ENOENT'});
   const cases=JSON.parse(await fs.readFile(path.join(billing.context.directory,'billing-demo-cases.json'),'utf8'));
   assert.deepEqual(cases,billing.cases);
-  assert.deepEqual(Object.keys(cases).sort(),['annualRenewal','refundSeat','seatAddition','timedOutAnnual']);
-  assert.equal(new Set(Object.values(cases).map(row=>row.orderId)).size,4);
+  assert.deepEqual(Object.keys(cases).sort(),['annualRenewal','recordedPaymentSeat','refundSeat','seatAddition','timedOutAnnual']);
+  assert.equal(new Set(Object.values(cases).map(row=>row.orderId)).size,5);
   assert.ok(Object.values(cases).every(row=>UUID.test(row.orderId)));
   const ordinaryDb=new DatabaseSync(path.join(ordinary.context.directory,'team-demo.sqlite'),{readOnly:true});
   const billingDb=new DatabaseSync(path.join(billing.context.directory,'team-demo.sqlite'),{readOnly:true});
@@ -47,9 +47,16 @@ test('billing and ordinary isolated launchers own separate ports, descriptors, c
       assert.equal(cases[name].kind,'annual');
       assert.equal(readAnnualOrder(billingDb,'team-a',cases[name].orderId).status,'pending');
     }
-    for(const name of ['seatAddition','refundSeat'])assert.equal(cases[name].kind,'seat');
+    for(const name of ['seatAddition','refundSeat','recordedPaymentSeat'])assert.equal(cases[name].kind,'seat');
     assert.equal(readSeatOrder(billingDb,'team-a',cases.seatAddition.orderId).status,'pending');
     assert.equal(readSeatOrder(billingDb,'team-a',cases.refundSeat.orderId).status,'paid');
+    const recorded=readSeatOrder(billingDb,'team-a',cases.recordedPaymentSeat.orderId);
+    assert.equal(recorded.status,'payment-verified');
+    assert.equal(recorded.quantity,1);
+    assert.equal(recorded.confirmedAt,recorded.createdAt+1000);
+    assert.equal(recorded.grant,null);
+    const {readSeatCapacity}=await moduleAt('server/team/seat-capacity-store.mjs');
+    assert.equal(readSeatCapacity(billingDb,'team-a',recorded.confirmedAt).purchasedSeats,8);
     assert.equal(billingDb.prepare("SELECT COUNT(*) AS n FROM team_operators WHERE team_id='team-a' AND user_id='billing-admin-demo' AND status='active'").get().n,1);
     assert.equal(billingDb.prepare("SELECT COUNT(*) AS n FROM team_billing_refund_intake_reviewers WHERE user_id='refund-owner-demo' AND status='active'").get().n,1);
   }finally{ordinaryDb.close();billingDb.close();}

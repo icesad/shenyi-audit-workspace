@@ -88,7 +88,7 @@ test('ordinary, billing and pilot previews keep separate databases, credentials,
   assert.equal(ordinary.cases,undefined);
   assert.equal(ordinary.pilotCases,undefined);
   assert.equal(billing.pilotCases,undefined);
-  assert.deepEqual(Object.keys(billing.cases).sort(),['annualRenewal','refundSeat','seatAddition','timedOutAnnual']);
+  assert.deepEqual(Object.keys(billing.cases).sort(),['annualRenewal','recordedPaymentSeat','refundSeat','seatAddition','timedOutAnnual']);
   assert.equal(pilot.cases,undefined);
   for(const own of [ordinary,billing]){
     await assert.rejects(fs.access(path.join(own.context.directory,'pilot-demo-cases.json')),{code:'ENOENT'});
