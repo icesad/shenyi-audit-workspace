@@ -232,7 +232,7 @@ journalctl -u shenyi-team-monitor.service -n 30 --no-pager
 
 停服前以 `shenyi-team` 运行候选的 `start-team-service.mjs --check-startup --config /etc/shenyi-team/service.json`。它以只读模式检查 SQLite 实例和所需库结构，包括已启用的审核式恢复或微信结构，并复用正式启动的证书、私钥和短信／微信配置校验。预检完成即退出，端口监听和双路 HTTPS 仍在切换后检查，供应商联调需使用相应授权环境。激活工具在停服前再次核对候选目录及预检所用配置文件状态。失败时保留当前服务与候选。发布人员可在候选目录以服务账号重跑同一命令，查看固定错误码。只核对库结构时可继续使用 `--check-database`。涉及迁移时，单独验证新旧版兼容性。
 
-SQLite 使用 WAL 模式时，只读连接可能创建 `-wal` 和 `-shm` 旁文件。 [SQLite WAL 文档](https://sqlite.org/wal.html#read_only_databases)
+候选预检的进程时限为 30 秒，计入冷加载正式服务依赖的时间，超时在停服前退出。SQLite 使用 WAL 模式时，只读连接可能创建 `-wal` 和 `-shm` 旁文件。 [SQLite WAL 文档](https://sqlite.org/wal.html#read_only_databases)
 
 隔离 Ubuntu 中，要求不存在的表和忽略退出信号的候选均在停服前被拒绝，原服务调用标识及 SQLite 字节一致。兼容候选的独立预检用时约 1.1 秒，随后切换通过双路 HTTPS 检查。此轮使用已准备的演练目录核验激活流程。证据见 `D:/codex-temp/shenyi-m7-db-preflight-20261119/verification.json`。
 

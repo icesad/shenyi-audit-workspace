@@ -414,9 +414,9 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(f.candidate_preflights, [f.new_id])
         release = f.release
         self.assertEqual(f.candidate_commands, [([
-            release.RUNUSER, '-u', 'shenyi-team', '-g', 'shenyi-team', '--', release.TIMEOUT, '--kill-after=2s', '10s',
+            release.RUNUSER, '-u', 'shenyi-team', '-g', 'shenyi-team', '--', release.TIMEOUT, '--kill-after=2s', '30s',
             release.NODE, f.staged / 'scripts/start-team-service.mjs', '--check-startup', '--config', release.CONFIG,
-        ], 20, {})])
+        ], 40, {})])
         self.assertEqual(result['candidateStartupPreflight'], 'passed')
         self.assertEqual(result['candidateDatabasePreflight'], 'passed')
         self.assertEqual(f.actions, ['stop', 'exchange', 'start', 'retain', 'record'])

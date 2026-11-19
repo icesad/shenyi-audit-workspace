@@ -251,8 +251,8 @@ def check_candidate_startup(staged, env):
     owned_path(entry, stat.S_ISREG, readonly=True)
     # Bound the candidate process under the service account as well as the parent command.
     try:
-        result = run([RUNUSER, '-u', 'shenyi-team', '-g', 'shenyi-team', '--', TIMEOUT, '--kill-after=2s', '10s',
-                      NODE, entry, '--check-startup', '--config', CONFIG], 20, env)
+        result = run([RUNUSER, '-u', 'shenyi-team', '-g', 'shenyi-team', '--', TIMEOUT, '--kill-after=2s', '30s',
+                      NODE, entry, '--check-startup', '--config', CONFIG], 40, env)
         if result.returncode == 0 and json.loads(result.stdout) == {'event': 'startup-ready'}:
             return
     except (ValueError, OSError, subprocess.TimeoutExpired):
