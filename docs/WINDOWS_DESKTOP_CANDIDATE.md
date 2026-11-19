@@ -217,15 +217,24 @@ node scripts/windows-candidate-authenticode.mjs verify-msi --msi $finalMsi --msi
 
 ### 接收正式 MSI 并核对内层发布
 
-接收人员也可在 Windows 用同一条命令验收外层和内层发布，并保存一份回执。参数使用可信发布记录中的最终 MSI SHA-256、发布者叶证书 SHA-256、发行版本和独立取得的 Ed25519 公钥。已接受版本从本机安装台账取得，首次台账为空时填 `0.0.0`。Node 使用 24.15 或更新的 24.x。
+签名前用 Node 24.15 或更新的 24.x 核对本次获准源码生成的完整候选。`$approvedCandidate` 使用候选目录的绝对路径。
+
+```powershell
+node scripts/verify-windows-candidate-inventory.mjs --bundle $approvedCandidate
+```
+
+核对回执的 `manifestSha256` 与获准候选清单一致。将回执的 `appPayloadSha256` 连同源码提交、候选清单摘要、架构和版本写入发行批准记录。应用负载摘要覆盖 `resources/app/` 内的相对路径、字节数和内容，`Shenyi.exe` 的 Authenticode 签名可单独完成。
+
+接收人员从该记录取得应用负载摘要，另从可信渠道取得最终 MSI SHA-256、发布者叶证书 SHA-256、发行版本和 Ed25519 公钥。已接受版本从本机安装台账取得，首次台账为空时填 `0.0.0`。
 
 ```powershell
 node scripts/check-windows-release-msi.mjs `
   --msi $finalMsi --msi-sha256 $approvedMsiSha256 --publisher-sha256 $publisherSha256 `
-  --public-key $trustedEd25519PublicKey --version $releaseVersion --installed-version $installedVersion
+  --public-key $trustedEd25519PublicKey --version $releaseVersion --installed-version $installedVersion `
+  --app-payload-sha256 $approvedAppPayloadSha256
 ```
 
-该命令核对同一独立临时副本的摘要、Authenticode、时间戳和审易 MSI 结构。外层校验全部通过后，Windows Installer 用 `/a` 生成临时管理映像。工具在该映像核对清单、发行文件、Ed25519 签名和程序签名，核对载荷数量、大小与版本一致后给出回执。回执含两层摘要、发布者、ProductCode、PackageCode、版本及 `systemInstallPerformed: false`。完成后清理本次临时目录。 [Windows Installer 管理提取](https://learn.microsoft.com/en-us/windows/win32/msi/administrative-installation)
+该命令核对同一独立临时副本的摘要、Authenticode、时间戳和审易 MSI 结构。外层校验全部通过后，Windows Installer 用 `/a` 生成临时管理映像。工具在该映像核对清单、发行文件、Ed25519 签名和程序签名，核对载荷数量、大小、版本及获准应用负载摘要一致后给出回执。回执含两层摘要、匹配的 `appPayloadSha256`、发布者、ProductCode、PackageCode、版本及 `systemInstallPerformed: false`。摘要不一致时停止验收并核对构建输入。完成后清理本次临时目录。 [Windows Installer 管理提取](https://learn.microsoft.com/en-us/windows/win32/msi/administrative-installation)
 
 临时目录默认建在本机用户主目录。可用 `--scratch-root` 指定已有的受保护本地目录。工具先核对祖先目录的所有者和变更权限，再为新目录关闭权限继承，仅允许当前用户、SYSTEM 和本机管理员访问。父目录允许其他人员删除或改权时，在读取 MSI 之前拒绝。
 

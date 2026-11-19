@@ -16,12 +16,23 @@ const productCode = '{2ED3842D-0945-4487-B019-2E0D3A607112}';
 const packageCode = '{9A17FBEC-0CD4-466E-B075-0E26382861F0}';
 const inspector = path.resolve(__dirname, '../scripts/inspect-windows-release-msi.ps1');
 const inputBytes = Buffer.from('Synthetic archive fixture for an injected Windows release pipeline.\n');
-const manifestBytes = Buffer.from('{"fixture":true}\n');
+const appEntry = 'resources/app/desktop/main.cjs';
+const approvedApp = Buffer.from('const revision = 1;\n');
+const previousApp = Buffer.from('const revision = 0;\n');
+const appPayloadSha256 = app => createHash('sha256')
+  .update('shenyi.windows.app-payload.v1\0')
+  .update(JSON.stringify(['desktop/main.cjs', app.length, digest(app)]) + '\n')
+  .digest('hex');
+const fixtureManifest = app => Buffer.from(JSON.stringify({
+  version: testerVersion, files: { [appEntry]: { bytes: app.length, sha256: digest(app) } },
+}, null, 2) + '\n');
+const manifestBytes = fixtureManifest(approvedApp);
 const signatureBytes = Buffer.alloc(64, 79);
 const executableBytes = Buffer.from('Synthetic executable evidence, never executed.\n');
 const publicKeyBytes = Buffer.from('Synthetic public key evidence, never interpreted.\n');
 
-async function fixture(t, hooks = {}) {
+async function fixture(t, hooks = {}, app = approvedApp) {
+  const bundleManifestBytes = fixtureManifest(app);
   const temp = await fs.realpath(os.tmpdir());
   const root = await fs.mkdtemp(path.join(temp, "shenyi msi's receipt-"));
   t.after(async () => {
@@ -44,14 +55,14 @@ async function fixture(t, hooks = {}) {
   const msiexec = path.join(systemDirectory, 'msiexec.exe');
   const release = {
     version: testerVersion, installedVersion, platform: 'win32', arch: 'x64',
-    manifestSha256: digest(manifestBytes), signatureSha256: digest(signatureBytes),
+    manifestSha256: digest(bundleManifestBytes), signatureSha256: digest(signatureBytes),
     publicKeySha256: digest(publicKeyBytes), publisherCertificateSha256: publisherSha256,
-    fileCount: 1, totalBytes: executableBytes.length, osSignatureVerified: true,
+    fileCount: 2, totalBytes: executableBytes.length + app.length, osSignatureVerified: true,
   };
   const policy = {
     ok: true, sourcePolicyVerified: true, sha256: expected.sha256, version: testerVersion,
     arch: 'x64', productCode, packageCode, payloadFileCount: release.fileCount + 2,
-    payloadBytes: release.totalBytes + manifestBytes.length + signatureBytes.length,
+    payloadBytes: release.totalBytes + bundleManifestBytes.length + signatureBytes.length,
     machineScope: true, releaseSourceDirectory: `ProgramFiles64Folder/Shenyi/ReleaseSource/${testerVersion}`,
     installationPerformed: false, installerSignatureVerified: false,
   };
@@ -114,7 +125,10 @@ async function fixture(t, hooks = {}) {
       assert.deepEqual(await fs.readFile(state.msi), inputBytes);
       await fs.mkdir(path.join(state.extracted, 'bundle'), { recursive: true });
       await fs.writeFile(path.join(state.extracted, 'bundle', 'Shenyi.exe'), executableBytes);
-      await fs.writeFile(path.join(state.extracted, 'bundle', 'candidate-manifest.json'), manifestBytes);
+      await fs.writeFile(path.join(state.extracted, 'bundle', 'candidate-manifest.json'), bundleManifestBytes);
+      const appFile = path.join(state.extracted, 'bundle', appEntry);
+      await fs.mkdir(path.dirname(appFile), { recursive: true });
+      await fs.writeFile(appFile, app);
       await fs.writeFile(path.join(state.extracted, 'signature.ed25519'), signatureBytes);
       await fs.writeFile(path.join(state.extracted, 'shenyi-release.msi'), 'Synthetic transformed administrative metadata');
       if (hooks.extract) await hooks.extract(state);
@@ -127,6 +141,7 @@ async function fixture(t, hooks = {}) {
         '--public-key': expected.publicKey, '--publisher-sha256': publisherSha256, '--installed-version': installedVersion,
       });
       assert.deepEqual(await fs.readFile(path.join(options['--bundle'], 'Shenyi.exe')), executableBytes);
+      assert.deepEqual(await fs.readFile(path.join(options['--bundle'], appEntry)), app);
       assert.deepEqual(await fs.readFile(options['--signature']), signatureBytes);
       return hooks.inner ? hooks.inner(release, state) : release;
     },
@@ -134,7 +149,9 @@ async function fixture(t, hooks = {}) {
       events.push('manifest');
       assert.equal(bundle, path.join(state.extracted, 'bundle'));
       const bytes = await fs.readFile(path.join(bundle, 'candidate-manifest.json'));
-      const source = { directory: bundle, bytes, manifestSha256: digest(bytes), manifest: { version: testerVersion } };
+      const actualApp = await fs.readFile(path.join(bundle, appEntry));
+      const source = { directory: bundle, bytes, manifestSha256: digest(bytes), manifest: JSON.parse(bytes),
+        appPayloadSha256: appPayloadSha256(actualApp) };
       return hooks.manifest ? hooks.manifest(source, state) : source;
     },
   };
@@ -189,9 +206,53 @@ test('a receipt binds the approved input to one private MSI through source inspe
   assert.equal(receipt.publicKeySha256, digest(publicKeyBytes));
   assert.equal(receipt.productCode, productCode);
   assert.equal(receipt.packageCode, packageCode);
-  assert.equal(receipt.releaseFileCount, 1);
-  assert.equal(receipt.releaseBytes, executableBytes.length);
+  assert.equal(receipt.releaseFileCount, 2);
+  assert.equal(receipt.releaseBytes, executableBytes.length + approvedApp.length);
+  assert.equal(Object.hasOwn(receipt, 'appPayloadSha256'), false);
   assert.ok(!JSON.stringify(receipt).includes(JSON.stringify(f.state.workspace).slice(1, -1)));
+  await f.cleaned();
+});
+
+test('the approved application digest is checked and reported after both signatures', async t => {
+  const f = await fixture(t);
+  const approvedDigest = appPayloadSha256(approvedApp);
+  const receipt = await f.receive({ appPayloadSha256: approvedDigest });
+  assert.deepEqual(f.events, ['outer', 'inspect', 'extract', 'inner', 'manifest']);
+  assert.equal(receipt.appPayloadSha256, approvedDigest);
+  assert.equal(receipt.systemInstallPerformed, false);
+  await f.cleaned();
+});
+
+test('an independently approved application digest cannot match stale same-version content', async t => {
+  assert.equal(previousApp.length, approvedApp.length);
+  assert.equal(fixtureManifest(previousApp).length, manifestBytes.length);
+  const f = await fixture(t, {}, previousApp);
+  const oldReceipt = await f.receive();
+  assert.equal(oldReceipt.version, testerVersion);
+  assert.equal(oldReceipt.releaseOsSignatureVerified, true);
+  assert.equal(oldReceipt.installerOsSignatureVerified, true);
+  const approvedDigest = appPayloadSha256(approvedApp);
+  assert.notEqual(appPayloadSha256(previousApp), approvedDigest);
+  f.events.length = 0;
+  await assert.rejects(f.receive({ appPayloadSha256: approvedDigest }), { code: 'MSI_APP_PAYLOAD_MISMATCH' });
+  assert.deepEqual(f.events, ['outer', 'inspect', 'extract', 'inner', 'manifest']);
+  await f.cleaned();
+});
+
+test('an approved digest still requires application evidence from the verified manifest', async t => {
+  const f = await fixture(t, { manifest: source => ({ ...source, appPayloadSha256: undefined }) });
+  await assert.rejects(f.receive({ appPayloadSha256: appPayloadSha256(approvedApp) }), { code: 'MSI_APP_PAYLOAD_MISMATCH' });
+  assert.deepEqual(f.events, ['outer', 'inspect', 'extract', 'inner', 'manifest']);
+  await f.cleaned();
+});
+
+test('a malformed approved application digest stops before workspace protection', async t => {
+  const f = await fixture(t);
+  for (const appPayloadSha256 of [null, '', 'g'.repeat(64), '1'.repeat(63), 123]) {
+    await assert.rejects(f.receive({ appPayloadSha256 }), { code: 'INVALID_ARGUMENTS' });
+  }
+  assert.equal(f.state.protectedWorkspace, '');
+  assert.deepEqual(f.events, []);
   await f.cleaned();
 });
 

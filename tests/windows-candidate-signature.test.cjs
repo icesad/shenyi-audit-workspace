@@ -48,6 +48,64 @@ async function fixture(version = '0.61.0') {
   return { directory, bundle, manifestPath, manifest, publicKey, publicPath, privatePath, signOptions, verifyOptions, signature: common['--signature'] };
 }
 
+test('Windows app-payload inventory CLI distinguishes same-version app files from runtime signing changes', async () => {
+  const { spawnSync } = require('node:child_process');
+  const f = await fixture();
+  const cli = path.resolve(__dirname, '../scripts/verify-windows-candidate-inventory.mjs');
+  const { readWindowsCandidateManifest } = await import('../scripts/verify-windows-candidate-inventory.mjs');
+  const invoke = () => spawnSync(process.execPath, [cli, '--bundle', f.bundle], {
+    encoding: 'utf8', timeout: 5000, windowsHide: true,
+  });
+  const checked = () => {
+    const result = invoke();
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stderr);
+    const proof = JSON.parse(result.stdout);
+    assert.equal(proof.version, f.manifest.version);
+    assert.equal(proof.arch, 'x64');
+    return proof;
+  };
+  const prefix = 'resources/app/';
+  const reference = createHash('sha256').update('shenyi.windows.app-payload.v1\0');
+  for (const relative of Object.keys(f.manifest.files).filter(name => name.startsWith(prefix)).sort()) {
+    const contents = await fs.readFile(path.join(f.bundle, relative));
+    reference.update(JSON.stringify([relative.slice(prefix.length), contents.length, sha(contents)]) + '\n');
+  }
+  const originalAppDigest = reference.digest('hex');
+  const original = checked();
+  assert.equal(original.appPayloadSha256, originalAppDigest);
+  assert.equal(original.manifestSha256, sha(await fs.readFile(f.manifestPath)));
+  assert.equal((await readWindowsCandidateManifest(f.bundle)).appPayloadSha256, originalAppDigest);
+
+  const unsignedExecutableSha256 = f.manifest.files['Shenyi.exe'].sha256;
+  const signedBytesFixture = Buffer.from('different executable bytes representing signed runtime');
+  await fs.writeFile(path.join(f.bundle, 'Shenyi.exe'), signedBytesFixture);
+  f.manifest.schemaVersion = 2;
+  f.manifest.releaseStatus = 'authenticode-signed-portable-candidate';
+  f.manifest.files['Shenyi.exe'] = { bytes: signedBytesFixture.length, sha256: sha(signedBytesFixture) };
+  f.manifest.authenticode = { publisherCertificateSha256: 'b'.repeat(64), unsignedExecutableSha256 };
+  await fs.writeFile(f.manifestPath, json(f.manifest));
+  const signedLayout = checked();
+  assert.equal(signedLayout.appPayloadSha256, original.appPayloadSha256);
+  assert.notEqual(signedLayout.manifestSha256, original.manifestSha256);
+
+  const appPath = 'resources/app/desktop/main.cjs';
+  const appContent = Buffer.from('module.exports = [];\n');
+  assert.equal(appContent.length, f.manifest.files[appPath].bytes);
+  await fs.writeFile(path.join(f.bundle, appPath), appContent);
+  const modified = invoke();
+  assert.ifError(modified.error);
+  assert.equal(modified.status, 1, modified.stderr);
+  assert.equal(modified.stdout.trim(), '');
+  assert.match(modified.stderr, /CANDIDATE_INVENTORY_INVALID/);
+
+  f.manifest.files[appPath] = { bytes: appContent.length, sha256: sha(appContent) };
+  await fs.writeFile(f.manifestPath, json(f.manifest));
+  const differentApp = checked();
+  assert.notEqual(differentApp.appPayloadSha256, original.appPayloadSha256);
+  assert.equal(differentApp.version, original.version);
+});
+
 test('detached signature authenticates exact candidate bytes and does not overwrite its output', async () => {
   const f = await fixture();
   const { signWindowsCandidate, verifyWindowsCandidate } = await import('../scripts/windows-candidate-signature.mjs');

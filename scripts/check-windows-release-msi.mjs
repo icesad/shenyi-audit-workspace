@@ -23,7 +23,7 @@ const guid = /^\{[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}\}$/;
 const fields = new Map([
   ['--msi', 'msi'], ['--msi-sha256', 'sha256'], ['--publisher-sha256', 'publisherSha256'],
   ['--public-key', 'publicKey'], ['--version', 'version'], ['--installed-version', 'installedVersion'],
-  ['--scratch-root', 'scratchRoot'],
+  ['--scratch-root', 'scratchRoot'], ['--app-payload-sha256', 'appPayloadSha256'],
 ]);
 const messages = {
   INVALID_ARGUMENTS: '请提供最终 MSI、可信摘要和发布者指纹、Ed25519 公钥、发行版本及本机已接受版本。',
@@ -36,6 +36,7 @@ const messages = {
   MSI_EXTRACTION_FAILED: 'Windows Installer 未能生成独立的管理映像。',
   MSI_IMAGE_INVALID: '管理映像的目录或文件与审易发行来源不一致。',
   MSI_RELEASE_MISMATCH: '解包后的双签名发布与 MSI 结构或获准版本不一致。',
+  MSI_APP_PAYLOAD_MISMATCH: '安装器内的应用文件与获准候选的摘要不一致。',
   MSI_WORKSPACE_UNSAFE: '接收目录无法限制为本机用户和系统维护人员可改动，请选择受保护的本地目录。',
   MSI_WORKSPACE_CHANGED: '接收临时目录的身份发生变化，请核对该目录。',
   CANDIDATE_VERSION_NOT_NEWER: '发行版本须高于本机已接受版本。',
@@ -118,15 +119,17 @@ function parse(args) {
 }
 
 function approvedRelease(expected) {
-  const { version, installedVersion, sha256, publisherSha256 } = expected;
+  const { version, installedVersion, sha256, publisherSha256, appPayloadSha256 } = expected;
   const msi = localPath(expected.msi, 'INVALID_ARGUMENTS');
   const publicKey = localPath(expected.publicKey, 'INVALID_ARGUMENTS');
-  if (path.extname(msi).toLowerCase() !== '.msi' || !isDigest(sha256) || !isDigest(publisherSha256)) fail('INVALID_ARGUMENTS');
+  if (path.extname(msi).toLowerCase() !== '.msi' || !isDigest(sha256) || !isDigest(publisherSha256) ||
+      (appPayloadSha256 !== undefined && !isDigest(appPayloadSha256))) fail('INVALID_ARGUMENTS');
   const next = parseCandidateVersion(version);
   const current = parseCandidateVersion(installedVersion);
   const different = next.findIndex((value, index) => value !== current[index]);
   if (different < 0 || next[different] < current[different]) fail('CANDIDATE_VERSION_NOT_NEWER');
-  return { msi, publicKey, version, installedVersion, sha256: sha256.toLowerCase(), publisher: publisherSha256.toLowerCase() };
+  return { msi, publicKey, version, installedVersion, sha256: sha256.toLowerCase(), publisher: publisherSha256.toLowerCase(),
+    appPayloadSha256: appPayloadSha256?.toLowerCase() };
 }
 
 async function canonicalEntry(filename, type, code) {
@@ -187,7 +190,7 @@ export async function checkWindowsReleaseMsi(expected, {
 } = {}) {
   if (platform !== 'win32') fail('WINDOWS_MSI_REQUIRED');
   const approved = approvedRelease(expected ?? {});
-  const { msi, publicKey, version, installedVersion, sha256, publisher } = approved;
+  const { msi, publicKey, version, installedVersion, sha256, publisher, appPayloadSha256 } = approved;
   const root = localPath(temporaryRoot, 'MSI_WORKSPACE_UNSAFE');
   await canonicalEntry(root, 'directory', 'MSI_WORKSPACE_UNSAFE');
   const workspace = await mkdtemp(path.join(root, 'shenyi-msi-receive-'));
@@ -246,6 +249,7 @@ export async function checkWindowsReleaseMsi(expected, {
         release.manifestSha256 !== manifest?.manifestSha256 || !Buffer.isBuffer(manifest.bytes) ||
         !isCount(release.fileCount) || !isCount(release.totalBytes) || source.payloadFileCount !== release.fileCount + 2 ||
         source.payloadBytes !== release.totalBytes + manifest.bytes.length + detachedSignatureLength) fail('MSI_RELEASE_MISMATCH');
+    if (appPayloadSha256 !== undefined && manifest.appPayloadSha256 !== appPayloadSha256) fail('MSI_APP_PAYLOAD_MISMATCH');
     await checkCopy();
     return { schemaVersion: 1, kind: 'shenyi-windows-final-msi-receipt', msi, ...copied, version, installedVersion,
       platform: 'win32', arch: 'x64', publisherCertificateSha256: publisher, productCode: source.productCode,
@@ -254,7 +258,7 @@ export async function checkWindowsReleaseMsi(expected, {
       publicKeySha256: release.publicKeySha256, releaseFileCount: release.fileCount, releaseBytes: release.totalBytes,
       installerOsSignatureVerified: true, timestampVerified: true, installerDatabaseVerified: true,
       sourcePolicyVerified: true, administrativeExtractionVerified: true, releaseOsSignatureVerified: true,
-      systemInstallPerformed: false };
+      ...(appPayloadSha256 === undefined ? {} : { appPayloadSha256 }), systemInstallPerformed: false };
   } finally {
     const current = await canonicalEntry(workspace, 'directory', 'MSI_WORKSPACE_CHANGED');
     if (!sameFile(current, workspaceOrigin)) fail('MSI_WORKSPACE_CHANGED');

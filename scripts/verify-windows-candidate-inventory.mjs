@@ -2,10 +2,12 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import windowsFiles from './windows-desktop-candidate-files.json' with { type: 'json' };
 
 const manifestName = 'candidate-manifest.json';
-const appPackageName = 'resources/app/package.json';
+const appPayloadPrefix = 'resources/app/';
+const appPackageName = appPayloadPrefix + 'package.json';
 const manifestLimit = 2 * 1024 * 1024;
 const packageLimit = 16 * 1024;
 const manifestError = 'CANDIDATE_MANIFEST_INVALID';
@@ -219,6 +221,18 @@ function validateManifest(data) {
   return Object.freeze(data);
 }
 
+function applicationPayloadSha256(files) {
+  const hash = createHash('sha256').update('shenyi.windows.app-payload.v1\0', 'ascii');
+  // Manifest validation requires the filenames to be in ordinal order.
+  for (const [name, { bytes, sha256 }] of Object.entries(files)) {
+    if (name.startsWith(appPayloadPrefix)) {
+      const relative = name.slice(appPayloadPrefix.length);
+      hash.update(JSON.stringify([relative, bytes, sha256]) + '\n');
+    }
+  }
+  return hash.digest('hex');
+}
+
 export async function readWindowsCandidateManifest(input) {
   try {
     const directory = candidateDirectory(input, manifestError);
@@ -226,7 +240,8 @@ export async function readWindowsCandidateManifest(input) {
     const bytes = await readMetadata(path.join(directory, manifestName), manifestLimit, manifestError);
     const manifest = validateManifest(readJson(bytes, manifestError));
     snapshotEquals(parents, await inspectParents(directory, manifestError), manifestError);
-    return Object.freeze({ directory, bytes, manifest, manifestSha256: digest(bytes) });
+    return Object.freeze({ directory, bytes, manifest, manifestSha256: digest(bytes),
+      appPayloadSha256: applicationPayloadSha256(manifest.files) });
   } catch { invalid(manifestError); }
 }
 
@@ -289,4 +304,23 @@ export async function verifyWindowsCandidateInventory(candidate) {
     snapshotEquals(parents, await inspectParents(directory, inventoryError), inventoryError);
     return Object.freeze({ fileCount: Object.keys(manifest.files).length, totalBytes });
   } catch { invalid(inventoryError); }
+}
+
+async function main(args) {
+  if (args.length !== 2 || args[0] !== '--bundle') invalid(manifestError);
+  const candidate = await readWindowsCandidateManifest(args[1]);
+  const inventory = await verifyWindowsCandidateInventory(candidate);
+  console.log(JSON.stringify({
+    kind: 'shenyi-windows-candidate-inventory', version: candidate.manifest.version,
+    platform: candidate.manifest.platform, arch: candidate.manifest.arch,
+    manifestSha256: candidate.manifestSha256, appPayloadSha256: candidate.appPayloadSha256, ...inventory,
+  }));
+}
+
+if (process.argv[1] && samePath(fileURLToPath(import.meta.url), path.resolve(process.argv[1]))) {
+  main(process.argv.slice(2)).catch(error => {
+    const code = error instanceof WindowsCandidateInventoryError ? error.code : inventoryError;
+    console.error(JSON.stringify({ code, message: messages[code] }));
+    process.exitCode = 1;
+  });
 }
