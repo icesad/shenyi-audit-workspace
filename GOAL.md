@@ -1,5 +1,9 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-20 M7BG Linux 发布目录完整性复核
+
+Linux 签名暂存现在记录服务代码、生产依赖、目录和只读权限的摘要。激活在运行候选前和停服前分别复核，恢复时也比对已记录的摘要。隔离 Ubuntu 验证四种文件变动在停服前被拒，原样候选通过实际 systemd 切换和双路 HTTPS，SQLite 与合成原件保持。12 组 Python 验证和 49 项相关回归通过。Windows 一键沿用上轮实测，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-staging-integrity-20261120/verification.json`。
+
 ## 2026-11-20 M5T 官网与团队 API 分开验收
 
 Windows 评审包一键启动独立的官网和团队 API 两个 HTTPS 地址，各用自己的证书链。官网年费和增购分别生成一笔合成待支付订单，返回桌面后可按原编号核对。20 项实际请求检查和 359 项相关回归通过，冷库核对收款、订阅期限和席位权益无变动，退出后两个监听器均关闭。正式官网和商户、Mac 实机、真实试点、双方签收及国内上线仍待验收。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m5-split-checkout-20261120/verification.json`。

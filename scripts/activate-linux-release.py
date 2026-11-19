@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+from runpy import run_path
 import stat
 import subprocess
 import sys
@@ -24,6 +25,8 @@ BACKEND_CA = Path('/etc/nginx/shenyi-team/backend-ca.pem')
 UNIT = 'shenyi-team.service'
 UNIT_PATH = '/etc/systemd/system/shenyi-team.service'
 JOURNAL = ROOT / '.shenyi-activation.json'
+RECEIPT = '.shenyi-stage-receipt.json'
+staged_tree = run_path(str(Path(__file__).resolve().with_name('linux-release-tree.py')))['staged_tree']
 SYSTEMCTL = Path('/usr/bin/systemctl')
 RUNUSER = Path('/usr/sbin/runuser')
 TIMEOUT = Path('/usr/bin/timeout')
@@ -182,10 +185,10 @@ def rename_entry(rename, root_fd, source, target, flags):
         raise OSError(error, os.strerror(error), str(source))
 
 
-def validate_stage(staged, revision, archive_sha, root_device, *, receipt_stage=None):
+def validate_stage(staged, revision, archive_sha, root_device, *, receipt_stage=None, recovery_journal=None):
     info = owned_path(staged, stat.S_ISDIR, readonly=True)
     require(info.st_dev == root_device, 'The staged release must be on the release filesystem.')
-    path = staged / '.shenyi-stage-receipt.json'
+    path = staged / RECEIPT
     owned_path(path, stat.S_ISREG, readonly=True)
     receipt = json.loads(read_file(path, 16 * 1024))
     require(receipt['ok'] is True and receipt['offline'] is True
@@ -196,13 +199,30 @@ def validate_stage(staged, revision, archive_sha, root_device, *, receipt_stage=
     owned_path(lock, stat.S_ISREG, readonly=True)
     require(hashlib.sha256(read_file(lock, 16 * 1024 * 1024)).hexdigest() == receipt['packageLockSha256'],
             'The staged lockfile has changed.')
-    for directory, directories, files in os.walk(staged, followlinks=False):
-        for child in directories:
-            owned_path(Path(directory) / child, stat.S_ISDIR, readonly=True)
-        for file in files:
-            listed = owned_path(Path(directory) / file, stat.S_ISREG, readonly=True)
-            require(listed.st_nlink == 1, 'The staged release contains a linked file.')
-    return identity(info)
+    legacy_recovery = (recovery_journal is not None and 'stagedTree' not in recovery_journal
+                       and 'stagedTree' not in receipt)
+    if legacy_recovery:
+        for directory, directories, files in os.walk(staged, followlinks=False):
+            for child in directories:
+                owned_path(Path(directory) / child, stat.S_ISDIR, readonly=True)
+            for file in files:
+                listed = owned_path(Path(directory) / file, stat.S_ISREG, readonly=True)
+                require(listed.st_nlink == 1, 'The staged release contains a linked file.')
+        return identity(info), None
+
+    expected = receipt.get('stagedTree')
+    require(isinstance(expected, dict) and set(expected) == {'version', 'sha256', 'files', 'directories', 'bytes'}
+            and type(expected['version']) is int and expected['version'] == 1
+            and all(type(expected[key]) is int and expected[key] >= 0 for key in ('files', 'directories', 'bytes'))
+            and isinstance(expected['sha256'], str) and re.fullmatch(r'[0-9a-f]{64}', expected['sha256']),
+            'The staged release requires a complete tree receipt. Stage the signed archive with the current tool.')
+    if recovery_journal is not None:
+        recorded = recovery_journal.get('stagedTree')
+        require(isinstance(recorded, dict) and recorded == expected
+                and all(type(recorded[key]) is type(value) for key, value in expected.items()),
+                'The staged tree receipt differs from the activation journal.')
+    require(staged_tree(staged, 0, RECEIPT) == expected, 'The staged release tree changed after staging.')
+    return identity(info), expected
 
 
 def check_candidate_database(staged, env):
@@ -232,17 +252,19 @@ def activate(args, root_fd, env):
     prior = owned_path(CURRENT, stat.S_ISDIR, readonly=True)
     require(prior.st_dev == root_device, 'The active release must be on the release filesystem.')
     old_identity = identity(prior)
-    new_identity = validate_stage(staged, revision, args.archive_sha256, root_device)
+    new_identity, tree = validate_stage(staged, revision, args.archive_sha256, root_device)
     rename = rename_operation()
     stamp = configuration_stamp()
     owned_path(CURRENT / 'scripts/check-team-service.mjs', stat.S_ISREG, readonly=True)
     _, warnings, baseline = health_check(env, prior_warnings=None, limit=15)
     check_candidate_database(staged, env)
+    confirmed = validate_stage(staged, revision, args.archive_sha256, root_device)
     require(configuration_stamp() == stamp and process_status(env) == baseline
-            and identity(staged.stat()) == new_identity,
+            and confirmed == (new_identity, tree),
             'Configuration or release state changed during the candidate database preflight.')
     report = {'revision': revision, 'archiveSha256': args.archive_sha256, 'oldDirectoryIdentity': old_identity,
-              'newDirectoryIdentity': new_identity, 'baselinePid': baseline[0], 'baselineInvocation': baseline[1],
+              'newDirectoryIdentity': new_identity, 'stagedTree': tree,
+              'baselinePid': baseline[0], 'baselineInvocation': baseline[1],
               'baselineWarningChecks': sorted(warnings), 'candidateDatabasePreflight': 'passed', **stamp}
     record(JOURNAL, {**report, 'status': 'stopping-current'}, root_fd)
 
@@ -371,8 +393,10 @@ def recover(args, root_fd, env):
     candidate = retained if old_current else CURRENT
     owned_path(old_path / 'scripts/check-team-service.mjs', stat.S_ISREG, readonly=True)
     owned_path(old_path / 'scripts/start-team-service.mjs', stat.S_ISREG, readonly=True)
-    require(validate_stage(candidate, args.revision, args.archive_sha256, root_device, receipt_stage=staged)
-            == report['newDirectoryIdentity'], 'The candidate directory changed during recovery preflight.')
+    candidate_identity, _ = validate_stage(candidate, args.revision, args.archive_sha256, root_device,
+                                           receipt_stage=staged, recovery_journal=report)
+    require(candidate_identity == report['newDirectoryIdentity'],
+            'The candidate directory changed during recovery preflight.')
     active_before = stable_invocation(env)
     check_state((old_current, retained))
     warnings = set(report['baselineWarningChecks'])

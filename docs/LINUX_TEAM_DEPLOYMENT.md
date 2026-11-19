@@ -26,7 +26,7 @@ node scripts/linux-release-signature.mjs sign \
   --private-key "$release_private_key" --output "$release_dir/shenyi-team-${release}.ed25519"
 ```
 
-在 Linux 部署机上，通过已审定渠道把 `scripts/stage-linux-release.py`、`scripts/linux-release-signature.mjs` 和 `scripts/detached-release-signature.mjs` 预置在同一目录。使用 Python 3.11 或更新版及配有 npm 的受信 Node 24.15 或更新的 24.x。按获准的发行记录设置 `$release`，将独立取得的公钥放在归档目录之外。npm 内容缓存放在发布树之外。归档和缓存各限 256 MiB、8,192 个条目，发布卷须为输入副本、解包目录和依赖预留空间。发布人员拥有 `/opt/shenyi-team`，普通用户对该目录和父目录没有写权限。
+在 Linux 部署机上，通过已审定渠道把 `scripts/stage-linux-release.py`、`scripts/linux-release-tree.py`、`scripts/linux-release-signature.mjs` 和 `scripts/detached-release-signature.mjs` 预置在同一目录。使用 Python 3.11 或更新版及配有 npm 的受信 Node 24.15 或更新的 24.x。按获准的发行记录设置 `$release`，将独立取得的公钥放在归档目录之外。npm 内容缓存放在发布树之外。归档和缓存各限 256 MiB、8,192 个条目，发布卷须为输入副本、解包目录和依赖预留空间。发布人员拥有 `/opt/shenyi-team`，普通用户对该目录和父目录没有写权限。
 
 ```sh
 /usr/bin/python3 -I /opt/shenyi-team/release-tools/scripts/stage-linux-release.py \
@@ -36,7 +36,7 @@ node scripts/linux-release-signature.mjs sign \
   --npm-cache "$npm_cache"
 ```
 
-工具将归档复制到权限受控的私有目录，验签后解包同一副本。用独立复制的 `_cacache` 执行离线 `npm ci --omit=dev --ignore-scripts`，回读已安装生产依赖和源文件摘要。所有步骤完成后，才发布只读的 `/opt/shenyi-team/staged-$release`，保留已有同名目录。单独核对标准输出和目录内的 `.shenyi-stage-receipt.json`，回执包含提交、整包和锁文件摘要、公钥指纹及文件数量。失败时无新的候选目录，按错误修正后可重试。进程被强制终止时可能留下 `.shenyi-preparation-*` 工作目录，发布人员可在确认没有暂存任务运行后检查。 [npm 锁定依赖安装](https://docs.npmjs.com/cli/v11/commands/npm-ci/) · [npm 离线模式](https://docs.npmjs.com/cli/v11/using-npm/config/#offline)
+工具将归档复制到权限受控的私有目录，验签后解包同一副本。用独立复制的 `_cacache` 执行离线 `npm ci --omit=dev --ignore-scripts`，回读已安装生产依赖和源文件摘要。转为只读后，按实际路径、权限和文件内容计算整个候选目录的 SHA-256，包含生产依赖、空目录和回执文件的权限，回执正文另行验证。所有步骤完成后，才发布只读的 `/opt/shenyi-team/staged-$release`，保留已有同名目录。单独核对标准输出和目录内的 `.shenyi-stage-receipt.json`，回执包含提交、整包和锁文件摘要、公钥指纹、文件数量及 `stagedTree`。失败时无新的候选目录，按错误修正后可重试。进程被强制终止时可能留下 `.shenyi-preparation-*` 工作目录，发布人员可在确认没有暂存任务运行后检查。 [npm 锁定依赖安装](https://docs.npmjs.com/cli/v11/commands/npm-ci/) · [npm 离线模式](https://docs.npmjs.com/cli/v11/using-npm/config/#offline)
 
 发布人员在获准的切换窗口，按下文流程单独停止服务、保留上一版并切换到已核对的候选目录。`current` 及服务配置的各级路径使用实际目录和文件。暂存回执与双路 HTTPS、业务读取和回滚的结果分别归档。 [受管启动约束](MANAGED_TEAM_SERVICE.md)
 
@@ -221,16 +221,18 @@ journalctl -u shenyi-team-monitor.service -n 30 --no-pager
 
 ## 变更与回滚
 
-停机变更前先停止接入新业务并等待进行中的上传和导出完成。备份代码版本、配置和数据库，核对候选与上一版本均兼容当前库。候选已签名并完成暂存后，在获准窗口用同一可信渠道预置 `scripts/activate-linux-release.py`，以发布管理员身份执行。使用支持 `renameat2` 原子目录交换的 Linux 文件系统，`current` 和候选均使用同一文件系统上的实际目录。 [Linux 目录交换](https://man7.org/linux/man-pages/man2/rename.2.html)
+停机变更前先停止接入新业务并等待进行中的上传和导出完成。备份代码版本、配置和数据库，核对候选与上一版本均兼容当前库。候选已签名并完成暂存后，在获准窗口用同一可信渠道预置 `scripts/activate-linux-release.py` 及同目录的 `scripts/linux-release-tree.py`，以发布管理员身份执行。使用支持 `renameat2` 原子目录交换的 Linux 文件系统，`current` 和候选均使用同一文件系统上的实际目录。 [Linux 目录交换](https://man7.org/linux/man-pages/man2/rename.2.html)
 
 ```sh
 /usr/bin/python3 -I /opt/shenyi-team/release-tools/scripts/activate-linux-release.py \
   --revision "$release" --archive-sha256 "$approved_archive_sha256" --same-schema
 ```
 
-`--same-schema` 确认本次切换已核对数据库兼容性。命令沿用暂存锁，核对审批归档摘要、候选回执和只读权限。停服前以 `shenyi-team` 运行候选的 `start-team-service.mjs --check-database --config /etc/shenyi-team/service.json`。该命令只读打开 SQLite，沿用候选的数据库启动检查，按配置核对实例和所需库结构，包括已启用的审核式恢复或微信结构。检查完成后直接退出。TLS 和供应商配置仍由正常启动核验。预检失败时保留当前服务与候选，由发布人员核对库结构和配置。涉及迁移时，单独验证新旧版兼容性。
+`--same-schema` 确认本次切换已核对数据库兼容性。命令沿用暂存锁，核对审批归档摘要、候选回执和完整目录摘要。旧版暂存回执缺少 `stagedTree` 时，保全该目录并使用新工具重新暂存签名归档。候选目录变化时，在执行候选或停服前拒绝。停服前以 `shenyi-team` 运行候选的 `start-team-service.mjs --check-database --config /etc/shenyi-team/service.json`。该命令只读打开 SQLite，沿用候选的数据库启动检查，按配置核对实例和所需库结构，包括已启用的审核式恢复或微信结构。检查完成后直接退出，激活工具再次核对候选目录摘要再停服。TLS 和供应商配置仍由正常启动核验。预检失败时保留当前服务与候选，由发布人员核对库结构和配置。涉及迁移时，单独验证新旧版兼容性。
 
 隔离 Ubuntu 中，要求不存在的表和忽略退出信号的候选均在停服前被拒绝，原服务调用标识及 SQLite 字节一致。兼容候选的独立预检用时约 1.1 秒，随后切换通过双路 HTTPS 检查。此轮使用已准备的演练目录核验激活流程。证据见 `D:/codex-temp/shenyi-m7-db-preflight-20261119/verification.json`。
+
+新版工具在隔离 Ubuntu 实际验签并离线暂存 36 个生产依赖包。服务代码和依赖的同长度改动、增加文件、缺少文件均在运行候选和停服前被拒绝。恢复原样后，候选通过实际服务切换及双路 HTTPS，停服复核的数据库与合成原件保持。 [演练记录](STATUS.md#2026-11-20-m7bg-linux-发布目录完整性复核)
 
 启动候选后，使用上一版的探针检查两路 HTTPS、实例和进程。原有磁盘和证书临近阈值的提示可保留，新增提示或必要检查失败会停止变更。隔离环境可显式提供 `--edge-ca` 读取受信的边缘 CA，生产公有证书通常使用系统信任。 [systemd 服务状态与重启计数](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html)
 
@@ -241,7 +243,7 @@ journalctl -u shenyi-team-monitor.service -n 30 --no-pager
   --recover --revision "$release" --archive-sha256 "$approved_archive_sha256" --same-schema
 ```
 
-恢复沿用发布锁，核对日志、候选暂存回执、目录设备号和 inode、配置摘要及 SQLite 文件身份。未结案的切换恢复上一版。上一版已正常运行时保留该调用；否则在确认候选已停止后，通过原子目录交换恢复并启动上一版。双路 HTTPS 校验通过后，候选保留在 `failed-$release`，结案状态为 `recovered`。日志若已写好 `activated`、`rolled-back` 或 `recovered` 终态，只在当前目录和服务重新核验通过后原样归档。恢复和归档成功均返回 `0`。
+恢复沿用发布锁，核对日志、候选暂存回执、目录设备号和 inode、配置摘要及 SQLite 文件身份。新日志保存 `stagedTree`，恢复时同时核对日志、回执和实际目录。升级工具前已开始的切换，若原日志和暂存回执均无 `stagedTree`，仍可按原检查恢复。未结案的切换恢复上一版。上一版已正常运行时保留该调用；否则在确认候选已停止后，通过原子目录交换恢复并启动上一版。双路 HTTPS 校验通过后，候选保留在 `failed-$release`，结案状态为 `recovered`。日志若已写好 `activated`、`rolled-back` 或 `recovered` 终态，只在当前目录和服务重新核验通过后原样归档。恢复和归档成功均返回 `0`。
 
 遇到审批摘要不一致、目录或配置变化、SQLite 文件身份变化、systemd 仍有任务或双路 HTTPS 失败时，恢复返回 `1` 并保留可核验的目录和日志。排查完毕后可对同一日志再次执行恢复。SQLite 和配置保留在各自的原路径，候选已处理的业务仍留在当前库。结案回执已生成时以该回执及实时健康检查为准。 [目录持久化](https://man7.org/linux/man-pages/man2/fsync.2.html)
 

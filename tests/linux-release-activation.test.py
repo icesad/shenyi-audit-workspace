@@ -1,4 +1,4 @@
-"""Portable state-machine tests for the Linux release recovery helper."""
+"""Portable state-machine tests for Linux release activation and recovery."""
 
 from contextlib import closing
 import hashlib
@@ -40,6 +40,17 @@ def write_json(path, value):
     path.write_text(json.dumps(value) + '\n', encoding='utf-8')
 
 
+def fixture_tree(root, _owner_uid, receipt_name):
+    # Exercise the worker's comparison against a path-independent seal on Windows.
+    # Native deployment tests exercise the production Linux inventory and permissions.
+    directories = sorted(path.relative_to(root).as_posix() for path in root.rglob('*') if path.is_dir())
+    files = {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob('*')
+             if path.is_file() and path != root / receipt_name}
+    representation = [directories, [(name, data.hex()) for name, data in sorted(files.items())]]
+    return {'version': 1, 'sha256': hashlib.sha256(json.dumps(representation).encode()).hexdigest(),
+            'files': len(files), 'directories': len(directories), 'bytes': sum(map(len, files.values()))}
+
+
 class Deployment:
     def __init__(self, directory, phase, mounted, retention, state):
         spec = importlib.util.spec_from_file_location('activation', SCRIPT)
@@ -52,6 +63,7 @@ class Deployment:
         release.JOURNAL = release.ROOT / '.shenyi-activation.json'
         release.CONFIG = directory / 'service.json'
         release.owned_path = self.owned_fixture_path
+        release.staged_tree = fixture_tree
         self.database = directory / 'team.sqlite'
         with closing(sqlite3.connect(self.database)) as db:
             db.execute('CREATE TABLE team_profile (label TEXT NOT NULL)')
@@ -79,6 +91,12 @@ class Deployment:
         lock = self.new / 'package-lock.json'
         lock.write_text('{}\n', encoding='utf-8')
         lock.chmod(0o444)
+        self.dependency = self.new / 'node_modules' / 'synthetic-package' / 'index.mjs'
+        self.dependency.parent.mkdir(parents=True)
+        self.dependency.write_bytes(b'/* synthetic dependency */\n')
+        self.dependency.chmod(0o444)
+        self.dependency.parent.chmod(0o555)
+        self.dependency.parent.parent.chmod(0o555)
         self.receipt_path = self.new / '.shenyi-stage-receipt.json'
         write_json(self.receipt_path, {
             'ok': True, 'offline': True, 'stageDir': str(self.staged),
@@ -98,6 +116,7 @@ class Deployment:
         self.job = '0'
         self.actions = []
         self.probes = []
+        self.candidate_preflights = []
         self.cut_after_exchange = False
         self.cut_after_retention = False
         self.report = {
@@ -117,6 +136,8 @@ class Deployment:
         release.rename_entry = self.rename_entry
         release.service_status = self.service_status
         release.process_status = self.process_status
+        release.check_candidate_database = self.check_candidate_database
+        release.service = self.service
         release.stop_service = self.stop_service
         release.restart_previous = self.restart_previous
         release.health_check = self.health_check
@@ -147,6 +168,16 @@ class Deployment:
     def stop_service(self, env):
         self.actions.append('stop')
         self.state = 'inactive'
+
+    def check_candidate_database(self, staged, env):
+        self.candidate_preflights.append(self.identity(staged))
+
+    def service(self, args, env, timeout):
+        if args != ['start'] or self.identity(self.current) != self.new_id:
+            raise AssertionError('Activation must start the candidate after placing it at current')
+        self.actions.append('start')
+        self.state, self.pid, self.invocation = 'active', 202, OTHER_INVOCATION
+        self.live_directory = self.identity(self.current)
 
     def restart_previous(self, env):
         if self.identity(self.current) != self.old_id:
@@ -195,6 +226,23 @@ class Deployment:
         # ID and accepts fsync while native tests exercise actual directory fsync.
         with self.fd_path.open('w+b') as fixture_fd:
             return self.release.recover(args, fixture_fd.fileno(), {})
+
+    def seal_candidate(self, *, journal):
+        receipt = json.loads(self.receipt_path.read_text(encoding='utf-8'))
+        seal = fixture_tree(self.new, 0, self.receipt_path.name)
+        receipt['stagedTree'] = seal
+        self.receipt_path.chmod(0o644)
+        write_json(self.receipt_path, receipt)
+        self.receipt_path.chmod(0o444)
+        if journal:
+            self.report['stagedTree'] = seal
+            write_json(self.journal, self.report)
+        return seal
+
+    def activate(self):
+        args = SimpleNamespace(revision=REVISION, archive_sha256=ARCHIVE_SHA, recover=False, same_schema=True)
+        with self.fd_path.open('w+b') as fixture_fd:
+            return self.release.activate(args, fixture_fd.fileno(), {})
 
 
 class RecoveryTests(unittest.TestCase):
@@ -317,6 +365,115 @@ class RecoveryTests(unittest.TestCase):
         f = self.deployment('activated', 'new', 'previous', 'active')
         f.live_directory = f.old_id
         self.assert_refused(f)
+
+    def fresh_deployment(self, *, sealed=True):
+        f = self.deployment('stopping-current', 'old', 'staged', 'active')
+        f.journal.unlink()
+        seal = f.seal_candidate(journal=False) if sealed else None
+        return f, seal
+
+    def assert_activation_refused(self, deployment, *, preflight_started=False):
+        with self.assertRaises((OSError, ValueError)):
+            deployment.activate()
+        self.assertEqual(deployment.actions, [])
+        self.assertEqual(deployment.candidate_preflights, [deployment.new_id] if preflight_started else [])
+        self.assertEqual(deployment.probes, [deployment.current] if preflight_started else [])
+        self.assertFalse(deployment.journal.exists())
+        self.assertFalse(deployment.history.exists())
+        self.assertEqual(deployment.identity(deployment.current), deployment.old_id)
+        self.assertEqual(deployment.identity(deployment.staged), deployment.new_id)
+        self.assertEqual(deployment.process_status({}), (101, BASELINE_INVOCATION))
+        self.assertEqual(deployment.database.read_bytes(), deployment.database_bytes)
+
+    @staticmethod
+    def change_same_size(path):
+        before = path.read_bytes()
+        path.chmod(0o644)
+        path.write_bytes(bytes([before[0] ^ 1]) + before[1:])
+        path.chmod(0o444)
+
+    def test_activation_binds_the_sealed_tree_in_the_durable_receipt(self):
+        f, seal = self.fresh_deployment()
+        result = f.activate()
+        self.verify_finish(f, result, 'activated', f.new_id, f.previous)
+        self.assertEqual(result['stagedTree'], seal)
+        self.assertEqual(fixture_tree(f.current, 0, f.receipt_path.name), seal)
+        self.assertEqual(f.candidate_preflights, [f.new_id])
+        self.assertEqual(f.actions, ['stop', 'exchange', 'start', 'retain', 'record'])
+
+    def test_new_activation_refuses_an_unsealed_stage(self):
+        f, _ = self.fresh_deployment(sealed=False)
+        self.assert_activation_refused(f)
+
+    def test_activation_refuses_tree_drift_before_any_candidate_execution_or_stop(self):
+        for change in ('source', 'dependency', 'add', 'remove'):
+            with self.subTest(change=change):
+                f, _ = self.fresh_deployment()
+                if change == 'source':
+                    self.change_same_size(f.new / 'scripts/start-team-service.mjs')
+                elif change == 'dependency':
+                    self.change_same_size(f.dependency)
+                else:
+                    directory = f.dependency.parent
+                    directory.chmod(0o755)
+                    try:
+                        if change == 'add':
+                            added = directory / 'additional.mjs'
+                            added.write_bytes(b'/* fixture */\n')
+                            added.chmod(0o444)
+                        else:
+                            f.dependency.chmod(0o644)
+                            f.dependency.unlink()
+                    finally:
+                        directory.chmod(0o555)
+                self.assert_activation_refused(f)
+
+    def test_tree_changes_after_database_preflight_cannot_stop_the_current_service(self):
+        f, _ = self.fresh_deployment()
+
+        def change_after_preflight(staged, env):
+            f.check_candidate_database(staged, env)
+            self.change_same_size(f.dependency)
+
+        f.release.check_candidate_database = change_after_preflight
+        self.assert_activation_refused(f, preflight_started=True)
+
+    def test_recovery_checks_a_seal_after_renaming_and_preserves_it(self):
+        f = self.deployment('starting-candidate', 'new', 'previous', 'active')
+        seal = f.seal_candidate(journal=True)
+        result = f.recover()
+        self.verify_finish(f, result, 'recovered', f.old_id, f.failed)
+        self.assertEqual(result['stagedTree'], seal)
+        self.assertEqual(fixture_tree(f.failed, 0, f.receipt_path.name), seal)
+        self.assertEqual(f.actions, ['stop', 'exchange', 'start', 'retain', 'record'])
+        self.assertEqual(f.probes, [f.current])
+        self.assertEqual(f.candidate_preflights, [])
+
+    def test_recovery_refuses_a_missing_mismatched_or_changed_seal(self):
+        for change in ('journal missing', 'receipt missing', 'journal digest', 'journal boolean',
+                       'journal float', 'candidate content'):
+            with self.subTest(change=change):
+                f = self.deployment('starting-candidate', 'new', 'previous', 'active')
+                f.seal_candidate(journal=change != 'journal missing')
+                if change == 'receipt missing':
+                    receipt = json.loads(f.receipt_path.read_text(encoding='utf-8'))
+                    del receipt['stagedTree']
+                    f.receipt_path.chmod(0o644)
+                    write_json(f.receipt_path, receipt)
+                    f.receipt_path.chmod(0o444)
+                elif change == 'journal digest':
+                    f.report['stagedTree']['sha256'] = 'd' * 64
+                    write_json(f.journal, f.report)
+                elif change == 'journal boolean':
+                    f.report['stagedTree']['version'] = True
+                    write_json(f.journal, f.report)
+                elif change == 'journal float':
+                    f.report['stagedTree']['files'] = float(f.report['stagedTree']['files'])
+                    write_json(f.journal, f.report)
+                elif change == 'candidate content':
+                    self.change_same_size(f.dependency)
+                self.assert_refused(f)
+                self.assertEqual(f.probes, [])
 
 
 if __name__ == '__main__':

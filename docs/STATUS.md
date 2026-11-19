@@ -1,4 +1,8 @@
-# 当前状态 · 官网与团队 API 分开验收
+# 当前状态 · Linux 发布目录完整性复核
+
+## 2026-11-20 M7BG Linux 发布目录完整性复核
+
+Linux 签名暂存现在记录服务代码、生产依赖、目录和只读权限的摘要。激活在运行候选前和停服前分别复核，恢复时也比对已记录的摘要。隔离 Ubuntu 验证四种文件变动在停服前被拒，原样候选通过实际 systemd 切换和双路 HTTPS，SQLite 与合成原件保持。12 组 Python 验证和 49 项相关回归通过。Windows 一键沿用上轮实测，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-staging-integrity-20261120/verification.json`。
 
 ## 2026-11-20 M5T 官网与团队 API 分开验收
 

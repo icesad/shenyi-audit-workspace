@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+from runpy import run_path
 import shutil
 import stat
 import subprocess
@@ -17,6 +18,7 @@ import tempfile
 
 
 RECEIPT = '.shenyi-stage-receipt.json'
+staged_tree = run_path(str(Path(__file__).resolve().with_name('linux-release-tree.py')))['staged_tree']
 REQUIRED_FILES = {
     'package.json', 'package-lock.json', 'scripts/start-team-service.mjs',
     'deploy/linux/shenyi-team.service',
@@ -239,8 +241,14 @@ def stage(args):
                 'archiveFiles': len(files), 'productionPackages': production_count,
                 'packageLockSha256': files['package-lock.json'], 'offline': True,
             }
-            (payload / RECEIPT).write_text(json.dumps(receipt) + '\n', encoding='utf-8')
-            make_read_only(payload)
+            # Hold the new receipt open while sealing the tree in its final read-only mode.
+            with (payload / RECEIPT).open('x', encoding='utf-8') as output:
+                make_read_only(payload)
+                receipt['stagedTree'] = staged_tree(payload, os.geteuid(), RECEIPT)
+                json.dump(receipt, output)
+                output.write('\n')
+                output.flush()
+                os.fsync(output.fileno())
             require(not os.path.lexists(published), 'This release already has a staged directory.')
             payload.rename(published)
             return receipt
