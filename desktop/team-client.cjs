@@ -57,7 +57,12 @@ function sessionIdInput(value){if(typeof value!=='string'||!SESSION_ID.test(valu
 function teamNameInput(value){if(typeof value!=='string'||!value.isWellFormed())throw failure('INVALID_INPUT','团队名称需要1至80个字符。');const clean=value.normalize('NFKC').trim();if(!clean||[...clean].length>80||/[\p{Cc}\p{Cf}]/u.test(clean))throw failure('INVALID_INPUT','团队名称需要1至80个字符。');return clean;}
 function provisioningView(value){
   if(!value||typeof value.id!=='string'||!ID.test(value.id)||typeof value.teamId!=='string'||!ID.test(value.teamId)||typeof value.teamName!=='string'||!value.teamName.isWellFormed()||!value.teamName.trim()||[...value.teamName].length>80||/[\x00-\x1f\x7f]/.test(value.teamName)||typeof value.phoneMasked!=='string'||!/^[+0-9* ]{7,32}$/.test(value.phoneMasked)||!value.phoneMasked.includes('*')||!['pending','approved','rejected','revoked','activated'].includes(value.status)||!Number.isSafeInteger(value.revision)||value.revision<1||!Number.isSafeInteger(value.createdAt)||value.createdAt<0||(value.expiresAt!==null&&(!Number.isSafeInteger(value.expiresAt)||value.expiresAt<value.createdAt)))throw failure('INVALID_RESPONSE','团队审核信息格式无效。');
-  return {id:value.id,teamId:value.teamId,teamName:value.teamName,phoneMasked:value.phoneMasked,status:value.status,revision:value.revision,createdAt:value.createdAt,expiresAt:value.expiresAt};
+  let pilot;
+  if(Object.hasOwn(value,'pilot')){
+    pilot=value.pilot;
+    if(value.status!=='activated'||pilot!==null&&(!pilot||Object.getPrototypeOf(pilot)!==Object.prototype||Object.keys(pilot).length!==3||!['startsAt','endsAt','seats'].every(key=>Object.hasOwn(pilot,key))||!Number.isSafeInteger(pilot.startsAt)||pilot.startsAt<0||Object.is(pilot.startsAt,-0)||!Number.isSafeInteger(pilot.endsAt)||pilot.endsAt<=pilot.startsAt||!Number.isSafeInteger(pilot.seats)||pilot.seats<1))throw failure('INVALID_RESPONSE','团队试点批准信息格式无效。');
+  }
+  return {id:value.id,teamId:value.teamId,teamName:value.teamName,phoneMasked:value.phoneMasked,status:value.status,revision:value.revision,createdAt:value.createdAt,expiresAt:value.expiresAt,...(Object.hasOwn(value,'pilot')?{pilot:pilot===null?null:{startsAt:pilot.startsAt,endsAt:pilot.endsAt,seats:pilot.seats}}:{})};
 }
 function firstAdministratorView(value){
   if(!value||typeof value.teamId!=='string'||!ID.test(value.teamId)||typeof value.teamName!=='string'||!value.teamName.isWellFormed()||!value.teamName.trim()||[...value.teamName].length>80||/[\x00-\x1f\x7f]/.test(value.teamName)||typeof value.phoneMasked!=='string'||!/^[+0-9* ]{7,32}$/.test(value.phoneMasked)||!value.phoneMasked.includes('*')||!Number.isSafeInteger(value.expiresAt)||value.expiresAt<=0)throw failure('INVALID_RESPONSE','首管理员邀请信息格式无效。');
@@ -196,7 +201,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     materialCheck();beforeSend?.();let response;
     const target=requestUrl(route);
     try { onDispatch?.();response = await fetchImpl(target, {method, redirect: 'error', signal: transportSignal,
-      headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'}),...(signed?.headers??{}),...(billingOverviewView?{'X-Shenyi-Billing-View':'expiry-reminder-v1','X-Shenyi-Billing-Recovery':'recorded-payment-v1'}:{})},
+      headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'}),...(signed?.headers??{}),...(billingOverviewView?{'X-Shenyi-Billing-View':'expiry-reminder-v1','X-Shenyi-Billing-Recovery':'recorded-payment-v1','X-Shenyi-Billing-Source':'approved-pilot-v1'}:{})},
       ...(serialized === undefined ? {} : {body: serialized})}); }
     catch { if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');signed?.assertCurrent();if(guardedHooks)materialCheck();if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('SERVICE_UNAVAILABLE', protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':(isolatedPreview?'无法连接独立合成预览，业务已暂停；请核对该候选窗口。':trusted?'无法连接受信HTTPS团队服务，业务已暂停；联网后请重新核验。':'无法连接本机团队服务，业务已暂停；联网后请重新核验。')); }
     if (at !== generation) {
@@ -484,9 +489,10 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
       if(view.status!=='pending'||view.teamName!==teamName)throw failure('INVALID_RESPONSE','无法确认开通申请，请刷新列表核对。');return {request:view};
     },
     async reviewTeamProvisioningRequest(input){
-      exactKeys(input,['requestId','decision','revision','currentPassword']);if(!['approve','reject','revoke'].includes(input.decision)||!Number.isSafeInteger(input.revision)||input.revision<1)throw failure('INVALID_INPUT','请选择有效的审核操作并刷新申请版本。');
-      const requestId=id(input.requestId),data=await provisioningRequest('/api/operations/team-requests/'+requestId+'/review',{method:'POST',body:{decision:input.decision,revision:input.revision,currentPassword:securityPasswordInput(input.currentPassword)}}),view=provisioningView(data?.request);
-      if(view.id!==requestId||view.revision<=input.revision||view.status!==({approve:'approved',reject:'rejected',revoke:'revoked'})[input.decision])throw failure('INVALID_RESPONSE','无法确认审核结果，请刷新列表核对。');
+      const pilot=input?.decision==='approve-pilot';
+      exactKeys(input,['requestId','decision','revision','currentPassword',...(pilot?['endsAt','seats']:[])]);if(!['approve','reject','revoke','approve-pilot'].includes(input.decision)||!Number.isSafeInteger(input.revision)||input.revision<1||pilot&&(input.revision>=Number.MAX_SAFE_INTEGER||!Number.isSafeInteger(input.endsAt)||input.endsAt<=0||!Number.isSafeInteger(input.seats)||input.seats<1))throw failure('INVALID_INPUT','请选择有效的审核操作并核对申请版本、试点截止时间和席位。');
+      const requestId=id(input.requestId),data=await provisioningRequest('/api/operations/team-requests/'+requestId+'/review',{method:'POST',body:{decision:input.decision,revision:input.revision,currentPassword:securityPasswordInput(input.currentPassword),...(pilot?{endsAt:input.endsAt,seats:input.seats}:{})}}),view=provisioningView(data?.request);
+      if(view.id!==requestId||view.revision<=input.revision||view.status!==({approve:'approved',reject:'rejected',revoke:'revoked','approve-pilot':'activated'})[input.decision]||pilot&&(view.revision!==input.revision+1||!view.pilot||view.pilot.endsAt!==input.endsAt||view.pilot.seats!==input.seats))throw failure('INVALID_RESPONSE','无法确认审核结果，请刷新列表核对。');
       return {request:view,...(input.decision==='approve'?{invitationCode:invitationCodeInput(data.invitationCode)}:{})};
     },
     async getTeamAdministration(){

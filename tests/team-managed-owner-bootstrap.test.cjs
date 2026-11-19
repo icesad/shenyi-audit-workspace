@@ -16,6 +16,7 @@ const grants = {
   team_administrator_business_role_reviewers: 'administrator.business-role',
   team_project_migration_reviewers: 'project.migrate',
   team_billing_refund_intake_reviewers: 'billing.refund-intake',
+  team_pilot_approval_reviewers: 'team.pilot.approve',
 };
 
 async function fixture() {

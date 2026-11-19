@@ -11,6 +11,7 @@ import {readSimulationOrderClosureRequest,verifySimulationOrderClosureEnvelope} 
 import {recordVerifiedBillingOrderClosure,recordVerifiedBillingOrderClosureWithinTransaction} from './billing-order-closure-store.mjs';
 import {readSeatCapacity} from './seat-capacity-store.mjs';
 import {readSubscriptionState} from './subscription-store.mjs';
+import {currentTermIsPilot} from './pilot-approval.mjs';
 
 export const SIMULATION_NOTIFICATION_PATH='/api/billing/simulation/notifications';
 export const SIMULATION_PAYMENT_EXCEPTION_PATH='/api/billing/simulation/payment-exceptions';
@@ -53,9 +54,10 @@ function billingAccess(request,options){
   return json({teams});
  });
 }
-function billingOverview(db,teamId,at,billingSimulation,{expiryReminder,resumeFulfilment}){
- const {state,revision,startsAt,endsAt}=readSubscriptionState(db,teamId,at);
+function billingOverview(db,teamId,at,billingSimulation,{expiryReminder,resumeFulfilment,pilotSource}){
+ const current=readSubscriptionState(db,teamId,at),{state,revision,startsAt,endsAt}=current;
  const subscription={state,revision,startsAt,endsAt},remaining=endsAt-at;
+ if(pilotSource&&!billingSimulation&&currentTermIsPilot(db,current))subscription.pilot=true;
  if(expiryReminder&&state==='active'&&remaining>0&&remaining<=RENEWAL_REMINDER_DAYS*MS_PER_DAY){
   subscription.renewalReminderDays=Math.ceil(remaining/MS_PER_DAY);
  }
@@ -239,6 +241,7 @@ export async function handleBillingRequest(request,options={}){
  if(kind==='overview')return scoped(()=>billingOverview(db,teamId,time(now),billingSimulation,{
   expiryReminder:request.headers.get('X-Shenyi-Billing-View')==='expiry-reminder-v1',
   resumeFulfilment:request.headers.get('X-Shenyi-Billing-Recovery')==='recorded-payment-v1',
+  pilotSource:options.serviceMode==='managed-service'&&request.headers.get('X-Shenyi-Billing-Source')==='approved-pilot-v1',
  }));
  if(kind==='offers')return scoped(()=>json({simulation:true,offers:billingSimulation.offers}));
  if(kind==='renewal-seats')return scoped(()=>{

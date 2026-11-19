@@ -653,10 +653,28 @@
   function provisioningApiReady(){return ['getTeamProvisioningAccess','listTeamProvisioningRequests','createTeamProvisioningRequest','reviewTeamProvisioningRequest'].every(name=>typeof api?.[name]==='function');}
   function provisioningPending(){return !!provisioningMutation&&sameAccountSessionsActor(provisioningMutation.actor);}
   function clearIssuedFirstAdmin(){byId('issued-first-admin').hidden=true;byId('issued-first-admin-description').textContent='';byId('issued-first-admin-code').value='';}
+  function provisioningPilotEnd(value){
+    const match=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+    if(!match)return null;const [year,month,day,hour,minute]=match.slice(1).map(Number),date=new Date(0);
+    if(year<1||month<1||month>12||day<1||day>31||hour>23||minute>59)return null;
+    date.setUTCFullYear(year,month-1,day);date.setUTCHours(hour,minute,0,0);
+    if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day||date.getUTCHours()!==hour||date.getUTCMinutes()!==minute)return null;
+    const endsAt=date.getTime()-8*60*60*1000;return Number.isSafeInteger(endsAt)&&endsAt>Date.now()?endsAt:null;
+  }
+  function provisioningPilotFields(item){
+    const row=[...byId('team-provisioning-list').children].find(node=>node.dataset.requestId===item.id),end=row?.querySelector('[data-pilot-ends]'),seats=row?.querySelector('[data-pilot-seats]');
+    const endsAt=end?provisioningPilotEnd(end.value):null,count=seats&&/^\d+$/.test(seats.value)?Number(seats.value):null;
+    return endsAt!==null&&Number.isSafeInteger(count)&&count>0?{endsAt,seats:count}:null;
+  }
+  function provisioningPilotTime(value){return new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hourCycle:'h23'})+'（北京时间）';}
   function updateProvisioningControls(){
     const ready=!!session&&provisioningAllowed&&provisioningApiReady()&&byId('team-provisioning-panel').open,locked=busy||provisioningWorking||provisioningPending();
     for(const id of ['team-provisioning-name','team-provisioning-phone','team-provisioning-create','team-provisioning-password','team-provisioning-refresh'])byId(id).disabled=!ready||locked;
-    for(const button of byId('team-provisioning-list').querySelectorAll('button'))button.disabled=!ready||locked||!byId('team-provisioning-password').value;
+    for(const input of byId('team-provisioning-list').querySelectorAll('input'))input.disabled=!ready||locked;
+    for(const button of byId('team-provisioning-list').querySelectorAll('button')){
+      const row=button.closest('[data-request-id]'),item=provisioningRows.find(value=>value.id===row?.dataset.requestId);
+      button.disabled=!ready||locked||!byId('team-provisioning-password').value||button.dataset.decision==='approve-pilot'&&(!item||!provisioningPilotFields(item));
+    }
   }
   function resetProvisioning(close=true,hide=true){
     provisioningEpoch++;provisioningWorking=false;provisioningRows=[];for(const id of ['team-provisioning-name','team-provisioning-phone','team-provisioning-password'])byId(id).value='';clearIssuedFirstAdmin();byId('team-provisioning-list').replaceChildren();message('team-provisioning-message','');
@@ -664,9 +682,25 @@
   }
   function currentProvisioningView(at,actor){return at===provisioningEpoch&&sameAccountSessionsActor(actor)&&provisioningAllowed;}
   function renderProvisioning(){
-    const list=byId('team-provisioning-list');list.replaceChildren();const words={pending:'待审核',approved:'已批准，待本人激活',rejected:'已拒绝',revoked:'已撤销',canceled:'已撤销',activated:'团队已开通',expired:'激活凭据已过期'};
+    const list=byId('team-provisioning-list'),drafts=new Map([...list.children].filter(row=>row.querySelector('[data-pilot-ends]')).map(row=>[row.dataset.requestId,{revision:row.dataset.revision,ends:row.querySelector('[data-pilot-ends]').value,seats:row.querySelector('[data-pilot-seats]').value}]));list.replaceChildren();const words={pending:'待审核',approved:'已批准，待本人激活',rejected:'已拒绝',revoked:'已撤销',canceled:'已撤销',activated:'团队已开通',expired:'激活凭据已过期'};
     if(!provisioningRows.length)list.append(el('li','暂无申请记录。'));
-    for(const item of provisioningRows){const row=el('li'),description=el('div');row.dataset.requestId=item.id;description.append(el('strong',item.teamName+' · '+item.phoneMasked),el('small',(words[item.status]||'状态待核对')+' · 录入于 '+new Date(item.createdAt).toLocaleString('zh-CN')));if(item.expiresAt!==null)description.append(el('small','激活凭据有效至 '+new Date(item.expiresAt).toLocaleString('zh-CN')));row.append(description);const decisions=item.status==='pending'?[['approve','批准并生成凭据'],['reject','拒绝']]:item.status==='approved'?[['revoke','撤销激活凭据']]:[];if(decisions.length){const actions=el('div',undefined,'provisioning-actions');for(const [decision,label] of decisions){const button=el('button',label,'button'+(decision==='approve'?' primary':''));button.type='button';button.dataset.decision=decision;button.addEventListener('click',()=>void reviewProvisioning(item,decision));actions.append(button);}row.append(actions);}list.append(row);}
+    for(const item of provisioningRows){
+      const row=el('li'),description=el('div');row.dataset.requestId=item.id;row.dataset.revision=String(item.revision);
+      description.append(el('strong',item.teamName+' · '+item.phoneMasked),el('small',(words[item.status]||'状态待核对')+' · 录入于 '+new Date(item.createdAt).toLocaleString('zh-CN')));
+      if(item.expiresAt!==null)description.append(el('small','激活凭据有效至 '+new Date(item.expiresAt).toLocaleString('zh-CN')));
+      if(item.status==='activated'&&item.pilot){description.append(el('small','试点已批准 · '+item.pilot.seats+' 个员工席位'),el('small','试点开始 '+provisioningPilotTime(item.pilot.startsAt)+' · 截止 '+provisioningPilotTime(item.pilot.endsAt)));}
+      if(item.status==='activated'&&Object.hasOwn(item,'pilot')&&item.pilot===null){
+        const controls=el('div',undefined,'provisioning-entry'),endField=el('div'),endLabel=el('label','试点截止时间（北京时间 UTC+8）'),end=el('input'),seatField=el('div'),seatLabel=el('label','试点员工席位'),seats=el('input'),approve=el('button','批准试点','button primary');
+        end.id='team-pilot-ends-'+item.id;end.type='datetime-local';end.step='60';end.required=true;end.dataset.pilotEnds='';endLabel.htmlFor=end.id;
+        seats.id='team-pilot-seats-'+item.id;seats.type='number';seats.min='1';seats.max=String(Number.MAX_SAFE_INTEGER);seats.step='1';seats.required=true;seats.dataset.pilotSeats='';seatLabel.htmlFor=seats.id;
+        const draft=drafts.get(item.id);if(draft?.revision===String(item.revision)){end.value=draft.ends;seats.value=draft.seats;}
+        for(const input of [end,seats]){input.addEventListener('input',updateProvisioningControls);input.addEventListener('keydown',event=>{if(event.key==='Enter')event.preventDefault();});}
+        approve.type='button';approve.dataset.decision='approve-pilot';approve.addEventListener('click',()=>void reviewProvisioning(item,'approve-pilot'));
+        endField.append(endLabel,end);seatField.append(seatLabel,seats);controls.append(endField,seatField,approve);description.append(el('small','核对试点截止时间和席位后，填写上方审核账号当前密码，再明确批准一次试点。'),controls);
+      }
+      row.append(description);const decisions=item.status==='pending'?[['approve','批准并生成凭据'],['reject','拒绝']]:item.status==='approved'?[['revoke','撤销激活凭据']]:[];
+      if(decisions.length){const actions=el('div',undefined,'provisioning-actions');for(const [decision,label] of decisions){const button=el('button',label,'button'+(decision==='approve'?' primary':''));button.type='button';button.dataset.decision=decision;button.addEventListener('click',()=>void reviewProvisioning(item,decision));actions.append(button);}row.append(actions);}list.append(row);
+    }
     updateProvisioningControls();
   }
   async function refreshProvisioning(at,actor){const value=await accountSessionsCall('listTeamProvisioningRequests',undefined,actor);if(!currentProvisioningView(at,actor))return;provisioningRows=value.requests;renderProvisioning();}
@@ -691,12 +725,21 @@
   }
   async function reviewProvisioning(item,decision){
     if(!session||!provisioningAllowed||busy||provisioningWorking||provisioningPending()||!byId('team-provisioning-panel').open)return;
+    const pilot=decision==='approve-pilot';if(pilot&&(!provisioningRows.includes(item)||item.status!=='activated'||!Object.hasOwn(item,'pilot')||item.pilot!==null))return;
     const currentPassword=byId('team-provisioning-password').value;if(!currentPassword){message('team-provisioning-message','请先核对申请并填写审核账号当前密码。',true);return;}
+    const pilotFields=pilot?provisioningPilotFields(item):null;if(pilot&&!pilotFields){message('team-provisioning-message','请填写有效的北京时间试点截止时间和正整数员工席位；截止时间须晚于现在。',true);return;}
     const at=provisioningEpoch,actor=accountSessionsActor(),operation={actor};provisioningMutation=operation;clearIssuedFirstAdmin();updateProvisioningControls();message('team-provisioning-message','正在验证当前密码并提交审核结果…');let committed=false;
-    try{const value=await accountSessionsCall('reviewTeamProvisioningRequest',{requestId:item.id,decision,revision:item.revision,currentPassword},actor);committed=true;if(!currentProvisioningView(at,actor)||!byId('team-provisioning-panel').open)return;
+    try{const value=await accountSessionsCall('reviewTeamProvisioningRequest',{requestId:item.id,decision,revision:item.revision,currentPassword,...(pilot?pilotFields:{})},actor);committed=true;if(!currentProvisioningView(at,actor)||!byId('team-provisioning-panel').open)return;
       if(decision==='approve'){if(typeof value.invitationCode!=='string'||!value.invitationCode)throw {code:'INVALID_RESPONSE'};byId('issued-first-admin-description').textContent=value.request.teamName+' · '+value.request.phoneMasked+' · 有效至 '+new Date(value.request.expiresAt).toLocaleString('zh-CN');byId('issued-first-admin-code').value=value.invitationCode;byId('issued-first-admin').hidden=false;}
-      await refreshProvisioning(at,actor);if(currentProvisioningView(at,actor))message('team-provisioning-message',decision==='approve'?'审核已批准，尚未开通团队。请自行转交本次凭据，首管理员本人激活后才可管理团队。':decision==='reject'?'申请已拒绝，未开通团队。':'未使用的首管理员激活凭据已撤销。');
-    }catch(error){if(currentProvisioningView(at,actor))message('team-provisioning-message',committed?'审核请求已完成，但结果展示或刷新无法确认，请刷新记录核对。一次性凭据不会重新显示。':passwordChangeUncertain(error)?'未能确认审核结果；请求可能已完成，请刷新记录核对，避免重复操作。':error.message||'审核未通过，请核对当前密码及申请状态。',true);}
+      if(pilot){if(value.request?.status!=='activated'||!value.request.pilot)throw {code:'INVALID_RESPONSE'};provisioningRows=provisioningRows.map(row=>row===item?value.request:row);renderProvisioning();}
+      await refreshProvisioning(at,actor);if(currentProvisioningView(at,actor))message('team-provisioning-message',pilot?'试点已批准，截止时间和员工席位已保存。':decision==='approve'?'审核已批准，尚未开通团队。请自行转交本次凭据，首管理员本人激活后才可管理团队。':decision==='reject'?'申请已拒绝，未开通团队。':'未使用的首管理员激活凭据已撤销。');
+    }catch(error){
+      if(currentProvisioningView(at,actor)){
+        const uncertain=passwordChangeUncertain(error);let refreshed=false;
+        if(pilot&&!committed&&uncertain&&byId('team-provisioning-panel').open){try{await refreshProvisioning(at,actor);refreshed=true;}catch{}}
+        if(currentProvisioningView(at,actor))message('team-provisioning-message',committed?(pilot?'试点批准已完成，但记录刷新无法确认，请刷新审核记录核对。':'审核请求已完成，但结果展示或刷新无法确认，请刷新记录核对。一次性凭据不会重新显示。'):uncertain?(pilot?'未能确认试点批准结果；请求可能已完成，'+(refreshed?'已刷新审核记录，请核对显示结果，避免重复操作。':'请刷新审核记录核对，避免重复操作。'):'未能确认审核结果；请求可能已完成，请刷新记录核对，避免重复操作。'):error.message||'审核未通过，请核对当前密码及申请状态。',true);
+      }
+    }
     finally{if(provisioningMutation===operation)provisioningMutation=null;if(sameAccountSessionsActor(actor)){byId('team-provisioning-password').value='';updateProvisioningControls();if(at!==provisioningEpoch&&byId('team-provisioning-panel').open)void loadProvisioning();}}
   }
   function closeProvisioning(){provisioningPanelOpened=false;const submitted=provisioningPending();resetProvisioning(false,false);if(submitted&&session)message('workspace-message','已清除审核输入与凭据；已提交的请求仍可能完成，请刷新审核记录核对。');}

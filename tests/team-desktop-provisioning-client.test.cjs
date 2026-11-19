@@ -67,3 +67,27 @@ test('all eight new IPC methods enforce trusted main-frame origin and exact argu
   for(const name of ['team-review-access','team-review-list','team-review-create','team-review-decide','team-administration','first-admin-preview','first-admin-challenge','first-admin-complete'])for(const event of [{sender:{},senderFrame:mainFrame},{sender:webContents,senderFrame:{url:APP_URL}},{sender:webContents,senderFrame:{url:'https://evil.invalid'}}])assert.equal((await handlers.get('shenyi:'+name)(event,{})).error.code,'UNTRUSTED_SENDER');
   const event={sender:webContents,senderFrame:mainFrame};assert.equal((await handlers.get('shenyi:team-review-access')(event,{userId:'victim'})).ok,false);assert.equal((await handlers.get('shenyi:team-review-create')(event,{teamName:'合成团队',adminPhone:'13800138000',role:'partner'})).ok,false);assert.equal(calls,0);assert.deepEqual(await handlers.get('shenyi:team-review-access')(event),{ok:true,value:{canReview:true}});assert.equal(calls,1);dispose();assert.equal(handlers.size,0);
 });
+
+
+test('pilot projection distinguishes legacy, eligible and approved activated requests without exposing extra facts',async()=>{
+  const activated={...REQUEST,status:'activated',revision:3},pilot={startsAt:1800000001000,endsAt:1800600000000,seats:4};
+  for(const row of [activated,{...activated,pilot:null},{...activated,pilot}]){const f=fixture(()=>json({requests:[{...row,password_hash:'private',adminPhone:'13800138000'}]}));await login(f);assert.deepEqual(await f.client.listTeamProvisioningRequests(),{requests:[row]});}
+});
+test('pilot projection rejects malformed or cross-state additions rather than broadening the DTO',async()=>{
+  const valid={startsAt:1800000001000,endsAt:1800600000000,seats:4};
+  for(const patch of [{status:'pending',pilot:null},{status:'approved',pilot:valid},...[
+    false,[],{}, {...valid,startsAt:-1},{...valid,endsAt:valid.startsAt},{...valid,endsAt:Number.MAX_SAFE_INTEGER+1},{...valid,seats:0},{...valid,seats:1.5},{...valid,seats:'4'},{...valid,seats:Number.MAX_SAFE_INTEGER+1},{...valid,token:'private'},
+  ].map(pilot=>({status:'activated',pilot}))]){const f=fixture(()=>json({requests:[{...REQUEST,...patch}]}));await login(f);await assert.rejects(()=>f.client.listTeamProvisioningRequests(),e=>e.code==='INVALID_RESPONSE');}
+});
+test('pilot approval uses the existing review route and preserves only the matched approved result',async()=>{
+  const endsAt=1900000000000,seats=6,pilot={startsAt:1800000001000,endsAt,seats},row={...REQUEST,status:'activated',revision:4,pilot};
+  const f=fixture(()=>json({request:{...row,adminPhone:'13800138000'},invitationCode:INVITE,token:TOKEN}));await login(f);
+  const input={requestId:REQUEST.id,decision:'approve-pilot',revision:3,currentPassword:'  unchanged password  ',endsAt,seats};assert.deepEqual(await f.client.reviewTeamProvisioningRequest(input),{request:row});assert.equal(f.calls.at(-1).url,API_BASE+'/api/operations/team-requests/request-a/review');assert.deepEqual(JSON.parse(f.calls.at(-1).options.body),{decision:'approve-pilot',revision:3,currentPassword:input.currentPassword,endsAt,seats});
+  const handlers=new Map(),mainFrame={url:APP_URL},webContents={mainFrame};const dispose=registerDesktopBridge({ipcMain:{handle:(n,fn)=>handlers.set(n,fn),removeHandler:n=>handlers.delete(n)},window:{webContents},client:f.client,dialog:{}});assert.equal(ledgerOldChannelNames(handlers).length,123);assert.deepEqual(await handlers.get('shenyi:team-review-decide')({sender:webContents,senderFrame:mainFrame},input),{ok:true,value:{request:row}});dispose();
+});
+test('pilot approval rejects unsafe fields, extra authority and wrong reply binding before accepting completion',async()=>{
+  const input={requestId:REQUEST.id,decision:'approve-pilot',revision:3,currentPassword:'current',endsAt:1900000000000,seats:2},f=fixture(()=>json({}));await login(f);const before=f.calls.length;
+  for(const patch of [{endsAt:undefined},{endsAt:0},{endsAt:1.5},{endsAt:'1900000000000'},{endsAt:Number.MAX_SAFE_INTEGER+1},{seats:undefined},{seats:0},{seats:-1},{seats:2.5},{seats:'2'},{seats:Number.MAX_SAFE_INTEGER+1},{revision:Number.MAX_SAFE_INTEGER},{startsAt:1},{role:'partner'},{token:TOKEN}])await assert.rejects(()=>f.client.reviewTeamProvisioningRequest({...input,...patch}),e=>e.code==='INVALID_INPUT');
+  for(const decision of ['approve','reject','revoke'])await assert.rejects(()=>f.client.reviewTeamProvisioningRequest({...input,decision}),e=>e.code==='INVALID_INPUT');assert.equal(f.calls.length,before);
+  for(const patch of [{id:'foreign'},{revision:3},{revision:5},{status:'approved'},{pilot:null},{pilot:{startsAt:1,endsAt:input.endsAt,seats:3}},{pilot:{startsAt:1,endsAt:input.endsAt+1,seats:2}}]){const g=fixture(()=>json({request:{...REQUEST,status:'activated',revision:4,pilot:{startsAt:1,endsAt:input.endsAt,seats:2},...patch}}));await login(g);await assert.rejects(()=>g.client.reviewTeamProvisioningRequest(input),e=>e.code==='INVALID_RESPONSE');}
+});

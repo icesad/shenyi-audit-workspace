@@ -100,6 +100,19 @@ test('the recovery capability is independent of lookup and unavailable in manage
   await assert.rejects(client.getBillingOverview(scope),{code:'INVALID_RESPONSE'});
 });
 
+test('managed first-term trial metadata is accepted without admitting it to simulated billing', async () => {
+  const {client,responses}=fixture();
+  const subscription={...OVERVIEW.subscription,pilot:true};
+  const managed={teamId:TEAM,simulation:false,subscription,seats:OVERVIEW.seats};
+  responses.push(managed);
+  assert.deepEqual(await client.getBillingOverview({teamId:TEAM}),managed);
+  for(const invalid of [{...OVERVIEW,subscription},{...managed,subscription:{...subscription,revision:2}},
+    {...managed,subscription:{...subscription,pilot:false}}]){
+    responses.push(invalid);
+    await assert.rejects(client.getBillingOverview({teamId:TEAM}),{code:'INVALID_RESPONSE'});
+  }
+});
+
 test('single-order reads use one fixed GET route and retain the safe projected order',async()=>{
   const {client,calls,responses}=fixture();
   for(const [kind,collection,source] of [['annual','orders',ANNUAL_ORDER],['seat','seat-orders',SEAT_ORDER]]){

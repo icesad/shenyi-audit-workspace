@@ -154,7 +154,7 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('team-review-access',arg=>{noArgs(arg);return client.getTeamProvisioningAccess();});
   handle('team-review-list',arg=>{noArgs(arg);return client.listTeamProvisioningRequests();});
   handle('team-review-create',arg=>client.createTeamProvisioningRequest(input(arg,['teamName','adminPhone'])));
-  handle('team-review-decide',arg=>client.reviewTeamProvisioningRequest(input(arg,['requestId','decision','revision','currentPassword'])));
+  handle('team-review-decide',arg=>client.reviewTeamProvisioningRequest(input(arg,['requestId','decision','revision','currentPassword','endsAt','seats'])));
   handle('team-administration',arg=>{noArgs(arg);return client.getTeamAdministration();});
   handle('first-admin-preview',arg=>client.previewFirstAdministrator(input(arg,['invitationCode','phone'])));
   handle('first-admin-challenge',arg=>client.requestFirstAdministratorActivation(input(arg,['invitationCode','phone'])));

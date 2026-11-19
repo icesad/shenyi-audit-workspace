@@ -178,11 +178,12 @@ function overviewView(value,teamId,reject){
   const optionalKeys=['canReconcilePaymentExceptions','canReconcileBillingBatch','canResumeFulfilment'];
   const overview=fields(value,commonKeys,reject,[...simulationKeys,...optionalKeys]);
   if(overview.teamId!==teamId||!boolean(overview.simulation))reject();
-  const subscription=fields(overview.subscription,['state','revision','startsAt','endsAt'],reject,['renewalReminderDays']);
+  const subscription=fields(overview.subscription,['state','revision','startsAt','endsAt'],reject,['renewalReminderDays','pilot']);
   const {state,revision,startsAt,endsAt}=subscription;
   if(!SUBSCRIPTION_STATES.has(state)||(state==='unconfigured'?
     revision!==0||startsAt!==null||endsAt!==null:!integer(revision,1)||!timestamp(startsAt)||!timestamp(endsAt)||startsAt>=endsAt))reject();
   if(Object.hasOwn(subscription,'renewalReminderDays')&&(state!=='active'||!integer(subscription.renewalReminderDays,1,30)))reject();
+  if(Object.hasOwn(subscription,'pilot')&&(overview.simulation||subscription.pilot!==true||revision!==1||state==='unconfigured'))reject();
   const seats=fields(overview.seats,['purchasedSeats','activeBusinessSeats','reservedInvitationSeats','usedSeats','availableSeats'],reject);
   if(!Object.values(seats).every(value=>integer(value))||seats.usedSeats!==seats.activeBusinessSeats+seats.reservedInvitationSeats||
     seats.availableSeats!==Math.max(0,seats.purchasedSeats-seats.usedSeats))reject();

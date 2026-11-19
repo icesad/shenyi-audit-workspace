@@ -350,7 +350,7 @@
         text = '业务新增和修改已暂停。已有资料仍可按原权限查阅或导出。';
       } else if (subscription?.state === 'active' && Number.isSafeInteger(days) && days >= 1 && days <= 30) {
         const remaining = days === 1 ? '24 小时' : days + ' 天';
-        text = '团队年订阅将在 ' + remaining + '内到期。请提前安排续费。';
+        text = subscription.pilot === true ? '团队试点将在 ' + remaining + '内结束。' : '团队年订阅将在 ' + remaining + '内到期。请提前安排续费。';
       }
       reminder.textContent = text;
       reminder.hidden = !text;
@@ -358,15 +358,16 @@
 
     function drawOverview(keepDraft = false) {
       const { subscription, seats, annualOffers, renewalSeats } = overview;
+      const pilot = subscription.pilot === true;
       node('notice').textContent = overview.simulation
         ? '本机模拟账务。创建订单和核对状态均不收款。'
-        : '当前仅可查阅订阅与席位。在线续费尚未开通。';
+        : pilot ? '本团队当前显示获批的试点期限与席位。' : '当前仅可查阅订阅与席位。在线续费尚未开通。';
       const term = subscription.startsAt == null ? '' : '　' + date(subscription.startsAt) + ' 至 ' + date(subscription.endsAt) + '（北京时间）';
-      node('term').textContent = '团队年订阅 · ' + (subscriptionStates[subscription.state] || '状态待核对') + term;
+      node('term').textContent = (pilot ? '团队试点 · ' : '团队年订阅 · ') + (subscriptionStates[subscription.state] || '状态待核对') + term;
       drawExpiryReminder(subscription);
       node('seats').replaceChildren();
       const metrics = [
-        ['已购', seats.purchasedSeats], ['已启用', seats.activeBusinessSeats], ['邀请预留', seats.reservedInvitationSeats],
+        [pilot ? '试点席位' : '已购', seats.purchasedSeats], ['已启用', seats.activeBusinessSeats], ['邀请预留', seats.reservedInvitationSeats],
         ['合计占用', seats.usedSeats], ['可用', seats.availableSeats]
       ];
       for (const [label, value] of metrics) {

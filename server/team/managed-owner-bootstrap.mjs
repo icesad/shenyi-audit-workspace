@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {constants} from 'node:fs';
+import {constants,readFileSync} from 'node:fs';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import {backup, DatabaseSync} from 'node:sqlite';
@@ -22,6 +22,7 @@ const reviewers = [
   ['team_administrator_business_role_reviewers', 'administrator.business-role'],
   ['team_project_migration_reviewers', 'project.migrate'],
   ['team_billing_refund_intake_reviewers', 'billing.refund-intake'],
+  ['team_pilot_approval_reviewers', 'team.pilot.approve'],
 ];
 const reviewPermissions = Object.freeze(reviewers.map(([, permission])=>permission));
 const messages = {
@@ -105,6 +106,7 @@ async function prepareTarget(value) {
 function initializeOwner(db,owner) {
   initializeTeamDatabase(db);
   transaction(db,()=>{
+    db.exec(readFileSync(new URL('./pilot-approval-schema.sql',import.meta.url),'utf8'));
     db.prepare("INSERT INTO team_users(user_id,status) VALUES (?,'active')").run(owner.id);
     db.prepare('INSERT INTO team_credentials(user_id,username,display_name,password_hash) VALUES (?,?,?,?)')
       .run(owner.id,owner.username,owner.name,owner.passwordHash);

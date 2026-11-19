@@ -7,6 +7,7 @@ import {normalizePhone} from './phone-api.mjs';
 import {onboardingAvailable} from './employee-invitations-api.mjs';
 import {hashPassword,validPassword,verifyPassword} from './passwords.mjs';
 import {ApiError,ID,deny,invalid,json,readJson,transaction} from './http-utils.mjs';
+import {approvePilot,pilotApprovalReader} from './pilot-approval.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const mask=phone=>phone.slice(0,5)+'****'+phone.slice(-4);
 const opaque=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{43}$/.test(value)&&Buffer.from(value,'base64url').toString('base64url')===value;
@@ -20,7 +21,7 @@ function text(value,maximum){
 function sameActor(db,request,userId,at){const actor=authenticated(db,request,at);if(actor.userId!==userId)deny();return actor;}
 function reviewer(db,userId){const row=platformReviewer(db,userId);if(!row)deny();return row;}
 function sameReviewer(before,after){return !!after&&before.revision===after.revision&&before.credential_revision===after.credential_revision&&before.password_hash===after.password_hash;}
-function requestView(row){return {id:row.request_id,teamId:row.team_id,teamName:row.team_name,phoneMasked:mask(row.admin_phone),status:row.status,revision:row.revision,createdAt:row.created_at,expiresAt:row.expires_at};}
+function requestView(row,pilot){return {id:row.request_id,teamId:row.team_id,teamName:row.team_name,phoneMasked:mask(row.admin_phone),status:row.status,revision:row.revision,createdAt:row.created_at,expiresAt:row.expires_at,...(pilot===undefined?{}:{pilot})};}
 function record(db,row,actor,action,at){db.prepare('INSERT INTO team_provisioning_events VALUES (?,?,?,?,?,?)').run(randomUUID(),row.request_id,actor,action,row.revision,at);}
 function liveTicket(db,code,phone,at){
   if(!opaque(code))deny();
@@ -50,7 +51,7 @@ function phoneOwner(db,phone){return db.prepare(`SELECT phone.user_id,phone.revi
 function eligibleOwner(db,owner,at){return owner.status==='active'&&owner.verified_at>0&&owner.verified_at<=at&&!hasAffiliation(db,owner.user_id);}
 function sameOwner(db,before,after,at){return !!after&&before.user_id===after.user_id&&eligibleOwner(db,after,at)&&['phone_revision','verified_at','credential_revision','password_hash'].every(key=>before[key]===after[key]);}
 
-export async function handleTeamProvisioningRequest(request,{db,now=Date.now,identityProviders={}}={}){
+export async function handleTeamProvisioningRequest(request,{db,now=Date.now,identityProviders={},...serviceOptions}={}){
   const url=new URL(request.url),path=url.pathname;
   const base=path==='/api/operations/team-requests';
   const access=path==='/api/operations/team-requests/access';
@@ -72,7 +73,11 @@ export async function handleTeamProvisioningRequest(request,{db,now=Date.now,ide
       return json({teams:rows.filter(row=>canOperateTeam(db,actor.userId,row.team_id)).map(row=>({teamId:row.team_id,teamName:row.name}))});
     }
     reviewer(db,actor.userId);
-    if(base&&request.method==='GET')return json({requests:db.prepare('SELECT * FROM team_provisioning_requests ORDER BY created_at DESC,request_id DESC LIMIT 50').all().map(requestView)});
+    const pilotOptions={...serviceOptions,now,identityProviders};
+    if(base&&request.method==='GET'){
+      const pilot=pilotApprovalReader(db,actor.userId,pilotOptions);
+      return json({requests:db.prepare('SELECT * FROM team_provisioning_requests ORDER BY created_at DESC,request_id DESC LIMIT 50').all().map(row=>requestView(row,pilot?.(row)))});
+    }
     if(request.method!=='POST')return method(base?'GET, POST':'POST');
     consume(db,'team-provisioning:'+digest(actor.userId),now(),15*60000,20);
     if(base){
@@ -87,8 +92,13 @@ export async function handleTeamProvisioningRequest(request,{db,now=Date.now,ide
       });
     }
     if(!ID.test(review[1]))deny();
-    const body=await readJson(request,['decision','revision','currentPassword']);
-    if(!['approve','reject','revoke'].includes(body.decision)||!Number.isSafeInteger(body.revision)||body.revision<1||typeof body.currentPassword!=='string'||!body.currentPassword||Buffer.byteLength(body.currentPassword)>512)invalid();
+    const body=await readJson(request,['decision','revision','currentPassword','endsAt','seats']);
+    if(!['approve','reject','revoke','approve-pilot'].includes(body.decision)||!Number.isSafeInteger(body.revision)||body.revision<1||typeof body.currentPassword!=='string'||!body.currentPassword||Buffer.byteLength(body.currentPassword)>512)invalid();
+    if(body.decision==='approve-pilot'){
+      const {row,pilot}=await approvePilot(db,request,review[1],body,pilotOptions);
+      return json({request:requestView(row,pilot)});
+    }
+    if(Object.hasOwn(body,'endsAt')||Object.hasOwn(body,'seats'))invalid();
     sameActor(db,request,actor.userId,now());const source=reviewer(db,actor.userId);
     const previous=db.prepare('SELECT * FROM team_provisioning_requests WHERE request_id=?').get(review[1]);if(!previous)deny();
     const expected=body.decision==='revoke'?'approved':'pending';
