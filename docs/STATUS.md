@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 发布核验与双人评审交接
+
+官网、包外签收和双平台发行核验候选已在同一源码 `3a1b271` 通过 145 项定向回归。候选待导入当前功能分支，双方签收及真实试点待验。证据位于 `C:/Users/icesa/Documents/ShenyiReleaseBundle1120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-发布核验与双人评审交接)
+
 ## 2026-11-20 M8X 空库四职级评审
 
 Windows 受管试点评审包增加两名固定的合成员工候选，可在同一干净演练中从只有一名负责人开通团队，经四份邀请完成四名员工激活与各自电脑绑定。两席首件路线继续可用。四席实机分别核对实习生、助理、经理和合伙人的任务与资料权限。评审 ZIP 位于 `C:/Users/icesa/Documents/ShenyiM8FourRoles1120/release-accepted/Shenyi-Owner-Review-Win-x64.zip`。证据见 `C:/Users/icesa/Documents/ShenyiM8FourRoles1120/verification.json`。
