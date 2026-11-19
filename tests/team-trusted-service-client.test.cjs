@@ -5,6 +5,7 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {DatabaseSync}=require('node:sqlite'),{generateKeyPairSync,sign,randomUUID}=require('node:crypto');
 const path=require('node:path'),{pathToFileURL}=require('node:url');
 const {createTeamClient,API_BASE,MAX_FILE_BYTES}=require('../desktop/team-client.cjs'),proof=require('../shared/device-proof.cjs');
+const {createTrustedTeamServiceTransport}=require('../desktop/trusted-team-service-client.cjs');
 const source=name=>import(pathToFileURL(path.resolve(__dirname,'../server/team/'+name)).href);
 const NOW=Date.parse('2026-11-17T02:00:00Z'),PASSWORD='ShenyiDemo!2026',ORIGIN='https://team.example.invalid';
 const POLICY={appId:'wx0123456789abcdef',redirectUri:ORIGIN+'/api/auth/wechat/callback'};
@@ -31,10 +32,71 @@ function assertPublic(call){assert.equal(call.settings.method,'GET');assert.equa
 test('private remote profile requires valid device identity and forbids baseUrl override',async t=>{const f=await fixture(t);for(const deviceIdentity of [undefined,null,{}, {platform:'linux',vault:{}},{platform:'win32',vault:{getPublicIdentity(){}}}])assert.throws(()=>f.client({deviceIdentity}),{code:'DEVICE_VAULT_UNAVAILABLE'});for(const baseUrl of [ORIGIN,'https://evil.invalid',API_BASE+'/'])assert.throws(()=>f.client({baseUrl}),{code:'INVALID_SERVER'});for(const serverId of [[f.profile.serverId],{},f.profile.serverId.toUpperCase()])assert.throws(()=>f.client({trustedService:{...f.profile,serverId}}));});
 test('profile is snapshotted and every nonmethods fetch follows a no-secret probe',async t=>{const f=await fixture(t),profile={...f.profile},c=f.client({trustedService:profile});profile.apiBase='https://evil.invalid';profile.serverId=randomUUID();await f.enroll(c);await tasks(c);const bytes=Buffer.from('HTTPS synthetic\0原件\r\n');const sent=await c.upload({teamId:'team-a',taskId:'task-a',revision:0},{filename:'original.txt',bytes});const target={teamId:'team-a',taskId:'task-a',attachmentId:sent.submission.attachmentId};assert.deepEqual(Buffer.from((await c.download(target)).bytes),bytes);await c.checkAttachmentAccess(target);await c.logout();for(let i=0;i<f.calls.length;i++){const call=f.calls[i];assert.equal(new URL(call.url).origin,ORIGIN);assert.equal(call.settings.redirect,'error');if(call.route!=='/api/auth/methods'){assert.ok(probe(f.calls[i-1]),call.route);assertPublic(f.calls[i-1]);}}});
 test('methods itself has no recursive probe and preserves synthetic service mode',async t=>{const f=await fixture(t),c=f.client(),value=await c.getAuthMethods();assert.equal(value.mode,'local-preview');assert.equal(f.calls.length,1);assert.equal(f.calls[0].settings.headers.Authorization,undefined);assert.equal(Object.hasOwn(value,'deviceBinding'),false);});
+test('one waiter can abort while new and old probe scopes finish independently',async()=>{
+ const serverId=randomUUID(),pending=[];
+ const transport=createTrustedTeamServiceTransport({
+   profile:{schemaVersion:1,apiBase:ORIGIN,serverId},
+   error:(code,message)=>Object.assign(new Error(message),{code}),
+   boundedBytes:async response=>new Uint8Array(await response.arrayBuffer()),
+   fetchImpl(url,settings){
+     assertPublic({settings});
+     const gate=deferred();
+     pending.push({signal:settings.signal,finish:()=>gate.resolve(metadata(Response.json({deviceBinding:{required:true,serverId,protocolVersion:1}},{headers:{'X-Shenyi-Server-Id':serverId}}),url))});
+     return gate.promise;
+   }
+ });
+ const first=new AbortController(),current=new AbortController();
+ let oldCurrent=true;
+ const oldGuard=()=>{if(!oldCurrent)throw new Error('old context');};
+ const canceled=assert.rejects(transport.probe(oldGuard,first.signal,'0:1'),{message:'cancel only this waiter'});
+ const obsolete=assert.rejects(transport.probe(oldGuard,current.signal,'0:1'),{message:'old context'});
+ assert.equal(pending.length,1);
+ first.abort(new Error('cancel only this waiter'));
+ await canceled;
+ assert.equal(pending[0].signal.aborted,false);
+ oldCurrent=false;
+ const fresh=transport.probe(undefined,current.signal,'0:2');
+ assert.equal(pending.length,2);
+ pending[0].finish();
+ await obsolete;
+ const secondFresh=transport.probe(undefined,current.signal,'0:2');
+ assert.equal(pending.length,2);
+ pending[1].finish();
+ await Promise.all([fresh,secondFresh]);
+ const sequential=transport.probe(undefined,current.signal,'0:2');
+ assert.equal(pending.length,3);
+ pending[2].finish();
+ await sequential;
+});
 for(const [name,patch] of [['missing-header',{header:null}],['wrong-header',{header:'22222222-2222-4222-8222-222222222222'}],['duplicate-header',{header:'11111111-1111-4111-8111-111111111111, 11111111-1111-4111-8111-111111111111'}],['foreign-url',{url:'https://evil.invalid/api/auth/methods'}],['wrong-path',{url:ORIGIN+'/other'}],['redirected',{redirected:true}]])test('probe '+name+' rejects before credential dispatch',async t=>{const f=await fixture(t),c=f.client();f.state.after=(call,r)=>probe(call)?changed(r,call.url,patch):r;await assert.rejects(f.login(c),{code:'UNTRUSTED_SERVER'});assert.equal(f.calls.length,1);assertPublic(f.calls[0]);assert.equal(await c.getSession(),null);});
 for(const deviceBinding of [null,{required:false,serverId:'x',protocolVersion:1},{required:true,serverId:['11111111-1111-4111-8111-111111111111'],protocolVersion:1},{required:true,serverId:'22222222-2222-4222-8222-222222222222',protocolVersion:1},{required:true,serverId:'11111111-1111-4111-8111-111111111111',protocolVersion:2}])test('probe refuses capability '+JSON.stringify(deviceBinding),async t=>{const f=await fixture(t),c=f.client();f.state.after=(call,r)=>probe(call)?changed(r,call.url,{body:{deviceBinding}}):r;await assert.rejects(f.login(c),{code:'UNTRUSTED_SERVER'});assert.equal(f.calls.length,1);});
 test('probe exact capability rejects unknown fields with the expected string UUID',async t=>{const f=await fixture(t),c=f.client();f.state.after=(call,r)=>probe(call)?changed(r,call.url,{body:{deviceBinding:{required:true,serverId:f.profile.serverId,protocolVersion:1,extra:true}}}):r;await assert.rejects(f.login(c),{code:'UNTRUSTED_SERVER'});assert.equal(f.calls.length,1);});
 test('failed probe never triggers mutation onDispatch or sends password/body',async t=>{const f=await fixture(t),c=f.client();await f.enroll(c,'manager-a');const before=f.calls.length;let dispatched=0;f.state.after=(call,r)=>probe(call)?changed(r,call.url,{header:null}):r;await assert.rejects(c.createCollectionWorkspace({requestId:randomUUID(),teamId:'team-a',title:'合成采集',read:true,manage:true,review:false,currentPassword:PASSWORD},{onDispatch(){dispatched++;}}),{code:'UNTRUSTED_SERVER'});assert.equal(dispatched,0);assert.equal(f.calls.length,before+1);assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_collection_workspace_creations').get().n,0);assert.equal(await c.getSession(),null);});
+test('one failed shared probe withholds every waiting password-bearing write',async t=>{
+ const f=await fixture(t),c=f.client();await f.enroll(c,'manager-a');
+ const offset=f.calls.length,entered=deferred(),release=deferred();
+ t.after(()=>release.resolve());
+ f.state.after=async(call,response)=>{
+   if(!probe(call))return response;
+   entered.resolve();await release.promise;
+   return changed(response,call.url,{header:null});
+ };
+ let dispatched=0;
+ const create=()=>c.createCollectionWorkspace({requestId:randomUUID(),teamId:'team-a',title:'合成采集',read:true,manage:true,review:false,currentPassword:PASSWORD},{onDispatch(){dispatched++;}});
+ const writes=Promise.allSettled([create(),create()]);
+ await entered.promise;
+ await new Promise(setImmediate);
+ const calls=f.calls.slice(offset);
+ release.resolve();
+ const outcomes=await writes;
+ assert.equal(calls.length,1);
+ assertPublic(calls[0]);
+ assert.deepEqual(outcomes.map(({status,reason})=>[status,reason?.code]).sort(),[['rejected','SESSION_CHANGED'],['rejected','UNTRUSTED_SERVER']]);
+ assert.equal(dispatched,0);
+ assert.equal(f.calls.length,offset+1);
+ assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_collection_workspace_creations').get().n,0);
+ assert.equal(await c.getSession(),null);
+});
 for(const status of [200,401,403,503])test('actual HTTP '+status+' verifies identity before adopting or processing error',async t=>{const f=await fixture(t),c=f.client();await f.enroll(c);f.state.after=(call,r)=>call.route.endsWith('/collection/tasks')?changed(r,call.url,{status,header:null}):r;await assert.rejects(tasks(c),{code:'UNTRUSTED_SERVER'});assert.equal(c.getDeviceStatus().state,'signed_out');assert.equal(await c.getSession(),null);});
 test('actual response URL and redirected status checked after probe',async t=>{for(const patch of [{url:'https://evil.invalid/api/auth/login'},{redirected:true}]){const f=await fixture(t),c=f.client();f.state.after=(call,r)=>call.route==='/api/auth/login'?changed(r,call.url,patch):r;await assert.rejects(f.login(c),{code:'UNTRUSTED_SERVER'});assert.equal(await c.getSession(),null);assert.equal(f.calls.length,2);}});
 test('late wrong probe cannot clear or pause a newer ready account',async t=>{const f=await fixture(t),c=f.client();await f.enroll(c);const entered=deferred(),release=deferred();let held=false;f.state.after=async(call,r)=>{if(!held&&probe(call)){held=true;entered.resolve();await release.promise;return changed(r,call.url,{header:null});}return r;};const stale=tasks(c);await entered.promise;await f.enroll(c,'assistant-a');const epoch=c.getDeviceStatus().epoch;release.resolve();await assert.rejects(stale,{code:'SESSION_CHANGED'});assert.equal(c.getDeviceStatus().epoch,epoch);assert.equal(c.getDeviceStatus().state,'ready');assert.equal((await c.getSession()).account.id,'assistant-a');});

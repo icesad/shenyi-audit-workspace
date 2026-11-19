@@ -189,7 +189,8 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     const materialCheck=()=>{if(at!==generation)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');signed?.assertCurrent();guardedHooks?.assertCurrent?.();if(guardedHooks?.signal?.aborted)throw failure(workpaper?'WORKPAPER_CANCELED':ledgerCheck?'LEDGER_CHECK_CANCELED':sourceHooks?'WORKSPACE_SOURCE_EXPORT_CANCELED':'MATERIAL_EXPORT_CANCELED',workpaper?'本次底稿操作已停止；已发操作仍须按原编号核对。':ledgerCheck?'本次账表查阅已停止；已发导入仍须查询原操作。':sourceHooks?'本次立项来源保存已停止。':'本次资料保全导出已停止。');};
     materialCheck();
     if(trusted&&route!=='/api/auth/methods'){
-      try{await trusted.probe(materialCheck,transportSignal);}
+      const probeScope=trustedService&&signed&&!linking?`${at}:${device.status().epoch}`:undefined;
+      try{await trusted.probe(materialCheck,transportSignal,probeScope);}
       catch(cause){materialCheck();if(cause?.code==='UNTRUSTED_SERVER'){clear();throw cause;}if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('SERVICE_UNAVAILABLE','无法核验受信团队服务，业务已暂停；联网后请重新核验。');}
     }
     materialCheck();beforeSend?.();let response;

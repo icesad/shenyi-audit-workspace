@@ -1,6 +1,7 @@
 'use strict';
 // Main-process only. The deployment profile fixes both transport and database
 // identity; no bearer, device lease or caller-provided address enters the probe.
+const {addAbortListener}=require('node:events');
 const {validateTrustedTeamService}=require('./team-service-config.cjs');
 const METHODS='/api/auth/methods';
 function createTrustedTeamServiceTransport({profile,fetchImpl,boundedBytes,error}){
@@ -20,7 +21,7 @@ function createTrustedTeamServiceTransport({profile,fetchImpl,boundedBytes,error
     const value=data?.deviceBinding,keys=['required','serverId','protocolVersion'];
     if(!value||Object.getPrototypeOf(value)!==Object.prototype||Object.keys(value).length!==keys.length||!keys.every(key=>Object.hasOwn(value,key))||value.required!==true||typeof value.serverId!=='string'||value.serverId!==trusted.serverId||value.protocolVersion!==1)throw mismatch();
   }
-  async function probe(check=()=>{},callerSignal){
+  async function verifyProbe(check=()=>{},callerSignal){
     check();const target=url(METHODS),timeout=AbortSignal.timeout(15000);
     const signal=callerSignal?AbortSignal.any([timeout,callerSignal]):timeout;
     let response;
@@ -32,6 +33,29 @@ function createTrustedTeamServiceTransport({profile,fetchImpl,boundedBytes,error
       let data;try{data=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch{throw mismatch();}
       methodsIdentity(data);check();
     }finally{if(response?.body&&!response.bodyUsed)void response.body.cancel().catch(()=>{});}
+  }
+  let pendingProbe;
+  async function probe(check=()=>{},callerSignal,scope){
+    if(scope===undefined)return verifyProbe(check,callerSignal);
+    check();callerSignal?.throwIfAborted();
+    if(pendingProbe?.scope!==scope){
+      // The public probe has its own deadline. No caller can abort it for others.
+      const flight={scope,result:verifyProbe()};
+      pendingProbe=flight;
+      const clear=()=>{if(pendingProbe===flight)pendingProbe=undefined;};
+      flight.result.then(clear,clear);
+    }
+    const {result}=pendingProbe;
+    let subscription;
+    try{
+      if(!callerSignal)await result;
+      else await Promise.race([result,new Promise((_,reject)=>{
+        subscription=addAbortListener(callerSignal,()=>reject(callerSignal.reason));
+      })]);
+    }finally{
+      subscription?.[Symbol.dispose]();
+      check();callerSignal?.throwIfAborted();
+    }
   }
   const wechatPolicy=trusted.schemaVersion===2?Object.freeze({
     appId:trusted.wechatAppId,

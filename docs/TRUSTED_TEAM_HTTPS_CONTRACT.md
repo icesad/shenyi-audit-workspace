@@ -50,6 +50,8 @@ M7Y 为 Finder 启动固定使用 `/Library/Application Support/ShenyiTeamDeskto
 
 remote在每个非methods请求发送前，以同一HTTPS origin单独GET `/api/auth/methods`，无bearer/lease/body/秘密，timeout15s/最多1MiB/no-store。该probe不调用原业务onDispatch，也不算写已派发；它验证正常TLS、非redirect/正确最终URL、严格响应身份头及body.deviceBinding `{required:true,serverId:预期,protocolVersion:1}`。methods请求自己不递归probe。已知身份不符、错误证书/主机/过期或redirect时，不发送后续密码、验证码、token、签名或原件。探测可合并相同在途只读工作，但每个后续派发须绑定自己的generation/guard，不跨代次复用。
 
+同一客户端内，普通持钥业务请求可共享相同账号代次和设备 epoch 的在途公开探针。探针结束即释放。每个调用仍独立签名、检查上下文和超时并派发，单个调用取消只结束本次等待。直接 methods、登录与设备 bootstrap、临时会话及 detached 清理仍各自处理。
+
 捕获generation/actor必须早于probe await；任何迟到probe或响应不得清除/暂停后来账号。正常HTTP响应及错误响应均先检查context，remote再验精确单值 `X-Shenyi-Server-Id` 与配置相同、response.redirected=false且response.url为所请求HTTPS URL；不接错服返回的token/lease/record。当前代次身份不符则清退/失效当前会话与私有缓存；旧代次仅SESSION_CHANGED。网络/证书故障按既有断网暂停处理，不自动重试写入。
 
 detached清理可能晚于账号切换，仅可对固定origin通过同样无秘密probe后发送原清理请求，核返回身份，不修改新账号状态、不把错服响应中的token再次发送。已派发写的网络故障仍保留原unknown/原编号查询语义；本片不擅自重放。

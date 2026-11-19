@@ -27,6 +27,57 @@ test('real trusted TLS allows explicit binding, signed own-task originals, and d
  assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(),[]);assert.equal(f.db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
 });
 
+test('real TLS coalesces only the in-flight probe while each concurrent business request has its own valid signature',async(_t,f)=>{
+ const batchSize=4,held=deferred(),release=deferred(),signedRequests=[];let start,backendStart,replaysBefore;
+ f.state.before=async(e,{headers})=>{
+  if(start===undefined)return;
+  if(e.route==='/api/auth/methods'){held.resolve();await release.promise;}
+  else if(e.route.startsWith('/api/teams/'))signedRequests.push({route:e.route,nonce:hash(headers['x-shenyi-device-nonce']),signature:hash(headers['x-shenyi-device-signature']),lease:hash(headers['x-shenyi-device-lease'])});
+ };
+ let result;
+ try{result=pass(await runClientScenario(f,{name:'concurrent-probe',code:`
+ const counts={probes:0,business:0,signatures:0};let measured=false;
+ const identity=vault(),signRequest=identity.signRequest;
+ identity.signRequest=async(...args)=>{const signature=await signRequest(...args);if(measured)counts.signatures++;return signature;};
+ const c=createTeamClient({trustedService:profile,deviceIdentity:{vault:identity,platform:'win32',displayName:'Synthetic concurrent TLS computer'},fetchImpl:(url,options)=>{
+  if(measured){const path=new URL(url).pathname;if(path==='/api/auth/methods')counts.probes++;else if(path.startsWith('/api/teams/'))counts.business++;}
+  return globalThis.fetch(url,options);
+ }});clients.push(c);await ready(c);const epoch=(await c.getDeviceStatus()).epoch;
+ await step('arm');measured=true;
+ const batch=Array.from({length:${batchSize}},(_,index)=>c.listTasks({teamId:'team-a',limit:index+1}));
+ // Every local signing continuation reaches transport before this event-loop
+ // boundary. The real first HTTPS response stays held by the parent's gate.
+ await new Promise(setImmediate);await step('in-flight',{...counts});
+ for(const answer of await Promise.all(batch))assert.deepEqual(answer.tasks.map(task=>task.id),['task-a']);
+ assert.deepEqual(counts,{probes:1,business:${batchSize},signatures:${batchSize}});
+ assert.equal((await c.getDeviceStatus()).epoch,epoch);
+ assert.deepEqual((await c.listTasks({teamId:'team-a',limit:${batchSize+1}})).tasks.map(task=>task.id),['task-a']);
+ assert.deepEqual(counts,{probes:2,business:${batchSize+1},signatures:${batchSize+1}});
+ assert.equal((await c.getDeviceStatus()).epoch,epoch);return counts;
+ `,onStep:async(action,data)=>{
+  if(action==='arm'){start=f.events.length;backendStart=f.backendEvents.length;replaysBefore=f.db.prepare('SELECT COUNT(*) n FROM team_device_request_replays').get().n;}
+  if(action==='in-flight'){
+   await held.promise;assert.deepEqual(data,{probes:1,business:0,signatures:batchSize});
+   const window=f.events.slice(start);assert.equal(window.length,1);const probe=window[0];
+   assert.equal(probe.route,'/api/auth/methods');assert.equal(probe.method,'GET');assert.equal(probe.bodyBytes,0);
+   for(const field of ['hasAuthorization','hasLease','hasSignature','hasNonce'])assert.equal(probe[field],false);
+   assert.equal(signedRequests.length,0);release.resolve();
+  }
+ }}));}finally{release.resolve();}
+ assert.deepEqual(result,{probes:2,business:batchSize+1,signatures:batchSize+1});
+ const events=f.events.slice(start),probes=events.filter(e=>e.route==='/api/auth/methods'),business=events.filter(e=>e.route.startsWith('/api/teams/'));
+ assert.equal(probes.length,2);assert.equal(business.length,batchSize+1);assert.equal(events.length,batchSize+3);
+ for(const probe of probes){assert.equal(probe.status,200);assert.equal(probe.method,'GET');assert.equal(probe.bodyBytes,0);for(const field of ['hasAuthorization','hasLease','hasSignature','hasNonce'])assert.equal(probe[field],false);}
+ assert.ok(business.every(e=>e.method==='GET'&&e.status===200&&e.hasAuthorization&&e.hasLease&&e.hasSignature&&e.hasNonce&&e.origin==='shenyi://app'));
+ const expectedRoutes=Array.from({length:batchSize+1},(_,index)=>'/api/teams/team-a/collection/tasks?limit='+(index+1));
+ assert.deepEqual(business.map(e=>e.route).sort(),expectedRoutes.sort());
+ assert.equal(signedRequests.length,batchSize+1);assert.equal(new Set(signedRequests.map(e=>e.nonce)).size,batchSize+1);assert.equal(new Set(signedRequests.map(e=>e.signature)).size,batchSize+1);assert.equal(new Set(signedRequests.map(e=>e.lease)).size,1);
+ const accepted=f.backendEvents.slice(backendStart).filter(e=>e.route.startsWith('/api/teams/'));
+ assert.equal(accepted.length,batchSize+1);assert.ok(accepted.every(e=>e.status===200));
+ assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_device_request_replays').get().n-replaysBefore,batchSize+1);
+ assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_task_submissions').get().n,0);assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_device_bindings').get().n,1);
+});
+
 for(const [name,options]of [['untrusted certificate',{trust:false}],['wrong hostname',{base:'wrongHostBase'}],['expired certificate',{base:'expiredBase'}]])test(`real TLS rejects ${name} before any HTTP or password`,async(_t,f)=>{
  pass(await runClientScenario(f,{trust:options.trust!==false,profile:{...f.profile,...options.base?{apiBase:f[options.base]}:{}},code:`await assert.rejects(()=>client.login({username:'intern-a',password:PASSWORD}));assert.equal(await client.getSession(),null);return {closed:true};`}));
  assert.equal(f.events.length,0);assert.equal(f.backendEvents.length,0);assert.equal(f.counter,0);assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_sessions').get().n,0);
