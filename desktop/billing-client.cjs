@@ -4,7 +4,7 @@ const {isProxy}=require('node:util').types;
 const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const BILLING_ROOT='/api/auth/billing/access';
-const BILLING_PATH=/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/billing\/(?:overview|website-handoff|reconciliation|(?:orders|seat-orders)(?:\?limit=20(?:&after=([0-9a-f-]{36}))?|\/([0-9a-f-]{36})(?:\/(?:reconcile|resume-fulfilment))?)?)$/;
+const BILLING_PATH=/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/billing\/(?:overview|website-handoff|website-seat-handoff|reconciliation|(?:orders|seat-orders)(?:\?limit=20(?:&after=([0-9a-f-]{36}))?|\/([0-9a-f-]{36})(?:\/(?:reconcile|resume-fulfilment))?)?)$/;
 const REFUND_ACCESS='/api/auth/refund-intake/access';
 const REFUND_PATH=/^\/api\/platform\/billing\/refund-intakes\/(?:annual|seat)\/([0-9a-f-]{36})(?:\?beforeRevision=([1-9][0-9]{0,15}))?$/;
 const REFUND_REFERENCE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
@@ -300,12 +300,12 @@ function createBillingClient({request,failure,websiteCheckout}){
       return overview.websiteCheckout===true?{...overview,websiteCheckoutReady:websiteCheckout?.configured===true}:overview;
     },
     async openWebsiteCheckout(input){
-      const {teamId}=fields(input,['teamId'],badInput);if(!match(ID,teamId))badInput();
+      const selection=fields(input,['teamId'],badInput,['kind']),{teamId}=selection,kind=Object.hasOwn(selection,'kind')?selection.kind:'annual';if(!match(ID,teamId)||kind!=='annual'&&kind!=='seat')badInput();
       if(websiteCheckout?.configured!==true||typeof websiteCheckout.capture!=='function'||typeof websiteCheckout.open!=='function')throw failure('WEBSITE_CHECKOUT_UNAVAILABLE','当前电脑尚未配置受信官网合成下单入口。');
       const check=websiteCheckout.capture();check();
-      const value=fields(await request('/api/teams/'+teamId+'/billing/website-handoff',{method:'POST',body:{}}),['handoff','expiresAt'],badResponse);check();
+      const value=fields(await request('/api/teams/'+teamId+'/billing/'+(kind==='seat'?'website-seat-handoff':'website-handoff'),{method:'POST',body:{}}),['handoff','expiresAt'],badResponse);check();
       if(typeof value.handoff!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(value.handoff)||Buffer.from(value.handoff,'base64url').length!==32||Buffer.from(value.handoff,'base64url').toString('base64url')!==value.handoff||!timestamp(value.expiresAt)||value.expiresAt<=websiteCheckout.now())badResponse();
-      check();try{await websiteCheckout.open(value.handoff);}catch{check();throw failure('WEBSITE_CHECKOUT_OPEN_FAILED','无法确认官网页面已打开，请核对浏览器后再操作。');}check();return {opened:true};
+      check();try{await websiteCheckout.open(value.handoff,kind);}catch{check();throw failure('WEBSITE_CHECKOUT_OPEN_FAILED','无法确认官网页面已打开，请核对浏览器后再操作。');}check();return {opened:true};
     },
     async listBillingOrders(input){
       const {teamId,kind,after}=fields(input,['teamId','kind'],badInput,['after']);

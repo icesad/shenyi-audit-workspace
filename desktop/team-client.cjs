@@ -384,7 +384,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
         const at=generation,bearer=token,actorId=current.account.id,guard=device.guard();
         return ()=>{if(at!==generation||token!==bearer||current?.account.id!==actorId)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');guard();};
       },
-      open:handoff=>openCheckoutExternal(checkoutOrigin+'/checkout/#handoff='+handoff),
+      open:(handoff,kind)=>openCheckoutExternal(checkoutOrigin+(kind==='seat'?'/checkout/seats/':'/checkout/')+'#handoff='+handoff),
     }}),
     ...createWorkpaperExportClient({request,failure,capture:captureWorkpaper,getWorkpaperClient:()=>workpaperClient}),
     ...preservationExport,

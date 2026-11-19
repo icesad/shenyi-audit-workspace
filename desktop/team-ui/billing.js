@@ -144,6 +144,9 @@
       node('website-checkout-section').hidden = !website;
       node('website-checkout').hidden = !websiteReady;
       node('website-checkout').disabled = blocked || !!accessRead || !!ordersRead || !websiteReady;
+      const websiteSeatReady = websiteReady && !!overview.seatOffer && overview.subscription.state === 'active';
+      node('website-seat-checkout').hidden = !websiteSeatReady;
+      node('website-seat-checkout').disabled = blocked || !!accessRead || !!ordersRead || !websiteSeatReady;
       node('website-checkout-hint').textContent = websiteReady ? '将在管理员配置的受信官网核对并生成合成订单；本次演练不收款。完成后请回到此处刷新订单。' : '当前电脑尚未配置可用的受信官网合成下单入口，请联系管理员核对配置。';
       node('checkout-heading').textContent = website ? '选择订单类型' : '创建订单';
       node('review').hidden = node('order-hint').hidden = website;
@@ -564,18 +567,19 @@
       drawOrders();
     }
 
-    async function openWebsiteCheckout() {
-      if (node('website-checkout').hidden || node('website-checkout').disabled || overview?.simulation !== true || overview.websiteCheckout !== true || overview.websiteCheckoutReady !== true || typeof api?.openWebsiteCheckout !== 'function' || !currentView(capture())) return;
+    async function openWebsiteCheckout(checkoutKind = 'annual') {
+      const seatCheckout = checkoutKind === 'seat', button = node(seatCheckout ? 'website-seat-checkout' : 'website-checkout');
+      if (checkoutKind !== 'annual' && checkoutKind !== 'seat' || button.hidden || button.disabled || overview?.simulation !== true || overview.websiteCheckout !== true || overview.websiteCheckoutReady !== true || typeof api?.openWebsiteCheckout !== 'function' || seatCheckout && (!overview.seatOffer || overview.subscription.state !== 'active') || !currentView(capture())) return;
       const at = capture(), operation = {};
       mutation = operation;
       clearConfirmation();
-      message('正在请求受信官网的合成下单入口…');
+      message(seatCheckout ? '正在请求受信官网的席位增购入口…' : '正在请求受信官网的合成下单入口…');
       controls();
       try {
-        const value = await invoke('openWebsiteCheckout', { teamId: at.team });
+        const value = await invoke('openWebsiteCheckout', { teamId: at.team, ...(seatCheckout ? { kind: 'seat' } : {}) });
         if (!currentView(at)) return;
         if (value?.opened !== true) throw new Error('Unexpected website handoff result');
-        message('已请求打开官网合成下单页。生成订单后，请返回并刷新订单记录。');
+        message(seatCheckout ? '已请求打开官网合成席位增购页。生成订单后，请返回并刷新增购席位订单记录。' : '已请求打开官网合成下单页。生成订单后，请返回并刷新订单记录。');
       } catch (error) {
         if (!currentView(at) || handleSessionError(error)) return;
         if (permissionErrors.has(error?.code)) discardTeam();
@@ -752,6 +756,7 @@
     });
     for (const name of ['annual-offer', 'selected-seats', 'seat-quantity']) node(name).addEventListener('input', () => { clearConfirmation(); message(); controls(); });
     node('website-checkout').addEventListener('click', () => void openWebsiteCheckout());
+    node('website-seat-checkout').addEventListener('click', () => void openWebsiteCheckout('seat'));
     node('review').addEventListener('click', review);
     node('confirm').addEventListener('click', () => void createOrder());
     node('cancel').addEventListener('click', () => { clearConfirmation(); message(); controls(); node('review').focus(); });

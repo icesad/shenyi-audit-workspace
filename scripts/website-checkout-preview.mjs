@@ -13,6 +13,8 @@ const pages = new Map([
   ['/checkout/', ['website/checkout.html', 'text/html; charset=utf-8']],
   ['/checkout/checkout.css', ['website/checkout.css', 'text/css; charset=utf-8']],
   ['/checkout/checkout.js', ['website/checkout.js', 'text/javascript; charset=utf-8']],
+  ['/checkout/seats/', ['website/checkout-seats.html', 'text/html; charset=utf-8']],
+  ['/checkout/checkout-seats.js', ['website/checkout-seats.js', 'text/javascript; charset=utf-8']],
 ]);
 const staticPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; " +
   "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";

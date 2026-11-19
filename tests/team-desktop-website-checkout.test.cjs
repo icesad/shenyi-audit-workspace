@@ -16,7 +16,7 @@ async function fixture(t,{version=3,open,reply}={}){
  let response=reply??(()=>({handoff:CODE,expiresAt:f.clock.value+120000}));
  const client=createTeamClient({now:()=>f.clock.value,trustedService:profile,deviceIdentity:{vault,platform:'win32',displayName:'Synthetic checkout device'},openCheckoutExternal:open===null?undefined:async url=>{opened.push(url);return open?.(url);},fetchImpl:async(url,settings)=>{
   const route=new URL(url).pathname;calls.push({route,...settings,headers:new Headers(settings.headers)});let result;
-  if(route.endsWith('/billing/website-handoff'))result=Response.json(await response());
+  if(/\/billing\/website(?:-seat)?-handoff$/.test(route))result=Response.json(await response());
   else if(route.endsWith('/billing/overview'))result=Response.json(OVERVIEW);
   else result=await f.dispatch(new Request(url,settings));
   result.headers.set('X-Shenyi-Server-Id',serverId);Object.defineProperty(result,'url',{value:url});return result;
@@ -46,4 +46,23 @@ test('awaiting a fake browser callback rechecks generation and masks errors with
 test('website overview capability is simulation-only and never trusts server-supplied readiness',async()=>{
  let response;const client=createBillingClient({failure:(code,message)=>Object.assign(new Error(message),{code}),request:async()=>response});response=OVERVIEW;assert.deepEqual(await client.getBillingOverview({teamId:TEAM}),{...OVERVIEW,websiteCheckoutReady:false});
  for(const patch of [{websiteCheckout:false},{websiteCheckout:'true'},{websiteCheckout:null},{websiteCheckoutReady:true},{simulation:false}]){response={...OVERVIEW,...patch};await assert.rejects(client.getBillingOverview({teamId:TEAM}),{code:'INVALID_RESPONSE'});}
+});
+
+
+test('seat website checkout reuses the guarded IPC and only the exact seat handoff path and pinned seat page',async t=>{
+ const f=await fixture(t),{registerDesktopBridge,APP_URL}=require('../desktop/bridge.cjs'),{EventEmitter}=require('node:events');
+ assert.equal(isBillingRoute('/api/teams/'+TEAM+'/billing/website-seat-handoff'),true);for(const suffix of ['?kind=seat','/','/../website-handoff','?url=https://evil.invalid'])assert.equal(isBillingRoute('/api/teams/'+TEAM+'/billing/website-seat-handoff'+suffix),false);
+ const handlers=new Map(),contents=new EventEmitter();contents.mainFrame={url:APP_URL};const event={sender:contents,senderFrame:contents.mainFrame},dispose=registerDesktopBridge({ipcMain:{handle:(n,fn)=>handlers.set(n,fn),removeHandler:n=>handlers.delete(n)},window:{webContents:contents},client:f.client,dialog:{}});
+ try{const channel=handlers.get('shenyi:website-checkout-open');assert.deepEqual(await channel(event,{teamId:TEAM,kind:'seat'}),{ok:true,value:{opened:true}});assert.deepEqual(f.opened,[ORIGIN+'/checkout/seats/#handoff='+CODE]);const call=f.calls.filter(c=>c.route.endsWith('/website-seat-handoff')).at(-1);assert.equal(call.method,'POST');assert.equal(call.body,'{}');assert.ok(call.headers.get('Authorization'));assert.ok(call.headers.get('X-Shenyi-Device-Lease'));assert.equal(call.headers.get('X-Shenyi-Website-Checkout'),null);const fields=f.signed.at(-1);assert.equal(fields.pathAndQuery,call.route);assert.ok(verify(null,proof.requestProofBytes(fields),f.pair.publicKey,Buffer.from(call.headers.get('X-Shenyi-Device-Signature'),'base64url')));
+  const before=f.calls.length;assert.equal((await channel(event,{teamId:TEAM,kind:'seat',url:ORIGIN})).ok,false);assert.equal((await channel({sender:{},senderFrame:contents.mainFrame},{teamId:TEAM,kind:'seat'})).error.code,'UNTRUSTED_SENDER');assert.equal(f.calls.length,before);
+  assert.deepEqual(await f.client.openWebsiteCheckout({teamId:TEAM,kind:'annual'}),{opened:true});assert.equal(f.opened.at(-1),ORIGIN+'/checkout/#handoff='+CODE);assert.equal(f.calls.at(-1).route,'/api/teams/'+TEAM+'/billing/website-handoff');
+ }finally{dispose();assert.equal(handlers.size,0);}
+});
+test('optional checkout kind is strict and malformed seat replies never reach a browser',async t=>{
+ const f=await fixture(t),before=f.calls.length;for(const kind of [undefined,null,false,true,'Seat','seat/other','yearly',{},['seat'],1])await assert.rejects(f.client.openWebsiteCheckout({teamId:TEAM,kind}),{code:'INVALID_INPUT'});let reads=0;const getter={teamId:TEAM};Object.defineProperty(getter,'kind',{enumerable:true,get(){reads++;return 'seat';}});await assert.rejects(f.client.openWebsiteCheckout(getter),{code:'INVALID_INPUT'});assert.equal(reads,0);assert.equal(f.calls.length,before);
+ for(const reply of [{handoff:CODE+'x',expiresAt:f.f.clock.value+1000},{handoff:CODE,expiresAt:f.f.clock.value},{handoff:CODE,expiresAt:NaN},{handoff:CODE,expiresAt:f.f.clock.value+1000,url:ORIGIN},null]){f.setReply(()=>reply);await assert.rejects(f.client.openWebsiteCheckout({teamId:TEAM,kind:'seat'}),{code:'INVALID_RESPONSE'});}assert.deepEqual(f.opened,[]);
+});
+test('seat checkout keeps generation guards across the server wait and the fake-browser wait',async t=>{
+ const serverWait=deferred(),f=await fixture(t,{reply:()=>serverWait.promise}),pending=f.client.openWebsiteCheckout({teamId:TEAM,kind:'seat'});while(!f.calls.some(c=>c.route.endsWith('/website-seat-handoff')))await new Promise(r=>setImmediate(r));await f.client.logout();await f.client.login({username:'administrator-demo',password:PASSWORD});serverWait.resolve({handoff:CODE,expiresAt:f.f.clock.value+120000});await assert.rejects(pending,{code:'SESSION_CHANGED'});assert.deepEqual(f.opened,[]);
+ const browserWait=deferred(),g=await fixture(t,{open:()=>browserWait.promise}),opening=g.client.openWebsiteCheckout({teamId:TEAM,kind:'seat'});while(!g.opened.length)await new Promise(r=>setImmediate(r));assert.equal(g.opened[0],ORIGIN+'/checkout/seats/#handoff='+CODE);await g.client.logout();browserWait.resolve();await assert.rejects(opening,{code:'SESSION_CHANGED'});
 });

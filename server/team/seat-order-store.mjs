@@ -20,9 +20,17 @@ function fields(value,keys){
  if(!value||typeof value!=='object'||isProxy(value)||Object.getPrototypeOf(value)!==Object.prototype)invalid();const ds=Object.getOwnPropertyDescriptors(value),actual=Reflect.ownKeys(ds);
  if(actual.length!==keys.length||actual.some(k=>typeof k!=='string'||!keys.includes(k)||!ds[k].enumerable||!Object.hasOwn(ds[k],'value')))invalid();return Object.fromEntries(keys.map(k=>[k,ds[k].value]));
 }
-function createInput(value){const v=fields(value,CREATE),offer=fields(v.offer,OFFER);
- if(!matches(ID,v.teamId)||!matches(ID,v.actorId)||!matches(UUID,v.requestId)||!matches(ID,v.merchantId)||!matches(ID,offer.id)||!integer(offer.revision,1)||!integer(offer.annualUnitAmountMinor,1)||offer.currency!=='CNY'||!integer(v.quantity,1,1000))invalid();
- return{teamId:v.teamId,actorId:v.actorId,requestId:v.requestId,merchantId:v.merchantId,offer,quantity:v.quantity};
+function seatSelection({teamId,offer:value,quantity}){
+ const offer=fields(value,OFFER);
+ if(!matches(ID,teamId)||!matches(ID,offer.id)||!integer(offer.revision,1)||
+    !integer(offer.annualUnitAmountMinor,1)||offer.currency!=='CNY'||!integer(quantity,1,1000))invalid();
+ return{teamId,offer,quantity};
+}
+function createInput(value){
+ const v=fields(value,CREATE),selection=seatSelection(v);
+ if(!matches(ID,v.actorId)||!matches(UUID,v.requestId)||!matches(ID,v.merchantId))invalid();
+ return{teamId:selection.teamId,actorId:v.actorId,requestId:v.requestId,merchantId:v.merchantId,
+  offer:selection.offer,quantity:selection.quantity};
 }
 function at(now){if(typeof now!=='function')invalid();const time=now();if(!integer(time,0,DATE_MAX))conflict();return time;}
 function stored(v,min=0,max=MAX){if(typeof v!=='bigint'||v<BigInt(min)||v>BigInt(max))conflict();return Number(v);}
@@ -59,6 +67,18 @@ function price(v,createdAt,endsAt){
  const amount=(numerator+denominator-1n)/denominator;
  if(amount<1n||amount>BigInt(MAX))conflict();
  return Number(amount);
+}
+function orderPricing(db,selection,createdAt){
+ const term=readSubscriptionState(db,selection.teamId,createdAt);
+ if(term.state!=='active')throw new ApiError(402,'SUBSCRIPTION_WRITE_UNAVAILABLE','当前团队订阅不允许新增或修改业务资料。');
+ return{
+  amountMinor:price(selection,createdAt,term.endsAt),
+  quoteExpiresAt:Math.min(createdAt+TTL,term.endsAt),
+  termRevision:term.revision,termStartsAt:term.startsAt,termEndsAt:term.endsAt,
+ };
+}
+export function readSeatOrderQuote(db,value,{now=Date.now}={}){
+ return orderPricing(db,seatSelection(fields(value,['teamId','offer','quantity'])),at(now));
 }
 function termFact(db,team,revision){
  const row=one(db,'SELECT * FROM team_subscription_events WHERE team_id=? AND revision=?',team,revision);if(!row||!matches(UUID,row.operation_id)||!matches(SHA,row.request_sha256)||typeof row.source_ref!=='string'||!row.source_ref.isWellFormed()||[...row.source_ref].length<1||[...row.source_ref].length>128||/[\p{Cc}\p{Cf}]/u.test(row.source_ref))conflict();
@@ -156,17 +176,14 @@ export function createSeatOrderWithinTransaction(db,value,{now=Date.now}={}){
   return view(db,prior);
  }
  const createdAt=at(now);
- const term=readSubscriptionState(db,v.teamId,createdAt);
- if(term.state!=='active')throw new ApiError(402,'SUBSCRIPTION_WRITE_UNAVAILABLE','当前团队订阅不允许新增或修改业务资料。');
- const amountMinor=price(v,createdAt,term.endsAt);
- const quoteExpiresAt=Math.min(createdAt+TTL,term.endsAt);
- const hash=digest(JSON.stringify(locked(v,term.revision,term.startsAt,term.endsAt,createdAt)));
+ const {amountMinor,quoteExpiresAt,termRevision,termStartsAt,termEndsAt}=orderPricing(db,v,createdAt);
+ const hash=digest(JSON.stringify(locked(v,termRevision,termStartsAt,termEndsAt,createdAt)));
  const id=randomUUID();
  if(one(db,'SELECT 1 FROM team_annual_orders WHERE order_id=?',id)||one(db,'SELECT 1 FROM team_seat_capacity_grants WHERE grant_id=?',id))conflict();
  const result=db.prepare('INSERT INTO team_seat_orders(order_id,team_id,actor_id,request_id,merchant_id,offer_id,offer_revision,annual_unit_amount_minor,amount_minor,quantity,currency,environment,created_at,quote_expires_at,term_revision,term_starts_at,term_ends_at,request_sha256) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
   id,v.teamId,v.actorId,v.requestId,v.merchantId,v.offer.id,v.offer.revision,
   v.offer.annualUnitAmountMinor,amountMinor,v.quantity,v.offer.currency,'simulation-v1',
-  createdAt,quoteExpiresAt,term.revision,term.startsAt,term.endsAt,hash,
+  createdAt,quoteExpiresAt,termRevision,termStartsAt,termEndsAt,hash,
  );
  if(result.changes!==1)conflict();
  const saved=orderFact(db,id);
