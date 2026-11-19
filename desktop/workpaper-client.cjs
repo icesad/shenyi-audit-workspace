@@ -87,7 +87,8 @@ function formValue(value,hashValue,bad){
 
 function createWorkpaperClient({request,failure,capture}={}){
  if(![request,failure,capture].every(f=>typeof f==='function'))throw Error('Missing workpaper client dependencies');let epoch=0;
- const bad=()=>{throw failure('INVALID_RESPONSE','底稿响应无法核实；已发操作请保留原编号只读核对。');},changed=()=>{throw failure('WORKPAPER_CHANGED','底稿项目、授权、来源或当前查阅已改变，旧结果已丢弃。');};
+ const bad=()=>{throw failure('INVALID_RESPONSE','底稿响应无法核实；已发操作请保留原编号只读核对。');},changed=status=>{throw failure('WORKPAPER_CHANGED','底稿项目、授权、来源或当前查阅已改变，旧结果已丢弃。',status);};
+ const headChanged=()=>{throw failure('WORKPAPER_HEAD_CHANGED','底稿已有新的保存版本，本次填写未保存。请先核对最新保存版本。',409);};
  const root=v=>'/api/teams/'+v.teamId+'/projects/'+v.projectId+'/workpapers';
  const messagesOverride={400:'底稿参数或完整包无效，请核对已保存来源。',403:'当前密码或设备验证失败，操作未获明确授权。',404:'底稿项目、权限、来源或原操作不可访问。',409:'底稿版本、来源或授权已改变，请刷新或核对原操作。',410:'临时底稿导入已到期，请先核对原操作。',413:'底稿数据超过相应大小限制，未裁剪。',422:'原表位置、格式或冻结保护不允许本次填写。',429:'底稿操作仍在处理中，请先查询原编号，勿重复提交。',503:'底稿操作结果未能确认；已发操作请保留原编号，勿重复提交。'};
  function context(options={}){const h=fields(options,['assertCurrent','signal','onDispatch'],[]);if(!h||h.assertCurrent!==undefined&&typeof h.assertCurrent!=='function'||h.onDispatch!==undefined&&typeof h.onDispatch!=='function'||h.signal!==undefined&&!(h.signal instanceof AbortSignal))throw failure('INVALID_INPUT','底稿操作上下文无效。');const c=capture(),at=epoch;if(!c||typeof c.assertCurrent!=='function'||!id(c.actorId))throw failure('SIGN_IN_REQUIRED','请先完成当前账号的持钥业务登录。');const check=()=>{c.assertCurrent();h.assertCurrent?.();if(epoch!==at)changed();if(h.signal?.aborted)throw failure('WORKPAPER_CANCELED','本次底稿操作已停止；已发请求仍须核对原编号。');};check();return{check,call(path,settings={}){check();const {kind='json',...rest}=settings;return request(path,{...rest,beforeSend:check,...(!['GET','HEAD'].includes(rest.method??'GET')&&h.onDispatch?{onDispatch:h.onDispatch}:{}),messagesOverride,workpaper:{kind,assertCurrent:check,...(h.signal?{signal:h.signal}:{})}});}};}
@@ -117,7 +118,31 @@ function createWorkpaperClient({request,failure,capture}={}){
   async getWorkpaperRecord(value,options={}){const v=input(value,'record'),c=context(options),before=await scope(v,c),result=await readRecord(v,c,before),after=await scopeAfter(v,c,before);result.metadata.headRevision=after.headRevision;return result;},
   async getWorkpaperOriginal(value,options={}){const v=input(value,'original'),c=context(options),before=await scope(v,c),saved=await readRecord(v,c,before),ref=recordReferences(saved.record,bad).get(v.sha256);if(!ref)throw failure('INVALID_INPUT','本版本没有引用所选原件。');let raw,bytes;try{raw=await c.call(root(v)+'/originals/'+v.sha256+query(v,true),{binary:true,kind:'original'});c.check();const metadata=responseMetadata(raw,v,before,'original',bad);if(metadata.recordSha256!==saved.metadata.recordSha256||metadata.recordRevision!==saved.metadata.recordRevision||raw.bytes.length!==ref.bytes)bad();bytes=Uint8Array.from(raw.bytes);const after=await scopeAfter(v,c,before);metadata.headRevision=after.headRevision;const result={bytes,metadata};bytes=null;return result;}finally{bytes?.fill(0);if(raw?.bytes instanceof Uint8Array)raw.bytes.fill(0);}},
   async getWorkpaperForm(value,options={}){const v=input(value,'form'),c=context(options),before=await scope(v,c),saved=await readRecord(v,c,before),r=await c.call(root(v)+'/forms/'+v.sha256+query(v,true),{kind:'form'});c.check();const top=fields(r,['form','version','headRevision','recordRevision','recordSha256','sourceProjectId','projectRevision','grantRevision']);if(!top||top.version!==v.version||!int(top.headRevision,v.version)||top.recordRevision!==saved.metadata.recordRevision||top.recordSha256!==saved.metadata.recordSha256||top.sourceProjectId!==before.sourceProjectId||top.projectRevision!==v.projectRevision||top.grantRevision!==v.grantRevision)bad();const form=formValue(top.form,v.sha256,bad);if(form.kind==='excel'){for(const sheet of form.sheets)if(sheet.frozen!==!!governance.isLocked(saved.record,v.sha256,sheet.name))bad();}else if(form.frozen!==!!governance.isLocked(saved.record,v.sha256))bad();const after=await scopeAfter(v,c,before);return{...top,headRevision:after.headRevision,form};},
-  async saveWorkpaperEntries(value,options={}){const v=input(value,'entries'),c=context(options),before=await scope(v,c,true);if(before.headRevision!==v.headRevision||before.recordRevision>=Number.MAX_SAFE_INTEGER)changed();const body=Object.fromEntries(['requestId','headRevision','projectRevision','grantRevision','changes'].map(k=>[k,v[k]])),r=await c.call(root(v)+'/entries/'+v.sha256,{method:'POST',body});c.check();const top=fields(r,['receipt']);if(!top)bad();const receipt=receiptValue(top.receipt,v.requestId,bad);if(receipt.version!==v.headRevision+1||receipt.recordRevision!==before.recordRevision+1||receipt.kind!=='entries'||receipt.sourceProjectId!==before.sourceProjectId)bad();return receipt;},
+  async saveWorkpaperEntries(value,options={}){
+   const v=input(value,'entries'),c=context(options),before=await scope(v,c,true);
+   c.check();
+   if(before.headRevision<v.headRevision||before.headRevision>=Number.MAX_SAFE_INTEGER||before.recordRevision>=Number.MAX_SAFE_INTEGER)changed();
+   if(before.headRevision>v.headRevision)headChanged();
+   const body=Object.fromEntries(['requestId','headRevision','projectRevision','grantRevision','changes'].map(k=>[k,v[k]]));
+   let r;
+   try{r=await c.call(root(v)+'/entries/'+v.sha256,{method:'POST',body});}
+   catch(error){
+    if(error?.code!=='HTTP_409'||error.status!==409)throw error;
+    // The rejected write is never repeated. Only a fresh authorized read can distinguish its conflict.
+    let after;
+    try{after=await scope(v,c,true);c.check();}
+    catch(recheck){
+     if(['WORKPAPER_CHANGED','WORKPAPER_VIEW_CHANGED','SESSION_CHANGED','SIGN_IN_REQUIRED','DEVICE_NOT_READY','DEVICE_STATE_CHANGED','UNTRUSTED_SERVER'].includes(recheck?.code))changed(409);
+     if(recheck?.code==='HTTP_409'&&recheck.status===409)changed(409);
+     if(recheck?.code==='HTTP_403'||recheck?.code==='HTTP_404')throw recheck;
+     throw error;
+    }
+    if(after.sourceProjectId!==before.sourceProjectId||after.headRevision>=Number.MAX_SAFE_INTEGER||after.recordRevision>=Number.MAX_SAFE_INTEGER)changed(409);
+    if(after.headRevision>v.headRevision)headChanged();
+    throw error;
+   }
+   c.check();const top=fields(r,['receipt']);if(!top)bad();const receipt=receiptValue(top.receipt,v.requestId,bad);if(receipt.version!==v.headRevision+1||receipt.recordRevision!==before.recordRevision+1||receipt.kind!=='entries'||receipt.sourceProjectId!==before.sourceProjectId)bad();return receipt;
+  },
   async getWorkpaperReceipt(value,options={}){const v=input(value,'receipt'),c=context(options),r=await c.call(root(v)+'/receipts/'+v.requestId);c.check();const top=fields(r,['receipt']);if(!top)bad();return receiptValue(top.receipt,v.requestId,bad);}
  };return Object.freeze(api);
 }

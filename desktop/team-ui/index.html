@@ -252,6 +252,12 @@
           <section id="workpaper-viewer" hidden>
             <div class="invitation-list-heading"><div><h4 id="workpaper-data-title"></h4><p id="workpaper-version-note" class="identity-note"></p></div><div class="device-actions"><button id="workpaper-save" class="button primary" type="button" disabled>保存填写</button><button id="workpaper-draft-discard" class="button" type="button" disabled>丢弃未保存填写</button></div></div>
             <p id="workpaper-draft-status" class="identity-note" aria-live="polite"></p>
+            <section id="workpaper-conflict" class="workpaper-draft-conflict" hidden aria-label="核对未保存填写">
+              <p class="identity-note">草稿仍在当前表单。请核对最新版本后再保存。</p>
+              <button id="workpaper-conflict-load" class="button" type="button">核对最新版本</button>
+              <ul id="workpaper-conflict-values" class="workpaper-conflict-values"></ul>
+              <button id="workpaper-conflict-apply" class="button" type="button" hidden>带入所选填写</button>
+            </section>
             <details id="workpaper-originals-panel"><summary>保存的原件清单</summary><ul id="workpaper-originals" class="member-management-list"></ul><button id="workpaper-originals-more" class="button" type="button" hidden>继续显示原件</button></details>
             <div class="workpaper-content">
               <aside class="workpaper-files-pane"><h5>原件与表单</h5><ul id="workpaper-files" class="workpaper-files"></ul></aside>

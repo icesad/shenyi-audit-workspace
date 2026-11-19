@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {fixture,excel,until,tick,deferred,ok,fail,P,P2,HASH,DOC}=require('./helpers/workpaper-ui-fixture.cjs');
+const {fixture,excel,until,tick,deferred,ok,fail,P,P2,Q,HASH,DOC,RECORD}=require('./helpers/workpaper-ui-fixture.cjs');
 test('only ready seniors expose the panel and no metadata is prefetched',async t=>{for(const role of ['intern','assistant','administrator','product_owner']){const f=fixture(t,{role});assert.equal(f.id('panel').hidden,true);await tick();assert.equal(f.calls.length,0);}const f=fixture(t);assert.equal(f.id('panel').hidden,false);assert.equal(f.calls.length,0);await f.open();assert.equal(f.count('listWorkpaperProjects'),1);assert.equal(f.count('getWorkpaperData'),0);});
 test('module owner without read sees grants only and never fetches data or forms',async t=>{const f=fixture(t,{read:false});await f.open();await f.select();assert.equal(f.id('owner').hidden,false);assert.equal(f.id('viewer').hidden,true);assert.equal(f.count('getWorkpaperData'),0);assert.equal(f.count('getWorkpaperForm'),0);assert.equal(f.count('chooseWorkpaperSource'),0);});
 test('current native sheet displays saved answers and only admitted fields can be edited',async t=>{const f=fixture(t);await f.open();await f.select();assert.equal(f.id('form').querySelector('.pw-original-sheet')!==null,true);assert.equal(f.id('form').querySelector('[data-cell=A1]').textContent,'已保存填写');assert.equal(f.id('form').querySelector('[data-cell=A1]').getAttribute('contenteditable'),'true');for(const field of ['B1','A2','B2'])assert.equal(f.id('form').querySelector('[data-cell='+field+']').getAttribute('contenteditable'),'false');assert.equal(f.id('form').querySelector('[data-cell=C3]'),null);f.edit('A1','=literal only');assert.equal(f.id('save').disabled,false);f.click('save');await until(()=>f.count('saveWorkpaperEntries')===1&&!f.id('refresh').disabled);const v=f.calls.find(c=>c.name==='saveWorkpaperEntries').input;assert.equal(v.headRevision,2);assert.equal(v.sha256,HASH);assert.deepEqual(v.changes,[{sheet:'Sheet1',field:'A1',value:'=literal only'}]);assert.equal(v.projectId,P);assert.equal(f.id('draft-status').textContent,'当前没有未保存填写。');});
@@ -66,6 +66,72 @@ test('three grant bits are explicit and a grant unknown response requires a fres
 test('an access poll failure closes sensitive content even when revisions were not returned',async t=>{let deny=false;const f=fixture(t,{overrides:{getWorkpaperAccess:async(v,s)=>deny?fail('HTTP_403'):ok({teamId:'team-a',projectId:v.projectId,projectRevision:7,grantRevision:1,read:true,write:true,export:true,canWrite:true,canExport:true,canManageAccess:true})}});await f.open();await f.select();f.field('grant-password','Unsent proof');deny=true;f.poll();await until(()=>f.id('viewer').hidden);assert.equal(f.id('form').textContent,'');assert.equal(f.id('grant-password').value,'');assert.equal(f.id('import').hidden,true);});
 test('form 404 is never mistaken for an empty project eligible for migration',async t=>{const f=fixture(t,{overrides:{getWorkpaperForm:async()=>fail('HTTP_404')}});await f.open();await f.select();assert.equal(f.id('viewer').hidden,true);assert.equal(f.id('import').hidden,true);assert.equal(f.id('form').textContent,'');});
 test('a confirmed save rejection does not impersonate an unknown dispatched result',async t=>{const f=fixture(t,{overrides:{saveWorkpaperEntries:async()=>fail('HTTP_422')}});await f.open();await f.select();f.edit('A1','Rejected input');f.click('save');await until(()=>f.count('saveWorkpaperEntries')===1&&!f.id('refresh').disabled);assert.equal(f.id('save').disabled,false);assert.match(f.id('attempts').textContent,/rejected/);});
+
+function concurrentDraft(t,recheckError=()=>null){
+ let saved=false;
+ const f=fixture(t,{overrides:{
+  getWorkpaperRecord:async(v,state)=>{
+   const error=recheckError();if(v.version>2&&error)return fail(error);
+   const record=f.record(),metadata={...f.access(v),sourceProjectId:Q,version:v.version,headRevision:state.headRevision,recordSha256:RECORD};
+   if(v.version>=3)record.answers[HASH].Sheet1.A1='另一位编辑已保存';
+   return ok({record,metadata});
+  },
+  saveWorkpaperEntries:async(v,state)=>{
+   if(!saved){saved=true;state.headRevision++;return fail('WORKPAPER_HEAD_CHANGED');}
+   state.headRevision++;return ok({status:'saved',receipt:f.receipt(v.requestId)});
+  },
+ }});
+ return f;
+}
+
+test('authorized stale draft exposes latest values, requires selection for overlap and only saves on a new click',async t=>{
+ const f=concurrentDraft(t);await f.open();await f.select();
+ f.edit('A1','保留我的重叠填写');f.edit('A3','带入我的其他填写');f.click('save');
+ await until(()=>!f.id('conflict').hidden&&!f.id('conflict-load').disabled);
+ assert.match(f.id('version-note').textContent,/草稿所用版本/);
+ assert.equal(f.id('form').querySelector('[data-cell=A1]').textContent,'保留我的重叠填写');
+ assert.equal(f.id('save').disabled,true);f.click('save');assert.equal(f.count('saveWorkpaperEntries'),1);
+ f.click('conflict-load');
+ await until(()=>f.id('conflict-values').querySelectorAll('input').length===2&&!f.id('conflict-apply').disabled);
+ const [overlap,other]=f.id('conflict-values').querySelectorAll('input');
+ assert.equal(overlap.checked,false);assert.equal(other.checked,true);
+ assert.match(overlap.closest('li').textContent,/另一位编辑已保存.*保留我的重叠填写/);
+ overlap.click();f.click('conflict-apply');
+ await until(()=>f.id('conflict').hidden&&!f.id('save').disabled);
+ assert.equal(f.id('data-title').textContent,'底稿保存版本 3');
+ assert.equal(f.id('form').querySelector('[data-cell=A1]').textContent,'保留我的重叠填写');
+ assert.equal(f.count('saveWorkpaperEntries'),1);
+ f.click('save');await until(()=>f.count('saveWorkpaperEntries')===2&&!f.id('refresh').disabled);
+ const [old,current]=f.calls.filter(call=>call.name==='saveWorkpaperEntries').map(call=>call.input);
+ assert.notEqual(old.requestId,current.requestId);assert.equal(current.headRevision,3);
+ assert.deepEqual(current.changes,[{sheet:'Sheet1',field:'A1',value:'保留我的重叠填写'},{sheet:'Sheet1',field:'A3',value:'带入我的其他填写'}]);
+});
+
+test('new version during comparison requires recheck and revocation then clears the retained draft',async t=>{
+ const f=concurrentDraft(t);await f.open();await f.select();f.edit('A1','仍保留当前草稿');f.click('save');
+ await until(()=>!f.id('conflict').hidden&&!f.id('conflict-load').disabled);
+ f.click('conflict-load');await until(()=>!!f.id('conflict-values').querySelector('input')&&!f.id('conflict-load').disabled);
+ f.id('conflict-values').querySelector('input').click();f.state.headRevision++;
+ f.click('conflict-apply');await until(()=>f.id('message').textContent.includes('核对期间又有新版本'));
+ assert.equal(f.id('conflict-values').textContent,'');assert.equal(f.id('save').disabled,true);
+ assert.equal(f.id('form').querySelector('[data-cell=A1]').textContent,'仍保留当前草稿');
+ f.click('conflict-load');await until(()=>!!f.id('conflict-values').querySelector('input')&&!f.id('conflict-load').disabled);
+ f.state.write=false;f.state.grantRevision++;f.poll();
+ await until(()=>f.id('viewer').hidden);assert.equal(f.id('form').textContent,'');
+ assert.equal(f.id('conflict-values').textContent,'');assert.equal(f.id('conflict').hidden,true);
+ assert.equal(f.count('saveWorkpaperEntries'),1);
+});
+test('comparison preserves an authorized draft on a transient failure and clears it when the server rejects the scope',async t=>{
+ let error='HTTP_429';
+ const f=concurrentDraft(t,()=>error);await f.open();await f.select();f.edit('A1','限流时保留草稿');f.click('save');
+ await until(()=>!f.id('conflict').hidden&&!f.id('conflict-load').disabled);
+ f.click('conflict-load');await until(()=>f.count('getWorkpaperRecord')===2&&!f.id('conflict-load').disabled);
+ assert.equal(f.id('form').querySelector('[data-cell=A1]').textContent,'限流时保留草稿');
+ assert.equal(f.id('save').disabled,true);
+ error='HTTP_409';f.click('conflict-load');await until(()=>f.id('viewer').hidden);
+ assert.equal(f.id('form').textContent,'');assert.equal(f.id('conflict').hidden,true);
+ assert.equal(f.count('saveWorkpaperEntries'),1);
+});
 test('querying an unrelated receipt preserves an unsent draft',async t=>{const f=fixture(t);await f.open();await f.select();f.edit('A1','Keep this unsent');f.field('operation-id','dddddddd-dddd-4ddd-8ddd-dddddddddddd');f.field('operation-kind','entries');f.click('receipt');await until(()=>f.count('getWorkpaperReceipt')===1&&!f.id('refresh').disabled);assert.equal(f.id('form').querySelector('[data-cell=A1]').textContent,'Keep this unsent');assert.equal(f.id('save').disabled,false);assert.equal(f.count('getWorkpaperRecord'),1);});
 test('closing the real summary clears sources, passwords, data and remote scope',async t=>{const f=fixture(t);await f.open();await f.select();f.field('grant-password','Pending password');f.id('panel').querySelector('summary').click();assert.equal(f.id('panel').open,false);assert.equal(f.id('form').textContent,'');assert.equal(f.id('title').textContent,'');assert.equal(f.id('grant-password').value,'');await f.open();await f.select();assert.equal(f.id('viewer').hidden,false);});
 test('an unknown save locks additional edits until its original receipt is reconciled',async t=>{const f=fixture(t,{overrides:{saveWorkpaperEntries:async v=>ok({status:'unknown',requestId:v.requestId})}});await f.open();await f.select();f.edit('A1','Submitted once');f.click('save');await until(()=>f.count('saveWorkpaperEntries')===1&&!f.id('refresh').disabled);assert.equal(f.id('form').querySelectorAll('[contenteditable=true]').length,0);f.click('receipt');await until(()=>f.count('getWorkpaperReceipt')===1&&!f.id('refresh').disabled);assert.match(f.id('message').textContent,/已核实/);assert.equal(f.id('form').querySelector('[data-cell=A1]').getAttribute('contenteditable'),'true');});

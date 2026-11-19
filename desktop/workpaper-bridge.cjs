@@ -53,7 +53,10 @@ function createWorkpaperBridge({client,dialog,window,sourceManagerFactory=create
   listWorkpaperVersions:value=>read(value,'versions','listWorkpaperVersions'),
   getWorkpaperRecord:value=>read(value,'record','getWorkpaperRecord'),
   getWorkpaperForm:value=>read(value,'form','getWorkpaperForm'),
-  async saveWorkpaperEntries(value){const c=input(value,'entries');let dispatched=false;try{const receipt=await client.saveWorkpaperEntries(c.target,{...options(c),onDispatch(){dispatched=true;}});c.check();return{status:'saved',receipt};}catch(error){if(dispatched&&!definite(error))return{status:'unknown',requestId:c.target.requestId};throw error;}},
+  async saveWorkpaperEntries(value){const c=input(value,'entries');let dispatched=false;try{const receipt=await client.saveWorkpaperEntries(c.target,{...options(c),onDispatch(){dispatched=true;}});c.check();return{status:'saved',receipt};}catch(error){
+   const confirmedConflict=error?.status===409&&['WORKPAPER_HEAD_CHANGED','WORKPAPER_CHANGED'].includes(error.code);
+   if(dispatched&&!definite(error)&&!confirmedConflict)return{status:'unknown',requestId:c.target.requestId};throw error;
+  }},
   getWorkpaperReceipt:value=>read(value,'receipt','getWorkpaperReceipt'),
   async chooseWorkpaperSource(value){const c=managedInput(value,TARGET);const result=await sources().chooseWorkpaperSource(c.target);c.check();if(result?.status==='selected'){if(!match(UUID,result.handle))throw fail('INVALID_RESPONSE','底稿来源句柄无法核实。');c.captured.sources.add(result.handle);}return result;},
   confirmWorkpaperImport:value=>sourceMutation(value,'confirmWorkpaperImport'),

@@ -3,3 +3,9 @@
 .workpaper-form:focus { outline: 3px solid var(--focus); outline-offset: 2px; }
 .workpaper-scroll-help { margin-bottom: 8px; }
 #workpaper-message:empty { min-height: 0; margin: 0; }
+.workpaper-draft-conflict { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--line); }
+.workpaper-conflict-values { display: grid; gap: 8px; margin: 8px 0; padding: 0; list-style: none; }
+.workpaper-conflict-values li + li { border-top: 1px solid var(--line); padding-top: 8px; }
+.workpaper-conflict-values p { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.workpaper-panel .workpaper-conflict-values label { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 6px; }
+.workpaper-panel .workpaper-conflict-values input[type=checkbox] { width: 16px; height: 16px; min-height: 16px; flex: none; margin: 2px 0 0; padding: 0; accent-color: var(--accent); }

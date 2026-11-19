@@ -43,6 +43,22 @@ test('definite entry denial remains denial; unknown grants require refresh witho
  const b=createWorkpaperBridge({client:stub({async saveWorkpaperEntries(_v,o){o.onDispatch();throw new ClientError('HTTP_422','synthetic');},async changeWorkpaperAccess(_v,o){o.onDispatch();throw new ClientError('INVALID_RESPONSE','synthetic');}}),window:{}}),v=open(b);
  try{await assert.rejects(b.saveWorkpaperEntries(entries(v)),{code:'HTTP_422'});await assert.rejects(b.changeWorkpaperAccess({...v,...revisions,userId:'senior',memberRevision:1,read:true,write:false,export:false,currentPassword:PASSWORD,confirmed:true}),{code:'WORKPAPER_ACCESS_UNKNOWN'});}finally{b.dispose();}
 });
+test('entry IPC preserves the verified stale-head denial and the original ID for uncertain transport',async()=>{
+ let dispatches=0,reason=new ClientError('WORKPAPER_HEAD_CHANGED','synthetic stale version',409);
+ const f=bridge(stub({async saveWorkpaperEntries(_input,{onDispatch}){dispatches++;onDispatch();throw reason;}}));
+ try{
+  const view=(await f.call('workpaper-view-open',scope)).value;
+  const stale=await f.call('workpaper-entries-save',entries(view));
+  assert.equal(stale.ok,false);
+  assert.equal(stale.error.code,'WORKPAPER_HEAD_CHANGED');
+  assert.equal(stale.value,undefined);
+  assert.equal(dispatches,1);
+  reason=new ClientError('SERVICE_UNAVAILABLE','synthetic lost response');
+  const input=entries(view),uncertain=await f.call('workpaper-entries-save',input);
+  assert.deepEqual(uncertain,{ok:true,value:{status:'unknown',requestId:input.requestId}});
+  assert.equal(dispatches,2);
+ }finally{f.dispose();}
+});
 test('private source and export handles cannot move between views; manager terminal outcomes are preserved',async()=>{
  const handle=randomUUID();let discarded=0,canceled=0;const b=createWorkpaperBridge({client:stub(),window:{},sourceManagerFactory:()=>({clearSource(){},dispose(){},async chooseWorkpaperSource(){return{status:'selected',handle};},discardWorkpaperSource(){discarded++;return{discarded:true,requestId:handle,remoteStageUnchanged:true};},async cancelWorkpaperSourceImport(v){return{status:'imported',requestId:v.requestId,receipt:{synthetic:true}};}}),exporterFactory:()=>({closeAll(){},dispose(){},async exportWorkpapers(){throw new ClientError('WORKPAPER_EXPORT_SAVE_UNKNOWN','synthetic');},cancelWorkpaperExport(){canceled++;return{canceled:false};}})}),a=open(b);
  try{await b.chooseWorkpaperSource({...a,...revisions});const c=b.openWorkpaperView(scope);assert.deepEqual(b.discardWorkpaperSource({viewId:c.viewId,handle}),{discarded:false});assert.equal(discarded,0);assert.deepEqual(await b.cancelWorkpaperSourceImport({...c,requestId:handle,confirmed:true}),{status:'imported',requestId:handle,receipt:{synthetic:true}});const input={...c,...revisions,version:1,headRevision:1,recordSha256:'a'.repeat(64),sourceProjectId:randomUUID(),requestId:randomUUID(),confirmed:true};await assert.rejects(b.exportWorkpapers(input),{code:'WORKPAPER_EXPORT_SAVE_UNKNOWN'});assert.deepEqual(b.cancelWorkpaperExport({viewId:c.viewId,requestId:input.requestId}),{canceled:false});const d=b.openWorkpaperView(scope);assert.deepEqual(b.cancelWorkpaperExport({viewId:d.viewId,requestId:input.requestId}),{canceled:false});assert.equal(canceled,1);}finally{b.dispose();}
