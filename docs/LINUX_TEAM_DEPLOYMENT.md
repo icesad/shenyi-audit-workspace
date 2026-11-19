@@ -63,13 +63,18 @@ node scripts/linux-release-signature.mjs sign \
 
 在官网发布范围和 HTTPS 主机名获准后，把 `www.shenyi.example` 换成已批准的官网域名。团队 API 使用独立的 `team.shenyi.example` 和证书。两处模板均核对 TLS SNI 和 HTTP Host，请求使用各自的规范域名和默认 HTTPS 端口。两份配置在同一 `http` 块中加载，保留团队模板中的一个默认 443 虚拟主机。 [官网 Nginx 配置](../deploy/linux/nginx-shenyi-website.conf) · [Nginx 虚拟主机选择](https://nginx.org/en/docs/http/server_names.html#virtual_server_selection)
 
-在已审定的源码目录，用 Node 24 构建独立官网文件。`$release` 为获准的提交，`$release_dir` 为仓库外发布目录。将生成的目录和校验清单作为同一批候选交接，清单留在站点根之外。
+在内容与获准提交一致的干净工作区中，用 Node 24 构建官网。`$release` 使用完整的 Git 提交 ID，`$release_dir` 使用仓库外发布目录的绝对真实路径，路径各级均使用实际目录。将静态目录、安装校验清单和 HTTPS 核验基线作为同一批候选交接，两份清单均放在站点根之外。
 
 ```sh
 node scripts/website-preview.mjs --build "$release_dir/website-$release" && \
   (cd "$release_dir/website-$release" && sha256sum index.html styles.css assets/brand-shenyi.png) \
-  > "$release_dir/website-$release.sha256"
+  > "$release_dir/website-$release.sha256" && \
+node scripts/check-website-release.mjs --make-baseline "$release_dir/website-$release" \
+  --source-commit "$release" > "$release_dir/website-$release.baseline.json" && \
+sha256sum "$release_dir/website-$release.baseline.json"
 ```
+
+在获准的发布记录中保存完整 Git 提交、官网 HTTPS origin 和 JSON 基线的 SHA-256。验证人员从批准记录获取 `$website_origin` 和 `$website_baseline_sha256`。官网 origin 使用小写主机名，省略路径和默认端口。
 
 部署人员通过已批准的交接渠道接收构件，以受控账号安装文件。网站目录由部署管理员管理，Nginx 只读。确认 `$release` 对应的目标目录尚不存在，再逐条执行。`current` 应尚未创建或为指向已核对上一版的管理员管控符号链接，切换前记录其目标。发布目录内使用实际文件和目录。
 
@@ -92,9 +97,22 @@ node scripts/website-preview.mjs --build "$release_dir/website-$release" && \
 
 将官网证书链和对应私钥安装到 `/etc/nginx/shenyi-website/` 所示位置。在使用独立 include 的 Ubuntu 上，放置到 `/etc/nginx/conf.d/shenyi-website.conf`，同时更新使用同一版本的团队 API 模板。运行 `nginx -t`，通过后再以 `systemctl reload nginx` 加载。官网 `GET` 和 `HEAD` 只提供 `/`、`/styles.css` 及 `/assets/brand-shenyi.png`，可带查询参数。直接访问 `/index.html`、业务 API、健康探针、合成下单页及下载路径均应返回 404。对有效路径使用其他方法返回 405。通过握手后发送不匹配的 HTTP Host 返回 421，未知 TLS 名称拒绝握手。 [Nginx 静态路径与符号链接](https://nginx.org/en/docs/http/ngx_http_core_module.html#disable_symlinks)
 
-在实际环境验证两条 HTTPS 链、三个静态内容的 SHA-256、页面资源加载，以及团队 `/api/auth/methods` 返回正确的实例。官网不缓存当前文件，访问日志只含时间、请求编号、方法、状态、响应字节数和耗时。错误日志按团队部署的读取权限和保留规则管理。静态模板上线的许可与商户、登录和下载入口另行验收。
+重载 Nginx 后，从实际访问网络回读公开官网。`$release_tools_dir` 指向获准发布源码中的 `scripts` 目录。每次核验用 `$website_check_receipt` 指定一个新的 JSON 文件绝对路径，保留首次发布、复测和回退的各次结果及退出码。
 
-官网内容需回退时，把 `current` 用同样的原子替换步骤指回先前已验证的发布目录，再重新核对首页和资源。首次启用出现故障时，将官网 include 移到 `conf.d` 匹配范围之外，校验并重新加载 Nginx，确认官网入口关闭且团队 API 健康。两种回退均使用原团队服务和数据库。
+```sh
+check_status=0
+(
+  set -C
+  node "$release_tools_dir/check-website-release.mjs" \
+    --origin "$website_origin" --baseline "$release_dir/website-$release.baseline.json" \
+    --baseline-sha256 "$website_baseline_sha256" > "$website_check_receipt"
+) || check_status=$?
+printf "Exit status %s\n" "$check_status"
+```
+
+退出码为 0 且 JSON 的 `status` 为 `verified` 表示三个静态文件通过内容与响应校验，三个匿名合成下单路径返回 404。在实际环境按[一次性上线检查](#一次性上线检查)核对团队 API 的边缘和后端 HTTPS 及实例标识，并记录工作站的页面资源加载结果。官网不缓存当前文件，访问日志只含时间、请求编号、方法、状态、响应字节数和耗时。错误日志按团队部署的读取权限和保留规则管理。静态模板上线的许可与商户、登录和下载入口另行验收。
+
+官网内容需回退时，把 `current` 用同样的原子替换步骤指回先前已验证的发布目录，再用上一版获准的基线、摘要和同一官网 origin 回读验证。首次启用出现故障时，将官网 include 移到 `conf.d` 匹配范围之外，校验并重新加载 Nginx，确认官网入口关闭且团队 API 健康。两种回退均使用原团队服务和数据库。
 
 ### 启动前检查文件权限
 
