@@ -36,6 +36,7 @@
   let deviceUiEpoch=0,deviceLastEpoch=-1,deviceSnapshot=null,deviceAccount=null,deviceLocalIssue='',deviceAction=null,devicePollOperation=null,deviceSessionRead=null,devicePollTimer=null,deviceUiClosed=false;
   let replacementOwnEpoch=0,replacementAuthEpoch=0,replacementOwn=null,replacementCanRequest=false,replacementOwnLoaded=false,replacementOwnRead=null,replacementOwnMutation=null;
   let replacementReviewEpoch=0,replacementReviewAllowed=false,replacementReviewRows=[],replacementReviewSelected=null,replacementReviewWorking=false,replacementReviewMutation=null,replacementReviewOpened=false;
+  let replacementReviewCursors=[null],replacementReviewNextCursor=null;
   let businessRoleAccessEpoch=0,businessRoleEpoch=0,businessRoleTeams=[],businessRoleTeam='',businessRoleRows=[],businessRoleHasMore=false,businessRoleQuery='',businessRoleSelected=null,businessRoleWorking=false,businessRoleMutation=null,businessRoleNeedsRefresh=true,businessRoleOpened=false;
   let projectAccessEpoch=0,projectAccessState=blankProjectAccess(),projectAccessMutation=null,projectDownloadOperation=null,projectAccessOpened=false;
   let projectMigrationAccessEpoch=0,projectMigrationEpoch=0,projectMigrationState=blankProjectMigration(),projectMigrationSourceOperation=null,projectMigrationMutation=null,projectMigrationOpened=false;
@@ -130,11 +131,18 @@
   function replacementReviewContext(){return {actor:accountSessionsActor(),at:replacementReviewEpoch,device:deviceUiEpoch,main:session?.device?.epoch};}
   function currentReplacementReview(context){return sameAccountSessionsActor(context.actor)&&context.at===replacementReviewEpoch&&context.device===deviceUiEpoch&&context.main===session?.device?.epoch&&replacementReviewReady()&&replacementReviewAllowed&&byId('device-replacement-reviews-panel').open&&!byId('device-replacement-reviews-panel').hidden;}
   function clearReplacementReviewSelection(){replacementReviewSelected=null;byId('device-replacement-reviews-password').value='';byId('device-replacement-reviews-target').textContent='尚未选择换机申请。';}
-  function resetReplacementReviews(close=true,hide=true){replacementReviewEpoch++;replacementReviewWorking=false;replacementReviewRows=[];clearReplacementReviewSelection();byId('device-replacement-reviews-list').replaceChildren();message('device-replacement-reviews-message','');if(hide){replacementReviewAllowed=false;byId('device-replacement-reviews-panel').hidden=true;}if(close){replacementReviewOpened=false;byId('device-replacement-reviews-panel').open=false;}updateReplacementReviewControls();}
+  function clearReplacementReviewPage(){
+    replacementReviewRows=[];replacementReviewNextCursor=null;clearReplacementReviewSelection();
+    byId('device-replacement-reviews-list').replaceChildren();byId('device-replacement-reviews-page-status').textContent='';
+  }
+  function resetReplacementReviews(close=true,hide=true){replacementReviewEpoch++;replacementReviewWorking=false;replacementReviewCursors=[null];clearReplacementReviewPage();message('device-replacement-reviews-message','');if(hide){replacementReviewAllowed=false;byId('device-replacement-reviews-panel').hidden=true;}if(close){replacementReviewOpened=false;byId('device-replacement-reviews-panel').open=false;}updateReplacementReviewControls();}
   function replacementReviewSelectable(item){return !!item&&['pending','approved'].includes(item.status)&&Number.isSafeInteger(item.revision)&&item.revision>=1&&item.revision<Number.MAX_SAFE_INTEGER;}
   function updateReplacementReviewControls(){
     const ready=replacementReviewReady()&&replacementReviewAllowed&&replacementReviewApiReady()&&byId('device-replacement-reviews-panel').open&&!byId('device-replacement-reviews-panel').hidden,locked=busy||replacementReviewWorking||replacementReviewPending(),target=ready&&!locked&&replacementReviewRows.includes(replacementReviewSelected)&&replacementReviewSelectable(replacementReviewSelected);
     byId('device-replacement-reviews-refresh').disabled=!ready||locked;for(const button of byId('device-replacement-reviews-list').querySelectorAll('button'))button.disabled=!ready||locked||button.dataset.selectable!=='true';byId('device-replacement-reviews-password').disabled=!target;for(const decision of ['approve','reject','revoke'])byId('device-replacement-reviews-'+decision).disabled=!target||!byId('device-replacement-reviews-password').value||!(decision==='revoke'?replacementReviewSelected.status==='approved':replacementReviewSelected.status==='pending');
+    byId('device-replacement-reviews-prev').disabled=!ready||locked||replacementReviewCursors.length===1;
+    byId('device-replacement-reviews-next').disabled=!ready||locked||!replacementReviewNextCursor;
+    byId('device-replacement-reviews-pagination').hidden=replacementReviewCursors.length===1&&!replacementReviewNextCursor;
   }
   function renderReplacementReviews(){
     const list=byId('device-replacement-reviews-list');list.replaceChildren();if(!replacementReviewRows.length)list.append(el('li','当前没有可显示的换机申请。','identity-note'));
@@ -145,24 +153,36 @@
     resetReplacementReviews();if(!replacementReviewReady()||!replacementReviewApiReady())return;const context=replacementReviewContext(),current=()=>sameAccountSessionsActor(context.actor)&&context.at===replacementReviewEpoch&&context.device===deviceUiEpoch&&replacementReviewReady();
     try{const value=await replacementReviewCall('getDeviceReplacementReviewAccess',undefined,current);if(!current()||value?.canReview!==true)return;replacementReviewAllowed=true;byId('device-replacement-reviews-panel').hidden=false;updateReplacementReviewControls();}catch{if(current())resetReplacementReviews();}
   }
-  async function refreshReplacementReviewRows(context){const value=await replacementReviewCall('listDeviceReplacementReviews',undefined,()=>currentReplacementReview(context));if(!Array.isArray(value?.requests)||value.requests.length>50||typeof value.hasMore!=='boolean'||!value.requests.every(validReplacementView)||new Set(value.requests.map(item=>item.id)).size!==value.requests.length)throw {code:'INVALID_RESPONSE'};replacementReviewRows=value.requests;clearReplacementReviewSelection();renderReplacementReviews();return value.hasMore;}
-  async function loadReplacementReviews(){
-    if(!replacementReviewReady()||!replacementReviewAllowed||!replacementReviewApiReady()||busy||replacementReviewWorking||replacementReviewPending()||!byId('device-replacement-reviews-panel').open)return;replacementReviewEpoch++;const context=replacementReviewContext();replacementReviewWorking=true;replacementReviewRows=[];clearReplacementReviewSelection();renderReplacementReviews();message('device-replacement-reviews-message','正在读取当前授权范围内的换机申请…');
-    try{const more=await refreshReplacementReviewRows(context);if(currentReplacementReview(context))message('device-replacement-reviews-message',more?'仅显示最近50条有权查看的申请，请先处理或稍后刷新核对。':'请核对申请人、申请编号及新电脑指纹，再选择申请并填写当前密码。');}
-    catch(error){if(currentReplacementReview(context)){replacementReviewRows=[];clearReplacementReviewSelection();renderReplacementReviews();message('device-replacement-reviews-message',error.message||'换机申请无法确认，请刷新核对。',true);}}
+  async function refreshReplacementReviewRows(context,cursors=replacementReviewCursors){
+    const after=cursors.at(-1);
+    const value=await replacementReviewCall('listDeviceReplacementReviews',after===null?{}:{after},()=>currentReplacementReview(context));
+    if(!Array.isArray(value?.requests)||value.requests.length>50||typeof value.hasMore!=='boolean'||!value.requests.every(validReplacementView)||new Set(value.requests.map(item=>item.id)).size!==value.requests.length)throw {code:'INVALID_RESPONSE'};
+    const paged=Object.hasOwn(value,'nextCursor'),next=paged?value.nextCursor:null;
+    if(after!==null&&!paged||paged&&(value.hasMore!==(next!==null)||next!==null&&(next!==value.requests.at(-1)?.id||cursors.includes(next))))throw {code:'INVALID_RESPONSE'};
+    replacementReviewRows=value.requests;replacementReviewCursors=cursors;replacementReviewNextCursor=next;
+    clearReplacementReviewSelection();
+    byId('device-replacement-reviews-page-status').textContent='第 '+cursors.length+' 页 · 本页 '+replacementReviewRows.length+' 条';
+    renderReplacementReviews();return !paged&&value.hasMore;
+  }
+  async function loadReplacementReviews(cursors=[null]){
+    if(!replacementReviewReady()||!replacementReviewAllowed||!replacementReviewApiReady()||busy||replacementReviewWorking||replacementReviewPending()||!byId('device-replacement-reviews-panel').open)return;replacementReviewEpoch++;const context=replacementReviewContext();replacementReviewWorking=true;clearReplacementReviewPage();renderReplacementReviews();message('device-replacement-reviews-message','正在读取当前授权范围内的换机申请…');
+    try{const limited=await refreshReplacementReviewRows(context,cursors);if(currentReplacementReview(context))message('device-replacement-reviews-message',limited?'当前服务仅显示最近 50 条申请。请更新服务端后查找更早的申请。':'请核对申请人、申请编号及新电脑指纹，再选择申请并填写当前密码。');}
+    catch(error){if(currentReplacementReview(context)){clearReplacementReviewPage();renderReplacementReviews();message('device-replacement-reviews-message',error.message||'换机申请无法确认，请刷新核对。',true);}}
     finally{if(currentReplacementReview(context)){replacementReviewWorking=false;updateReplacementReviewControls();}}
   }
   async function decideReplacementReview(decision){
     const item=replacementReviewSelected,currentPassword=byId('device-replacement-reviews-password').value;if(!replacementReviewReady()||!replacementReviewAllowed||!replacementReviewApiReady()||!byId('device-replacement-reviews-panel').open||busy||replacementReviewWorking||replacementReviewPending()||!replacementReviewRows.includes(item)||!replacementReviewSelectable(item)||!currentPassword||!(decision==='revoke'?item.status==='approved':item.status==='pending')||!['approve','reject','revoke'].includes(decision))return;
     const context=replacementReviewContext(),operation={actor:context.actor};replacementReviewMutation=operation;byId('device-replacement-reviews-password').value='';updateReplacementReviewControls();message('device-replacement-reviews-message','正在验证当前密码并提交本次审核…');let completed=false;
     try{const value=await replacementReviewCall('reviewDeviceReplacement',{requestId:item.id,revision:item.revision,decision,currentPassword},()=>currentReplacementReview(context));completed=true;if(!validReplacementView(value?.request))throw {code:'INVALID_RESPONSE'};await refreshReplacementReviewRows(context);if(currentReplacementReview(context))message('device-replacement-reviews-message',decision==='approve'?'申请已批准，旧电脑尚未被替换。本人仍须在获批电脑上明确激活。':decision==='reject'?'申请已拒绝，旧电脑绑定未因此改变。':'未激活的换机批准已撤销，旧电脑绑定未因此改变。');}
-    catch(error){if(currentReplacementReview(context)){replacementReviewRows=[];clearReplacementReviewSelection();renderReplacementReviews();message('device-replacement-reviews-message',completed?'审核已完成，但列表刷新无法确认，请刷新核对。':error.code==='OPERATION_UNCONFIRMED'||passwordChangeUncertain(error)?'未能确认审核结果；请求可能已完成，请刷新换机申请核对，系统不会自动重试。':error.message||'审核未通过，请刷新申请后核对。',true);}}
+    catch(error){if(currentReplacementReview(context)){clearReplacementReviewPage();renderReplacementReviews();message('device-replacement-reviews-message',completed?'审核已完成，但列表刷新无法确认，请刷新核对。':error.code==='OPERATION_UNCONFIRMED'||passwordChangeUncertain(error)?'未能确认审核结果；请求可能已完成，请刷新换机申请核对，系统不会自动重试。':error.message||'审核未通过，请刷新申请后核对。',true);}}
     finally{if(replacementReviewMutation===operation)replacementReviewMutation=null;if(sameAccountSessionsActor(context.actor)){byId('device-replacement-reviews-password').value='';updateReplacementReviewControls();if(context.at!==replacementReviewEpoch&&byId('device-replacement-reviews-panel').open)void loadReplacementReviews();}}
   }
   function closeReplacementReviews(){const pending=replacementReviewPending();replacementReviewOpened=false;resetReplacementReviews(false,false);if(pending&&session)message('workspace-message','已清除审核输入；已提交的审核仍可能完成，请刷新换机申请核对。');}
   byId('device-replacement-reviews-panel').querySelector('summary').addEventListener('click',()=>{if(byId('device-replacement-reviews-panel').open)closeReplacementReviews();else replacementReviewOpened=true;});
   byId('device-replacement-reviews-panel').addEventListener('toggle',()=>{if(byId('device-replacement-reviews-panel').open&&!byId('device-replacement-reviews-panel').hidden&&replacementReviewReady()){replacementReviewOpened=true;if(replacementReviewPending())message('device-replacement-reviews-message','换机审核仍在处理中；请稍候刷新核对。');else void loadReplacementReviews();updateReplacementReviewControls();}else if(replacementReviewOpened)closeReplacementReviews();});
   byId('device-replacement-reviews-password').addEventListener('input',updateReplacementReviewControls);byId('device-replacement-reviews-password').addEventListener('keydown',event=>{if(event.key==='Enter')event.preventDefault();});byId('device-replacement-reviews-refresh').addEventListener('click',()=>void loadReplacementReviews());for(const decision of ['approve','reject','revoke'])byId('device-replacement-reviews-'+decision).addEventListener('click',()=>void decideReplacementReview(decision));
+  byId('device-replacement-reviews-prev').addEventListener('click',()=>{if(replacementReviewCursors.length>1)void loadReplacementReviews(replacementReviewCursors.slice(0,-1));});
+  byId('device-replacement-reviews-next').addEventListener('click',()=>{if(replacementReviewNextCursor)void loadReplacementReviews([...replacementReviewCursors,replacementReviewNextCursor]);});
   byId('device-replacement-refresh').addEventListener('click',()=>void loadOwnReplacement());for(const kind of ['request','withdraw','activate'])byId('device-replacement-'+kind).addEventListener('click',()=>void mutateOwnReplacement(kind));
   function deviceApiReady(){return ['getDeviceStatus','enrollDevice','reconnectDevice'].every(name=>typeof api?.[name]==='function');}
   function validDeviceSnapshot(value){

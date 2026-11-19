@@ -3,7 +3,7 @@ import {administratorTechnicalEligibilitySql} from './administrator-business-rol
 import {canOperateTeam,restrictedBusinessIdentity} from './administration-policy.mjs';
 import {safeMemberText} from './member-access-policy.mjs';
 import {deviceServerId,safeRevision} from './device-policy.mjs';
-import {ApiError} from './http-utils.mjs';
+import {ApiError,deny} from './http-utils.mjs';
 import {hasProtectedReviewerHistory,noReviewerHistorySql} from './reviewer-policy.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 export const replacementConflict=()=>{throw new ApiError(409,'DEVICE_REPLACEMENT_CONFLICT','换机申请或授权状态已改变，请刷新核对。');};
@@ -60,11 +60,11 @@ export function canReviewReplacement(db,userId){
  if(replacementOwner(db,userId))return true;
  return db.prepare("SELECT team_id FROM team_operators WHERE user_id=? AND role='administrator' AND status='active'").all(userId).some(row=>canOperateTeam(db,userId,row.team_id));
 }
-export function replacementReviewRows(db,actorId){
+export function replacementReviewRows(db,actorId,after=null){
  const owner=!!replacementOwner(db,actorId),technical=!restrictedBusinessIdentity(db,actorId);
  // All historic affiliations and protected identities are scoped in SQL before
- // the bounded page. Foreign tenants cannot occupy or expand this result set.
- return db.prepare(`SELECT request.* FROM team_device_replacement_requests request
+ // the bounded page, including lookup of the preceding page's anchor.
+ const scope=`FROM team_device_replacement_requests request
  JOIN team_users account ON account.user_id=request.user_id AND account.status='active'
  JOIN team_credentials credential ON credential.user_id=account.user_id
  JOIN teams team ON team.team_id=request.team_id AND team.status='active'
@@ -78,8 +78,17 @@ export function replacementReviewRows(db,actorId){
  OR (request.target_kind='administrator' AND ?=1
    AND (SELECT COUNT(*) FROM team_operators WHERE user_id=account.user_id)=1
    AND EXISTS (SELECT 1 FROM team_operators operator WHERE operator.user_id=account.user_id AND operator.team_id=request.team_id AND operator.status='active' AND operator.role='administrator'
-     AND ${administratorTechnicalEligibilitySql('operator')})))
- ORDER BY request.created_at DESC,request.request_id DESC LIMIT 51`).all(actorId,technical?1:0,actorId,owner?1:0);
+     AND ${administratorTechnicalEligibilitySql('operator')})))`;
+ const params=[actorId,technical?1:0,actorId,owner?1:0];
+ let boundary='';
+ if(after!==null){
+  const anchor=db.prepare(`SELECT request.* ${scope} AND request.request_id=?`).get(...params,after);
+  if(!anchor||!replacementAuthority(db,actorId,anchor,{freshTarget:false}))deny();
+  boundary=' AND (request.created_at,request.request_id)<(?,?)';
+  params.push(anchor.created_at,anchor.request_id);
+ }
+ return db.prepare(`SELECT request.* ${scope}${boundary}
+ ORDER BY request.created_at DESC,request.request_id DESC LIMIT 51`).all(...params);
 }
 export function replacementState(db,row,at){
  if(!['pending','approved'].includes(row.status))return row.status;

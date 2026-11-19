@@ -37,6 +37,13 @@ const LIVE="SELECT * FROM team_device_leases WHERE revoked_at IS NULL";
 const ownedTables=['team_credentials','team_phone_credentials','team_wechat_identities','team_memberships','team_operators','team_project_grants','team_attachment_grants','team_admin_grants','team_task_assignments','team_task_versions','team_task_submissions','team_collection_attachments'];
 const rows=(db,tables)=>JSON.stringify(tables.map(table=>[table,db.prepare('SELECT * FROM '+table).all()]));
 function dto(row){assert.deepEqual(Object.keys(row).sort(),['id','teamId','teamName','displayName','targetKind','status','revision','createdAt','expiresAt','oldDevice','newDevice'].sort());assert.deepEqual(Object.keys(row.oldDevice).sort(),['id','displayName','platform','keyFingerprint','status','revision'].sort());assert.deepEqual(Object.keys(row.newDevice).sort(),['displayName','platform','keyFingerprint'].sort());for(const forbidden of ['publicKey','token','stamp','session','phone','password'])assert.ok(!JSON.stringify(row).includes('"'+forbidden+'"'));}
+function cloneReplacementHistory(db,id,createdAt){
+ const original=db.prepare('SELECT * FROM team_device_replacement_requests WHERE request_id=?').get(id);
+ const row={...original,request_id:randomUUID(),status:'rejected',created_at:createdAt};
+ const names=Object.keys(row);
+ db.prepare('INSERT INTO team_device_replacement_requests('+names.join(',')+') VALUES ('+names.map(()=>'?').join(',')+')').run(...Object.values(row));
+ return row.request_id;
+}
 
 test('first enrollment remains separate, same active key cannot request replacement, and query/method constraints stay exact',async t=>{
  const f=await fixture(t),boot=await f.login();assert.deepEqual((await f.api('/api/auth/device-replacements',{session:boot})).data,{canRequest:false,request:null});const old=await f.ready(),r=await f.api('/api/auth/device-replacements/request-challenges',{method:'POST',session:old,body:{publicKey:old.key.encoded,displayName:'Same',platform:'win32',currentPassword:PASSWORD}});assert.equal(r.status,409);
@@ -98,8 +105,60 @@ test('review list only projects current authorized team requests and returns a b
 });
 test('SQL scopes foreign history before its 51-row bound and authorized history sets hasMore',async t=>{
  const f=await fixture(t),a=await f.request(),b=await f.request({user:'intern-b'}),admin=await f.ready('admin-core');
- const clone=(id,created)=>{const row={...f.db.prepare('SELECT * FROM team_device_replacement_requests WHERE request_id=?').get(id),request_id:randomUUID(),status:'rejected',created_at:created};const names=Object.keys(row);f.db.prepare('INSERT INTO team_device_replacement_requests('+names.join(',')+') VALUES ('+names.map(()=>'?').join(',')+')').run(...Object.values(row));};
- for(let i=0;i<90;i++)clone(b.row.id,NOW+1000+i);let result=await f.api('/api/account/device-replacement-reviews',{session:admin});assert.deepEqual(result.data.requests.map(row=>row.id),[a.row.id]);assert.equal(result.data.hasMore,false);
- for(let i=0;i<51;i++)clone(a.row.id,NOW+i);const original=f.db.prepare,observed=[];f.db.prepare=function(sql){const statement=original.call(this,sql);if(sql.includes('SELECT request.* FROM team_device_replacement_requests request')){const all=statement.all;statement.all=function(...args){const rows=all.apply(this,args);observed.push({sql,count:rows.length});return rows;};}return statement;};t.after(()=>{f.db.prepare=original;});
+ for(let i=0;i<90;i++)cloneReplacementHistory(f.db,b.row.id,NOW+1000+i);let result=await f.api('/api/account/device-replacement-reviews',{session:admin});assert.deepEqual(result.data.requests.map(row=>row.id),[a.row.id]);assert.equal(result.data.hasMore,false);
+ for(let i=0;i<51;i++)cloneReplacementHistory(f.db,a.row.id,NOW+i);const original=f.db.prepare,observed=[];f.db.prepare=function(sql){const statement=original.call(this,sql);if(sql.includes('SELECT request.* FROM team_device_replacement_requests request')){const all=statement.all;statement.all=function(...args){const rows=all.apply(this,args);observed.push({sql,count:rows.length});return rows;};}return statement;};t.after(()=>{f.db.prepare=original;});
  result=await f.api('/api/account/device-replacement-reviews',{session:admin});assert.equal(result.data.requests.length,50);assert.equal(result.data.hasMore,true);assert.ok(result.data.requests.every(row=>row.teamId==='team-a'));assert.equal(observed.length,1);assert.equal(observed[0].count,51);assert.match(observed[0].sql,/LIMIT 51/);assert.match(observed[0].sql,/request\.team_id IN/);
+});
+
+test('opt-in review pages preserve tied order and reach the older open request after an insert',async t=>{
+ const f=await fixture(t),older=await f.request(),admin=await f.ready('admin-core');
+ const route='/api/account/device-replacement-reviews',options={session:admin};
+ const history=Array.from({length:55},()=>cloneReplacementHistory(f.db,older.row.id,NOW+1)).sort().reverse();
+ const business=['team_device_replacement_requests','team_device_replacement_events','team_device_replacement_challenges','team_device_bindings',...ownedTables];
+ let before=rows(f.db,business);
+ const first=await f.api(route+'?paging=1',options),legacy=await f.api(route,options);
+ assert.equal(first.status,200);
+ assert.deepEqual(first.data.requests.map(row=>row.id),history.slice(0,50));
+ assert.equal(first.data.nextCursor,history[49]);
+ assert.equal(first.data.hasMore,true);
+ assert.deepEqual(legacy.data,{requests:first.data.requests,hasMore:true});
+ assert.equal(rows(f.db,business),before);
+ const inserted=cloneReplacementHistory(f.db,older.row.id,NOW+2);
+ before=rows(f.db,business);
+ const second=await f.api(route+'?paging=1&after='+first.data.nextCursor,options);
+ assert.equal(second.status,200);
+ assert.deepEqual(second.data.requests.map(row=>row.id),[...history.slice(50),older.row.id]);
+ assert.equal(second.data.requests.at(-1).status,'pending');
+ assert.equal(second.data.hasMore,false);
+ assert.equal(second.data.nextCursor,null);
+ second.data.requests.forEach(dto);
+ assert.deepEqual((await f.api(route+'?paging=1&after='+older.row.id,options)).data,{requests:[],hasMore:false,nextCursor:null});
+ assert.equal((await f.api(route+'?paging=1',options)).data.requests[0].id,inserted);
+ assert.equal(rows(f.db,business),before);
+});
+
+test('review page anchors recheck scope and unavailable anchors have the same response',async t=>{
+ const f=await fixture(t),own=await f.request(),foreign=await f.request({user:'intern-b'}),admin=await f.ready('admin-core');
+ const route='/api/account/device-replacement-reviews',options={session:admin};
+ const pageAfter=id=>f.api(route+'?paging=1&after='+id,options);
+ const missing=await pageAfter(randomUUID()),differentTeam=await pageAfter(foreign.row.id);
+ assert.equal(missing.status,404);
+ assert.equal(differentTeam.status,404);
+ assert.deepEqual(differentTeam.data,missing.data);
+ assert.equal((await pageAfter(own.row.id)).status,200);
+ f.db.prepare('UPDATE team_device_bindings SET revision=revision+1 WHERE device_id=?').run(own.old.device.id);
+ const stale=(await f.api(route+'?paging=1',options)).data.requests[0];
+ assert.equal(stale.id,own.row.id);
+ assert.equal(stale.status,'stale');
+ assert.equal((await pageAfter(stale.id)).status,200);
+ f.db.prepare("UPDATE team_memberships SET status='disabled' WHERE user_id='intern-a'").run();
+ const noLongerAvailable=await pageAfter(own.row.id);
+ assert.equal(noLongerAvailable.status,404);
+ assert.deepEqual(noLongerAvailable.data,missing.data);
+ for(const query of ['paging=2','paging=1&paging=1','paging=1&after=','paging=1&after=invalid','paging=1&after='+own.row.id+'&after='+own.row.id,'paging=1&limit=50','after='+own.row.id]){
+  assert.equal((await f.api(route+'?'+query,options)).status,400,query);
+ }
+ assert.equal((await f.api(route+'/access?paging=1',options)).status,400);
+ assert.equal((await f.api(route+'?paging=1',{...options,method:'POST',body:{}})).status,400);
+ assert.equal((await f.api(route+'?paging=1&after='+own.row.id,{session:foreign.old})).status,404);
 });

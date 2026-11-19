@@ -33,7 +33,7 @@ vault新增仅main的 `signReplacementChallenge(fields,context)`，context精确
 审核路由永远不在bootstrap，必须strict设备context＋当前实际actor：
 
 - GET `/api/account/device-replacement-reviews/access` → `{canReview:boolean}`。
-- GET `/api/account/device-replacement-reviews` → `{requests:[DTO最多50],hasMore:boolean}`；scope/当前权源先过滤再截断，createdAt/id倒序。无任意成员目录，不暴露不同团队/无权请求；未知与无权同404。
+- GET `/api/account/device-replacement-reviews` → `{requests:[DTO最多50],hasMore:boolean}`。带 `?paging=1` 时使用分页响应 `nextCursor`。后续页追加 `&after=<上一页末条申请编号>`，以录入时间和申请编号倒序读取。每次都先按当前权源限制可见范围；无权和未知的游标均返回 404。旧客户端可继续读取原格式首页。
 - POST `/api/account/device-replacement-reviews/:requestId/review` body `{revision,decision,currentPassword}`，decision仅approve/reject/revoke；密码重验、fresh authority/target/oldbinding/request及CAS，→ `{request:DTO}`。pending可approve/reject，approved可revoke，不重复批准或回pending。
 
 DTO精确11字段 `{id,teamId,teamName,displayName,targetKind,status,revision,createdAt,expiresAt,oldDevice,newDevice}`。targetKind employee/administrator；status含pending/approved/claimed/rejected/withdrawn/revoked/expired/stale；oldDevice为 `{id,displayName,platform,keyFingerprint,status,revision}`，newDevice为 `{displayName,platform,keyFingerprint}`；无publicKey/token/hash/private审查stamp/phone/正文。正常文本安全限制沿用80字符，名称非空、platform win32/darwin、revision安全。server opaque错误沿用400/401/403/404/409/410/429/503，错误签名最多5次，不回原始异常或秘密。

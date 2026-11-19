@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   withdrawDeviceReplacement:request=>invoke('device-replacement-withdraw',request),
   activateDeviceReplacement:confirmation=>invoke('device-replacement-activate',confirmation),
   getDeviceReplacementReviewAccess:()=>invoke('device-replacement-review-access'),
-  listDeviceReplacementReviews:()=>invoke('device-replacement-reviews'),
+  listDeviceReplacementReviews:page=>invoke('device-replacement-reviews',page),
   reviewDeviceReplacement:decision=>invoke('device-replacement-review',decision),
   requestPasswordRecovery:target=>invoke('recovery-challenge',target),
   recoverPassword:proof=>invoke('recovery-complete',proof),

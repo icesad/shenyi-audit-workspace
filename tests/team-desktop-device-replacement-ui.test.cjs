@@ -45,3 +45,58 @@ test('close/reopen preserves the mutation lock, clears selection and cannot issu
 test('a late closed-panel list 401 does not end the current ready login',async t=>{const held=deferred(),f=fixture(t,{getDeviceReplacementReviewAccess:async()=>ok({canReview:true}),listDeviceReplacementReviews:async()=>held.promise});await workspace(f);await until(()=>!f.id('device-replacement-reviews-panel').hidden);f.id('device-replacement-reviews-panel').querySelector('summary').click();await until(()=>count(f,'listDeviceReplacementReviews')===1);f.id('device-replacement-reviews-panel').querySelector('summary').click();held.resolve(fail('SIGN_IN_REQUIRED','late old view'));await settled();assert.equal(f.id('workspace-view').hidden,false);assert.equal(f.id('account-name').textContent,ACCOUNT.displayName);});
 test('MAX revision and terminal requests are displayed but cannot be selected',async t=>{const f=fixture(t,{getDeviceReplacementReviewAccess:async()=>ok({canReview:true}),listDeviceReplacementReviews:async()=>ok({requests:[requestView('pending',Number.MAX_SAFE_INTEGER),requestView('claimed',3,{id:'33333333-3333-4333-8333-333333333333'})],hasMore:false})});await reviews(f);for(const button of f.d.querySelectorAll('#device-replacement-reviews-list button'))assert.equal(button.disabled,true);assert.equal(f.id('device-replacement-reviews-password').disabled,true);});
 test('unload clears replacement proof fields and stops status polling',async t=>{const f=fixture(t,{loginState:'different_key'});await gate(f);confirm(f);f.window.dispatchEvent(new f.window.Event('beforeunload'));assert.equal(f.id('password').value,'');assert.equal(f.id('device-enroll-consent').checked,false);assert.equal(f.id('device-name').value,'');assert.equal(f.id('device-replacement-reviews-password').value,'');assert.equal(f.intervals.size,0);});
+
+test('older authorized replacement can be approved on a later page without retaining the previous selection',async t=>{
+ const first=Array.from({length:50},(_,i)=>requestView('pending',1,{id:'00000000-0000-4000-8000-'+String(i).padStart(12,'0')}));
+ const boundary=first.at(-1).id;
+ let older=requestView();
+ const f=fixture(t,{
+  getDeviceReplacementReviewAccess:async()=>ok({canReview:true}),
+  listDeviceReplacementReviews:async input=>input.after===boundary?ok({requests:[older],hasMore:false,nextCursor:null}):ok({requests:first,hasMore:true,nextCursor:boundary}),
+  reviewDeviceReplacement:async()=>{older=requestView('approved',2);return ok({request:older});},
+ });
+ await reviews(f);chooseReview(f);
+ const stale=f.id('device-replacement-reviews-list').querySelector('button');
+ f.click('device-replacement-reviews-next');
+ assert.equal(f.id('device-replacement-reviews-password').value,'');
+ assert.equal(f.id('device-replacement-reviews-approve').disabled,true);
+ await until(()=>f.id('device-replacement-reviews-page-status').textContent==='第 2 页 · 本页 1 条'&&!f.id('device-replacement-reviews-prev').disabled);
+ stale.click();assert.equal(f.id('device-replacement-reviews-password').disabled,true);
+ assert.deepEqual({...f.calls.findLast(call=>call.name==='listDeviceReplacementReviews').input},{after:boundary});
+ chooseReview(f);f.click('device-replacement-reviews-approve');
+ await until(()=>f.id('device-replacement-reviews-message').textContent.includes('本人仍须'));
+ assert.equal(f.calls.find(call=>call.name==='reviewDeviceReplacement').input.requestId,older.id);
+ assert.equal(f.calls.findLast(call=>call.name==='listDeviceReplacementReviews').input.after,boundary);
+ assert.equal(f.id('device-replacement-reviews-page-status').textContent,'第 2 页 · 本页 1 条');
+ f.click('device-replacement-reviews-prev');
+ await until(()=>f.id('device-replacement-reviews-page-status').textContent==='第 1 页 · 本页 50 条'&&!f.id('device-replacement-reviews-next').disabled);
+ assert.deepEqual({...f.calls.findLast(call=>call.name==='listDeviceReplacementReviews').input},{});
+ assert.equal(count(f,'reviewDeviceReplacement'),1);
+ assert.equal(count(f,'activateDeviceReplacement'),0);
+ assert.deepEqual(f.writes,[]);
+});
+
+test('when the cursor page load fails, the old review selection and actions stay cleared',async t=>{
+ const item=requestView();
+ const f=fixture(t,{
+  getDeviceReplacementReviewAccess:async()=>ok({canReview:true}),
+  listDeviceReplacementReviews:async input=>input.after?fail('HTTP_404','申请范围已变化'):ok({requests:[item],hasMore:true,nextCursor:item.id}),
+ });
+ await reviews(f);chooseReview(f);f.click('device-replacement-reviews-next');
+ await until(()=>f.id('device-replacement-reviews-message').textContent.includes('申请范围已变化'));
+ assert.equal(f.d.querySelectorAll('#device-replacement-reviews-list [data-request-id]').length,0);
+ assert.equal(f.id('device-replacement-reviews-page-status').textContent,'');
+ assert.equal(f.id('device-replacement-reviews-password').value,'');
+ assert.equal(f.id('device-replacement-reviews-next').disabled,true);
+ f.fire('device-replacement-reviews-approve');assert.equal(count(f,'reviewDeviceReplacement'),0);
+ f.click('device-replacement-reviews-refresh');
+ await until(()=>f.id('device-replacement-reviews-page-status').textContent==='第 1 页 · 本页 1 条');
+});
+
+test('a legacy server list with more records shows its limit without manufacturing a cursor',async t=>{
+ const f=fixture(t,{getDeviceReplacementReviewAccess:async()=>ok({canReview:true}),listDeviceReplacementReviews:async()=>ok({requests:[requestView()],hasMore:true})});
+ await reviews(f);
+ assert.match(f.id('device-replacement-reviews-message').textContent,/最近 50 条/);
+ assert.equal(f.id('device-replacement-reviews-pagination').hidden,true);
+ f.fire('device-replacement-reviews-next');assert.equal(count(f,'listDeviceReplacementReviews'),1);
+});

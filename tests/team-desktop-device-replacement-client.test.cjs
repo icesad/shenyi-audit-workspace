@@ -2,7 +2,9 @@
 const test=require('node:test'),assert=require('node:assert/strict'),{DatabaseSync}=require('node:sqlite');
 const {generateKeyPairSync,sign,createHash}=require('node:crypto'),path=require('node:path'),{pathToFileURL}=require('node:url');
 const {createTeamClient}=require('../desktop/team-client.cjs'),proof=require('../shared/device-proof.cjs'),replacementProof=require('../shared/device-replacement-proof.cjs');
+const {registerDesktopBridge,APP_URL}=require('../desktop/bridge.cjs');
 const source=name=>import(pathToFileURL(path.resolve(__dirname,'../server/team/'+name)).href),NOW=Date.parse('2026-11-15T14:00:00Z'),PASSWORD='ShenyiDemo!2026';
+const REVIEW_LIST_PATH='/api/account/device-replacement-reviews',OLDER_REQUEST='ffffffff-ffff-4fff-8fff-ffffffffffff';
 const deferred=()=>{let resolve;return {promise:new Promise(r=>resolve=r),resolve:value=>resolve(value)};};
 function identity(){const pair=generateKeyPairSync('ed25519'),publicKey=pair.publicKey.export({format:'der',type:'spki'}).toString('base64url'),fingerprint=proof.parsePublicKey(publicKey).fingerprint,calls=[];return {fingerprint,calls,vault:{async getPublicIdentity(){return {publicKey,fingerprint};},async signChallenge(fields){return sign(null,proof.challengeBytes(fields),pair.privateKey).toString('base64url');},async signRequest(fields){return sign(null,proof.requestProofBytes(fields),pair.privateKey).toString('base64url');},async signReplacementChallenge(fields,context){assert.deepEqual(Object.keys(context).sort(),['oldBindingRevision','oldBindingStatus','oldDeviceId','purpose','requestId','requestRevision','serverId','sessionToken','userId']);assert.equal(fields.sessionBinding,proof.sessionBinding(context.sessionToken));assert.equal(fields.keyFingerprint,fingerprint);for(const key of ['purpose','serverId','userId','oldDeviceId','oldBindingRevision','oldBindingStatus','requestId','requestRevision'])assert.equal(fields[key],context[key]);calls.push({fields:{...fields},context:{...context}});return sign(null,replacementProof.replacementChallengeBytes(fields),pair.privateKey).toString('base64url');}}};}
 let baseline;
@@ -10,7 +12,7 @@ async function fixture(t){
  const {initializeTeamDatabase,seedDemoTeamData}=await source('database.mjs');baseline||=(async()=>{const db=new DatabaseSync(':memory:');try{initializeTeamDatabase(db);await seedDemoTeamData(db);for(const [file,name]of [['provisioning-demo.mjs','seedProvisioningDemo'],['recovery-review-demo.mjs','seedRecoveryReviewDemo'],['member-access-demo.mjs','seedMemberDeactivationDemo'],['device-replacement-demo.mjs','seedDeviceReplacementDemo']])await (await source(file))[name](db);return db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY rowid").all().map(({name})=>({name,rows:db.prepare('SELECT * FROM "'+name+'"').all()}));}finally{db.close();}})();
  const db=new DatabaseSync(':memory:');t.after(()=>db.close());initializeTeamDatabase(db);db.exec('BEGIN;PRAGMA defer_foreign_keys=ON;');for(const {name,rows}of await baseline)for(const row of rows){const cols=Object.keys(row);db.prepare('INSERT OR REPLACE INTO "'+name+'"('+cols.map(key=>'"'+key+'"').join(',')+') VALUES ('+cols.map(()=>'?').join(',')+')').run(...Object.values(row));}db.exec('COMMIT;');
  const {handleTeamApplicationRequest}=await source('application-api.mjs'),calls=[],state={after:null},clock={value:NOW};
- const client=(key=identity())=>{const c=createTeamClient({deviceIdentity:{vault:key.vault,platform:'win32'},now:()=>clock.value,fetchImpl:async(url,options)=>{const call={route:new URL(url).pathname,method:options.method,body:options.body,headers:options.headers};calls.push(call);let response=await handleTeamApplicationRequest(new Request(url,options),{db,now:()=>clock.value,identityProviders:{deviceProofRequired:true}});if(state.after)response=await state.after(call,response)||response;return response;}});return {c,key};};
+ const client=(key=identity())=>{const c=createTeamClient({deviceIdentity:{vault:key.vault,platform:'win32'},now:()=>clock.value,fetchImpl:async(url,options)=>{const target=new URL(url),call={route:target.pathname,search:target.search,method:options.method,body:options.body,headers:options.headers};calls.push(call);let response=await handleTeamApplicationRequest(new Request(url,options),{db,now:()=>clock.value,identityProviders:{deviceProofRequired:true}});if(state.after)response=await state.after(call,response)||response;return response;}});return {c,key};};
  const login=(c,name='intern-a')=>c.login({username:name,password:PASSWORD}),enroll=async(c,name='intern-a')=>{await login(c,name);return c.enrollDevice({displayName:'旧合成电脑',currentPassword:PASSWORD,confirmed:true});},apply=c=>c.requestDeviceReplacement({displayName:'新合成电脑',currentPassword:PASSWORD,confirmed:true});
  const old=client();await enroll(old.c);const next=client();await login(next.c);const admin=client();await enroll(admin.c,'administrator-demo');return {db,calls,state,clock,client,login,enroll,apply,old,next,admin};
 }
@@ -30,6 +32,74 @@ test('malformed replacement challenge context fails before signing or final POST
 test('a committed activation with lost response is never automatically replayed and can be reconciled by login',async t=>{const f=await fixture(t),item=(await review(f,(await f.apply(f.next.c)).request)).request;f.state.after=async(call,response)=>{if(call.route.endsWith('/activate')&&response.ok){await response.arrayBuffer();throw Error('synthetic disconnected after commit');}return response;};await assert.rejects(f.next.c.activateDeviceReplacement({requestId:item.id,revision:item.revision,confirmed:true}),{code:'OPERATION_UNCONFIRMED'});assert.equal(activateCount(f),1);assert.equal(f.db.prepare("SELECT status FROM team_device_replacement_requests WHERE request_id=?").get(item.id).status,'claimed');f.state.after=null;const value=await f.login(f.next.c);assert.equal(value.device.state,'ready');assert.equal(activateCount(f),1);assert.equal((await task(f.next.c)).tasks.length,1);});
 test('a late minted activation after logout never replaces a later account and only revokes its own token',async t=>{const f=await fixture(t),item=(await review(f,(await f.apply(f.next.c)).request)).request,held=deferred(),reached=deferred();f.state.after=async(call,response)=>{if(call.route.endsWith('/activate')&&response.ok){reached.resolve();await held.promise;}return response;};const action=f.next.c.activateDeviceReplacement({requestId:item.id,revision:item.revision,confirmed:true});const outcome=action.then(value=>({value}),error=>({error}));await reached.promise;await f.next.c.logout().catch(()=>{});await f.login(f.next.c,'assistant-a');held.resolve();const result=await outcome;assert.equal(result.error.code,'SESSION_CHANGED');assert.equal((await f.next.c.getSession()).account.id,'assistant-a');assert.equal(f.db.prepare("SELECT status FROM team_device_replacement_requests WHERE request_id=?").get(item.id).status,'claimed');assert.equal(f.db.prepare("SELECT COUNT(*) n FROM team_device_leases WHERE user_id='intern-a' AND revoked_at IS NULL").get().n,0);assert.equal(f.db.prepare("SELECT COUNT(*) n FROM team_device_bindings WHERE user_id='intern-a' AND status='active'").get().n,1);});
 test('review DTOs reject secret-bearing extras and duplicate pages rather than projecting arbitrary server data',async t=>{const f=await fixture(t),item=(await f.apply(f.next.c)).request;f.state.after=async(call,response)=>call.route==='/api/account/device-replacement-reviews'?Response.json({requests:[{...item,approvalSecret:'must-not-leave-main'}],hasMore:false}):response;await assert.rejects(f.admin.c.listDeviceReplacementReviews(),{code:'INVALID_RESPONSE'});f.state.after=async(call,response)=>call.route==='/api/account/device-replacement-reviews'?Response.json({requests:[item,item],hasMore:false}):response;await assert.rejects(f.admin.c.listDeviceReplacementReviews(),{code:'INVALID_RESPONSE'});});
+
+test('review paging keeps the legacy DTO and sends first and later pages on narrow signed GETs',async t=>{
+  const f=await fixture(t),item=(await f.apply(f.next.c)).request,older={...item,id:OLDER_REQUEST,createdAt:item.createdAt-1};
+  f.state.after=(call,response)=>{
+    if(call.route!==REVIEW_LIST_PATH)return response;
+    if(call.search==='?paging=1')return Response.json({requests:[item],hasMore:true,nextCursor:item.id});
+    if(call.search==='?paging=1&after='+item.id)return Response.json({requests:[older],hasMore:false,nextCursor:null});
+    return response;
+  };
+  assert.deepEqual(await f.admin.c.listDeviceReplacementReviews(),{requests:[item],hasMore:false});
+  assert.deepEqual(await f.admin.c.listDeviceReplacementReviews({}),{requests:[item],hasMore:true,nextCursor:item.id});
+  const later=await f.admin.c.listDeviceReplacementReviews({after:item.id});
+  assert.deepEqual(later,{requests:[older],hasMore:false,nextCursor:null});
+  noSecrets(later,f);
+  const calls=f.calls.filter(call=>call.route===REVIEW_LIST_PATH);
+  assert.deepEqual(calls.map(call=>call.search),['','?paging=1','?paging=1&after='+item.id]);
+  assert.ok(calls.every(call=>call.method==='GET'&&call.body===undefined&&call.headers['X-Shenyi-Device-Signature']));
+});
+
+test('only an explicit rejection of the first query retries once against the legacy review list',async t=>{
+  const f=await fixture(t),item=(await f.apply(f.next.c)).request,readCalls=()=>f.calls.filter(call=>call.route===REVIEW_LIST_PATH);
+  let queryStatus=400;
+  f.state.after=(call,response)=>call.route===REVIEW_LIST_PATH&&call.search?Response.json({error:{code:'VALIDATION_ERROR'}},{status:queryStatus}):response;
+  assert.deepEqual(await f.admin.c.listDeviceReplacementReviews({}),{requests:[item],hasMore:false});
+  assert.deepEqual(readCalls().map(call=>call.search),['?paging=1','']);
+  await assert.rejects(f.admin.c.listDeviceReplacementReviews({after:item.id}),{code:'HTTP_400'});
+  assert.deepEqual(readCalls().slice(2).map(call=>call.search),['?paging=1&after='+item.id]);
+  queryStatus=404;
+  await assert.rejects(f.admin.c.listDeviceReplacementReviews({}),{code:'HTTP_404'});
+  assert.deepEqual(readCalls().slice(3).map(call=>call.search),['?paging=1']);
+});
+
+test('invalid review cursor inputs and malformed paged projections never fall back to a different read',async t=>{
+  const f=await fixture(t),item=(await f.apply(f.next.c)).request;
+  const readCalls=()=>f.calls.filter(call=>call.route===REVIEW_LIST_PATH);
+  for(const input of [null,[],{after:undefined},{after:[item.id]},{after:'unverified'},{after:item.id,limit:50}]){
+    await assert.rejects(f.admin.c.listDeviceReplacementReviews(input),{code:'INVALID_INPUT'});
+  }
+  assert.equal(readCalls().length,0);
+  for(const response of [
+    {requests:[item],hasMore:true},
+    {requests:[item],hasMore:true,nextCursor:null},
+    {requests:[item],hasMore:true,nextCursor:OLDER_REQUEST},
+    {requests:[item],hasMore:false,nextCursor:item.id},
+    {requests:[item,item],hasMore:false,nextCursor:null},
+    {requests:[{...item,id:[item.id]}],hasMore:false,nextCursor:null},
+    {requests:[item],hasMore:false,nextCursor:null,extra:true},
+  ]){
+    f.state.after=(call,original)=>call.route===REVIEW_LIST_PATH?Response.json(response):original;
+    await assert.rejects(f.admin.c.listDeviceReplacementReviews({}),{code:'INVALID_RESPONSE'});
+  }
+  f.state.after=(call,response)=>call.route===REVIEW_LIST_PATH?Response.json({requests:[item],hasMore:false,nextCursor:null}):response;
+  await assert.rejects(f.admin.c.listDeviceReplacementReviews({after:item.id}),{code:'INVALID_RESPONSE'});
+  assert.ok(readCalls().every(call=>call.search));
+});
+
+test('replacement review IPC accepts just the existing no-arg call and scoped paging input',async()=>{
+  const handlers=new Map(),calls=[],frame={url:APP_URL},window={webContents:{mainFrame:frame}};
+  const client={listDeviceReplacementReviews(...args){calls.push(args);return {requests:[],hasMore:false};},clearSession(){}};
+  const dispose=registerDesktopBridge({ipcMain:{handle:(name,handler)=>handlers.set(name,handler),removeHandler:name=>handlers.delete(name)},window,client,dialog:{}});
+  const handler=handlers.get('shenyi:device-replacement-reviews'),event={sender:window.webContents,senderFrame:frame};
+  try{
+    for(const input of [undefined,{}, {after:OLDER_REQUEST}])assert.equal((await handler(event,input)).ok,true);
+    for(const input of [null,[],{after:OLDER_REQUEST,filter:'wrong'}])assert.equal((await handler(event,input)).ok,false);
+    assert.deepEqual(calls,[[],[{}],[{after:OLDER_REQUEST}]]);
+  }finally{dispose();}
+});
+
 test('pending request writes are single-flight until the held final response settles',async t=>{const f=await fixture(t),held=deferred(),reached=deferred();f.state.after=async(call,response)=>{if(call.route.endsWith('/request')&&response.ok){reached.resolve();await held.promise;}return response;};const first=f.apply(f.next.c);await reached.promise;await assert.rejects(f.apply(f.next.c),{code:'DEVICE_BUSY'});held.resolve();await first;assert.equal(requestCount(f),1);});
 test('a post-adopt actor change rejects the old delivery and revokes only its minted session',async t=>{const f=await fixture(t),item=(await review(f,(await f.apply(f.next.c)).request)).request;let later;await assert.rejects(f.next.c.activateDeviceReplacement({requestId:item.id,revision:item.revision,confirmed:true},()=>{later=f.login(f.next.c,'assistant-b');}),{code:'SESSION_CHANGED'});await later;assert.equal((await f.next.c.getSession()).account.id,'assistant-b');assert.equal(f.db.prepare("SELECT COUNT(*) n FROM team_device_leases WHERE user_id='intern-a' AND revoked_at IS NULL").get().n,0);assert.equal(f.db.prepare('SELECT status FROM team_device_replacement_requests WHERE request_id=?').get(item.id).status,'claimed');assert.equal(f.db.prepare("SELECT COUNT(*) n FROM team_device_bindings WHERE user_id='intern-a' AND status='active'").get().n,1);});
 test('retained completed activation receipt still cleans the old minted token on a later login',async t=>{const f=await fixture(t),item=(await review(f,(await f.apply(f.next.c)).request)).request;await f.next.c.activateDeviceReplacement({requestId:item.id,revision:item.revision,confirmed:true});assert.equal(f.next.c.getDeviceStatus().state,'ready');await f.login(f.next.c,'assistant-b');assert.equal((await f.next.c.getSession()).account.id,'assistant-b');assert.equal(f.db.prepare("SELECT COUNT(*) n FROM team_device_leases WHERE user_id='intern-a' AND revoked_at IS NULL").get().n,0);assert.equal(f.db.prepare('SELECT status FROM team_device_replacement_requests WHERE request_id=?').get(item.id).status,'claimed');});

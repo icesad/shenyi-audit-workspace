@@ -98,15 +98,22 @@ function reviewerIdentity(db,request,identityProviders,context,at){
  return identity;
 }
 function sameReviewer(db,request,before,providers,context,at){const fresh=reviewerIdentity(db,request,providers,context,at);if(fresh.userId!==before.userId||fresh.token!==before.token||fresh.stamp!==before.stamp||fresh.leaseId!==before.leaseId)replacementConflict();return fresh;}
+function replacementReviewPage(db,url,actorId,now){
+ const params=url.searchParams,paging=!!url.search,after=params.get('after');
+ if(paging&&(params.get('paging')!=='1'||params.size!==(after===null?1:2)||after!==null&&!UUID.test(after)))invalid();
+ const rows=replacementReviewRows(db,actorId,after).filter(row=>replacementAuthority(db,actorId,row,{freshTarget:false}));
+ const requests=rows.slice(0,50).map(row=>replacementView(db,row,now())),hasMore=rows.length>50;
+ return json(paging?{requests,hasMore,nextCursor:hasMore?requests.at(-1).id:null}:{requests,hasMore});
+}
 export async function handleDeviceReplacementRequest(request,{db,now=Date.now,identityProviders={},deviceContext}={}){
  const url=new URL(request.url),own=/^\/api\/auth\/device-replacements(?:\/(request-challenges|request|withdraw-challenges|withdraw|activate-challenges|activate))?$/.exec(url.pathname),
  access=url.pathname==='/api/account/device-replacement-reviews/access',list=url.pathname==='/api/account/device-replacement-reviews',review=/^\/api\/account\/device-replacement-reviews\/([^/]+)\/review$/.exec(url.pathname);
- if(!own&&!access&&!list&&!review)return null;if(url.search)invalid();
+ if(!own&&!access&&!list&&!review)return null;if(url.search&&(!list||request.method!=='GET'))invalid();
  if(!own){
   if(request.method!==(review?'POST':'GET'))return method(review?'POST':'GET');
   const actor=reviewerIdentity(db,request,identityProviders,deviceContext,replacementTime(now()));
   if(access)return json({canReview:canReviewReplacement(db,actor.userId)});if(!canReviewReplacement(db,actor.userId))deny();
-  if(list){const rows=replacementReviewRows(db,actor.userId).filter(row=>replacementAuthority(db,actor.userId,row,{freshTarget:false}));return json({requests:rows.slice(0,50).map(row=>replacementView(db,row,now())),hasMore:rows.length>50});}
+  if(list)return replacementReviewPage(db,url,actor.userId,now);
   if(!UUID.test(review[1]))deny();const previous=db.prepare('SELECT * FROM team_device_replacement_requests WHERE request_id=?').get(review[1]);
   const before=previous&&replacementAuthority(db,actor.userId,previous);if(!before)deny();
   const body=await readJson(request,['revision','decision','currentPassword']);if(!Number.isSafeInteger(body.revision)||body.revision<1||!['approve','reject','revoke'].includes(body.decision))invalid();password(body.currentPassword);

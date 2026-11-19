@@ -4,6 +4,7 @@ const proof=require('../shared/device-proof.cjs');
 const replacementProof=require('../shared/device-replacement-proof.cjs');
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/,HEX=/^[a-f0-9]{64}$/;
+const REVIEW_LIST_PATH='/api/account/device-replacement-reviews';
 const exact=(value,keys)=>!!value&&Object.getPrototypeOf(value)===Object.prototype&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
 const text=value=>typeof value==='string'&&value.isWellFormed()&&!!value.trim()&&[...value].length<=80&&!/[\p{Cc}\p{Cf}]/u.test(value);
 const revision=value=>Number.isSafeInteger(value)&&value>=1;
@@ -55,7 +56,11 @@ function createDeviceReplacement({identity,getAccount,getContext,bootstrap,revie
   try{const data=await bootstrap('/api/auth/device-replacements/'+purpose,{method:'POST',token:captured.account.token,body:{challengeId:fields.challengeId,signature},minted:purpose==='activate'});try{captured.assertCurrent();}catch(cause){if(purpose==='activate'&&typeof data?.token==='string'&&/^[A-Za-z0-9_-]{43}$/.test(data.token))await revoke(data.token).catch(()=>{});throw cause;}return data;}
   catch(cause){if(!unchanged(captured.account))throw changed();if(['SERVICE_UNAVAILABLE','INVALID_RESPONSE','RESPONSE_TOO_LARGE'].includes(cause.code))throw fail('OPERATION_UNCONFIRMED','已发换机操作的结果未确认，可能已经完成；请重新登录或刷新本人申请核对，系统不会自动重试。');throw cause;}
  }
- function assertReviewReady(){if(!identity||getContext()?.state!=='ready')throw fail('DEVICE_NOT_READY','换机审核需要当前已持钥核验的业务登录。');}
+ function assertReviewReady(){
+  const context=getContext();
+  if(!identity||context?.state!=='ready')throw fail('DEVICE_NOT_READY','换机审核需要当前已持钥核验的业务登录。');
+  return context;
+ }
  function actionInput(input,confirmed=false){if(!exact(input,confirmed?['requestId','revision','confirmed']:['requestId','revision'])||!UUID.test(input.requestId)||!revision(input.revision)||input.revision>=Number.MAX_SAFE_INTEGER||(confirmed&&input.confirmed!==true))throw invalid();}
  return Object.freeze({
   async getStatus(input){if(input!==undefined)throw invalid();return ownRead(capture());},
@@ -79,7 +84,27 @@ function createDeviceReplacement({identity,getAccount,getContext,bootstrap,revie
   },
   reset(){if(retainedReceipt)void retainedReceipt.rollback({clear:false});},
   async getReviewAccess(input){if(input!==undefined)throw invalid();assertReviewReady();const data=await reviewRequest('/api/account/device-replacement-reviews/access');if(!exact(data,['canReview'])||typeof data.canReview!=='boolean')throw malformed();return {canReview:data.canReview};},
-  async listReviews(input){if(input!==undefined)throw invalid();assertReviewReady();const data=await reviewRequest('/api/account/device-replacement-reviews');if(!exact(data,['requests','hasMore'])||!Array.isArray(data.requests)||data.requests.length>50||typeof data.hasMore!=='boolean')throw malformed();const requests=data.requests.map(view);if(new Set(requests.map(item=>item.id)).size!==requests.length)throw malformed();return {requests,hasMore:data.hasMore};},
+  async listReviews(input){
+   let paged=input!==undefined;
+   if(paged&&!exact(input,[])&&(!exact(input,['after'])||typeof input.after!=='string'||!UUID.test(input.after)))throw invalid();
+   const after=input?.after,account=getAccount(),epoch=assertReviewReady().epoch;
+   const query=paged?'?paging=1'+(after===undefined?'':'&after='+after):'';
+   let data;
+   try{data=await reviewRequest(REVIEW_LIST_PATH+query);}
+   catch(cause){
+    if(!paged||after!==undefined||cause?.code!=='HTTP_400'||cause.status!==400)throw cause;
+    // Older services reject even the first page query. Retry only the same actor's read.
+    if(!unchanged(account)||getContext()?.epoch!==epoch)throw changed();
+    assertReviewReady();
+    data=await reviewRequest(REVIEW_LIST_PATH);paged=false;
+   }
+   if(!exact(data,paged?['requests','hasMore','nextCursor']:['requests','hasMore'])||!Array.isArray(data.requests)||data.requests.length>50||typeof data.hasMore!=='boolean')throw malformed();
+   const requests=data.requests.map(view),ids=new Set(requests.map(item=>item.id));
+   if(ids.size!==requests.length||paged&&requests.some(item=>typeof item.id!=='string'||item.id===after))throw malformed();
+   if(!paged)return {requests,hasMore:data.hasMore};
+   if(data.hasMore?(typeof data.nextCursor!=='string'||data.nextCursor!==requests.at(-1)?.id):data.nextCursor!==null)throw malformed();
+   return {requests,hasMore:data.hasMore,nextCursor:data.nextCursor};
+  },
   async review(input){if(!exact(input,['requestId','revision','decision','currentPassword'])||!UUID.test(input.requestId)||!revision(input.revision)||input.revision>=Number.MAX_SAFE_INTEGER||!['approve','reject','revoke'].includes(input.decision)||typeof input.currentPassword!=='string'||!input.currentPassword||Buffer.byteLength(input.currentPassword)>512)throw invalid();assertReviewReady();const data=await reviewRequest('/api/account/device-replacement-reviews/'+input.requestId+'/review',{method:'POST',body:{revision:input.revision,decision:input.decision,currentPassword:input.currentPassword}});if(!exact(data,['request']))throw malformed();const item=view(data.request);if(item.id!==input.requestId||item.revision!==input.revision+1||item.status!==({approve:'approved',reject:'rejected',revoke:'revoked'})[input.decision])throw malformed();return {request:item};}
  });
 }

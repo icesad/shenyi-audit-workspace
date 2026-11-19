@@ -107,7 +107,7 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
     }
   });
   handle('device-replacement-review-access',arg=>{noArgs(arg);return client.getDeviceReplacementReviewAccess();});
-  handle('device-replacement-reviews',arg=>{noArgs(arg);return client.listDeviceReplacementReviews();});
+  handle('device-replacement-reviews',arg=>arg===undefined?client.listDeviceReplacementReviews():client.listDeviceReplacementReviews(input(arg,['after'])));
   handle('device-replacement-review',arg=>client.reviewDeviceReplacement(input(arg,['requestId','revision','decision','currentPassword'])));
   handle('member-management-access',arg=>{noArgs(arg);return client.getMemberManagementAccess();});
   handle('business-role-management-access',arg=>{noArgs(arg);return client.getBusinessRoleManagementAccess();});
