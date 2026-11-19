@@ -25,6 +25,8 @@ UNIT = 'shenyi-team.service'
 UNIT_PATH = '/etc/systemd/system/shenyi-team.service'
 JOURNAL = ROOT / '.shenyi-activation.json'
 SYSTEMCTL = Path('/usr/bin/systemctl')
+RUNUSER = Path('/usr/sbin/runuser')
+TIMEOUT = Path('/usr/bin/timeout')
 HEALTH_KEYS = {
     'backendReadiness', 'backendIdentity', 'publicIdentity', 'publicReadinessHidden', 'publicHealthHidden',
     'backendCertificate', 'publicCertificate', 'tlsKeySeparation', 'databaseVolume',
@@ -188,6 +190,21 @@ def validate_stage(staged, revision, archive_sha, root_device):
     return identity(info)
 
 
+def check_candidate_database(staged, env):
+    entry = staged / 'scripts/start-team-service.mjs'
+    owned_path(entry, stat.S_ISREG, readonly=True)
+    # Bound the candidate process under the service account as well as the parent command.
+    result = run([RUNUSER, '-u', 'shenyi-team', '-g', 'shenyi-team', '--', TIMEOUT, '--kill-after=2s', '10s',
+                  NODE, entry, '--check-database', '--config', CONFIG], 20, env)
+    if result.returncode == 0:
+        try:
+            if json.loads(result.stdout) == {'event': 'database-ready'}:
+                return
+        except ValueError:
+            pass
+    raise ValueError('The candidate database preflight failed before stopping the current service.')
+
+
 def activate(args, root_fd, env):
     revision = args.revision
     staged = ROOT / f'staged-{revision}'
@@ -205,9 +222,13 @@ def activate(args, root_fd, env):
     stamp = configuration_stamp()
     owned_path(CURRENT / 'scripts/check-team-service.mjs', stat.S_ISREG, readonly=True)
     _, warnings, baseline = health_check(env, prior_warnings=None, limit=15)
+    check_candidate_database(staged, env)
+    require(configuration_stamp() == stamp and process_status(env) == baseline
+            and identity(staged.stat()) == new_identity,
+            'Configuration or release state changed during the candidate database preflight.')
     report = {'revision': revision, 'archiveSha256': args.archive_sha256, 'oldDirectoryIdentity': old_identity,
               'newDirectoryIdentity': new_identity, 'baselinePid': baseline[0], 'baselineInvocation': baseline[1],
-              'baselineWarningChecks': sorted(warnings), **stamp}
+              'baselineWarningChecks': sorted(warnings), 'candidateDatabasePreflight': 'passed', **stamp}
     record(JOURNAL, {**report, 'status': 'stopping-current'}, root_fd)
 
     try:
@@ -273,7 +294,7 @@ def main():
                 'Run as the release administrator with the approved revision and SHA-256.')
         for directory in (ROOT, *ROOT.parents, NODE.parent, NODE.parent.parent):
             owned_path(directory, stat.S_ISDIR)
-        for path in (NODE, CONFIG, BACKEND_CA, Path(UNIT_PATH)):
+        for path in (NODE, CONFIG, BACKEND_CA, Path(UNIT_PATH), RUNUSER, TIMEOUT):
             owned_path(path, stat.S_ISREG)
         env = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}
         if args.edge_ca:

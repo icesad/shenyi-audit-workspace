@@ -163,7 +163,11 @@ journalctl -u shenyi-team-monitor.service -n 30 --no-pager
   --revision "$release" --archive-sha256 "$approved_archive_sha256" --same-schema
 ```
 
-`--same-schema` 确认本次切换已核对数据库兼容性。命令沿用暂存锁，核对审批归档摘要、候选回执和只读权限。启动候选后，使用上一版的探针检查两路 HTTPS、实例和进程。原有磁盘和证书临近阈值的提示可保留，新增提示或必要检查失败会停止变更。隔离环境可显式提供 `--edge-ca` 读取受信的边缘 CA，生产公有证书通常使用系统信任。 [systemd 服务状态与重启计数](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html)
+`--same-schema` 确认本次切换已核对数据库兼容性。命令沿用暂存锁，核对审批归档摘要、候选回执和只读权限。停服前以 `shenyi-team` 运行候选的 `start-team-service.mjs --check-database --config /etc/shenyi-team/service.json`。该命令只读打开 SQLite，沿用候选的数据库启动检查，按配置核对实例和所需库结构，包括已启用的审核式恢复或微信结构。检查完成后直接退出。TLS 和供应商配置仍由正常启动核验。预检失败时保留当前服务与候选，由发布人员核对库结构和配置。涉及迁移时，单独验证新旧版兼容性。
+
+隔离 Ubuntu 中，要求不存在的表和忽略退出信号的候选均在停服前被拒绝，原服务调用标识及 SQLite 字节一致。兼容候选的独立预检用时约 1.1 秒，随后切换通过双路 HTTPS 检查。此轮使用已准备的演练目录核验激活流程。证据见 `D:/codex-temp/shenyi-m7-db-preflight-20261119/verification.json`。
+
+启动候选后，使用上一版的探针检查两路 HTTPS、实例和进程。原有磁盘和证书临近阈值的提示可保留，新增提示或必要检查失败会停止变更。隔离环境可显式提供 `--edge-ca` 读取受信的边缘 CA，生产公有证书通常使用系统信任。 [systemd 服务状态与重启计数](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html)
 
 返回 `0` 时，旧版保存在 `previous-$release`。候选启动或探针失败且旧版已恢复时返回 `2`，候选保留在 `failed-$release`。两种结果均写入 `activation-$release.json`。返回 `1` 或进程意外退出时，在发布根核对结案回执及 `/opt/shenyi-team/.shenyi-activation.json`。未结案记录及其中的目录设备号和 inode 用于定位当前落位。遇到存储故障或无法证明已安全停服时，核对受管单元、进程、目录和实际库后再处置。SQLite 与配置保留在各自的原路径。
 

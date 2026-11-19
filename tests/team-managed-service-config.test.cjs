@@ -4,7 +4,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
+const { execFile } = require('node:child_process');
+const { pathToFileURL } = require('node:url');
 const { DatabaseSync } = require('node:sqlite');
 
 async function fixture() {
@@ -161,4 +163,98 @@ test('managed readiness requires recovery epoch triggers and challenge bindings 
   db.exec('DROP TABLE team_phone_challenge_bindings;');
   assertManagedDatabaseReady(db, serverId);
   assert.throws(() => assertManagedDatabaseReady(db, serverId, enabled), notReady);
+});
+
+async function databasePreflightFixture(t) {
+  const value = await fixture();
+  t.after(() => fs.rm(value.directory, {recursive:true,force:true}));
+  const {initializeTeamDatabase} = await import('../server/team/database.mjs');
+  const {deviceServerId} = await import('../server/team/device-policy.mjs');
+  const db = new DatabaseSync(value.configuration.database);
+  try {
+    initializeTeamDatabase(db);
+    value.configuration.serverId = deviceServerId(db);
+    db.prepare("INSERT INTO team_users VALUES ('preflight-member','active')").run();
+    db.prepare("INSERT INTO teams VALUES ('preflight-team','active')").run();
+    db.prepare("INSERT INTO team_memberships VALUES ('preflight-team','preflight-member','intern','active')").run();
+  } finally { db.close(); }
+  const unexpectedListen = path.join(value.directory,'unexpected-listen');
+  const unexpectedBootstrap = path.join(value.directory,'unexpected-bootstrap');
+  const bootstrapModule = pathToFileURL(path.resolve(__dirname,'../server/team/managed-service.mjs')).href;
+  const guard = path.join(value.directory,'no-listener.cjs');
+  await fs.writeFile(guard, "'use strict';\nrequire('node:net').Server.prototype.listen=function(){require('node:fs').writeFileSync("+
+    JSON.stringify(unexpectedListen)+",'unexpected listener');throw new Error('Database preflight must not listen');};\n"+
+    "require('node:module').registerHooks({load(url,context,nextLoad){if(url==="+JSON.stringify(bootstrapModule)+"){"+
+    "require('node:fs').writeFileSync("+JSON.stringify(unexpectedBootstrap)+",'unexpected managed-service import');"+
+    "throw new Error('DATABASE_PREFLIGHT_EAGER_BOOTSTRAP');}return nextLoad(url,context);}});\n", {flag:'wx'});
+  return {...value,guard,unexpectedListen,unexpectedBootstrap,bootstrapModule};
+}
+
+async function preflightFileFacts(directory) {
+  return Promise.all((await fs.readdir(directory)).sort().map(async name => {
+    const filename=path.join(directory,name),info=await fs.lstat(filename,{bigint:true});
+    assert.ok(info.isFile()&&!info.isSymbolicLink());
+    return {name,bytes:String(info.size),mtimeNs:String(info.mtimeNs),
+      sha256:createHash('sha256').update(await fs.readFile(filename)).digest('hex')};
+  }));
+}
+
+async function databasePreflightCli(f,configuration,expectedCode) {
+  await fs.writeFile(f.filename,JSON.stringify(configuration));
+  const sources=['../scripts/start-team-service.mjs','../server/team/managed-database-readiness.mjs','../server/team/managed-service.mjs'].map(name=>path.resolve(__dirname,name));
+  const sourceBytes=await Promise.all(sources.map(name=>fs.readFile(name)));
+  const before=await preflightFileFacts(f.directory);
+  const result=await new Promise(resolve=>execFile(process.execPath,
+    ['--disable-warning=ExperimentalWarning','--require',f.guard,path.resolve(__dirname,'../scripts/start-team-service.mjs'),'--check-database','--config',f.filename],
+    {windowsHide:true,timeout:15000,maxBuffer:65536},(error,stdout,stderr)=>resolve({error,stdout,stderr})));
+  assert.equal(result.error?.signal??null,null,result.stderr);
+  assert.notEqual(result.error?.killed,true,result.stderr);
+  if(expectedCode){
+    assert.ok(Number.isInteger(result.error?.code)&&result.error.code!==0,result.stdout+result.stderr);
+    assert.equal(result.stdout,'');
+    assert.deepEqual(JSON.parse(result.stderr),{event:'error',code:expectedCode,message:'指定数据库未通过服务启动检查。'});
+  }else{
+    assert.equal(result.error,null,result.stderr);
+    assert.equal(result.stdout,JSON.stringify({event:'database-ready'})+'\n');
+    assert.equal(result.stderr,'');
+  }
+  assert.deepEqual(await preflightFileFacts(f.directory),before,'CLI must not alter SQLite, config, sidecars or other fixture files');
+  await assert.rejects(fs.stat(f.unexpectedListen),{code:'ENOENT'});
+  await assert.rejects(fs.stat(f.unexpectedBootstrap),{code:'ENOENT'});
+  for(const [index,name] of sources.entries())assert.deepEqual(await fs.readFile(name),sourceBytes[index],name);
+}
+
+test('database-only CLI checks an active database without loading app bootstrap or missing provider files or opening a listener', async t => {
+  const f=await databasePreflightFixture(t);
+  // Positive control proves the preload blocks the real ESM app module before
+  // evaluating it; the subsequent CLI calls must succeed with this hook active.
+  const blocked=await new Promise(resolve=>execFile(process.execPath,
+    ['--disable-warning=ExperimentalWarning','--require',f.guard,'--input-type=module','-e','await import('+JSON.stringify(f.bootstrapModule)+');'],
+    {windowsHide:true,timeout:15000,maxBuffer:65536},(error,stdout,stderr)=>resolve({error,stdout,stderr})));
+  assert.equal(blocked.error?.code,1);
+  assert.match(blocked.stderr,/DATABASE_PREFLIGHT_EAGER_BOOTSTRAP/);
+  assert.equal(blocked.stdout,'');
+  assert.equal(await fs.readFile(f.unexpectedBootstrap,'utf8'),'unexpected managed-service import');
+  await fs.unlink(f.unexpectedBootstrap);
+  await databasePreflightCli(f,f.configuration);
+  await databasePreflightCli(f,{...f.configuration,apiBase:'https://login.shenyi.example',reviewedRecovery:true,
+    smsProfile:path.join(f.directory,'absent-sms.json'),wechatProfile:path.join(f.directory,'absent-wechat.json')});
+});
+
+test('database-only CLI applies optional provider schema requirements without initializing or repairing the database', async t => {
+  for(const optional of ['wechat','reviewed-recovery']){
+    const f=await databasePreflightFixture(t),db=new DatabaseSync(f.configuration.database);
+    try{db.exec(optional==='wechat'?'DROP TABLE team_wechat_codes':'DROP TRIGGER recovery_epoch_team_recovery_reviewers_update');}
+    finally{db.close();}
+    const enabled=optional==='wechat'?{wechatProfile:path.join(f.directory,'absent-wechat.json')}:
+      {reviewedRecovery:true,smsProfile:path.join(f.directory,'absent-sms.json')};
+    await databasePreflightCli(f,{...f.configuration,apiBase:'https://login.shenyi.example',...enabled},'MANAGED_DATABASE_NOT_READY');
+    await databasePreflightCli(f,f.configuration);
+  }
+});
+
+test('database-only CLI rejects an absent database and wrong instance without creating or changing files', async t => {
+  const f=await databasePreflightFixture(t);
+  await databasePreflightCli(f,{...f.configuration,database:path.join(f.directory,'absent.sqlite')},'MANAGED_DATABASE_NOT_READY');
+  await databasePreflightCli(f,{...f.configuration,serverId:randomUUID()},'MANAGED_DATABASE_NOT_READY');
 });

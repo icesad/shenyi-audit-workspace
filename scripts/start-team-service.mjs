@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { assertManagedDatabaseReady, startManagedTeamServer } from '../server/team/managed-service.mjs';
+import { assertManagedDatabaseReady } from '../server/team/managed-database-readiness.mjs';
 import { createAliyunSms } from '../server/team/aliyun-sms.mjs';
 import { createWechatOpenPlatform } from '../server/team/wechat-open-platform.mjs';
 
@@ -175,21 +175,37 @@ async function loadWechatProvider(filename, apiBase) {
   }
 }
 
-async function openManagedDatabase(filename, serverId, readinessOptions) {
+function databaseReadinessOptions({ reviewedRecovery = false, wechatProfile }) {
+  return { reviewedRecovery, wechatEnabled: wechatProfile !== undefined };
+}
+
+async function checkManagedDatabase(configuration) {
+  const { database, serverId } = configuration;
   const code = 'MANAGED_DATABASE_NOT_READY';
-  let readonly, writable;
+  let readonly;
   try {
-    const entry = await existingFile(filename, code);
-    const uri = pathToFileURL(filename).href;
-    readonly = new DatabaseSync(uri + '?mode=ro', { readOnly: true });
-    assertManagedDatabaseReady(readonly, serverId, readinessOptions);
-    readonly.close();
-    readonly = undefined;
-    writable = new DatabaseSync(uri + '?mode=rw', { timeout: 5000 });
-    if (path.relative(filename, writable.location()) || !sameFile(entry, await existingFile(filename, code))) fail(code);
+    const entry = await existingFile(database, code);
+    readonly = new DatabaseSync(pathToFileURL(database).href + '?mode=ro', { readOnly: true, timeout: 5000 });
+    assertManagedDatabaseReady(readonly, serverId, databaseReadinessOptions(configuration));
+    if (path.relative(database, readonly.location()) || !sameFile(entry, await existingFile(database, code))) fail(code);
+    return entry;
+  } catch {
+    fail(code);
+  } finally {
+    readonly?.close();
+  }
+}
+
+async function openManagedDatabase(configuration) {
+  const { database } = configuration;
+  const code = 'MANAGED_DATABASE_NOT_READY';
+  const entry = await checkManagedDatabase(configuration);
+  let writable;
+  try {
+    writable = new DatabaseSync(pathToFileURL(database).href + '?mode=rw', { timeout: 5000 });
+    if (path.relative(database, writable.location()) || !sameFile(entry, await existingFile(database, code))) fail(code);
     return writable;
   } catch {
-    readonly?.close();
     writable?.close();
     fail(code);
   }
@@ -197,14 +213,15 @@ async function openManagedDatabase(filename, serverId, readinessOptions) {
 
 export async function openConfiguredTeamService(filename) {
   const configuration = await loadManagedServiceConfiguration(filename);
-  const { database, serverId, apiBase, listenPort: port, tlsCertificate, tlsKey, smsProfile, reviewedRecovery = false, wechatProfile } = configuration;
+  const { serverId, apiBase, listenPort: port, tlsCertificate, tlsKey, smsProfile, reviewedRecovery = false, wechatProfile } = configuration;
   let db, key, smsProvider;
   try {
+    const { startManagedTeamServer } = await import('../server/team/managed-service.mjs');
     smsProvider = await loadSmsProvider(smsProfile);
     const wechat = await loadWechatProvider(wechatProfile, apiBase);
     const cert = await readLocalFile(tlsCertificate, 128 * 1024, 'MANAGED_TLS_INVALID');
     key = await readLocalFile(tlsKey, 32 * 1024, 'MANAGED_TLS_INVALID');
-    db = await openManagedDatabase(database, serverId, { reviewedRecovery, wechatEnabled: wechat !== undefined });
+    db = await openManagedDatabase(configuration);
     const service = await startManagedTeamServer({ db, apiBase, port, serverId, cert, key, ...smsProvider, reviewedRecovery, wechat });
     let stopping;
     return { address: service.address, apiBase: service.apiBase, serverId,
@@ -219,6 +236,11 @@ export async function openConfiguredTeamService(filename) {
 }
 
 async function main(args) {
+  if (args.length === 3 && args[0] === '--check-database' && args[1] === '--config') {
+    await checkManagedDatabase(await loadManagedServiceConfiguration(args[2]));
+    console.log(JSON.stringify({ event: 'database-ready' }));
+    return;
+  }
   if (args.length !== 2 || args[0] !== '--config') fail(configCode);
   const service = await openConfiguredTeamService(args[1]);
   const signals = process.platform === 'win32' ? ['SIGINT', 'SIGTERM', 'SIGBREAK'] : ['SIGINT', 'SIGTERM'];
