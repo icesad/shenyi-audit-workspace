@@ -11,7 +11,7 @@ const BILLING_BATCH_RPC=Object.freeze([['reconcileBillingPage','billing-page-rec
 const REFUND_INTAKE_RPC=Object.freeze([['getRefundIntakeAccess','refund-intake-access'],['getRefundIntake','refund-intake-read'],
  ['recordRefundIntake','refund-intake-record']]);
 const WEBSITE_CHECKOUT_RPC=Object.freeze([['openWebsiteCheckout','website-checkout-open']]);
-const added=[...RPC,...BILLING_RPC,...BILLING_BATCH_RPC,...REFUND_INTAKE_RPC,...WEBSITE_CHECKOUT_RPC];
+const ADDED_RPC=Object.freeze([...RPC,...BILLING_RPC,...BILLING_BATCH_RPC,...REFUND_INTAKE_RPC,...WEBSITE_CHECKOUT_RPC]);
 const digest=names=>createHash('sha256').update(names.join('\n')).digest('hex');
 function oldNames(names,suffix,baseline,{allowHistorical=false}={}){
  assert.equal(names.length,allowHistorical&&names.length===135?135:135+suffix.length);
@@ -19,9 +19,9 @@ function oldNames(names,suffix,baseline,{allowHistorical=false}={}){
  assert.deepEqual(names.slice(135),names.length===135?[]:suffix);
  return names.slice(0,135);
 }
-function workpaperOldApiNames(api,options){return oldNames(Object.keys(api),added.map(x=>x[0]),'bf32a639b6956ae133c8879f774d2fe40c9ffcf5a30216c7b56c0c75c01a5fd9',options);}
+function workpaperOldApiNames(api,options){return oldNames(Object.keys(api),ADDED_RPC.map(x=>x[0]),'bf32a639b6956ae133c8879f774d2fe40c9ffcf5a30216c7b56c0c75c01a5fd9',options);}
 function workpaperOldApi(api){return Object.freeze(Object.fromEntries(workpaperOldApiNames(api).map(name=>[name,api[name]])));}
-function workpaperOldChannelNames(handlers,options){return oldNames([...handlers.keys()],added.map(x=>'shenyi:'+x[1]),'5ea6cae22b7b5ef71d3c844dd3851a20a1638fccbca566d42bc91c71300eff38',options);}
+function workpaperOldChannelNames(handlers,options){return oldNames([...handlers.keys()],ADDED_RPC.map(x=>'shenyi:'+x[1]),'5ea6cae22b7b5ef71d3c844dd3851a20a1638fccbca566d42bc91c71300eff38',options);}
 function workpaperDomLayer(doc,{allowAbsent=false}={}){
  const assets=['workpaper-sheets.js','workpaper-original-sheet.js','workpaper-original-word.js','workpapers.js'];
  const signatures=doc.querySelectorAll('[id^="workpaper-"],script[src^="workpaper"],link[href="workpapers.css"]');
@@ -50,4 +50,4 @@ function refundIntakeDomLayer(doc,{allowAbsent=false}={}){
  assert.equal(panel.querySelectorAll('form').length,0);
  return 1;
 }
-module.exports={RPC,BILLING_RPC,BILLING_BATCH_RPC,REFUND_INTAKE_RPC,WEBSITE_CHECKOUT_RPC,workpaperOldApiNames,workpaperOldApi,workpaperOldChannelNames,workpaperDomLayer,refundIntakeDomLayer};
+module.exports={RPC,BILLING_RPC,BILLING_BATCH_RPC,REFUND_INTAKE_RPC,WEBSITE_CHECKOUT_RPC,ADDED_RPC,workpaperOldApiNames,workpaperOldApi,workpaperOldChannelNames,workpaperDomLayer,refundIntakeDomLayer};
