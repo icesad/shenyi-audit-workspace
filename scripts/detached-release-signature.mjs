@@ -101,7 +101,7 @@ export function detachedSignatureFiles(fail) {
     }
   }
 
-  async function publishSignature(filename, bytes) {
+  async function publishSignature(filename, bytes, assertSourceStable) {
     const code = 'SIGNATURE_OUTPUT_INVALID';
     const parent = path.dirname(filename);
     const temporary = path.join(parent, `.shenyi-signature-${randomUUID()}.pending`);
@@ -117,6 +117,7 @@ export function detachedSignatureFiles(fail) {
       handle = undefined;
       const current = await fs.lstat(temporary, { bigint: true });
       if (!sameFile(owned, current) || !current.isFile() || current.nlink !== 1n || current.size !== BigInt(detachedSignatureLength)) fail(code);
+      await assertSourceStable?.();
       if (path.relative(parent, await fs.realpath(parent)) || !sameFile(directory, await fs.lstat(parent, { bigint: true }))) fail(code);
       await fs.link(temporary, filename);
       linked = true;
@@ -124,6 +125,7 @@ export function detachedSignatureFiles(fail) {
       if (!sameFile(owned, published) || !published.isFile() || published.nlink !== 2n) fail(code);
       await fs.unlink(temporary);
       if (!(await readStableFile(filename, detachedSignatureLength, code)).equals(bytes)) fail(code);
+      await assertSourceStable?.();
     } catch {
       await handle?.close().catch(() => {});
       if (linked) await unlinkIfOwned(filename, owned);

@@ -4,17 +4,37 @@
 
 ## 构件和目录
 
-在私有工作区以已审定的 Git 提交生成服务构件。保留 `dist/` 中的原有解析器、首位负责人初始化入口、离线备份演练工具和上线检查工具。文件校验值通过有权限的发布渠道交接。
+在私有工作区以已审定的 Git 提交生成服务构件。保留 `dist/` 中的原有解析器、首位负责人初始化入口、离线备份演练工具和上线检查工具。先选定仓库外且仅发布人员可写的 `$release_dir`。交接时提供归档、独立签名和对应的完整提交，通过独立可信渠道提供验签公钥。 [Git 归档说明](https://git-scm.com/docs/git-archive)
 
 ```sh
 release=$(git rev-parse --verify HEAD)
-git archive --format=tar --output="shenyi-team-${release}.tar" "$release" -- \
+git archive --format=tar --output="$release_dir/shenyi-team-${release}.tar" "$release" -- \
   package.json package-lock.json dist shared server/team deploy/linux \
   scripts/start-team-service.mjs scripts/bootstrap-managed-team.mjs scripts/team-database-backup.mjs \
   scripts/check-team-service.mjs \
   docs/LINUX_TEAM_DEPLOYMENT.md docs/MANAGED_TEAM_SERVICE.md docs/TEAM_OFFLINE_BACKUP.md
-sha256sum "shenyi-team-${release}.tar"
+sha256sum "$release_dir/shenyi-team-${release}.tar"
 ```
+
+### 发布归档签发与部署验签
+
+发布人员使用独立保存的服务归档 Ed25519 私钥。签发命令核对未压缩 Git TAR 首部的 40 位完整提交标记，并签署发行类型、完整提交、字节数和整包 SHA-256。签名为独立的 64 字节文件。目标路径已存在时保留原文件。 [Git 提交标记](https://git-scm.com/docs/git-get-tar-commit-id) · [Node.js 签名接口](https://nodejs.org/docs/latest-v24.x/api/crypto.html#cryptosignalgorithm-data-key-callback)
+
+```sh
+node scripts/linux-release-signature.mjs sign \
+  --archive "$release_dir/shenyi-team-${release}.tar" --revision "$release" \
+  --private-key "$release_private_key" --output "$release_dir/shenyi-team-${release}.ed25519"
+```
+
+在 Linux 部署机上，从已审定渠道预置 `scripts/linux-release-signature.mjs` 和同目录的 `detached-release-signature.mjs`。将公钥保存在归档目录之外，按获准的发行记录设置 `$release`。以下核验只需 Node，无需安装 Git。
+
+```sh
+/opt/shenyi-team/node/bin/node /opt/shenyi-team/release-tools/scripts/linux-release-signature.mjs verify \
+  --archive "$release_dir/shenyi-team-${release}.tar" --revision "$release" \
+  --public-key "$release_public_key" --signature "$release_dir/shenyi-team-${release}.ed25519"
+```
+
+成功回执记录提交标记、整包哈希、签名摘要和公钥指纹。签发前由发布人员确认归档由上面的白名单命令从审定的提交生成。验签成功后保持同一受保护的归档路径，再解包到新的暂存目录。验签失败时停止部署。归档验签、依赖安装和应用运行各留回执。
 
 在暂存发布目录以经过校验的 Node 24.15 或更高版本的 24.x 运行 `npm ci --omit=dev --ignore-scripts`。验收后交由发布人员把代码和依赖置于 root 持有的只读目录。首次配置须使用真实目录，`current` 及服务配置中的文件路径各级均使用实际路径。 [npm 锁定依赖安装](https://docs.npmjs.com/cli/v11/commands/npm-ci/) · [受管启动约束](MANAGED_TEAM_SERVICE.md)
 
