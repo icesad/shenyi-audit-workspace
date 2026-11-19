@@ -22,6 +22,8 @@ node scripts/website-preview.mjs --build D:/codex-temp/shenyi-website-static
 
 静态包固定包含 `index.html`、`styles.css` 和 `assets/brand-shenyi.png`。准备上线时以该白名单和实际交付条件重新核对发布范围。
 
+Linux HTTPS 部署见仓库 `docs/LINUX_TEAM_DEPLOYMENT.md` 的「官网静态站与团队 API 并行部署」。官网使用独立域名，公开入口为 `/` 和两项静态资源。
+
 ## 官网下单演练
 
 Windows 双人评审包完整解压后，双击 [Start-Team-Website-Checkout-Candidate.cmd](../Start-Team-Website-Checkout-Candidate.cmd)。用启动窗口显示的合成账号登录并绑定本轮电脑，再从「订阅与席位」打开专用官网窗口。关闭桌面应用后，本轮 HTTPS 服务停止。

@@ -1,4 +1,8 @@
-# 当前状态 · Windows 邀请回执恢复
+# 当前状态 · 官网 HTTPS 和内容回退
+
+## 2026-11-19 M7BD 官网 HTTPS 和内容回退
+
+官网与团队 API 通过两个 HTTPS 虚拟主机独立提供。隔离 Ubuntu 实测 GET、HEAD、MIME 类型、响应摘要、原始路径白名单、跨域名 Host 拒绝和日志样例。两轮虚拟机正常关闭，原 10 层 backing image 摘要一致。最终轮以随包说明的命令拒绝错摘要候选、启用同长度的合成新首页并恢复原摘要。卸下官网配置后，团队 API 持续返回同一受管实例。最终通过 47 项 HTTP、4 次 Nginx 配置检查及不同证书的 TLS 校验。71 项关联回归和独立复核通过。交接 ZIP 中两份模板、三项静态载荷与实际输入一致。两处旧预览观察一致。本轮未复验 Windows 一键，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-website-https-20261119/verification.json`。 [部署与回退](LINUX_TEAM_DEPLOYMENT.md#官网静态站与团队-api-并行部署)
 
 ## 2026-11-19 M8R Windows 邀请回执恢复
 

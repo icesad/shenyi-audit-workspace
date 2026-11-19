@@ -59,6 +59,43 @@ node scripts/linux-release-signature.mjs sign \
 3. 将 [systemd 单元](../deploy/linux/shenyi-team.service)装到 `/etc/systemd/system/shenyi-team.service`。在目标主机先核对下方的文件权限，再运行 `systemd-analyze verify /etc/systemd/system/shenyi-team.service`、`systemctl daemon-reload` 和 `systemctl start shenyi-team`。就绪核对通过后，用 `systemctl enable shenyi-team.service` 设置开机启动。下次开机后先观察自动启动状态，再核对 HTTPS 和实例标识。 [systemd 服务与停止](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html) · [systemd 私有状态目录](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)
 4. 使用支持 `ssl_reject_handshake` 和 TLS 1.3 的受支持 Nginx 构建。将 [Nginx 配置](../deploy/linux/nginx-shenyi-team.conf)纳入目标主机的 `http` 配置，统一替换保留示例域名和证书路径。已有默认 443 虚拟主机时，先核对并合并其未知域名拒绝行为，确保同一监听地址只有一个默认虚拟主机。运行 `nginx -t`，通过后按已授权的环境流程加载。安全组及主机防火墙仅开放所需边缘端口，管理入口限授权来源，`9443` 保持仅回环。 [Nginx TLS](https://nginx.org/en/docs/http/ngx_http_ssl_module.html) · [阿里云安全组](https://help.aliyun.com/en/ecs/user-guide/security-groups-for-different-use-cases)
 
+### 官网静态站与团队 API 并行部署
+
+在官网发布范围和 HTTPS 主机名获准后，把 `www.shenyi.example` 换成已批准的官网域名。团队 API 使用独立的 `team.shenyi.example` 和证书。两处模板均核对 TLS SNI 和 HTTP Host，请求使用各自的规范域名和默认 HTTPS 端口。两份配置在同一 `http` 块中加载，保留团队模板中的一个默认 443 虚拟主机。 [官网 Nginx 配置](../deploy/linux/nginx-shenyi-website.conf) · [Nginx 虚拟主机选择](https://nginx.org/en/docs/http/server_names.html#virtual_server_selection)
+
+在已审定的源码目录，用 Node 24 构建独立官网文件。`$release` 为获准的提交，`$release_dir` 为仓库外发布目录。将生成的目录和校验清单作为同一批候选交接，清单留在站点根之外。
+
+```sh
+node scripts/website-preview.mjs --build "$release_dir/website-$release" && \
+  (cd "$release_dir/website-$release" && sha256sum index.html styles.css assets/brand-shenyi.png) \
+  > "$release_dir/website-$release.sha256"
+```
+
+部署人员通过已批准的交接渠道接收构件，以受控账号安装文件。网站目录由部署管理员管理，Nginx 只读。确认 `$release` 对应的目标目录尚不存在，再逐条执行。`current` 应尚未创建或为指向已核对上一版的管理员管控符号链接，切换前记录其目标。发布目录内使用实际文件和目录。
+
+```sh
+(
+  set -eu
+  site_root=/srv/shenyi-website
+  site_release="$site_root/releases/$release"
+  site_source="$release_dir/website-$release"
+  install -d -m 0755 "$site_root/releases"
+  mkdir -m 0755 -- "$site_release"
+  install -d -m 0755 "$site_release/assets"
+  install -m 0644 "$site_source/index.html" "$site_source/styles.css" "$site_release/"
+  install -m 0644 "$site_source/assets/brand-shenyi.png" "$site_release/assets/"
+  (cd "$site_release" && sha256sum --check "$release_dir/website-$release.sha256")
+  ln -s -- "$site_release" "$site_root/.current-next"
+  mv -Tf -- "$site_root/.current-next" "$site_root/current"
+)
+```
+
+将官网证书链和对应私钥安装到 `/etc/nginx/shenyi-website/` 所示位置。在使用独立 include 的 Ubuntu 上，放置到 `/etc/nginx/conf.d/shenyi-website.conf`，同时更新使用同一版本的团队 API 模板。运行 `nginx -t`，通过后再以 `systemctl reload nginx` 加载。官网 `GET` 和 `HEAD` 只提供 `/`、`/styles.css` 及 `/assets/brand-shenyi.png`，可带查询参数。直接访问 `/index.html`、业务 API、健康探针、合成下单页及下载路径均应返回 404。对有效路径使用其他方法返回 405。通过握手后发送不匹配的 HTTP Host 返回 421，未知 TLS 名称拒绝握手。 [Nginx 静态路径与符号链接](https://nginx.org/en/docs/http/ngx_http_core_module.html#disable_symlinks)
+
+在实际环境验证两条 HTTPS 链、三个静态内容的 SHA-256、页面资源加载，以及团队 `/api/auth/methods` 返回正确的实例。官网不缓存当前文件，访问日志只含时间、请求编号、方法、状态、响应字节数和耗时。错误日志按团队部署的读取权限和保留规则管理。静态模板上线的许可与商户、登录和下载入口另行验收。
+
+官网内容需回退时，把 `current` 用同样的原子替换步骤指回先前已验证的发布目录，再重新核对首页和资源。首次启用出现故障时，将官网 include 移到 `conf.d` 匹配范围之外，校验并重新加载 Nginx，确认官网入口关闭且团队 API 健康。两种回退均使用原团队服务和数据库。
+
 ### 启动前检查文件权限
 
 在服务文件及 SQLite 已安装后，发布管理员可用 root 执行权限检查。它按随包的 `shenyi-team.service`、`/etc/shenyi-team/service.json` 和 `/var/lib/shenyi-team` 布局核对。
