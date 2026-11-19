@@ -72,7 +72,25 @@ curl --fail-with-body --silent --show-error --include "https://${api_host}/api/a
 
 输出的 `checks` 可定位具体检查和度量。参数、配置或后端 CA 在检查开始前被拒绝时，输出顶层 `code`。
 
-该命令只对固定路径发出无凭据的只读 GET，读取配置、后端 CA 和文件系统元数据。SQLite 内容和 TLS 私钥字节不在读取范围内，命令不写入文件。该探针可在上线、变更或回滚后手动运行，定时监控和实际生产环境验收仍待部署时完成。
+该命令只对固定路径发出无凭据的只读 GET，读取配置、后端 CA 和文件系统元数据。SQLite 内容和 TLS 私钥字节不在读取范围内，命令不写入文件。该探针可在上线、变更或回滚后手动运行。
+
+## 定时健康检查
+
+使用同一探针的 [检查服务单元](../deploy/linux/shenyi-team-monitor.service) 和 [定时器](../deploy/linux/shenyi-team-monitor.timer)。定时器每五分钟触发一个单次检查，诊断写入 journal。告警退出码 2 保留在日志和进程结果中，systemd 将其作为本次完成处理。必需检查失败时退出码为 1，下一个周期继续观察。监控单元与业务服务分别管理。 [systemd 定时器](https://www.freedesktop.org/software/systemd/man/latest/systemd.timer.html) · [临时用户及运行目录](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)
+
+按示例部署路径安装两个文件。数据库保持 `0600 shenyi-team:shenyi-team`，由独立于监控的业务账号持有。检查进程通过私有配置与 CA 副本读取所需输入。调整数据库、配置或 CA 路径时，对照正式部署调整监控单元的路径，保留原文件权限。私有证书链通过受控 drop-in 配置公开信任根。
+
+```sh
+install -m 0644 /opt/shenyi-team/current/deploy/linux/shenyi-team-monitor.service /etc/systemd/system/
+install -m 0644 /opt/shenyi-team/current/deploy/linux/shenyi-team-monitor.timer /etc/systemd/system/
+systemd-analyze verify /etc/systemd/system/shenyi-team-monitor.service /etc/systemd/system/shenyi-team-monitor.timer
+systemctl daemon-reload
+systemctl enable --now shenyi-team-monitor.timer
+systemctl list-timers shenyi-team-monitor.timer
+journalctl -u shenyi-team-monitor.service -n 30 --no-pager
+```
+
+通过服务单元的 drop-in 覆盖 `SHENYI_MONITOR_DISK_WARNING_BYTES` 和 `SHENYI_MONITOR_CERTIFICATE_WARNING_DAYS`。默认分别为 10 GiB 和 30 天。生产监控验收应核对实际阈值、journal 保留和授权告警接收渠道。
 
 ## Linux 虚拟机演练
 
@@ -87,6 +105,8 @@ curl --fail-with-body --silent --show-error --include "https://${api_host}/api/a
 在独立 Ubuntu 副本沿用原 systemd 和 Nginx 配置。用原包校验器审核合成完整包，并在该副本的 SQLite 内准备已保存底稿版本。项目负责人经 HTTPS 持钥验证密码，获得明确查阅和导出权。首次导出在临时文件写入 8,398,028 字节后取消，代理侧也记录到不完整响应。取消未产生最终文件或遗留临时文件。同账号随后正常导出，保存 50,364,569 字节的 ZIP，含 7 件原件。完整请求在该虚拟机约 73.4 秒收到响应头。正常客户端和独立 ZIP 读取器分别核对最终文件大小、SHA-256、成员 CRC 及原件摘要。重启后只读核对底稿业务表保持一致。
 
 在独立 Ubuntu 副本沿用原 systemd 和 Nginx 配置。合成账号正常登录、绑机并提交一件 2 KiB 原件。在首次开机的已就绪实例中，核实服务主进程身份后仅向其发送一次 SIGKILL。systemd 日志记录异常退出和计划自动重启，重启计数增加一次，主进程和调用 ID 更换。从同一磁盘正常关机后冷启动，得到不同的开机 ID，受管服务和 Nginx 由开机流程启动。故障前后及冷启动后的双路 HTTPS 自检均通过。两次恢复后使用原已绑定密钥重新登录并读取提交和原件，服务实例、设备绑定、21 张业务表和原件摘要保持。
+
+新增独立 systemd 定时器和单次检查单元，复用现有双路 HTTPS 探针。探针以临时系统用户运行，读取隔离配置副本和公开后端 CA。数据库路径保留卷元数据检查，原文件权限仍拒绝读取正文。默认每五分钟检查，结果写入 journal。隔离 Ubuntu 用 15 秒周期、合成告警阈值及仅验收使用的退出观察，核对健康、低空间告警、后端停服和恢复。实测记录 6 次不同的定时调用，业务服务由独立操作控制。检查过程中未自动启动业务服务。
 
 在目标云主机上仍需实测防火墙和对外访问、正式证书及 DNS、持钥业务操作、大文件与并发、开机自启及崩溃重启、定时监控。
 
