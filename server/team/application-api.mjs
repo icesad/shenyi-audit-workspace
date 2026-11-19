@@ -39,6 +39,7 @@ import {seatCapacityMode} from './seat-capacity-policy.mjs';
 import {billingSimulationConfiguration} from './billing-simulation.mjs';
 import {handleBillingRequest,handleBillingSimulationNotification,SIMULATION_NOTIFICATION_PATH,SIMULATION_PAYMENT_EXCEPTION_PATH,SIMULATION_ORDER_CLOSURE_PATH} from './billing-api.mjs';
 import {handleBillingRefundIntakeRequest} from './billing-refund-intake-api.mjs';
+import {handleWebsiteCheckoutBrowser,handleWebsiteCheckoutHandoff,isWebsiteCheckoutBrowserPath,websiteCheckoutAvailable} from './website-checkout.mjs';
 
 /** Team application boundary shared by the local preview and managed service. */
 export async function handleTeamApplicationRequest(request, options = {}) {
@@ -55,7 +56,7 @@ export async function handleTeamApplicationRequest(request, options = {}) {
   // HEAD never carries a body, including metadata/origin/auth/clock errors.
   return new Response(request.method==='HEAD'?null:response.body,{status:response.status,statusText:response.statusText,headers});
 }
-async function applicationResponse(request, {db, now = Date.now,identityProviders={},subscriptionEnforcement='disabled',billingSimulation=null,seatCapacityEnforcement='disabled',serviceMode='local-preview'} = {}) {
+async function applicationResponse(request, {db, now = Date.now,identityProviders={},subscriptionEnforcement='disabled',billingSimulation=null,seatCapacityEnforcement='disabled',serviceMode='local-preview',websiteCheckout} = {}) {
   let releaseDeviceBody;
   try {
     const managedService=serviceMode==='managed-service';
@@ -64,9 +65,11 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
     }
     const at = now();
     if (!Number.isSafeInteger(at) || at < 0) throw new Error('Invalid clock');
-    const url=new URL(request.url),options={db,now,identityProviders,serviceMode,subscriptionEnforcement:subscriptionEnforcementMode(subscriptionEnforcement,identityProviders)};
+    const url=new URL(request.url),options={db,now,identityProviders,serviceMode,websiteCheckout,subscriptionEnforcement:subscriptionEnforcementMode(subscriptionEnforcement,identityProviders)};
     options.seatCapacityEnforcement=seatCapacityMode(seatCapacityEnforcement,options);
     options.billingSimulation=billingSimulationConfiguration(billingSimulation,options);
+    options.websiteCheckoutActive=websiteCheckoutAvailable(db,options);
+    if(isWebsiteCheckoutBrowserPath(url.pathname))return await handleWebsiteCheckoutBrowser(request,options);
     // A provider's top-level browser callback is cross-site by design. Only this
     // exact GET endpoint uses state/code checks instead of the data API origin gate.
     if(url.pathname==='/api/auth/wechat/callback'&&request.method==='GET')return await handleWechatRequest(request,options);
@@ -84,11 +87,15 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
     if(managedService&&url.pathname==='/api/auth/login'){
       return json({error:{code:'DEMO_LOGIN_DISABLED',message:'演示登录在受管团队服务中已关闭。'}},403);
     }
-    if([SIMULATION_NOTIFICATION_PATH,SIMULATION_PAYMENT_EXCEPTION_PATH,SIMULATION_ORDER_CLOSURE_PATH].includes(url.pathname))return await handleBillingSimulationNotification(request,options);
+    if([SIMULATION_NOTIFICATION_PATH,SIMULATION_PAYMENT_EXCEPTION_PATH,SIMULATION_ORDER_CLOSURE_PATH].includes(url.pathname)) {
+      if(options.websiteCheckoutActive)return json({error:{code:'NOT_FOUND',message:'无法访问此资源。'}},404);
+      return await handleBillingSimulationNotification(request,options);
+    }
     const deviceAuthorization=await authorizeDeviceRequest(request,options);
     releaseDeviceBody=deviceAuthorization.release;
     request=deviceAuthorization.request;options.deviceContext=deviceAuthorization.context;
-    return await handleBillingRefundIntakeRequest(request,options)
+    return await handleWebsiteCheckoutHandoff(request,options)
+      || (!options.websiteCheckoutActive && await handleBillingRefundIntakeRequest(request,options))
       || await handleBillingRequest(request,options)
       || await handleSubscriptionRequest(request,options)
       || await handleMyDeviceRequest(request,options)

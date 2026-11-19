@@ -10,7 +10,8 @@ const BILLING_RPC=Object.freeze([
 const BILLING_BATCH_RPC=Object.freeze([['reconcileBillingPage','billing-page-reconcile']]);
 const REFUND_INTAKE_RPC=Object.freeze([['getRefundIntakeAccess','refund-intake-access'],['getRefundIntake','refund-intake-read'],
  ['recordRefundIntake','refund-intake-record']]);
-const added=[...RPC,...BILLING_RPC,...BILLING_BATCH_RPC,...REFUND_INTAKE_RPC];
+const WEBSITE_CHECKOUT_RPC=Object.freeze([['openWebsiteCheckout','website-checkout-open']]);
+const added=[...RPC,...BILLING_RPC,...BILLING_BATCH_RPC,...REFUND_INTAKE_RPC,...WEBSITE_CHECKOUT_RPC];
 const digest=names=>createHash('sha256').update(names.join('\n')).digest('hex');
 function oldNames(names,suffix,baseline,{allowHistorical=false}={}){
  assert.equal(names.length,allowHistorical&&names.length===135?135:135+suffix.length);
@@ -49,4 +50,4 @@ function refundIntakeDomLayer(doc,{allowAbsent=false}={}){
  assert.equal(panel.querySelectorAll('form').length,0);
  return 1;
 }
-module.exports={RPC,BILLING_RPC,BILLING_BATCH_RPC,REFUND_INTAKE_RPC,workpaperOldApiNames,workpaperOldApi,workpaperOldChannelNames,workpaperDomLayer,refundIntakeDomLayer};
+module.exports={RPC,BILLING_RPC,BILLING_BATCH_RPC,REFUND_INTAKE_RPC,WEBSITE_CHECKOUT_RPC,workpaperOldApiNames,workpaperOldApi,workpaperOldChannelNames,workpaperDomLayer,refundIntakeDomLayer};

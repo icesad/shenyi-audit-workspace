@@ -133,22 +133,30 @@
       const disabled = !currentScope(scope) || panel.hidden || !panel.open || !!getContext().busy || !!mutation;
       const annual = kind === 'annual';
       const simulation = overview?.simulation === true;
+      const website = simulation && overview.websiteCheckout === true;
+      const websiteReady = website && overview.websiteCheckoutReady === true && typeof api?.openWebsiteCheckout === 'function';
       const hasOffer = simulation && (annual ? overview.annualOffers.length > 0 : !!overview.seatOffer);
       const blocked = disabled || !!overviewRead;
       node('team').disabled = disabled || teams.length <= 1 || !!accessRead;
       node('refresh').disabled = blocked || !!accessRead;
       node('overview').hidden = !overview;
       node('checkout-section').hidden = node('orders-section').hidden = !simulation;
+      node('website-checkout-section').hidden = !website;
+      node('website-checkout').hidden = !websiteReady;
+      node('website-checkout').disabled = blocked || !!accessRead || !!ordersRead || !websiteReady;
+      node('website-checkout-hint').textContent = websiteReady ? '将在管理员配置的受信官网核对并生成合成订单；本次演练不收款。完成后请回到此处刷新订单。' : '当前电脑尚未配置可用的受信官网合成下单入口，请联系管理员核对配置。';
+      node('checkout-heading').textContent = website ? '选择订单类型' : '创建订单';
+      node('review').hidden = node('order-hint').hidden = website;
       node('order-kind').disabled = blocked || !simulation;
-      node('annual-fields').hidden = !annual;
-      node('renewal-fields').hidden = !annual || !overview?.renewalSeats;
-      node('seat-fields').hidden = annual;
+      node('annual-fields').hidden = website || !annual;
+      node('renewal-fields').hidden = website || !annual || !overview?.renewalSeats;
+      node('seat-fields').hidden = website || annual;
       node('annual-offer').disabled = blocked || !hasOffer;
       node('selected-seats').disabled = blocked || !hasOffer;
       node('seat-quantity').disabled = blocked || !hasOffer;
-      node('review').disabled = blocked || !hasOffer || !!confirmation;
-      node('confirmation').hidden = !confirmation;
-      node('confirm').disabled = blocked || !!ordersRead || !confirmation;
+      node('review').disabled = blocked || website || !hasOffer || !!confirmation;
+      node('confirmation').hidden = website || !confirmation;
+      node('confirm').disabled = blocked || website || !!ordersRead || !confirmation;
       node('cancel').disabled = disabled;
       node('orders-refresh').disabled = disabled || !simulation || !!ordersRead;
       node('orders-more').hidden = !nextCursor;
@@ -520,7 +528,7 @@
     }
 
     function review() {
-      if (node('review').disabled || overview?.simulation !== true || !currentView(capture())) return;
+      if (overview?.websiteCheckout === true || node('review').disabled || overview?.simulation !== true || !currentView(capture())) return;
       const annual = kind === 'annual';
       const offer = annual ? overview.annualOffers.find(record => record.id === node('annual-offer').value) : overview.seatOffer;
       if (!offer) return;
@@ -556,8 +564,30 @@
       drawOrders();
     }
 
+    async function openWebsiteCheckout() {
+      if (node('website-checkout').hidden || node('website-checkout').disabled || overview?.simulation !== true || overview.websiteCheckout !== true || overview.websiteCheckoutReady !== true || typeof api?.openWebsiteCheckout !== 'function' || !currentView(capture())) return;
+      const at = capture(), operation = {};
+      mutation = operation;
+      clearConfirmation();
+      message('正在请求受信官网的合成下单入口…');
+      controls();
+      try {
+        const value = await invoke('openWebsiteCheckout', { teamId: at.team });
+        if (!currentView(at)) return;
+        if (value?.opened !== true) throw new Error('Unexpected website handoff result');
+        message('已请求打开官网合成下单页。生成订单后，请返回并刷新订单记录。');
+      } catch (error) {
+        if (!currentView(at) || handleSessionError(error)) return;
+        if (permissionErrors.has(error?.code)) discardTeam();
+        else message('无法确认官网页面已打开；入口可能已签发。请核对浏览器和订单记录后再操作，系统不会自动重试。', true);
+      } finally {
+        if (mutation === operation) mutation = null;
+        controls();
+      }
+    }
+
     async function createOrder() {
-      if (node('confirm').disabled || overview?.simulation !== true || !confirmation || !currentView(capture())) return;
+      if (overview?.websiteCheckout === true || node('confirm').disabled || overview?.simulation !== true || !confirmation || !currentView(capture())) return;
       const at = capture();
       clearOrderLookup();
       const { input, key } = confirmation;
@@ -721,6 +751,7 @@
       controls();
     });
     for (const name of ['annual-offer', 'selected-seats', 'seat-quantity']) node(name).addEventListener('input', () => { clearConfirmation(); message(); controls(); });
+    node('website-checkout').addEventListener('click', () => void openWebsiteCheckout());
     node('review').addEventListener('click', review);
     node('confirm').addEventListener('click', () => void createOrder());
     node('cancel').addEventListener('click', () => { clearConfirmation(); message(); controls(); node('review').focus(); });

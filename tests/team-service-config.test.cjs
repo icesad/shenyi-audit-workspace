@@ -114,3 +114,15 @@ test('bounded file reader closes and reads at most 16385 bytes even if file grow
     assert.equal(seen.closed,1);if(scenario==='growing')assert.equal(seen.read,16385);
   }
 });
+
+
+test('version 3 pins a canonical HTTPS checkout origin without changing version 1 or 2',async t=>{
+  for(const checkoutOrigin of ['https://checkout.example.invalid','https://127.0.0.1:43322','https://localhost:43322']){
+    const profile={...PROFILE,schemaVersion:3,checkoutOrigin},f=await fixture(t,JSON.stringify(profile));assert.deepEqual(validateTrustedTeamService(profile),profile);assert.ok(Object.isFrozen(validateTrustedTeamService(profile)));assert.deepEqual((await loadTeamServiceConfiguration({env:f.env,isPackaged:true})).profile,profile);
+  }
+  const profile={...PROFILE,schemaVersion:3,checkoutOrigin:'https://127.0.0.1:43322'};
+  for(const checkoutOrigin of [undefined,null,1,[],{},'http://127.0.0.1:43322','https://127.0.0.1:43322/','https://127.0.0.1:43322/checkout/','https://127.0.0.1:43322?','https://127.0.0.1:43322#','https://a:b@checkout.invalid','https://@checkout.invalid','https://CHECKOUT.invalid','HTTPS://checkout.invalid','https://checkout.invalid:443',' https://checkout.invalid','https://checkout.invalid\\path'])assert.throws(()=>validateTrustedTeamService({...profile,checkoutOrigin}),invalid);
+  for(const extra of [{wechatAppId:'wx0123456789abcdef'},{openUrl:'https://evil.invalid'},{handoff:'secret'}])assert.throws(()=>validateTrustedTeamService({...profile,...extra}),invalid);
+  assert.throws(()=>validateTrustedTeamService({...PROFILE,checkoutOrigin:profile.checkoutOrigin}),invalid);
+  let reads=0;const accessor={...profile};Object.defineProperty(accessor,'checkoutOrigin',{enumerable:true,get(){reads++;return profile.checkoutOrigin;}});assert.throws(()=>validateTrustedTeamService(accessor),invalid);assert.equal(reads,0);
+});

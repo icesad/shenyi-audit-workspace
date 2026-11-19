@@ -7,7 +7,7 @@ const {test}=require('node:test');
 const {APP_URL,registerDesktopBridge}=require('../desktop/bridge.cjs');
 const {createBillingClient,isBillingRoute,billingErrorMessage}=require('../desktop/billing-client.cjs');
 const {ClientError,createTeamClient}=require('../desktop/team-client.cjs');
-const {BILLING_RPC,BILLING_BATCH_RPC,REFUND_INTAKE_RPC,workpaperOldApiNames,workpaperOldChannelNames}=require('./helpers/workpaper-entry-layer.cjs');
+const {BILLING_RPC,BILLING_BATCH_RPC,REFUND_INTAKE_RPC,WEBSITE_CHECKOUT_RPC,workpaperOldApiNames,workpaperOldChannelNames}=require('./helpers/workpaper-entry-layer.cjs');
 
 const TEAM='team-a',CREATED=100,CONFIRMED=200,RENEWAL_START=1000,END=2000;
 const ID='01000000-0000-4000-8000-000000000000';
@@ -241,6 +241,7 @@ test('overview opt-ins are fixed by the protected transport and never sent on lo
   for(const call of calls){
     assert.equal(call.headers.get('X-Shenyi-Billing-View'),call===overviews[0]?'expiry-reminder-v1':null,call.route);
     assert.equal(call.headers.get('X-Shenyi-Billing-Recovery'),call===overviews[0]?'recorded-payment-v1':null,call.route);
+    assert.equal(call.headers.get('X-Shenyi-Website-Checkout'),call===overviews[0]?'candidate-v1':null,call.route);
   }
 });
 
@@ -480,7 +481,7 @@ test('billing preload actions and guarded bridge channels are exact and have no 
   }});
   try{
     assert.equal(workpaperOldApiNames(api).length,135);assert.equal(workpaperOldChannelNames(handlers).length,135);
-    const operations=[...BILLING_RPC,...BILLING_BATCH_RPC,...REFUND_INTAKE_RPC];
+    const operations=[...BILLING_RPC,...BILLING_BATCH_RPC,...REFUND_INTAKE_RPC,...WEBSITE_CHECKOUT_RPC];
     assert.deepEqual(Object.keys(api).slice(-operations.length),operations.map(([name])=>name));
     assert.deepEqual([...handlers.keys()].slice(-operations.length),operations.map(([,channel])=>'shenyi:'+channel));
     for(const [,operation] of operations){

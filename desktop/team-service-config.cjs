@@ -7,6 +7,7 @@ const API_BASE='http://127.0.0.1:8774';
 const MAX_CONFIGURATION_BYTES=16*1024;
 const CONFIGURATION_KEYS=Object.freeze(['schemaVersion','apiBase','serverId']);
 const WECHAT_CONFIGURATION_KEYS=Object.freeze([...CONFIGURATION_KEYS,'wechatAppId']);
+const CHECKOUT_CONFIGURATION_KEYS=Object.freeze([...CONFIGURATION_KEYS,'checkoutOrigin']);
 const MAC_MANAGED_PARENTS=Object.freeze(['/','/Library','/Library/Application Support']);
 const MAC_MANAGED_DIRECTORY='/Library/Application Support/ShenyiTeamDesktop';
 const MAC_MANAGED_FILE=MAC_MANAGED_DIRECTORY+'/team-service.json';
@@ -23,8 +24,8 @@ function validateTrustedTeamService(value){
     if(!value||typeof value!=='object'||Object.getPrototypeOf(value)!==Object.prototype)throw invalid();
     const keys=Reflect.ownKeys(value),fields=Object.getOwnPropertyDescriptors(value);
     const schemaVersion=fields.schemaVersion?.value;
-    if(schemaVersion!==1&&schemaVersion!==2)throw invalid();
-    const expected=schemaVersion===2?WECHAT_CONFIGURATION_KEYS:CONFIGURATION_KEYS;
+    if(schemaVersion!==1&&schemaVersion!==2&&schemaVersion!==3)throw invalid();
+    const expected=schemaVersion===3?CHECKOUT_CONFIGURATION_KEYS:schemaVersion===2?WECHAT_CONFIGURATION_KEYS:CONFIGURATION_KEYS;
     if(keys.length!==expected.length||expected.some(key=>!Object.hasOwn(fields,key)||!Object.hasOwn(fields[key],'value')||fields[key].enumerable!==true))throw invalid();
     const apiBase=fields.apiBase.value,serverId=fields.serverId.value;
     if(typeof apiBase!=='string'||typeof serverId!=='string')throw invalid();
@@ -39,6 +40,13 @@ function validateTrustedTeamService(value){
         url.port||isIP(url.hostname)||url.hostname.length>253||!url.hostname.includes('.')||
         !url.hostname.split('.').every(label=>/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)))throw invalid();
       profile.wechatAppId=wechatAppId;
+    }
+    if(schemaVersion===3){
+      const checkoutOrigin=fields.checkoutOrigin.value;
+      if(typeof checkoutOrigin!=='string'||!checkoutOrigin.isWellFormed()||/[\x00-\x20\x7f-\x9f\\]/.test(checkoutOrigin))throw invalid();
+      const checkout=new URL(checkoutOrigin);
+      if(checkout.protocol!=='https:'||!checkout.hostname||checkout.username||checkout.password||checkout.pathname!=='/'||checkout.search||checkout.hash||checkoutOrigin!==checkout.origin)throw invalid();
+      profile.checkoutOrigin=checkout.origin;
     }
     return Object.freeze(profile);
   }catch{throw invalid();}

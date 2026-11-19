@@ -54,7 +54,7 @@ function billingAccess(request,options){
   return json({teams});
  });
 }
-function billingOverview(db,teamId,at,billingSimulation,{expiryReminder,resumeFulfilment,pilotSource}){
+function billingOverview(db,teamId,at,billingSimulation,{expiryReminder,resumeFulfilment,pilotSource,websiteCheckout}){
  const current=readSubscriptionState(db,teamId,at),{state,revision,startsAt,endsAt}=current;
  const subscription={state,revision,startsAt,endsAt},remaining=endsAt-at;
  if(pilotSource&&!billingSimulation&&currentTermIsPilot(db,current))subscription.pilot=true;
@@ -73,6 +73,7 @@ function billingOverview(db,teamId,at,billingSimulation,{expiryReminder,resumeFu
   ...summary,simulation:true,
   annualOffers:renewalSeats?billingSimulation.offers:[],renewalSeats,seatOffer,
   canReconcile,
+  ...(websiteCheckout?{websiteCheckout:true}:{}),
   ...(resumeFulfilment?{canResumeFulfilment:true}:{}),
   ...(billingSimulation.paymentExceptions&&canReconcile?{canReconcilePaymentExceptions:true}:{}),
   ...(billingSimulation.batchReconciliation&&canReconcile?{canReconcileBillingBatch:true}:{}),
@@ -234,6 +235,7 @@ export async function handleBillingRequest(request,options={}){
  }else if(kind!=='seats'&&!billingSimulation)unavailable();
  const allowed=action||kind==='reconciliation'?'POST':isOrder&&!orderId?'GET, POST':'GET';
  if(!allowed.split(', ').includes(request.method))return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:allowed});
+ if(options.websiteCheckoutActive&&request.method==='POST')throw new ApiError(403,'WEBSITE_CHECKOUT_REQUIRED','请在官网候选订单页操作。');
  const authorize=()=>actor(db,request,currentOptions,teamId,initial);
  const scoped=action=>transaction(db,()=>{const current=authorize(),result=action(current);authorize();return result;});
  if(kind==='reconciliation')return reconcileBatch(request,{db,teamId,options:currentOptions,now,scoped,authorize});
@@ -242,6 +244,7 @@ export async function handleBillingRequest(request,options={}){
   expiryReminder:request.headers.get('X-Shenyi-Billing-View')==='expiry-reminder-v1',
   resumeFulfilment:request.headers.get('X-Shenyi-Billing-Recovery')==='recorded-payment-v1',
   pilotSource:options.serviceMode==='managed-service'&&request.headers.get('X-Shenyi-Billing-Source')==='approved-pilot-v1',
+  websiteCheckout:options.websiteCheckoutActive&&request.headers.get('X-Shenyi-Website-Checkout')==='candidate-v1',
  }));
  if(kind==='offers')return scoped(()=>json({simulation:true,offers:billingSimulation.offers}));
  if(kind==='renewal-seats')return scoped(()=>{

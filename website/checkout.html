@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="从审易桌面客户端核对团队年订阅与席位，创建本地模拟订单。">
+  <title>团队年订阅 · 审易</title>
+  <link rel="icon" href="/assets/brand-shenyi.png" type="image/png">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/checkout/checkout.css">
+  <script src="/checkout/checkout.js" defer></script>
+</head>
+<body class="checkout-page">
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <header class="site-header">
+    <div class="shell masthead">
+      <a class="brand" href="/" aria-label="审易，返回官网首页">
+        <img src="/assets/brand-shenyi.png" width="47" height="38" alt="">
+        <span>审易</span>
+      </a>
+      <nav aria-label="官网导航"><a href="/">返回官网 <span aria-hidden="true">↗</span></a></nav>
+    </div>
+  </header>
+
+  <main id="main" class="shell checkout-main" tabindex="-1">
+    <div class="checkout-heading">
+      <div>
+        <p class="eyebrow">官网订阅</p>
+        <h1>团队年订阅</h1>
+        <p class="checkout-lead">核对团队、年费和席位，再确认订单。</p>
+      </div>
+      <span class="checkout-badge">本地模拟</span>
+    </div>
+
+    <div class="checkout-notice">
+      <strong>当前仅演示下单，不收取费用。</strong>
+      <p>模拟订单不会开通或续展订阅，也不会增加团队席位。</p>
+    </div>
+
+    <section class="checkout-message" aria-labelledby="checkout-status-title" aria-busy="true" id="status-panel">
+      <h2 id="checkout-status-title">正在核对桌面授权</h2>
+      <p id="checkout-status" role="status" aria-live="polite" aria-atomic="true">请稍候。</p>
+      <button class="button secondary" id="recover-context" type="button" hidden>只读核对订单</button>
+    </section>
+
+    <div class="checkout-grid" id="checkout-content" hidden>
+      <section class="checkout-form-panel" aria-labelledby="team-title">
+        <div class="checkout-panel-heading">
+          <p class="eyebrow">订阅团队</p>
+          <h2 id="team-title"></h2>
+          <p class="checkout-muted">团队年订阅 · 按年订阅</p>
+        </div>
+
+        <form id="annual-order-form" novalidate>
+          <fieldset id="checkout-fields" disabled>
+            <legend>确认席位数量</legend>
+            <label class="checkout-label" for="selected-seats">本次订阅席位</label>
+            <div class="checkout-seat-input">
+              <input id="selected-seats" name="selectedSeats" type="number" inputmode="numeric" min="0" step="1" required aria-describedby="seat-guidance seat-error" autocomplete="off">
+              <span aria-hidden="true">席</span>
+            </div>
+            <p class="checkout-field-note" id="seat-guidance"></p>
+            <p class="checkout-field-error" id="seat-error" aria-live="polite"></p>
+
+            <dl class="checkout-pricing">
+              <div><dt>团队年费</dt><dd id="base-amount">—</dd></div>
+              <div><dt>每席年费</dt><dd id="seat-unit-amount">—</dd></div>
+            </dl>
+            <p class="checkout-field-note">合计为团队年费，加上每席年费乘以所选席位数。</p>
+
+            <button class="button primary checkout-submit" id="create-order" type="submit">创建模拟订单</button>
+            <p class="checkout-submit-note">提交后保存本次金额与席位，订单内容不可在此修改。</p>
+          </fieldset>
+        </form>
+
+        <div id="receipt-panel" class="checkout-receipt" hidden>
+          <p class="checkout-receipt-state">模拟订单已创建</p>
+          <h3 id="receipt-title">订单回执</h3>
+          <dl class="checkout-receipt-details">
+            <div><dt>订单编号</dt><dd id="receipt-id" class="checkout-order-id"></dd></div>
+            <div><dt>订单状态</dt><dd>待处理（模拟）</dd></div>
+            <div><dt>订阅席位</dt><dd id="receipt-seats"></dd></div>
+            <div><dt>创建时间</dt><dd id="receipt-created"></dd></div>
+            <div><dt>订单金额</dt><dd id="receipt-amount"></dd></div>
+          </dl>
+          <p class="checkout-field-note">此为已保存的原订单。页面不会重复建单，也不会发起收款。可返回桌面查看团队账务。</p>
+        </div>
+      </section>
+
+      <aside class="checkout-summary" aria-labelledby="summary-title">
+        <p class="eyebrow">本次确认</p>
+        <h2 id="summary-title">年订阅合计</h2>
+        <p class="checkout-total" id="order-total">—</p>
+        <p class="checkout-summary-currency">人民币 · CNY</p>
+        <dl class="checkout-summary-lines">
+          <div><dt>订阅项目</dt><dd>团队年订阅</dd></div>
+          <div><dt>席位数量</dt><dd id="summary-seats">—</dd></div>
+          <div><dt>环境</dt><dd>本地模拟</dd></div>
+        </dl>
+        <p class="checkout-summary-note" id="summary-note">价格来自当前目录，确认后以原订单回执为准。</p>
+        <a class="checkout-home-link" href="/">了解审易产品 <span aria-hidden="true">↗</span></a>
+      </aside>
+    </div>
+
+    <noscript><p class="checkout-notice">请启用 JavaScript，并从审易桌面客户端重新打开订单页。</p></noscript>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-inner">
+      <p><strong>审易</strong><span>官网本地候选</span></p>
+      <p>当前为合成下单演示，正式收款入口待发布。</p>
+    </div>
+  </footer>
+</body>
+</html>

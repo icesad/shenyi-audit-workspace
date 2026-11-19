@@ -847,3 +847,26 @@ test('lookup reuses trusted closure and exception facts without enabling a recon
   assert.equal(row.querySelector('button'), null);
   assert.equal(f.calls.filter(call => /^reconcileBilling/.test(call.name)).length, 0);
 });
+
+
+function websiteSnapshot(teamId,ready=true){return {...snapshot(teamId),websiteCheckout:true,websiteCheckoutReady:ready};}
+test('a configured website candidate exposes one deliberate action and suppresses only desktop order creation',async t=>{
+ const f=fixture(t,{getBillingOverview:({teamId})=>ok(websiteSnapshot(teamId)),openWebsiteCheckout:()=>ok({opened:true})});await f.open();await until(()=>!f.id('website-checkout').disabled);assert.equal(f.calls.filter(c=>c.name==='openWebsiteCheckout').length,0);assert.equal(f.id('website-checkout').hidden,false);assert.equal(f.id('review').hidden,true);assert.equal(f.id('annual-fields').hidden,true);assert.equal(f.id('renewal-fields').hidden,true);assert.equal(f.id('confirmation').hidden,true);assert.equal(f.id('orders-section').hidden,false);assert.equal(f.id('order-kind').disabled,false);f.id('review').click();f.id('confirm').click();assert.equal(f.calls.some(c=>c.name==='createBillingOrder'),false);
+ f.id('website-checkout').click();await until(()=>f.id('message').textContent.includes('已请求打开官网'));assert.deepEqual({...f.calls.find(c=>c.name==='openWebsiteCheckout').input},{teamId:'a'});assert.equal(f.calls.filter(c=>c.name==='openWebsiteCheckout').length,1);f.change('order-kind','seat');await until(()=>f.calls.some(c=>c.name==='listBillingOrders'&&c.input.kind==='seat'));assert.equal(f.id('seat-fields').hidden,true);
+});
+test('missing pinned checkout configuration or old bridge does not fall back to a desktop write',async t=>{
+ for(const overrides of [{getBillingOverview:({teamId})=>ok(websiteSnapshot(teamId,false)),openWebsiteCheckout:()=>ok({opened:true})},{getBillingOverview:({teamId})=>ok(websiteSnapshot(teamId,true)),openWebsiteCheckout:undefined}]){const f=fixture(t,overrides);await f.open();assert.equal(f.id('website-checkout').hidden,true);assert.match(f.id('website-checkout-hint').textContent,/联系管理员/);assert.equal(f.id('review').hidden,true);f.id('website-checkout').click();f.id('review').click();f.id('confirm').click();assert.equal(f.calls.some(c=>['openWebsiteCheckout','createBillingOrder'].includes(c.name)),false);}
+});
+test('legacy simulation and managed read-only views never gain the website candidate behavior',async t=>{
+ const legacy=fixture(t,{openWebsiteCheckout:()=>ok({opened:true})});await legacy.open();assert.equal(legacy.id('website-checkout-section').hidden,true);assert.equal(legacy.id('review').hidden,false);
+ const managed=fixture(t,{getBillingOverview:({teamId})=>ok({...managedSnapshot(teamId),websiteCheckout:true,websiteCheckoutReady:true}),openWebsiteCheckout:()=>ok({opened:true})});await managed.open();assert.equal(managed.id('website-checkout-section').hidden,true);managed.id('website-checkout').click();assert.equal(managed.calls.some(c=>c.name==='openWebsiteCheckout'),false);
+});
+test('website handoff stays single-flight across panel closure and never resurfaces its late result',async t=>{
+ const wait=deferred(),f=fixture(t,{getBillingOverview:({teamId})=>ok(websiteSnapshot(teamId)),openWebsiteCheckout:()=>wait.promise});await f.open();await until(()=>!f.id('website-checkout').disabled);f.id('website-checkout').click();f.id('website-checkout').click();assert.equal(f.calls.filter(c=>c.name==='openWebsiteCheckout').length,1);assert.equal(f.id('team').disabled,true);f.panel.querySelector('summary').click();f.panel.querySelector('summary').click();await new Promise(r=>setTimeout(r,0));f.id('website-checkout').click();assert.equal(f.calls.filter(c=>c.name==='openWebsiteCheckout').length,1);wait.resolve(ok({opened:true}));await until(()=>!f.id('website-checkout').disabled);assert.equal(f.id('message').textContent.includes('已请求打开官网'),false);
+});
+test('a stale website result cannot act on another actor or sign out the replacement view',async t=>{
+ const wait=deferred(),f=fixture(t,{getBillingOverview:({teamId})=>ok(websiteSnapshot(teamId)),openWebsiteCheckout:()=>wait.promise});await f.open();await until(()=>!f.id('website-checkout').disabled);f.id('website-checkout').click();f.context.identity='next';f.context.actor='next:1';f.view.update();wait.resolve(fail('SIGN_IN_REQUIRED'));await new Promise(r=>setTimeout(r,10));assert.deepEqual(f.callbacks,[]);assert.equal(f.id('message').textContent.includes('已请求打开官网'),false);
+});
+test('browser uncertainty stays generic, never renders a handoff and never retries automatically',async t=>{
+ const f=fixture(t,{getBillingOverview:({teamId})=>ok(websiteSnapshot(teamId)),openWebsiteCheckout:()=>({ok:false,error:{code:'WEBSITE_CHECKOUT_OPEN_FAILED',message:'https://private.invalid/checkout/#handoff=PRIVATE_TICKET'}})});await f.open();await until(()=>!f.id('website-checkout').disabled);f.id('website-checkout').click();await until(()=>f.id('message').textContent.includes('入口可能已签发'));assert.equal(f.calls.filter(c=>c.name==='openWebsiteCheckout').length,1);assert.equal(f.id('panel').textContent.includes('PRIVATE_TICKET'),false);assert.equal(f.id('panel').textContent.includes('private.invalid'),false);assert.match(f.id('message').textContent,/不会自动重试/);
+});

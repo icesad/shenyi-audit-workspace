@@ -168,4 +168,5 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   getRefundIntakeAccess:()=>invoke('refund-intake-access'),
   getRefundIntake:input=>invoke('refund-intake-read',input),
   recordRefundIntake:input=>invoke('refund-intake-record',input),
+  openWebsiteCheckout:input=>invoke('website-checkout-open',input),
 }));
