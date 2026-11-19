@@ -211,34 +211,51 @@ async function openManagedDatabase(configuration) {
   }
 }
 
-export async function openConfiguredTeamService(filename) {
+async function withManagedServiceInputs(filename, use) {
   const configuration = await loadManagedServiceConfiguration(filename);
   const { serverId, apiBase, listenPort: port, tlsCertificate, tlsKey, smsProfile, reviewedRecovery = false, wechatProfile } = configuration;
-  let db, key, smsProvider;
+  let key, smsProvider;
   try {
-    const { startManagedTeamServer } = await import('../server/team/managed-service.mjs');
     smsProvider = await loadSmsProvider(smsProfile);
     const wechat = await loadWechatProvider(wechatProfile, apiBase);
     const cert = await readLocalFile(tlsCertificate, 128 * 1024, 'MANAGED_TLS_INVALID');
     key = await readLocalFile(tlsKey, 32 * 1024, 'MANAGED_TLS_INVALID');
-    db = await openManagedDatabase(configuration);
-    const service = await startManagedTeamServer({ db, apiBase, port, serverId, cert, key, ...smsProvider, reviewedRecovery, wechat });
-    let stopping;
-    return { address: service.address, apiBase: service.apiBase, serverId,
-      close: () => stopping ??= service.close().finally(() => db.close()) };
-  } catch (error) {
-    db?.close();
-    throw error;
+    return await use(configuration, { apiBase, port, serverId, cert, key, ...smsProvider, reviewedRecovery, wechat });
   } finally {
     key?.fill(0);
     smsProvider?.phonePepper.fill(0);
   }
 }
 
+export function openConfiguredTeamService(filename) {
+  return withManagedServiceInputs(filename, async (configuration, inputs) => {
+    const { startManagedTeamServer } = await import('../server/team/managed-service.mjs');
+    const db = await openManagedDatabase(configuration);
+    try {
+      const service = await startManagedTeamServer({ db, ...inputs });
+      let stopping;
+      return { address: service.address, apiBase: service.apiBase, serverId: inputs.serverId,
+        close: () => stopping ??= service.close().finally(() => db.close()) };
+    } catch (error) {
+      db.close();
+      throw error;
+    }
+  });
+}
+
 async function main(args) {
   if (args.length === 3 && args[0] === '--check-database' && args[1] === '--config') {
     await checkManagedDatabase(await loadManagedServiceConfiguration(args[2]));
     console.log(JSON.stringify({ event: 'database-ready' }));
+    return;
+  }
+  if (args.length === 3 && args[0] === '--check-startup' && args[1] === '--config') {
+    await withManagedServiceInputs(args[2], async (configuration, inputs) => {
+      const { checkManagedServiceStartup } = await import('../server/team/managed-service.mjs');
+      await checkManagedDatabase(configuration);
+      checkManagedServiceStartup(inputs);
+    });
+    console.log(JSON.stringify({ event: 'startup-ready' }));
     return;
   }
   if (args.length !== 2 || args[0] !== '--config') fail(configCode);

@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import subprocess
 import sys
 import tempfile
 from types import ModuleType, SimpleNamespace
@@ -117,6 +118,9 @@ class Deployment:
         self.actions = []
         self.probes = []
         self.candidate_preflights = []
+        self.candidate_commands = []
+        self.candidate_exit = 0
+        self.candidate_stdout = '{"event":"startup-ready"}\n'
         self.cut_after_exchange = False
         self.cut_after_retention = False
         self.report = {
@@ -136,7 +140,9 @@ class Deployment:
         release.rename_entry = self.rename_entry
         release.service_status = self.service_status
         release.process_status = self.process_status
-        release.check_candidate_database = self.check_candidate_database
+        self.check_candidate_startup_impl = release.check_candidate_startup
+        release.check_candidate_startup = self.check_candidate_startup
+        release.run = self.run_candidate
         release.service = self.service
         release.stop_service = self.stop_service
         release.restart_previous = self.restart_previous
@@ -169,8 +175,13 @@ class Deployment:
         self.actions.append('stop')
         self.state = 'inactive'
 
-    def check_candidate_database(self, staged, env):
+    def check_candidate_startup(self, staged, env):
         self.candidate_preflights.append(self.identity(staged))
+        self.check_candidate_startup_impl(staged, env)
+
+    def run_candidate(self, command, timeout, env):
+        self.candidate_commands.append((command, timeout, env))
+        return subprocess.CompletedProcess(command, self.candidate_exit, self.candidate_stdout)
 
     def service(self, args, env, timeout):
         if args != ['start'] or self.identity(self.current) != self.new_id:
@@ -380,6 +391,8 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(deployment.probes, [deployment.current] if preflight_started else [])
         self.assertFalse(deployment.journal.exists())
         self.assertFalse(deployment.history.exists())
+        self.assertFalse(deployment.previous.exists())
+        self.assertFalse(deployment.failed.exists())
         self.assertEqual(deployment.identity(deployment.current), deployment.old_id)
         self.assertEqual(deployment.identity(deployment.staged), deployment.new_id)
         self.assertEqual(deployment.process_status({}), (101, BASELINE_INVOCATION))
@@ -399,7 +412,32 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(result['stagedTree'], seal)
         self.assertEqual(fixture_tree(f.current, 0, f.receipt_path.name), seal)
         self.assertEqual(f.candidate_preflights, [f.new_id])
+        release = f.release
+        self.assertEqual(f.candidate_commands, [([
+            release.RUNUSER, '-u', 'shenyi-team', '-g', 'shenyi-team', '--', release.TIMEOUT, '--kill-after=2s', '10s',
+            release.NODE, f.staged / 'scripts/start-team-service.mjs', '--check-startup', '--config', release.CONFIG,
+        ], 20, {})])
+        self.assertEqual(result['candidateStartupPreflight'], 'passed')
+        self.assertEqual(result['candidateDatabasePreflight'], 'passed')
         self.assertEqual(f.actions, ['stop', 'exchange', 'start', 'retain', 'record'])
+
+    def test_failed_or_invalid_startup_receipt_cannot_stop_the_current_service(self):
+        for exit_code, stdout in ((1, ''), (1, '{"event":"startup-ready"}'), (0, '{"event":"database-ready"}'),
+                                  (0, '{"event":"startup-ready","extra":true}'), (0, 'unexpected output')):
+            with self.subTest(exit_code=exit_code, stdout=stdout):
+                f, _ = self.fresh_deployment()
+                f.candidate_exit, f.candidate_stdout = exit_code, stdout
+                self.assert_activation_refused(f, preflight_started=True)
+                self.assertEqual(len(f.candidate_commands), 1)
+
+    def test_startup_probe_timeout_cannot_stop_the_current_service(self):
+        f, _ = self.fresh_deployment()
+
+        def timeout(command, seconds, env):
+            raise subprocess.TimeoutExpired(command, seconds)
+
+        f.release.run = timeout
+        self.assert_activation_refused(f, preflight_started=True)
 
     def test_new_activation_refuses_an_unsealed_stage(self):
         f, _ = self.fresh_deployment(sealed=False)
@@ -428,18 +466,44 @@ class RecoveryTests(unittest.TestCase):
                         directory.chmod(0o555)
                 self.assert_activation_refused(f)
 
-    def test_tree_changes_after_database_preflight_cannot_stop_the_current_service(self):
+    def test_tree_changes_after_startup_preflight_cannot_stop_the_current_service(self):
         f, _ = self.fresh_deployment()
 
         def change_after_preflight(staged, env):
-            f.check_candidate_database(staged, env)
+            f.check_candidate_startup(staged, env)
             self.change_same_size(f.dependency)
 
-        f.release.check_candidate_database = change_after_preflight
+        f.release.check_candidate_startup = change_after_preflight
         self.assert_activation_refused(f, preflight_started=True)
+
+    def test_startup_input_changes_cannot_stop_the_current_service(self):
+        for field in ('tlsCertificate', 'tlsKey', 'smsProfile', 'wechatProfile'):
+            with self.subTest(field=field):
+                f, _ = self.fresh_deployment()
+                filename = f.release.CONFIG.with_name(field)
+                filename.write_bytes(b'synthetic startup input\n')
+                write_json(f.release.CONFIG, {'database': str(f.database), field: str(filename)})
+                before = filename.stat()
+
+                def change_after_preflight(staged, env):
+                    f.check_candidate_startup(staged, env)
+                    self.change_same_size(filename)
+                    os.utime(filename, ns=(before.st_atime_ns, before.st_mtime_ns - 1_000_000_000))
+
+                f.release.check_candidate_startup = change_after_preflight
+                self.assert_activation_refused(f, preflight_started=True)
+
+    def test_missing_startup_input_is_diagnosed_by_the_candidate(self):
+        f, _ = self.fresh_deployment()
+        missing_profile = f.release.CONFIG.with_name('missing-wechat.json')
+        write_json(f.release.CONFIG, {'database': str(f.database), 'wechatProfile': str(missing_profile)})
+        f.candidate_exit, f.candidate_stdout = 1, ''
+        self.assert_activation_refused(f, preflight_started=True)
+        self.assertFalse(missing_profile.exists())
 
     def test_recovery_checks_a_seal_after_renaming_and_preserves_it(self):
         f = self.deployment('starting-candidate', 'new', 'previous', 'active')
+        f.report['candidateStartupPreflight'] = 'passed'
         seal = f.seal_candidate(journal=True)
         result = f.recover()
         self.verify_finish(f, result, 'recovered', f.old_id, f.failed)
@@ -451,7 +515,7 @@ class RecoveryTests(unittest.TestCase):
 
     def test_recovery_refuses_a_missing_mismatched_or_changed_seal(self):
         for change in ('journal missing', 'receipt missing', 'journal digest', 'journal boolean',
-                       'journal float', 'candidate content'):
+                       'journal float', 'candidate content', 'startup receipt'):
             with self.subTest(change=change):
                 f = self.deployment('starting-candidate', 'new', 'previous', 'active')
                 f.seal_candidate(journal=change != 'journal missing')
@@ -472,6 +536,9 @@ class RecoveryTests(unittest.TestCase):
                     write_json(f.journal, f.report)
                 elif change == 'candidate content':
                     self.change_same_size(f.dependency)
+                elif change == 'startup receipt':
+                    f.report['candidateStartupPreflight'] = 'failed'
+                    write_json(f.journal, f.report)
                 self.assert_refused(f)
                 self.assertEqual(f.probes, [])
 

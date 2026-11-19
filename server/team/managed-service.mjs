@@ -1,6 +1,7 @@
 import {createPrivateKey, X509Certificate} from 'node:crypto';
 import {createServer} from 'node:https';
 import {isIP} from 'node:net';
+import {createSecureContext} from 'node:tls';
 import {handleTeamApplicationRequest} from './application-api.mjs';
 import {json} from './http-utils.mjs';
 import {assertDatabaseIdentity, assertManagedDatabaseReady} from './managed-database-readiness.mjs';
@@ -36,7 +37,7 @@ function managedOrigin(apiBase, port, serverId) {
   } catch { fail('MANAGED_SERVICE_CONFIGURATION_INVALID'); }
 }
 
-function checkTlsConfiguration(origin, key, cert) {
+function checkedTlsOptions(origin, key, cert) {
   try {
     const leaf = new X509Certificate(cert);
     const hostname = origin.hostname.replace(/^\[|\]$/g, '');
@@ -44,6 +45,7 @@ function checkTlsConfiguration(origin, key, cert) {
     const at = Date.now();
     if (!hostMatch || !leaf.checkPrivateKey(createPrivateKey(key)) ||
         !(leaf.validFromDate.getTime() <= at && at <= leaf.validToDate.getTime())) fail('MANAGED_TLS_INVALID');
+    return {key, cert, minVersion:'TLSv1.2'};
   } catch { fail('MANAGED_TLS_INVALID'); }
 }
 
@@ -57,8 +59,7 @@ function resolveManagedTarget(incoming, origin) {
   if (url.origin === origin.origin && url.href === origin.origin + target) return url;
 }
 
-/** Loopback-only HTTPS listener for a separately provisioned non-demo database. */
-export async function startManagedTeamServer({db, apiBase, port = 0, serverId, key, cert, sms, phonePepper, reviewedRecovery = false, wechat} = {}) {
+function validateManagedServiceOptions({apiBase, port = 0, serverId, sms, phonePepper, reviewedRecovery = false, wechat}) {
   const origin = managedOrigin(apiBase, port, serverId);
   const hasSms = sms !== undefined || phonePepper !== undefined;
   const validSms = typeof sms?.send === 'function' && Buffer.isBuffer(phonePepper) && phonePepper.length === 32;
@@ -69,9 +70,21 @@ export async function startManagedTeamServer({db, apiBase, port = 0, serverId, k
   if (wechatEnabled && (!isWechatConfigured({wechat}) || !/^wx[a-zA-Z0-9]{16}$/.test(wechat.appId) ||
     origin.port || isIP(origin.hostname.replace(/^\[|\]$/g, '')) || !origin.hostname.includes('.') ||
     wechat.redirectUri !== origin.origin + '/api/auth/wechat/callback')) fail('MANAGED_SERVICE_CONFIGURATION_INVALID');
-  const readinessOptions = {reviewedRecovery,wechatEnabled};
+  return {origin, hasSms, wechatEnabled, readinessOptions:{reviewedRecovery,wechatEnabled}};
+}
+
+/** Validate the same provider settings and TLS context without creating a listener. */
+export function checkManagedServiceStartup(options) {
+  const {origin} = validateManagedServiceOptions(options);
+  try { createSecureContext(checkedTlsOptions(origin, options.key, options.cert)); }
+  catch { fail('MANAGED_TLS_INVALID'); }
+}
+
+/** Loopback-only HTTPS listener for a separately provisioned non-demo database. */
+export async function startManagedTeamServer({db, apiBase, port = 0, serverId, key, cert, sms, phonePepper, reviewedRecovery = false, wechat} = {}) {
+  const {origin, hasSms, wechatEnabled, readinessOptions} = validateManagedServiceOptions({apiBase, port, serverId, sms, phonePepper, reviewedRecovery, wechat});
   assertManagedDatabaseReady(db, serverId, readinessOptions);
-  checkTlsConfiguration(origin, key, cert);
+  const tlsOptions = checkedTlsOptions(origin, key, cert);
   const pepper = hasSms ? Buffer.from(phonePepper) : undefined;
   const identityProviders = Object.freeze({deviceProofRequired:true, reviewedRecovery,
     ...(hasSms ? {sms:Object.freeze({send:sms.send.bind(sms)}), phonePepper:pepper} : {}),
@@ -87,7 +100,7 @@ export async function startManagedTeamServer({db, apiBase, port = 0, serverId, k
   try {
     const service = await startLoopbackTeamListener({
       createServer(listener) {
-        try { return createServer({key, cert, minVersion:'TLSv1.2'}, listener); }
+        try { return createServer(tlsOptions, listener); }
         catch { fail('MANAGED_TLS_INVALID'); }
       },
       protocol:'https', port,

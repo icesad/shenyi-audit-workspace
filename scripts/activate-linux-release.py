@@ -85,6 +85,27 @@ def configuration_stamp():
     return {'configSha256': hashlib.sha256(source).hexdigest(), 'databaseIdentity': identity(info)}
 
 
+def startup_input_stamp():
+    # The service loads these files separately. Keep their metadata in memory
+    # only; durable recovery continues to use the configuration and DB stamp.
+    def file_state(info):
+        return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+                info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+    listed = owned_path(CONFIG, stat.S_ISREG)
+    profile = json.loads(read_file(CONFIG, 64 * 1024))
+    inputs = [file_state(listed)]
+    for field in ('tlsCertificate', 'tlsKey', 'smsProfile', 'wechatProfile'):
+        filename = profile.get(field)
+        try:
+            info = Path(filename).lstat() if isinstance(filename, str) and Path(filename).is_absolute() else None
+        except (OSError, ValueError):
+            # Missing or malformed references are still diagnosed by the candidate.
+            info = None
+        inputs.append(file_state(info) if info is not None else None)
+    return tuple(inputs)
+
+
 def run(command, timeout, env):
     return subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=env)
 
@@ -225,19 +246,18 @@ def validate_stage(staged, revision, archive_sha, root_device, *, receipt_stage=
     return identity(info), expected
 
 
-def check_candidate_database(staged, env):
+def check_candidate_startup(staged, env):
     entry = staged / 'scripts/start-team-service.mjs'
     owned_path(entry, stat.S_ISREG, readonly=True)
     # Bound the candidate process under the service account as well as the parent command.
-    result = run([RUNUSER, '-u', 'shenyi-team', '-g', 'shenyi-team', '--', TIMEOUT, '--kill-after=2s', '10s',
-                  NODE, entry, '--check-database', '--config', CONFIG], 20, env)
-    if result.returncode == 0:
-        try:
-            if json.loads(result.stdout) == {'event': 'database-ready'}:
-                return
-        except ValueError:
-            pass
-    raise ValueError('The candidate database preflight failed before stopping the current service.')
+    try:
+        result = run([RUNUSER, '-u', 'shenyi-team', '-g', 'shenyi-team', '--', TIMEOUT, '--kill-after=2s', '10s',
+                      NODE, entry, '--check-startup', '--config', CONFIG], 20, env)
+        if result.returncode == 0 and json.loads(result.stdout) == {'event': 'startup-ready'}:
+            return
+    except (ValueError, OSError, subprocess.TimeoutExpired):
+        pass
+    raise ValueError('The candidate startup preflight failed before stopping the current service.')
 
 
 def activate(args, root_fd, env):
@@ -255,17 +275,19 @@ def activate(args, root_fd, env):
     new_identity, tree = validate_stage(staged, revision, args.archive_sha256, root_device)
     rename = rename_operation()
     stamp = configuration_stamp()
+    startup_inputs = startup_input_stamp()
     owned_path(CURRENT / 'scripts/check-team-service.mjs', stat.S_ISREG, readonly=True)
     _, warnings, baseline = health_check(env, prior_warnings=None, limit=15)
-    check_candidate_database(staged, env)
+    check_candidate_startup(staged, env)
     confirmed = validate_stage(staged, revision, args.archive_sha256, root_device)
-    require(configuration_stamp() == stamp and process_status(env) == baseline
+    require(configuration_stamp() == stamp and startup_input_stamp() == startup_inputs and process_status(env) == baseline
             and confirmed == (new_identity, tree),
-            'Configuration or release state changed during the candidate database preflight.')
+            'Configuration or release state changed during the candidate startup preflight.')
     report = {'revision': revision, 'archiveSha256': args.archive_sha256, 'oldDirectoryIdentity': old_identity,
               'newDirectoryIdentity': new_identity, 'stagedTree': tree,
               'baselinePid': baseline[0], 'baselineInvocation': baseline[1],
-              'baselineWarningChecks': sorted(warnings), 'candidateDatabasePreflight': 'passed', **stamp}
+              'baselineWarningChecks': sorted(warnings), 'candidateDatabasePreflight': 'passed',
+              'candidateStartupPreflight': 'passed', **stamp}
     record(JOURNAL, {**report, 'status': 'stopping-current'}, root_fd)
 
     try:
@@ -323,7 +345,8 @@ def read_recovery_journal(args, root_device):
     require(info.st_nlink == 1 and info.st_dev == root_device, 'Untrusted activation journal file.')
     report = json.loads(read_file(JOURNAL, 64 * 1024))
     require(report['revision'] == args.revision and report['archiveSha256'] == args.archive_sha256
-            and report['status'] in RECOVERY_LAYOUTS and report['candidateDatabasePreflight'] == 'passed',
+            and report['status'] in RECOVERY_LAYOUTS and report['candidateDatabasePreflight'] == 'passed'
+            and report.get('candidateStartupPreflight', 'passed') == 'passed',
             'The journal does not match the approved interrupted activation.')
     for key in ('oldDirectoryIdentity', 'newDirectoryIdentity', 'databaseIdentity'):
         value = report[key]
