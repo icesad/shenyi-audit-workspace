@@ -11,7 +11,7 @@ release=$(git rev-parse --verify HEAD)
 git archive --format=tar --output="$release_dir/shenyi-team-${release}.tar" "$release" -- \
   package.json package-lock.json dist shared server/team deploy/linux \
   scripts/start-team-service.mjs scripts/bootstrap-managed-team.mjs scripts/team-database-backup.mjs \
-  scripts/check-team-service.mjs \
+  scripts/check-team-service.mjs scripts/check-linux-team-file-permissions.py \
   docs/LINUX_TEAM_DEPLOYMENT.md docs/MANAGED_TEAM_SERVICE.md docs/TEAM_OFFLINE_BACKUP.md
 sha256sum "$release_dir/shenyi-team-${release}.tar"
 ```
@@ -48,7 +48,7 @@ node scripts/linux-release-signature.mjs sign \
 | --- | --- |
 | `/opt/shenyi-team/node/bin/node` | 由运维固定并校验的 Node 可执行文件 |
 | `/opt/shenyi-team/current` | 归 root 管理的当前发布目录，`shenyi-team` 只读 |
-| `/etc/shenyi-team` | 仅 root 和 `shenyi-team` 可访问。配置及后端密钥建议 `0640 root:shenyi-team`，目录 `0750` |
+| `/etc/shenyi-team` | 配置、后端私钥及可选供应商配置建议 `0640 root:shenyi-team`，目录 `0750` |
 | `/var/lib/shenyi-team` | `shenyi-team:shenyi-team` 私有状态目录，模式 `0700`，数据库 `0600`，允许 SQLite 创建附属文件 |
 | `/etc/nginx/shenyi-team` | 对外 TLS 证书和私钥、专用于后端的 CA 信任文件。私钥由运维和 Nginx 主进程持有 |
 
@@ -56,8 +56,22 @@ node scripts/linux-release-signature.mjs sign \
 
 1. 建立无交互登录的系统账号和同名组 `shenyi-team`。已有受管库按获准的迁移或备份恢复流程单独准备。新环境按受管初始化说明，以 `shenyi-team` 运行离线初始化 CLI，经标准输入传入核验后的数据。使用实际数据库回执中的 `serverId`，将库放到示例指定的文件路径。 [首位产品负责人](MANAGED_TEAM_SERVICE.md#首位产品负责人)
 2. 复制 [服务配置示例](../deploy/linux/service.json.example)到 `/etc/shenyi-team/service.json`，替换示例域名和 UUID。将后端证书链和私钥放在示例指定的实际文件。后端叶子证书的 DNS SAN 必须匹配公共域名，Nginx 配置中的后端 CA 必须能验证该链。边缘证书与后端证书使用各自的私钥。短信与恢复按已批准范围另行配置。 [TLS 与短信配置](MANAGED_TEAM_SERVICE.md)
-3. 将 [systemd 单元](../deploy/linux/shenyi-team.service)装到 `/etc/systemd/system/shenyi-team.service`。在目标主机先运行 `systemd-analyze verify /etc/systemd/system/shenyi-team.service`，再运行 `systemctl daemon-reload` 和 `systemctl start shenyi-team`。就绪核对通过后，用 `systemctl enable shenyi-team.service` 设置开机启动。下次开机后先观察自动启动状态，再核对 HTTPS 和实例标识。 [systemd 服务与停止](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html) · [systemd 私有状态目录](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)
+3. 将 [systemd 单元](../deploy/linux/shenyi-team.service)装到 `/etc/systemd/system/shenyi-team.service`。在目标主机先核对下方的文件权限，再运行 `systemd-analyze verify /etc/systemd/system/shenyi-team.service`、`systemctl daemon-reload` 和 `systemctl start shenyi-team`。就绪核对通过后，用 `systemctl enable shenyi-team.service` 设置开机启动。下次开机后先观察自动启动状态，再核对 HTTPS 和实例标识。 [systemd 服务与停止](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html) · [systemd 私有状态目录](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)
 4. 使用支持 `ssl_reject_handshake` 和 TLS 1.3 的受支持 Nginx 构建。将 [Nginx 配置](../deploy/linux/nginx-shenyi-team.conf)纳入目标主机的 `http` 配置，统一替换保留示例域名和证书路径。已有默认 443 虚拟主机时，先核对并合并其未知域名拒绝行为，确保同一监听地址只有一个默认虚拟主机。运行 `nginx -t`，通过后按已授权的环境流程加载。安全组及主机防火墙仅开放所需边缘端口，管理入口限授权来源，`9443` 保持仅回环。 [Nginx TLS](https://nginx.org/en/docs/http/ngx_http_ssl_module.html) · [阿里云安全组](https://help.aliyun.com/en/ecs/user-guide/security-groups-for-different-use-cases)
+
+### 启动前检查文件权限
+
+在服务文件及 SQLite 已安装后，发布管理员可用 root 执行权限检查。它按随包的 `shenyi-team.service`、`/etc/shenyi-team/service.json` 和 `/var/lib/shenyi-team` 布局核对。
+
+```sh
+/usr/bin/python3 -I /opt/shenyi-team/current/scripts/check-linux-team-file-permissions.py
+```
+
+命令读取主配置以定位数据库、后端证书与私钥，以及可选的短信和微信配置。其余文件只查归属、权限位、链接和 POSIX ACL。后端私钥、主配置和供应商配置使用 `root:shenyi-team`、`0640` 或 `0440`，所在目录为同一属主和组，且仅允许 root 和服务组访问。公开证书由 root 管理并允许服务读取。SQLite 和已存在的 `-journal`、`-wal`、`-shm` 由 `shenyi-team:shenyi-team` 持有，模式 `0600`，状态目录及其中通往该库的目录模式 `0700`。
+
+退出码 `0` 表示检查的文件及目录符合该布局。退出码 `1` 在 JSON 中给出项目和错误码，例如 `database` 的 `FILE_PERMISSIONS` 或 `tlsKey` 的 `EXTENDED_ACL`。按实际文件归属和部署路径处理后复查。服务组成员、证书内容、SQLite 结构和 HTTPS 就绪分别沿用部署和启动检查。
+
+隔离 Ubuntu 按默认布局运行了 29 次检查，覆盖错误归属、组和其他用户权限、软硬链接、同一权限位下的扩展和默认 ACL，以及 SQLite WAL 文件。逐项恢复后再次通过，服务状态和文件内容保持一致。部署时按实际启用的供应商配置再核对对应文件。证据见 `D:/codex-temp/shenyi-m7-linux-file-permissions-20261119/verification.json`。
 
 ## 端到端验收
 
