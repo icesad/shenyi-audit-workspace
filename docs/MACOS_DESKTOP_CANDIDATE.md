@@ -80,10 +80,25 @@ SHENYI_TEAM_SERVICE_CONFIG='/Users/release/test/team-service.json' \
 
 配置加载逻辑已在 Windows 测试。Finder、Gatekeeper 与 Keychain 仍须在 Mac 上验收。
 
+## 已签名应用的只读核验
+
+正式分发包完成 Developer ID 签名、公证和票据装订后，先用可信发布记录核对最终 ZIP 的 SHA-256，再解包到独立目录。用受支持的 Mac 和 Node.js 24.15 或更新的 24.x 运行下列命令。把示例参数替换为该次发行记录中的值。核验期间保持应用目录静置。票据核验使用该 Mac 上的 Xcode 命令行工具。 [Apple 签名身份说明](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements/) · [Apple 公证与票据装订流程](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
+
+```sh
+node scripts/check-macos-release-app.mjs \
+  --app '/Users/release/verified/Shenyi.app' \
+  --team-id 'A1B2C3D4E5' --bundle-id 'cn.example.shenyi' \
+  --version '0.61.0' --arch 'arm64' > '/Users/release/verified/app-check.json'
+```
+
+命令核对 `Info.plist` 的两个版本字段和主程序 Mach-O，递归严格验签，并用 Apple 证书链和独立提供的发行身份约束核对外层签名。它要求 Hardened Runtime 和安全时间戳，检查验收机启用了 Gatekeeper。macOS 14 及以后使用 `syspolicy_check distribution`，macOS 13 使用 `spctl` 的执行评估。还会独立校验应用的附带票据。 [Apple 签名验证说明](https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/Procedures/Procedures.html) · [Apple 公证测试说明](https://developer.apple.com/forums/thread/130560)
+
+完整通过后，命令退出码为 0，标准输出包含本机评估方式、主程序架构、签名摘要、时间戳和应用树摘要。应用树摘要覆盖普通文件内容、相对路径、权限和符号链接目标，链接须解析到应用内部。任一失败返回非零，并在标准错误中记录失败代码。最终 ZIP 的字节和签名交接、Framework 和 Helper 架构，以及下面的真实 Finder、Keychain 和升级测试分别留证。
+
 ## Mac 实机验收
 
 1. 在获准的 Mac 上按[离线签名与交接](#离线签名与交接)验签。使用 macOS 的归档工具或 `ditto -x -k` 解包到独立测试目录。
 2. 由有权限的人员按 Apple 的嵌套代码顺序签名，再核验 `codesign --verify --deep --strict --verbose=2 Shenyi.app`。发行版还须使用 Developer ID、Hardened Runtime 和公证票据，并在 Mac 上用 Gatekeeper 检查最终分发构件。上游 Electron 保留的签名字段和候选 SHA-256 均不构成审易发行签名。候选产品 ID 为 `invalid.shenyi.audit.candidate`，正式产品 ID 和发行证书应在签名阶段确认。 [Apple 签名指南](https://developer.apple.com/documentation/xcode/creating-distribution-signed-code-for-the-mac) · [Apple 公证指南](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution/)
-3. 管理员按上节配置独立合成团队服务，使用能通过客户端默认 TLS 验证的证书。用普通 macOS 测试账号在 Finder 打开已签名的应用，核对有效配置下可连接。另在独立测试环境核对缺少配置、路径权限不安全或文件损坏时的原生提示，以及错误实例或不可信证书时拒绝进入团队业务。
+3. 管理员按「从 Finder 启动已配置客户端」配置独立合成团队服务，使用能通过客户端默认 TLS 验证的证书。用普通 macOS 测试账号在 Finder 打开已签名的应用，核对有效配置下可连接。另在独立测试环境核对缺少配置、路径权限不安全或文件损坏时的原生提示，以及错误实例或不可信证书时拒绝进入团队业务。
 4. 使用测试账号登录并绑定设备，退出重开后核对公钥指纹和登录流程。核验 Keychain 访问失败时的界面，检查浏览器会话和设备密钥分别写入 `~/Library/Application Support/ShenyiTeamDesktop` 下的 `profile` 和 `device-vault`，旧预览目录无新写入。 [Electron safeStorage](https://github.com/electron/electron/blob/v45.3.2/docs/api/safe-storage.md)
 5. 验收一条资料采集流程，核对原件哈希、设备撤销、安装升级和退出。Apple 芯片及 Intel 要分别记录 Finder 启动、运行架构、签名、Keychain、系统文件选择和持久状态。正式升级路径待安装包确定后实测。

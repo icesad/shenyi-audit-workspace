@@ -1,4 +1,8 @@
-# 当前状态 · M8F 随包底稿双人走查
+# 当前状态 · M7AJ macOS 正式应用只读核验
+
+## 2026-11-19 M7AJ macOS 正式应用只读核验
+
+新增 Mac 原生只读命令，核对解包应用的正式 Bundle ID、两个版本字段、主程序 Mach-O、应用内链接、Developer ID 签名、Hardened Runtime、安全时间戳、Gatekeeper 和装订票据。Windows 文件夹具和模拟 Mac 命令的 38 项关联检查全通过，独立复核补齐了包内链接检查。实读两个归档的主程序架构及各 14 条链接记录。两份归档均为占位身份候选，正式签名、公证、Finder 启动、Keychain 和升级须在实机留证。两处旧预览前后观察一致，桌面一键入口本轮未复验。未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-macos-native-release-check-20261119/verification.json`。
 
 ## 2026-11-19 M8F 随包底稿双人走查
 
