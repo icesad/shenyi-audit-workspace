@@ -92,25 +92,34 @@ SHENYI_TEAM_SERVICE_CONFIG='/Users/release/test/team-service.json' \
 
 发行人员先将候选包里的 Electron 许可及第三方 notices 放入 `Shenyi.app`，把主应用及各个 Shenyi Helper 的标识改为本次正式标识，再签名、公证并将票据装订到应用。用 Mac 的 `ditto -c -k --sequesterRsrc --keepParent` 将最终应用归档为 ZIP。最终归档包含 `Shenyi.app` 和可选的 `__MACOSX` 附带元数据，发行记录单独提供 ZIP 的 SHA-256、Team ID、Bundle ID、版本与架构。 [Apple ZIP 分发](https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution) · [Apple 票据装订与重新打包](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
 
-接收方可先运行跨平台只读检查。使用 Python 3.10 或更新版本。示例变量由可信发布记录和本机实际路径提供。
+签名前用获准源码对应的原候选生成归档回执。使用 Python 3.10 或更新版本，`$approved_candidate_zip` 使用实际 ZIP 的绝对路径。
+
+```sh
+python3 -I scripts/build-macos-desktop-archive.py --verify "$approved_candidate_zip" "$arch" "$version" \
+  > "$candidate_receipt_file"
+```
+
+命令成功后，核对回执的 `archiveSha256` 等于独立取得的获准候选 ZIP 摘要。将 `appPayloadSha256` 连同源码提交、候选 ZIP 摘要、版本和架构记录于同一份发行批准记录。接收方从该记录取应用负载摘要，另取获准正式 ZIP 的最终摘要，运行跨平台只读核对。
 
 ```sh
 python3 -I scripts/build-macos-desktop-archive.py --verify-release "$release_zip" "$arch" "$version" \
-  --bundle-id "$bundle_id" --sha256 "$approved_sha256"
+  --bundle-id "$bundle_id" --sha256 "$approved_sha256" \
+  --app-payload-sha256 "$approved_app_payload_sha256"
 ```
 
-工具核对受信摘要、包内路径与符号链接、版本和正式 Bundle ID、主程序及配套组件的 Mach-O 架构，并完整读取归档成员核验 CRC。签前候选仍使用 `--verify`，其占位标识不能通过正式入口。
+工具核对受信摘要、包内路径与符号链接、版本和正式 Bundle ID、主程序及配套组件的 Mach-O 架构，并完整读取归档成员核验 CRC。应用负载摘要覆盖 `Shenyi.app/Contents/Resources/app/` 内的每份普通文件，包括相对路径、权限位、字节数和内容。签名可更新此目录之外的发行元数据。若应用负载摘要不匹配，接收方应停止验收，核对所用候选和签名流程。
 
 在 Mac 上，把 `check-macos-release-zip.mjs`、`check-macos-release-app.mjs` 和 `build-macos-desktop-archive.py` 放在同一工具目录。从可信安装中取得 Python 的绝对路径，并用 Node 24.15 或更高的 24.x 执行。
 
 ```sh
 node scripts/check-macos-release-zip.mjs \
   --archive "$release_zip" --sha256 "$approved_sha256" --python "$trusted_python" \
+  --app-payload-sha256 "$approved_app_payload_sha256" \
   --team-id "$team_id" --bundle-id "$bundle_id" --version "$version" --arch "$arch" \
   > "$receipt_file"
 ```
 
-该入口将受信 ZIP 的字节复制到私有临时目录，核对结构后用 macOS `ditto` 解包，对生成的应用检查 Developer ID、Gatekeeper 和公证票据。完整回执同时记录 ZIP 摘要和应用签名、应用树摘要。核验会清理临时副本，应用启动、下载安装、Keychain 和升级仍在正式实机流程中留证。
+该入口将受信 ZIP 的字节复制到私有临时目录，核对结构后用 macOS `ditto` 解包，对生成的应用检查 Developer ID、Gatekeeper 和公证票据。完整回执同时记录 ZIP 摘要、签名前应用负载摘要匹配结果、应用签名及应用树摘要。核验会清理临时副本，应用启动、下载安装、Keychain 和升级仍在正式实机流程中留证。
 
 ## 已签名应用的只读核验
 

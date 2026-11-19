@@ -521,7 +521,8 @@ def hash_held_archive(handle, expected_size):
     return digest.hexdigest()
 
 
-def verify_archive(filename, arch, version, *, bundle_id=BUNDLE_ID, expected_sha256=None):
+def verify_archive(filename, arch, version, *, bundle_id=BUNDLE_ID, expected_sha256=None,
+                   expected_app_payload_sha256=None):
     """Read ZIP and hash the same held file; never extract or execute its contents."""
     checked_version(version)
     release = expected_sha256 is not None
@@ -529,6 +530,9 @@ def verify_archive(filename, arch, version, *, bundle_id=BUNDLE_ID, expected_sha
                     bundle_id.lower() == BUNDLE_ID or not re.fullmatch(r'[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', bundle_id) or
                     any(len(part) > 16 or int(part) > (1 << 53) - 1 for part in version.split('.'))):
         raise ValueError('Expected an approved SHA-256, formal Bundle ID and valid version')
+    if expected_app_payload_sha256 is not None and (not release or
+            not re.fullmatch(r'[0-9a-f]{64}', expected_app_payload_sha256)):
+        raise ValueError('Expected a lower-case approved app payload SHA-256 for a Mac release ZIP')
     if not filename.is_absolute() or filename.resolve(strict=True) != filename:
         raise ValueError('Expected a canonical absolute Mac archive path')
     listed = filename.lstat()
@@ -549,22 +553,38 @@ def verify_archive(filename, arch, version, *, bundle_id=BUNDLE_ID, expected_sha
             entries, nodes, links = candidate_inventory(archive, count, initial.st_size, release=release)
             verify_candidate_contents(archive, entries, nodes, arch, version, bundle_id)
             # Bounded streaming validates every local header, expansion length and CRC.
-            for info, _ in entries.values():
+            payload_files = []
+            for parts, (info, kind) in entries.items():
+                in_payload = kind == 'file' and parts[:len(PAYLOAD)] == PAYLOAD
+                member_digest = hashlib.sha256() if in_payload else None
                 consumed = 0
                 with archive.open(info) as member:
                     while data := member.read(CHUNK):
                         consumed += len(data)
                         if consumed > info.file_size:
                             raise ValueError('Mac ZIP member exceeds its declared length')
+                        if member_digest is not None:
+                            member_digest.update(data)
                 if consumed != info.file_size:
                     raise ValueError('Mac ZIP member length differs from its declaration')
+                if member_digest is not None:
+                    relative = '/'.join(parts[len(PAYLOAD):])
+                    permissions = stat.S_IMODE(info.external_attr >> 16)
+                    payload_files.append((relative, permissions, consumed, member_digest.hexdigest()))
+        # Bind app files without binding the ZIP container or signing data outside the app payload.
+        payload_digest = hashlib.sha256(b'shenyi.macos.app-payload.v1\x00')
+        for member in sorted(payload_files):
+            payload_digest.update(json.dumps(member, separators=(',', ':')).encode('ascii') + b'\n')
+        app_payload_sha256 = payload_digest.hexdigest()
+        if expected_app_payload_sha256 is not None and app_payload_sha256 != expected_app_payload_sha256:
+            raise ValueError('Mac release application payload does not match the approved application payload SHA-256')
         digest = hash_held_archive(handle, initial.st_size)
         final = filename.lstat()
         if ((release and digest != expected_sha256) or not unchanged(initial, os.fstat(handle.fileno())) or
                 not plain_entry(final) or not unchanged(listed, final) or filename.resolve(strict=True) != filename):
             raise ValueError('Mac archive changed during verification')
     result = {'archiveEntries': len(entries), 'symlinks': len(links),
-              'appFiles': sum(kind == 'file' and parts[:len(PAYLOAD)] == PAYLOAD for parts, (_, kind) in entries.items()),
+              'appFiles': len(payload_files), 'appPayloadSha256': app_payload_sha256,
               'bundleIdentifier': bundle_id, 'archiveSha256': digest, 'archiveBytes': initial.st_size}
     if release:
         result.update(format='shenyi-macos-release-zip', arch=arch, version=version)
@@ -579,6 +599,7 @@ def main():
         parser.add_argument('--verify-release', required=True, type=Path)
         parser.add_argument('--bundle-id', required=True)
         parser.add_argument('--sha256', required=True, metavar='HEX')
+        parser.add_argument('--app-payload-sha256', metavar='HEX')
     elif verify_only:
         parser.add_argument('--verify', required=True, type=Path)
     else:
@@ -591,7 +612,8 @@ def main():
     try:
         if mode == '--verify-release':
             result = verify_archive(args.verify_release, args.arch, args.version,
-                                    bundle_id=args.bundle_id, expected_sha256=args.sha256)
+                                    bundle_id=args.bundle_id, expected_sha256=args.sha256,
+                                    expected_app_payload_sha256=args.app_payload_sha256)
         elif verify_only:
             result = verify_archive(args.verify, args.arch, args.version)
         else:

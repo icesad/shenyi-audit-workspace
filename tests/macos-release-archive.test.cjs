@@ -37,7 +37,11 @@ def plist(name, identifier, main=False):
     return plistlib.dumps(value)
 
 with zipfile.ZipFile(output, 'x', compression=zipfile.ZIP_DEFLATED) as archive:
+    pending = []
     def put(name, value, mode=stat.S_IFREG | 0o644):
+        pending.append((name, value, mode))
+
+    def write_entry(name, value, mode):
         entry = zipfile.ZipInfo(name)
         entry.create_system, entry.external_attr = 3, mode << 16
         archive.writestr(entry, value, compress_type=zipfile.ZIP_DEFLATED)
@@ -63,7 +67,13 @@ with zipfile.ZipFile(output, 'x', compression=zipfile.ZIP_DEFLATED) as archive:
         'desktop/team-ui/index.html', 'node_modules/jsdom/package.json')
     for name in required:
         if name != options.get('missing'):
-            put(resources + name, b'{}')
+            value = options.get('mainContents', '{}').encode('utf-8') if name == 'desktop/main.cjs' else b'{}'
+            mode = 0o755 if name == 'desktop/main.cjs' and options.get('executableMainScript') else 0o644
+            put(resources + name, value, stat.S_IFREG | mode)
+    if name := options.get('extraPayloadPath'):
+        put(resources + name, b'{}')
+    if options.get('signatureMetadata'):
+        put(app + '_CodeSignature/CodeResources', b'Synthetic signing metadata')
     put(app + 'Resources/LICENSE.Electron.txt', b'Fixture only')
     put(app + 'Resources/LICENSES.chromium.html', b'Fixture only')
 
@@ -77,6 +87,10 @@ with zipfile.ZipFile(output, 'x', compression=zipfile.ZIP_DEFLATED) as archive:
         put('__MACOSX/' + app + '._' + sidecar_target, apple_double)
     if options.get('unexpectedRoot'):
         put('OTHER.txt', b'Unexpected file')
+    if options.get('reverseEntries'):
+        pending.reverse()
+    for entry in pending:
+        write_entry(*entry)
 `;
 
 async function fixture(t, arch, options = {}) {
@@ -99,6 +113,9 @@ function invoke(fixture, overrides = {}) {
   const expected = { arch: fixture.arch, version, bundleId, sha256: fixture.sha256, ...overrides };
   const args = ['-I', cli, '--verify-release', fixture.archive, expected.arch, expected.version,
     '--bundle-id', expected.bundleId, '--sha256', expected.sha256];
+  if (expected.appPayloadSha256 !== undefined) {
+    args.push('--app-payload-sha256', expected.appPayloadSha256);
+  }
   return run(python, args, { windowsHide: true, timeout: 15_000 });
 }
 
@@ -179,4 +196,48 @@ test('legacy built candidate verification and formal archive acceptance stay dis
 
   const formal = await fixture(t, 'arm64');
   await assert.rejects(run(python, ['-I', cli, '--verify', formal.archive, 'arm64', version], { windowsHide: true }), refused);
+});
+
+
+test('approved candidate payload remains identical after reordering and formal packaging', async t => {
+  const payload = { extraPayloadPath: 'desktop/extra.json' };
+  const candidate = await fixture(t, 'arm64', { ...payload, bundleId: candidateId, candidateNotices: true });
+  const { stdout } = await run(python, ['-I', cli, '--verify', candidate.archive, candidate.arch, version],
+    { windowsHide: true, timeout: 15_000 });
+  const { appPayloadSha256 } = JSON.parse(stdout);
+  assert.match(appPayloadSha256, /^[a-f0-9]{64}$/);
+
+  const formal = await fixture(t, 'arm64', { ...payload, reverseEntries: true, signatureMetadata: true });
+  assert.notEqual(formal.sha256, candidate.sha256);
+  const approved = JSON.parse((await invoke(formal, { appPayloadSha256 })).stdout);
+  assert.equal(approved.appPayloadSha256, appPayloadSha256);
+  assert.equal(approved.appFiles, 7);
+  assert.equal(approved.archiveSha256, formal.sha256);
+});
+
+test('valid same-version archive cannot substitute application content, paths or permissions', async t => {
+  const payload = { extraPayloadPath: 'desktop/extra.json' };
+  const candidate = await fixture(t, 'x64', { ...payload, bundleId: candidateId, candidateNotices: true });
+  const { stdout } = await run(python, ['-I', cli, '--verify', candidate.archive, candidate.arch, version],
+    { windowsHide: true, timeout: 15_000 });
+  const { appPayloadSha256 } = JSON.parse(stdout);
+  assert.match(appPayloadSha256, /^[a-f0-9]{64}$/);
+
+  for (const [label, change] of [
+    ['same-length body change', { mainContents: '[]' }],
+    ['same-length renamed path', { extraPayloadPath: 'desktop/other.json' }],
+    ['file executable permission change', { executableMainScript: true }],
+  ]) {
+    await t.test(label, async t => {
+      const different = await fixture(t, 'x64', { ...payload, ...change });
+      const structuralReceipt = JSON.parse((await invoke(different)).stdout);
+      assert.equal(structuralReceipt.appFiles, 7);
+      assert.notEqual(structuralReceipt.appPayloadSha256, appPayloadSha256);
+      await assert.rejects(invoke(different, { appPayloadSha256 }), error => {
+        refused(error);
+        assert.match(error.stderr, /does not match the approved (?:app|application) payload SHA-256/i);
+        return true;
+      });
+    });
+  }
 });

@@ -32,6 +32,7 @@ function archiveReceipt({ input, bytes }) {
     format: 'shenyi-macos-release-zip', archiveSha256: input.sha256, archiveBytes: bytes.length,
     archiveEntries: 28, symlinks: 4, appFiles: 8, bundleIdentifier: input.bundleId,
     arch: input.arch, version: input.version,
+    ...(input.appPayloadSha256 === undefined ? {} : { appPayloadSha256: input.appPayloadSha256 }),
   };
 }
 
@@ -55,8 +56,12 @@ function commandBoundary(f, { verify, extract, native } = {}) {
       if (program === f.input.python) {
         calls.push('verify ZIP');
         privateZip = args[3];
-        assert.deepEqual(args, ['-I', verifier, '--verify-release', privateZip, f.input.arch, f.input.version,
-          '--bundle-id', f.input.bundleId, '--sha256', f.input.sha256]);
+        const expectedArgs = ['-I', verifier, '--verify-release', privateZip, f.input.arch, f.input.version,
+          '--bundle-id', f.input.bundleId, '--sha256', f.input.sha256];
+        if (f.input.appPayloadSha256 !== undefined) {
+          expectedArgs.push('--app-payload-sha256', f.input.appPayloadSha256);
+        }
+        assert.deepEqual(args, expectedArgs);
         assert.notEqual(privateZip, f.input.archive);
         const relative = path.relative(f.temporaryRoot, privateZip);
         assert.ok(relative && !path.isAbsolute(relative) && relative.split(path.sep)[0] !== '..');
@@ -161,6 +166,38 @@ test('unusable or mismatching ZIP verifier responses cannot reach extraction', a
   }
 });
 
+test('approved application payload is verified on the held ZIP before extraction and kept in the receipt', async t => {
+  const f = await fixture(t);
+  f.input.appPayloadSha256 = 'a'.repeat(64);
+  const model = commandBoundary(f);
+  const result = await checkFixture(f, model);
+  assert.deepEqual(model.calls, ['verify ZIP', 'extract approved ZIP', 'assess expanded application']);
+  assert.equal(result.appPayloadSha256, f.input.appPayloadSha256);
+  assert.equal(result.archiveSha256, f.input.sha256);
+});
+
+test('invalid expected payload digest is rejected before running any release commands', async t => {
+  const f = await fixture(t);
+  f.input.appPayloadSha256 = 'A'.repeat(64);
+  const model = commandBoundary(f);
+  await assert.rejects(checkFixture(f, model));
+  assert.deepEqual(model.calls, []);
+});
+
+test('missing or different approved application payload evidence stops before extraction and signature assessment', async t => {
+  const f = await fixture(t);
+  f.input.appPayloadSha256 = 'a'.repeat(64);
+  for (const [label, appPayloadSha256] of [['missing', undefined], ['mismatched', 'b'.repeat(64)]]) {
+    await t.test(label, async () => {
+      const model = commandBoundary(f, {
+        verify: ({ receipt }) => JSON.stringify({ ...receipt, appPayloadSha256 }),
+      });
+      await assert.rejects(checkFixture(f, model));
+      assert.deepEqual(model.calls, ['verify ZIP']);
+    });
+  }
+});
+
 test('extraction failures and unexpected siblings are refused without app assessment', async t => {
   const f = await fixture(t);
   for (const extract of [
@@ -233,12 +270,14 @@ test('non-Mac host cannot produce a native receipt or start any commands', async
     { code: 'MACOS_REQUIRED' });
   assert.deepEqual(model.calls, []);
   if (process.platform !== 'darwin') {
-    const cli = spawnSync(process.execPath, [wrapper, '--archive', f.input.archive, '--sha256', f.input.sha256,
-      '--python', f.input.python, '--team-id', f.input.teamId, '--bundle-id', f.input.bundleId,
-      '--version', f.input.version, '--arch', f.input.arch], { encoding: 'utf8', timeout: 15_000 });
-    assert.equal(cli.error, undefined);
-    assert.equal(cli.status, 1);
-    assert.equal(cli.stdout, '');
-    assert.equal(JSON.parse(cli.stderr).code, 'MACOS_REQUIRED');
+    for (const payloadArgs of [[], ['--app-payload-sha256', 'a'.repeat(64)]]) {
+      const cli = spawnSync(process.execPath, [wrapper, '--archive', f.input.archive, '--sha256', f.input.sha256,
+        '--python', f.input.python, '--team-id', f.input.teamId, '--bundle-id', f.input.bundleId,
+        '--version', f.input.version, '--arch', f.input.arch, ...payloadArgs], { encoding: 'utf8', timeout: 15_000 });
+      assert.equal(cli.error, undefined);
+      assert.equal(cli.status, 1);
+      assert.equal(cli.stdout, '');
+      assert.equal(JSON.parse(cli.stderr).code, 'MACOS_REQUIRED');
+    }
   }
 });

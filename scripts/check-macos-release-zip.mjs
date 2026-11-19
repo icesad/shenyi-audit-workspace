@@ -15,6 +15,7 @@ const archiveChecker = fileURLToPath(new URL('./build-macos-desktop-archive.py',
 const maxArchiveBytes = 1024n ** 3n;
 const options = new Map([
   ['--archive', 'archive'], ['--sha256', 'sha256'], ['--python', 'python'],
+  ['--app-payload-sha256', 'appPayloadSha256'],
   ['--team-id', 'teamId'], ['--bundle-id', 'bundleId'], ['--version', 'version'], ['--arch', 'arch'],
 ]);
 
@@ -89,11 +90,13 @@ async function systemCommand(program, args) {
 }
 
 async function verifyCopiedArchive(run, copy, byteLength, expected) {
-  const { python, sha256, arch, bundleId, version } = expected;
+  const { python, sha256, arch, bundleId, version, appPayloadSha256 } = expected;
+  const payloadArgs = appPayloadSha256 === undefined ? [] : ['--app-payload-sha256', appPayloadSha256];
   let receipt;
   try {
     const { stdout } = await run(python, [
       '-I', archiveChecker, '--verify-release', copy, arch, version, '--bundle-id', bundleId, '--sha256', sha256,
+      ...payloadArgs,
     ]);
     receipt = JSON.parse(stdout);
   } catch {
@@ -103,10 +106,13 @@ async function verifyCopiedArchive(run, copy, byteLength, expected) {
   if (format !== 'shenyi-macos-release-zip' || archiveSha256 !== sha256 || archiveBytes !== byteLength ||
       receipt.arch !== arch || receipt.version !== version || bundleIdentifier !== bundleId ||
       ![archiveEntries, symlinks, appFiles].every(Number.isSafeInteger) || appFiles < 1 || symlinks < 0 ||
-      appFiles + symlinks > archiveEntries) {
+      appFiles + symlinks > archiveEntries ||
+      (appPayloadSha256 !== undefined && receipt.appPayloadSha256 !== appPayloadSha256)) {
     fail('ARCHIVE_RECEIPT_MISMATCH', '归档核验回执与本次获准发行记录不一致。');
   }
-  return { archiveSha256, archiveBytes, archiveEntries, symlinks, appFiles };
+  const verified = { archiveSha256, archiveBytes, archiveEntries, symlinks, appFiles };
+  if (appPayloadSha256 !== undefined) verified.appPayloadSha256 = appPayloadSha256;
+  return verified;
 }
 
 async function assertPrivateArchiveUnchanged(copy, sealed, expectedSha256, byteLength) {
@@ -131,9 +137,11 @@ export async function checkMacosReleaseZip(expected, {
   platform = process.platform, run = systemCommand, checkApp = checkMacosReleaseApp, temporaryRoot = tmpdir(),
 } = {}) {
   if (platform !== 'darwin') fail('MACOS_REQUIRED', '最终 ZIP 的 Apple 签名核验须在真实 macOS 上运行。');
-  const { archive, sha256, python, teamId, bundleId, version, arch } = expected ?? {};
+  const { archive, sha256, python, teamId, bundleId, version, arch, appPayloadSha256 } = expected ?? {};
   if (!absolute(archive) || path.resolve(archive) !== archive || path.extname(archive).toLowerCase() !== '.zip' ||
       !absolute(python) || typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256) ||
+      (appPayloadSha256 !== undefined && (typeof appPayloadSha256 !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(appPayloadSha256))) ||
       !hasMacosReleaseIdentity({ teamId, bundleId, version, arch })) invalidArguments();
 
   const workspace = await mkdtemp(path.join(await realpath(temporaryRoot), 'shenyi-release-zip-'));
