@@ -2,6 +2,12 @@
 
 候选归档分别面向 Apple 芯片 `arm64` 和 Intel `x64`，当前锁定的 Electron 需要 macOS 13 或更新版本。两份构件使用同一份审易客户端源码与生产依赖清单。产物用于后续在 Mac 上签名并验收。 [Electron macOS 支持范围](https://www.electronjs.org/docs/latest/breaking-changes#removed-macos-12-support)
 
+## 2026-11-19 候选交接
+
+Apple 芯片与 Intel 的 0.61.0 原 ZIP 和清单均已从提交 `4bc11ab` 构建，存放在 `D:/codex-temp/shenyi-m7-macos-current-candidates-20261119/release`。用同一架构目录中的 ZIP 和清单交接。对应文件摘要和源码对证见 `D:/codex-temp/shenyi-m7-macos-current-candidates-20261119/verification.json`。
+
+本次独立审查逐项核对了两架构的应用载荷、当前源码、生产依赖和 ZIP 权限。一次性密钥仅用于交接演练。实际交接由获准的发行人员使用独立保管的发行密钥签署后进行，随后按下文办理 Apple 签名、公证与实机验收。
+
 ## 构建候选
 
 在仓库根目录使用 Node 24.15 或更高版本的 24.x、npm 和 Python 3.10 或更新版本。用 `npm --prefix desktop ci --ignore-scripts` 按桌面锁文件准备构建工具和 Electron 校验值。在仓库外准备包含根仓库生产依赖的 npm 缓存。输出目录尚未创建，上一级实际目录已存在并支持硬链接。ZIP 与清单均发布后，该目录才是完整候选。

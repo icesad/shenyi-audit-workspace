@@ -1,4 +1,8 @@
-# 当前状态 · M8G Windows 双人评审包恢复兑现走查
+# 当前状态 · M7AV macOS 双架构当前源码候选与签前交接
+
+## 2026-11-19 M7AV macOS 双架构当前源码候选与签前交接
+
+从当前提交重建 Apple 芯片与 Intel 的 0.61.0 候选。逐项核对 82 个客户端源码文件、36 个生产依赖及锁文件，两架构的 1,933 个应用文件字节一致。旧两包的归档结构仍能通过，但各有 9 个源码文件与当前批准版本不符。新包分别通过 2,761 个归档成员、14 个 Mach-O 和 14 个包内符号链接的独立核验。Windows 上用一次性 Ed25519 密钥签署并验签两包，错架构、错公钥、两架构签名混用、同版本和变更签名按预期拒绝。测试私钥已清除。65 项相关检查通过，两处旧预览前后观察一致。当前构件保留候选包标识，Developer ID、Apple 公证、Gatekeeper、Finder 与 Keychain 以及正式升级仍待 Mac 实机验收。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-macos-current-candidates-20261119/verification.json`。 [macOS 交接说明](MACOS_DESKTOP_CANDIDATE.md)
 
 ## 2026-11-19 M8G Windows 双人评审包恢复兑现走查
 
