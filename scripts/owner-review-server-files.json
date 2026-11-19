@@ -102,6 +102,7 @@
   "server/team/task-originals-export-api.mjs",
   "server/team/team-http-listener.mjs",
   "server/team/wechat-api.mjs",
+  "server/team/website-checkout-schema.sql",
   "server/team/website-checkout.mjs",
   "server/team/workpaper-access-api.mjs",
   "server/team/workpaper-access-grant.mjs",

@@ -24,7 +24,7 @@ const seatOffer = { id: 'synthetic-combined-seat', revision: 1, annualUnitAmount
 
 async function fixture(t, { wechat = true, checkout = true, providerAppId = appId, providerCallback = callback } = {}) {
   const { db, clock } = await createBusinessRoleFixture(t);
-  const [{ handleTeamApplicationRequest }, { createWebsiteCheckoutCandidate }, subscription, capacity] = await Promise.all([
+  const [{ handleTeamApplicationRequest }, { createWebsiteCheckoutCandidate, initializeWebsiteCheckoutStore }, subscription, capacity] = await Promise.all([
     source('application-api.mjs'), source('website-checkout.mjs'), source('subscription-store.mjs'), source('seat-capacity-store.mjs'),
   ]);
   const startsAt = clock.value - 1000;
@@ -36,6 +36,7 @@ async function fixture(t, { wechat = true, checkout = true, providerAppId = appI
   }, { now });
   capacity.recordSeatCapacityGrant(db, { teamId, grantId: randomUUID(), seats: 8, startsAt, endsAt, sourceRef }, { now });
   db.prepare("INSERT INTO team_database_metadata(name,value) VALUES ('website-checkout-demo','true')").run();
+  if (checkout) initializeWebsiteCheckoutStore(db);
 
   const provider = {
     appId: providerAppId,

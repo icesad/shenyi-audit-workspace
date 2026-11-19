@@ -14,14 +14,16 @@ const error=(result,status,code)=>{assert.equal(result.status,status,JSON.string
 
 async function fixture(t,{remaining=YEAR/4,unit=SEAT.annualUnitAmountMinor}={}){
  const f=await createBusinessRoleFixture(t,{now:AT}),admin=await f.ready('administrator-demo');
- const {createWebsiteCheckoutCandidate}=await source('website-checkout.mjs'),{handleTeamApplicationRequest}=await source('application-api.mjs');
+ const {createWebsiteCheckoutCandidate,initializeWebsiteCheckoutStore}=await source('website-checkout.mjs'),{handleTeamApplicationRequest}=await source('application-api.mjs');
  const subscription=await source('subscription-store.mjs'),capacity=await source('seat-capacity-store.mjs'),termEndsAt=AT+remaining;
  subscription.recordSubscriptionTerm(f.db,{teamId:'team-a',operationId:randomUUID(),expectedRevision:0,startsAt:AT-86400000,endsAt:termEndsAt,sourceRef:'synthetic-seat-checkout-prior'},{now:()=>AT});
  capacity.recordSeatCapacityGrant(f.db,{teamId:'team-a',grantId:randomUUID(),seats:8,startsAt:AT-86400000,endsAt:termEndsAt,sourceRef:'synthetic-seat-checkout-capacity'},{now:()=>AT});
  f.db.prepare("INSERT INTO team_database_metadata(name,value) VALUES ('website-checkout-demo','true')").run();
+ initializeWebsiteCheckoutStore(f.db);
  const seatOffer={...SEAT,annualUnitAmountMinor:unit};
  const billingSimulation={mode:'simulation-v1',merchantId:'synthetic-seat-checkout',signingKey:randomBytes(32),offers:[{...ANNUAL}],annualSeatUnitAmountMinor:2000,seatOffer};
  const options={db:f.db,now:()=>f.clock.value,serviceMode:'local-preview',identityProviders:{deviceProofRequired:true},subscriptionEnforcement:'team-management-v1',seatCapacityEnforcement:'invitation-reservations-v1',billingSimulation,websiteCheckout:createWebsiteCheckoutCandidate({origin:SITE})};
+ const restart=()=>({options:{websiteCheckout:createWebsiteCheckoutCandidate({origin:SITE})}});
  const dispatch=async(request,overrides={})=>{const response=await handleTeamApplicationRequest(request,{...options,...overrides});return {status:response.status,data:await response.json()};};
  const desktop=(route,body={},settings={})=>dispatch(f.makeRequest(route,{method:'POST',session:settings.session??admin,body}),settings.options);
  const handoff=(settings={})=>desktop((settings.root??ROOT)+'/website-seat-handoff',settings.body??{},settings);
@@ -35,7 +37,7 @@ async function fixture(t,{remaining=YEAR/4,unit=SEAT.annualUnitAmountMinor}={}){
  const facts=()=>tables.map(name=>{const rows=f.db.prepare('SELECT * FROM '+name+' ORDER BY rowid').all();return {name,count:rows.length,sha256:digest(JSON.stringify(rows))};});
  const orders=()=>f.db.prepare('SELECT * FROM team_seat_orders ORDER BY rowid').all().map(row=>({...row}));
  const updateTerm=()=>subscription.recordSubscriptionTerm(f.db,{teamId:'team-a',operationId:randomUUID(),expectedRevision:1,startsAt:AT-86400000,endsAt:termEndsAt,sourceRef:'synthetic-new-revision-same-window'},{now:()=>f.clock.value});
- return {...f,admin,dispatch,desktop,handoff,browser,ticket,context,quote,create,q,facts,orders,updateTerm,options,billingSimulation,seatOffer,termEndsAt};
+ return {...f,admin,dispatch,desktop,handoff,browser,ticket,context,quote,create,q,facts,orders,updateTerm,restart,options,billingSimulation,seatOffer,termEndsAt};
 }
 function quoteView(quote,{seats,amountMinor,at=AT,termEndsAt}){
  assert.deepEqual(Object.keys(quote).sort(),['amountMinor','expiresAt','id','seats','termEndsAt']);assert.equal(typeof quote.id,'string');assert.ok(quote.id.length>0&&quote.id.length<=128);
@@ -183,8 +185,36 @@ test('only the latest live quote may create an order, and stale quote expiry lea
  const f=await fixture(t),ticket=await f.ticket(),before=f.facts(),old=await f.q(ticket,1),current=await f.q(ticket,3);
  error(await f.create(ticket,old.id),409,'WEBSITE_CHECKOUT_CONFLICT');assert.equal(f.orders().length,0);
  error(await f.create(ticket,randomUUID()),409,'WEBSITE_CHECKOUT_CONFLICT');
- f.clock.value=current.expiresAt;assert.ok(f.clock.value<ticket.expiresAt);error(await f.create(ticket,current.id),409,'WEBSITE_CHECKOUT_CONFLICT');
+ f.clock.value=current.expiresAt;assert.ok(f.clock.value<ticket.expiresAt);error(await f.create(ticket,current.id,{},f.restart()),409,'WEBSITE_CHECKOUT_CONFLICT');
  assert.equal(f.orders().length,0);assert.deepEqual(f.facts(),before);
+});
+
+test('a replacement website candidate confirms a surviving seat quote and later recovers that same committed receipt',async t=>{
+ const f=await fixture(t),ticket=await f.ticket(),quoted=await f.q(ticket),before=f.facts();
+ const replacement=f.restart();
+ assert.notEqual(replacement.options.websiteCheckout,f.options.websiteCheckout);
+ f.clock.value=quoted.expiresAt-1;
+ const committed=await f.create(ticket,quoted.id,{},replacement);
+ assert.equal(committed.status,201,JSON.stringify(committed.data));
+ orderView(committed.data.order,{seats:3,amountMinor:quoted.amountMinor,termEndsAt:f.termEndsAt,createdAt:f.clock.value});
+ const original=f.orders();
+ assert.equal(original.length,1);
+
+ f.clock.value=quoted.expiresAt+1;
+ assert.ok(f.clock.value<ticket.expiresAt);
+ const reopened=f.restart();
+ const changes=()=>f.db.prepare('SELECT total_changes() AS count').get().count;
+ const beforeRecovery=changes();
+ const recovered=await f.context(ticket,reopened);
+ assert.equal(recovered.status,200,JSON.stringify(recovered.data));
+ assert.deepEqual(recovered.data.order,committed.data.order);
+ noPrivate(recovered.data,f.admin);
+ const replay=await f.create(ticket,quoted.id,{},reopened);
+ assert.equal(replay.status,201,JSON.stringify(replay.data));
+ assert.deepEqual(replay.data,committed.data);
+ assert.equal(changes(),beforeRecovery);
+ assert.deepEqual(f.orders(),original);
+ assert.deepEqual(f.facts(),before);
 });
 
 test('one intention concurrently creates once and exact replay survives preview quote expiry while the capability remains valid',async t=>{

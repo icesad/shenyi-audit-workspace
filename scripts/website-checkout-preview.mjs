@@ -5,7 +5,7 @@ import {handleTeamApplicationRequest} from '../server/team/application-api.mjs';
 import {billingSimulationConfiguration} from '../server/team/billing-simulation.mjs';
 import {deviceServerId} from '../server/team/device-policy.mjs';
 import {startLoopbackTeamListener} from '../server/team/team-http-listener.mjs';
-import {createWebsiteCheckoutCandidate, isWebsiteCheckoutBrowserPath} from '../server/team/website-checkout.mjs';
+import {createWebsiteCheckoutCandidate, initializeWebsiteCheckoutStore, isWebsiteCheckoutBrowserPath} from '../server/team/website-checkout.mjs';
 
 const pages = new Map([
   ['/', ['website/index.html', 'text/html; charset=utf-8']],
@@ -57,6 +57,7 @@ export async function startWebsiteCheckoutPreview({db, key, cert, checkoutTLS, b
   if (options.billingSimulation?.offers.length !== 1 || options.billingSimulation.annualSeatUnitAmountMinor === undefined) {
     throw new Error('A trusted synthetic annual offer and synthetic seat amount are required.');
   }
+  initializeWebsiteCheckoutStore(db);
   const files = new Map(await Promise.all([...pages].map(async ([route,[file,type]]) => [
     route, {bytes:await readFile(new URL('../'+file,import.meta.url)),type},
   ])));

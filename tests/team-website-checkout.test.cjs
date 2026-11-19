@@ -3,7 +3,7 @@
 // in-process; this is not browser UI, TCP/TLS or production checkout acceptance.
 const test=require('node:test'),assert=require('node:assert/strict');
 const {randomBytes,randomUUID,createHash}=require('node:crypto');
-const {createBusinessRoleFixture,source}=require('./helpers/business-role-fixture.cjs');
+const {createBusinessRoleFixture,PASSWORD,source}=require('./helpers/business-role-fixture.cjs');
 const SITE='https://127.0.0.1:14443',ROOT='/api/teams/team-a/billing',WEB='/api/website-checkout';
 const OFFER={id:'synthetic-website-year',revision:7,product:'team-annual-renewal',amountMinor:12345,currency:'CNY'};
 const UNIT=2500,SEATS=8,DAY=86400000;
@@ -12,15 +12,17 @@ const isError=(result,status,code)=>{assert.equal(result.status,status,JSON.stri
 
 async function fixture(t){
  const f=await createBusinessRoleFixture(t),admin=await f.ready('administrator-demo');
- const {createWebsiteCheckoutCandidate}=await source('website-checkout.mjs');
+ const {createWebsiteCheckoutCandidate,initializeWebsiteCheckoutStore}=await source('website-checkout.mjs');
  const {handleTeamApplicationRequest}=await source('application-api.mjs');
  const subscription=await source('subscription-store.mjs'),capacity=await source('seat-capacity-store.mjs');
  const at=f.clock.value,endsAt=at+365*DAY;
  subscription.recordSubscriptionTerm(f.db,{teamId:'team-a',operationId:randomUUID(),expectedRevision:0,startsAt:at-1000,endsAt,sourceRef:'synthetic-website-prior-term'},{now:()=>at});
  capacity.recordSeatCapacityGrant(f.db,{teamId:'team-a',grantId:randomUUID(),seats:SEATS,startsAt:at-1000,endsAt,sourceRef:'synthetic-website-prior-capacity'},{now:()=>at});
  f.db.prepare("INSERT INTO team_database_metadata(name,value) VALUES ('website-checkout-demo','true')").run();
+ initializeWebsiteCheckoutStore(f.db);
  const billingSimulation={mode:'simulation-v1',merchantId:'synthetic-website-merchant',signingKey:randomBytes(32),offers:[{...OFFER}],annualSeatUnitAmountMinor:UNIT};
  const websiteCheckout=createWebsiteCheckoutCandidate({origin:SITE});
+ const restart=(origin=SITE)=>({origin,urlOrigin:origin,options:{websiteCheckout:createWebsiteCheckoutCandidate({origin})}});
  const options={db:f.db,now:()=>f.clock.value,serviceMode:'local-preview',identityProviders:{deviceProofRequired:true},subscriptionEnforcement:'team-management-v1',seatCapacityEnforcement:'invitation-reservations-v1',billingSimulation,websiteCheckout};
  const dispatch=async(request,overrides={})=>{const response=await handleTeamApplicationRequest(request,{...options,...overrides});return {status:response.status,data:await response.json(),headers:response.headers};};
  const desktop=(route,body={},settings={})=>dispatch(f.makeRequest(route,{method:settings.method??'POST',session:settings.session??admin,body:settings.method==='GET'?undefined:body}),settings.options);
@@ -36,7 +38,7 @@ async function fixture(t){
  const facts=()=>financial.filter(name=>names.has(name)).map(name=>{const rows=f.db.prepare('SELECT * FROM '+name+' ORDER BY rowid').all();return {name,count:rows.length,sha256:hash(JSON.stringify(rows))};});
  const orderRows=()=>['team_annual_orders','team_annual_order_seat_plans'].map(name=>({name,rows:f.db.prepare('SELECT * FROM '+name+' ORDER BY rowid').all().map(row=>({...row}))}));
  const ticket=async()=>{const result=await handoff();assert.equal(result.status,201,JSON.stringify(result.data));assert.deepEqual(Object.keys(result.data).sort(),['expiresAt','handoff']);assert.match(result.data.handoff,/^[A-Za-z0-9_-]+$/);assert.ok(result.data.expiresAt>f.clock.value&&result.data.expiresAt<=f.clock.value+120000);return result.data;};
- return {...f,admin,options,billingSimulation,websiteCheckout,dispatch,desktop,handoff,browser,context,order,facts,orderRows,ticket,capacity};
+ return {...f,admin,options,billingSimulation,websiteCheckout,restart,dispatch,desktop,handoff,browser,context,order,facts,orderRows,ticket,capacity};
 }
 
 function safeOrder(order,amountMinor,seats){
@@ -74,6 +76,74 @@ test('same browser intention is idempotent under concurrent posts and rejects ch
  for(const change of [{selectedSeats:SEATS+1},{offerRevision:OFFER.revision+1},{offerId:'other-synthetic-offer'}]){
   isError(await f.order(ticket,change),409,'WEBSITE_CHECKOUT_CONFLICT');assert.deepEqual(f.orderRows(),original);
  }
+ assert.deepEqual(f.facts(),before);
+});
+
+test('a replacement website candidate at the same origin recovers the committed annual receipt without a second order',async t=>{
+ const f=await fixture(t),ticket=await f.ticket(),before=f.facts();
+ const saved=f.db.prepare('SELECT * FROM team_website_checkout_handoffs').get();
+ assert.equal(saved.handoff_hash,hash(ticket.handoff));
+ assert.equal(saved.origin,SITE);
+ assert.equal(saved.expires_at,ticket.expiresAt);
+ const storedPassword=f.db.prepare("SELECT password_hash FROM team_credentials WHERE user_id='administrator-demo'").get().password_hash;
+ const durable=JSON.stringify(saved);
+ for(const secret of [ticket.handoff,f.admin.token,f.admin.lease.token,storedPassword,hash(storedPassword)]){
+  assert.equal(durable.includes(secret),false);
+ }
+ const committed=await f.order(ticket);
+ assert.equal(committed.status,201,JSON.stringify(committed.data));
+ safeOrder(committed.data.order,OFFER.amountMinor+UNIT*SEATS,SEATS);
+ const original=f.orderRows(),replacement=f.restart();
+ assert.notEqual(replacement.options.websiteCheckout,f.websiteCheckout);
+ const changes=()=>f.db.prepare('SELECT total_changes() AS count').get().count;
+ const beforeRecovery=changes();
+ const recovered=await f.context(ticket,replacement);
+ assert.equal(recovered.status,200,JSON.stringify(recovered.data));
+ assert.deepEqual(recovered.data.order,committed.data.order);
+ noPrivateFields(recovered.data,f.admin);
+ const replay=await f.order(ticket,{},replacement);
+ assert.equal(replay.status,201,JSON.stringify(replay.data));
+ assert.deepEqual(replay.data,committed.data);
+ assert.equal(changes(),beforeRecovery);
+ assert.equal(original[0].rows.length,1);
+ assert.equal(original[1].rows.length,1);
+ assert.deepEqual(f.orderRows(),original);
+ assert.deepEqual(f.facts(),before);
+});
+
+test('the outstanding handoff cap survives restart and issuance clears expired rows at their original boundary',async t=>{
+ const f=await fixture(t),first=await f.ticket();
+ const {origin,merchant_id,scope_json}=f.db.prepare('SELECT origin,merchant_id,scope_json FROM team_website_checkout_handoffs').get();
+ const seed=f.db.prepare(`INSERT INTO team_website_checkout_handoffs
+   (handoff_hash,origin,merchant_id,request_id,expires_at,scope_json) VALUES (?,?,?,?,?,?)`);
+ // Fill the shared store without also exhausting one device's separate request quota.
+ for(let count=1;count<256;count++)seed.run(hash('synthetic-other-handoff-'+count),origin,merchant_id,randomUUID(),first.expiresAt,scope_json);
+ const count=()=>f.db.prepare('SELECT count(*) AS n FROM team_website_checkout_handoffs').get().n;
+ assert.equal(count(),256);
+ const reopened=f.restart();
+ isError(await f.handoff({options:reopened.options}),429,'WEBSITE_HANDOFF_LIMIT');
+ assert.equal(count(),256);
+
+ f.clock.value=first.expiresAt;
+ const fresh=await f.handoff({options:reopened.options});
+ assert.equal(fresh.status,201,JSON.stringify(fresh.data));
+ assert.equal(count(),1);
+ assert.equal((await f.context(fresh.data,reopened)).status,200);
+ isError(await f.context(first,reopened),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+ assert.equal(f.orderRows()[0].rows.length,0);
+});
+
+test('a durable annual handoff cannot be used at a different branded origin, merchant or database',async t=>{
+ const f=await fixture(t),ticket=await f.ticket(),other=await fixture(t),before=f.facts();
+ const elsewhere=f.restart('https://127.0.0.1:14444');
+ isError(await f.context(ticket,elsewhere),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+ isError(await f.order(ticket,{},elsewhere),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+ const replacement=f.restart();
+ replacement.options.billingSimulation={...f.billingSimulation,merchantId:'synthetic-different-merchant'};
+ isError(await f.context(ticket,replacement),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+ isError(await other.context(ticket,other.restart()),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+ assert.equal(f.orderRows()[0].rows.length,0);
+ assert.equal(other.orderRows()[0].rows.length,0);
  assert.deepEqual(f.facts(),before);
 });
 
@@ -150,17 +220,21 @@ test('handoffs are technical-own-team and proof scoped rather than ordinary audi
 
 test('reading a handoff does not extend its maximum two-minute expiry',async t=>{
  const f=await fixture(t),ticket=await f.ticket(),before=f.facts();
- f.clock.value=ticket.expiresAt-1;assert.equal((await f.context(ticket)).status,200);
- f.clock.value=ticket.expiresAt;isError(await f.context(ticket),403,'WEBSITE_HANDOFF_UNAVAILABLE');isError(await f.order(ticket),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+ f.clock.value=ticket.expiresAt-1;assert.equal((await f.context(ticket,f.restart())).status,200);
+ f.clock.value=ticket.expiresAt;const replacement=f.restart();
+ isError(await f.context(ticket,replacement),403,'WEBSITE_HANDOFF_UNAVAILABLE');isError(await f.order(ticket,{},replacement),403,'WEBSITE_HANDOFF_UNAVAILABLE');
  assert.equal(f.orderRows()[0].rows.length,0);assert.deepEqual(f.facts(),before);
 });
 
-for(const change of ['role','lease','logout'])test('browser cannot use a previously valid handoff after '+change+' revocation',async t=>{
+for(const change of ['role','lease','logout','credential'])test('replacement website candidate denies a previously valid handoff after '+change+' revocation',async t=>{
  const f=await fixture(t),ticket=await f.ticket(),before=f.facts();
+ assert.equal((await f.context(ticket)).status,200);
  if(change==='role')f.db.prepare("UPDATE team_operators SET status='revoked' WHERE user_id='administrator-demo'").run();
  if(change==='lease')f.db.prepare("UPDATE team_device_leases SET revoked_at=? WHERE user_id='administrator-demo' AND revoked_at IS NULL").run(f.clock.value);
  if(change==='logout')assert.equal((await f.api('/api/auth/logout',{method:'POST',session:f.admin,body:{}})).status,200);
- isError(await f.context(ticket),403,'WEBSITE_HANDOFF_UNAVAILABLE');isError(await f.order(ticket),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+ if(change==='credential')assert.equal((await f.api('/api/auth/password',{method:'POST',session:f.admin,body:{currentPassword:PASSWORD,newPassword:'SyntheticChangedForCheckout!2026'}})).status,200);
+ const replacement=f.restart();
+ isError(await f.context(ticket,replacement),403,'WEBSITE_HANDOFF_UNAVAILABLE');isError(await f.order(ticket,{},replacement),403,'WEBSITE_HANDOFF_UNAVAILABLE');
  assert.equal(f.orderRows()[0].rows.length,0);assert.deepEqual(f.facts(),before);
 });
 
