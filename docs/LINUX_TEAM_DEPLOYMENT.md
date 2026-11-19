@@ -26,25 +26,23 @@ node scripts/linux-release-signature.mjs sign \
   --private-key "$release_private_key" --output "$release_dir/shenyi-team-${release}.ed25519"
 ```
 
-在 Linux 部署机上，从已审定渠道预置 `scripts/linux-release-signature.mjs` 和同目录的 `detached-release-signature.mjs`。将公钥保存在归档目录之外，按获准的发行记录设置 `$release`。发布人员须控制归档路径，确保从核验到解包期间归档不可被替换或修改。将 `$stage_dir` 设为与 `current` 同一文件系统上的新目录。以下验签不依赖 Git。
+在 Linux 部署机上，通过已审定渠道把 `scripts/stage-linux-release.py`、`scripts/linux-release-signature.mjs` 和 `scripts/detached-release-signature.mjs` 预置在同一目录。使用 Python 3.11 或更新版及配有 npm 的受信 Node 24.15 或更新的 24.x。按获准的发行记录设置 `$release`，将独立取得的公钥放在归档目录之外。npm 内容缓存放在发布树之外。归档和缓存各限 256 MiB、8,192 个条目，发布卷须为输入副本、解包目录和依赖预留空间。发布人员拥有 `/opt/shenyi-team`，普通用户对该目录和父目录没有写权限。
 
 ```sh
-/opt/shenyi-team/node/bin/node /opt/shenyi-team/release-tools/scripts/linux-release-signature.mjs verify \
+/usr/bin/python3 -I /opt/shenyi-team/release-tools/scripts/stage-linux-release.py \
+  --node /opt/shenyi-team/node/bin/node --release-root /opt/shenyi-team \
   --archive "$release_dir/shenyi-team-${release}.tar" --revision "$release" \
-  --public-key "$release_public_key" --signature "$release_dir/shenyi-team-${release}.ed25519" &&
-  mkdir -- "$stage_dir" &&
-  (umask 022
-   tar --extract --no-same-owner --no-same-permissions \
-     --file "$release_dir/shenyi-team-${release}.tar" --directory "$stage_dir")
+  --public-key "$release_public_key" --signature "$release_dir/shenyi-team-${release}.ed25519" \
+  --npm-cache "$npm_cache"
 ```
 
-成功回执记录提交标记、整包哈希、签名摘要和公钥指纹。签发前由发布人员确认归档由上面的白名单命令从审定的提交生成。验签、创建暂存目录或解包任一步失败时停止部署。归档验签、依赖安装和应用运行各留回执。
+工具将归档复制到权限受控的私有目录，验签后解包同一副本。用独立复制的 `_cacache` 执行离线 `npm ci --omit=dev --ignore-scripts`，回读已安装生产依赖和源文件摘要。所有步骤完成后，才发布只读的 `/opt/shenyi-team/staged-$release`，保留已有同名目录。单独核对标准输出和目录内的 `.shenyi-stage-receipt.json`，回执包含提交、整包和锁文件摘要、公钥指纹及文件数量。失败时无新的候选目录，按错误修正后可重试。进程被强制终止时可能留下 `.shenyi-preparation-*` 工作目录，发布人员可在确认没有暂存任务运行后检查。 [npm 锁定依赖安装](https://docs.npmjs.com/cli/v11/commands/npm-ci/) · [npm 离线模式](https://docs.npmjs.com/cli/v11/using-npm/config/#offline)
 
-在暂存发布目录以经过校验的 Node 24.15 或更高版本的 24.x 运行 `npm ci --omit=dev --ignore-scripts`。验收后交由发布人员把代码和依赖置于 root 持有的只读目录。首次配置须使用真实目录，`current` 及服务配置中的文件路径各级均使用实际路径。 [npm 锁定依赖安装](https://docs.npmjs.com/cli/v11/commands/npm-ci/) · [受管启动约束](MANAGED_TEAM_SERVICE.md)
+发布人员在获准的切换窗口，按下文流程单独停止服务、保留上一版并切换到已核对的候选目录。`current` 及服务配置的各级路径使用实际目录和文件。暂存回执与双路 HTTPS、业务读取和回滚的结果分别归档。 [受管启动约束](MANAGED_TEAM_SERVICE.md)
 
-隔离网络的部署可用单独准备并核验的 npm 缓存，从暂存目录运行 `npm ci --offline --omit=dev --ignore-scripts --no-audit --no-fund --cache "$npm_cache"`。缺少缓存或锁文件完整性校验失败时停止切换。 [npm 离线模式](https://docs.npmjs.com/cli/v11/using-npm/config/#offline)
+隔离 Ubuntu 已验证暂存工具拒绝已改动的包、空缓存和重复暂存。补齐缓存后可重试，成功候选的 581 个源文件和 36 个生产依赖一致。输入缓存、SQLite 及运行中的 systemd 和 Nginx 保持，五次双路 HTTPS 检查通过。
 
-隔离 Ubuntu 演练中，修改过的归档在创建暂存目录前被拒绝，原服务持续运行。有效包的 581 个文件逐一核对，36 个生产依赖按锁文件离线安装。随后切换到新 systemd 进程，后端和 Nginx 边缘 HTTPS 检查通过。原设备继续登录并签名读取同一 2 KiB 原件，SQLite 文件和 21 张业务表摘要保持。演练使用临时签名密钥及合成资料。
+先前的独立切换演练用同一签名包启动新的 systemd 进程，后端和 Nginx 边缘 HTTPS 检查通过。原设备继续登录并签名读取同一 2 KiB 原件，SQLite 文件和 21 张业务表摘要保持。两项演练均使用临时签名密钥及合成资料。
 
 | 位置 | 用途与权限 |
 | --- | --- |
