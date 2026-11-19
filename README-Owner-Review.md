@@ -5,6 +5,7 @@
 | 走查项目 | 双击入口 | 重点 |
 | --- | --- | --- |
 | 采集和核对 | `Start-Team-Pilot-Candidate.cmd` | 依次检查实习生、助理、经理和合伙人的任务与资料范围。 |
+| 底稿迁入和导出 | `Start-Team-Pilot-Candidate.cmd` | 使用 `review-inputs` 中同一来源的两个合成文件，核对已保存填写、冻结及导出。 |
 | 订阅和席位 | `Start-Team-Billing-Candidate.cmd` | 检查技术管理员的年费、增购和按订单号查询，以及退款负责人留痕。所有收款回执均为合成。 |
 | 官网口径 | `Start-Website-Preview.cmd` | 在浏览器核对产品描述、下载与购买入口表述。 |
 
@@ -14,6 +15,7 @@
 
 - [双人评审单](docs/PILOT_OWNER_REVIEW.md)
 - [资料采集演练](docs/TEAM_PILOT_REHEARSAL.md)
+- [合成底稿演练](docs/PILOT_WORKPAPER_REHEARSAL.md)
 - [订阅与退款受理演练](docs/M5_LOCAL_ACCEPTANCE.md)
 - [官网预览说明](website/README.md)
 

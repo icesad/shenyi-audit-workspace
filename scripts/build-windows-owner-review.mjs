@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { fileFacts, loadBuildInventory, prepareDesktopCandidatePayload, resolveBuildOutput, verifyElectronArchive } from './build-windows-desktop-candidate.mjs';
 import previewConfiguration from '../desktop/isolated-preview-config.cjs';
+import workpaperInputs from './owner-review-workpaper-inputs.cjs';
 
 const checkout = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const nodeVersion = '24.22.1';
@@ -23,6 +24,7 @@ const reviewFiles = new Map([
   ['website/styles.css', 'website/styles.css'],
   ['website/README.md', 'website/README.md'],
   ['docs/PILOT_OWNER_REVIEW.md', 'docs/PILOT_OWNER_REVIEW.md'],
+  ['docs/PILOT_WORKPAPER_REHEARSAL.md', 'docs/PILOT_WORKPAPER_REHEARSAL.md'],
   ['docs/TEAM_PILOT_REHEARSAL.md', 'docs/TEAM_PILOT_REHEARSAL.md'],
   ['docs/M5_LOCAL_ACCEPTANCE.md', 'docs/M5_LOCAL_ACCEPTANCE.md'],
   ['README-Owner-Review.md', 'README-Owner-Review.md'],
@@ -177,6 +179,11 @@ async function build({ nodeArchive, electronArchive, npmCache, output }) {
     }
     for (const [source, target] of [...reviewFiles, ...serviceFiles.map(file => [file, file])]) {
       await copyRegular(path.join(checkout, source), path.join(bundle, target));
+    }
+    const reviewInputs = path.join(bundle, 'review-inputs');
+    await mkdir(reviewInputs);
+    for (const [filename, bytes] of Object.entries(await workpaperInputs.createOwnerReviewWorkpaperInputs())) {
+      await writeFile(path.join(reviewInputs, filename), bytes, { flag: 'wx' });
     }
     for (const [filename, command] of launches) {
       await writeFile(path.join(bundle, filename), commandFile(command), { flag: 'wx' });
