@@ -94,6 +94,39 @@ async function serverSources() {
   return list;
 }
 
+async function serverWorkpaperAssets() {
+  const files = [
+    'dist/legacy-doc.js', 'dist/workpaper-docs.js', 'dist/tender-import.js',
+    'dist/initial-layout-catalog.js', 'dist/risk-layout-catalog.js',
+    'dist/initial-word-layout-catalog.js', 'dist/risk-word-layout-catalog.js',
+  ];
+  const manifests = [
+    ['workpaper-layout-manifest.js', 'WorkpaperLayoutManifest', 'workpaper-layouts'],
+    ['workpaper-word-manifest.js', 'WorkpaperWordLayoutManifest', 'workpaper-word-layouts'],
+  ];
+  for (const [name, key, directory] of manifests) {
+    const filename = 'dist/' + name;
+    const source = path.join(checkout, filename);
+    await regular(source);
+    const prefix = 'globalThis.' + key + '=';
+    const declarations = (await readFile(source, 'utf8')).split('\n').map(line => line.trim())
+      .filter(line => line.startsWith(prefix));
+    if (declarations.length !== 1 || !declarations[0].endsWith(';')) {
+      throw new Error('底稿版式清单格式无效：' + name);
+    }
+    const index = JSON.parse(declarations[0].slice(prefix.length, -1));
+    if (!index || typeof index !== 'object' || Array.isArray(index)) throw new Error('底稿版式清单无效：' + name);
+    files.push(filename);
+    for (const [hash, relative] of Object.entries(index)) {
+      if (!/^[0-9a-f]{64}$/.test(hash) || (relative !== null && relative !== directory + '/' + hash + '.js')) {
+        throw new Error('底稿版式资源路径无效：' + name);
+      }
+      if (relative !== null) files.push('dist/' + relative);
+    }
+  }
+  return files;
+}
+
 async function publishDirectory(bundle, output, working) {
   // A Windows filesystem provider may briefly still hold the newly written directory.
   for (const wait of [0, 250, 750]) {
@@ -122,7 +155,7 @@ async function build({ nodeArchive, electronArchive, npmCache, output }) {
   if (nodeFacts.sha256 !== nodeZipSha256) throw new Error('Node.js ZIP 与官方固定 SHA-256 不符。');
   const inventory = await loadBuildInventory();
   const electron = await verifyElectronArchive(electronArchive, inventory.archiveHash);
-  const serviceFiles = await serverSources();
+  const serviceFiles = [...await serverSources(), ...await serverWorkpaperAssets()];
   const { extract } = createRequire(path.join(checkout, 'desktop/package.json'))('@electron-internal/extract-zip');
   const working = await mkdtemp(path.join(path.dirname(destination), '.shenyi-owner-review-'));
   try {
