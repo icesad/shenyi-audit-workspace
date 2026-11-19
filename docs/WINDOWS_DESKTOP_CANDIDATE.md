@@ -169,7 +169,7 @@ node scripts/build-windows-release-msi.mjs `
   --output $releaseMsi
 ```
 
-构建器使用 Windows Installer COM 和 MakeCab，校验输入及暂存副本的双签名，再由 Windows Installer 以 `/a` 解出管理映像并核验发行内容。成功回执的 `workingDirectory` 指向构建记录与管理映像。MSI 按机器安装、按版本并存，默认目标是 64 位 Program Files 下的 `Shenyi\ReleaseSource\<version>\bundle`，`signature.ed25519` 与 `bundle` 同级。MSI 只携带发行副本。包内无密钥、团队服务配置或用户资料，也不会创建快捷方式或启动客户端。 [Windows Installer 管理安装](https://learn.microsoft.com/en-us/windows/win32/msi/administrative-installation)
+构建器使用 Windows Installer COM 和 MakeCab，校验输入及暂存副本的双签名。生成 MSI 后先只读核对发行结构，再由 Windows Installer 以 `/a` 解出管理映像并核验发行内容。成功回执的 `workingDirectory` 指向构建记录与管理映像，其中 `source-policy.stdout.txt` 记录结构核验。MSI 按机器安装、按版本并存，默认目标是 64 位 Program Files 下的 `Shenyi\ReleaseSource\<version>\bundle`，`signature.ed25519` 与 `bundle` 同级。MSI 只携带发行副本。包内无密钥、团队服务配置或用户资料，也不会创建快捷方式或启动客户端。 [Windows Installer 管理安装](https://learn.microsoft.com/en-us/windows/win32/msi/administrative-installation)
 
 如需独立复核管理映像，用新目录作为 `TARGETDIR`。完成后，`bundle` 与 `signature.ed25519` 直接位于该目录下。`/a` 生成管理映像，本机产品注册使用 `/i`。本轮未执行 `/i`。 [TARGETDIR 说明](https://learn.microsoft.com/en-us/windows/win32/msi/targetdir)
 
@@ -201,6 +201,17 @@ node scripts/windows-candidate-authenticode.mjs verify-msi --msi $finalMsi --msi
 ```
 
 核验成功时输出最终文件的 SHA-256、字节数、发布者指纹，以及 Windows Authenticode、时间戳和只读 MSI 数据库检查结果。命令不启动安装器。Windows 可以按系统配置检查证书信任。交付方保存这份回执和构建阶段的包内双签名回执。 [Windows Installer 只读数据库模式](https://learn.microsoft.com/en-us/windows/win32/msi/installer-opendatabase)
+
+外签后也用最终 MSI 的同一份可信摘要复核审易发行结构。在 64 位 Windows PowerShell 中指定该次发行的版本。 [标准安装执行序列](https://learn.microsoft.com/en-us/windows/win32/msi/installexecutesequence-table)
+
+```powershell
+& 'D:/ShenyiDeploy/scripts/inspect-windows-release-msi.ps1' `
+  -MsiPath 'D:/delivery/Shenyi-0.61.0-x64.msi' `
+  -ExpectedVersion '0.61.0' `
+  -ExpectedSha256 $SignedMsiSha256
+```
+
+结构检查只读核对 x64、机器级安装、版本目录、文件和组件映射、内嵌 CAB 及两套受限执行序列，并拒绝额外安装表或嵌入变换。保留 `sourcePolicyVerified` 回执。此命令不调用 `msiexec`，签名及时间戳仍由上面的 `verify-msi` 单独核验。 [微软的 MSI 签名说明](https://learn.microsoft.com/en-us/windows/desktop/Msi/digital-signatures-and-windows-installer)
 
 审易正式证书和已签名 MSI 就绪后，仍须在独立 Windows 终端验证安装注册、有效权限、升级、回滚和卸载。macOS 实机安装、签名和公证另按对应发行流程验收。
 

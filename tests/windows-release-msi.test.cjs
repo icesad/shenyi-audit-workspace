@@ -54,6 +54,35 @@ test('Windows Installer reproduces the authored release source in an unregistere
   assert.equal(report.msiPath, file);
   const before = await fs.readFile(file);
   const digest = createHash('sha256').update(before).digest('hex');
+  const inspector = path.resolve(__dirname, '../scripts/inspect-windows-release-msi.ps1');
+  const inspect = (filename, hash, version = report.version) => run(windows.executable, [
+    '-NoProfile', '-NonInteractive', '-File', inspector, '-MsiPath', filename,
+    '-ExpectedVersion', version, '-ExpectedSha256', hash,
+  ], processOptions);
+  const policy = JSON.parse((await inspect(file, digest)).stdout);
+  assert.equal(policy.sourcePolicyVerified, true);
+  assert.equal(policy.sha256, digest);
+  assert.equal(policy.productCode, report.productCode);
+  assert.equal(policy.packageCode, report.packageCode);
+  assert.equal(policy.payloadFileCount, payload.size);
+  assert.equal(policy.payloadBytes, report.payloadBytes);
+  assert.equal(policy.installationPerformed, false);
+  assert.equal(policy.installerSignatureVerified, false);
+  const policyRejected = code => error => error.code === 1 && error.stdout.trim() === '' && error.stderr.trim() === code;
+  await assert.rejects(inspect(file, '0'.repeat(64)), policyRejected('MSI_SOURCE_POLICY_DIGEST'));
+  await assert.rejects(inspect(file, digest, '219.63.1998'), policyRejected('MSI_SOURCE_POLICY_PROPERTIES'));
+
+  const changed = path.join(directory, 'changed default scope.msi');
+  await fs.copyFile(file, changed);
+  const changeScope = '$db=(New-Object -ComObject WindowsInstaller.Installer).OpenDatabase($env:SHENYI_TEST_MSI, 1);' +
+    "$view=$db.OpenView('UPDATE `Property` SET `Value` = ''2'' WHERE `Property` = ''ALLUSERS''');" +
+    '$view.Execute(); $view.Close(); $db.Commit();';
+  await run(windows.executable, ['-NoProfile', '-NonInteractive', '-Command', changeScope], {
+    ...processOptions, env: { ...env, SHENYI_TEST_MSI: changed },
+  });
+  const changedDigest = createHash('sha256').update(await fs.readFile(changed)).digest('hex');
+  assert.notEqual(changedDigest, digest);
+  await assert.rejects(inspect(changed, changedDigest), policyRejected('MSI_SOURCE_POLICY_PROPERTIES'));
   const verifier = path.resolve(__dirname, '../scripts/windows-candidate-authenticode.mjs');
   const verify = (filename, hash, extra = []) => run(process.execPath, [
     verifier, 'verify-msi', '--msi', filename, '--msi-sha256', hash, '--publisher-sha256', 'a'.repeat(64), ...extra,

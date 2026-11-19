@@ -11,6 +11,7 @@ import { readWindowsCandidateManifest } from './verify-windows-candidate-invento
 
 const run = promisify(execFile);
 const authorScript = fileURLToPath(new URL('./write-windows-release-msi.ps1', import.meta.url));
+const inspectScript = fileURLToPath(new URL('./inspect-windows-release-msi.ps1', import.meta.url));
 const msiName = 'shenyi-release.msi';
 const bundleName = 'bundle';
 const signatureName = 'signature.ed25519';
@@ -90,6 +91,7 @@ async function executeTool(executable, arguments_, environment, workingDirectory
     const result = await run(executable, arguments_, options);
     await writeFile(`${logPrefix}.stdout.txt`, result.stdout, { flag: 'wx' });
     await writeFile(`${logPrefix}.stderr.txt`, result.stderr, { flag: 'wx' });
+    return result.stdout;
   } catch (error) {
     await writeFile(`${logPrefix}.failure.txt`, JSON.stringify({ exit: error.code, stdout: error.stdout, stderr: error.stderr }), { flag: 'wx' });
     fail('WINDOWS_MSI_BUILD_FAILED');
@@ -145,6 +147,13 @@ async function buildMsi(options) {
 
     const msi = path.join(outputDirectory, msiName);
     const archive = await fileFacts(msi);
+    const inspected = await executeTool(windows.executable, ['-NoProfile', '-NonInteractive', '-File', inspectScript,
+      '-MsiPath', msi, '-ExpectedVersion', verified.version, '-ExpectedSha256', archive.sha256], env, working, path.join(working, 'source-policy'));
+    const sourcePolicy = JSON.parse(inspected);
+    const payloadBytes = files.reduce((bytes, file) => bytes + file.bytes, 0);
+    if (sourcePolicy?.sourcePolicyVerified !== true || sourcePolicy.sha256 !== archive.sha256 ||
+        sourcePolicy.version !== verified.version || sourcePolicy.payloadFileCount !== files.length ||
+        sourcePolicy.payloadBytes !== payloadBytes) fail('WINDOWS_MSI_CONTENT_INVALID');
     const extracted = path.join(working, 'administrative-image');
     const log = path.join(working, 'msiexec.log');
     await executeTool(path.join(windows.systemDirectory, 'msiexec.exe'), windowsMsiAdministrativeArguments(msi, extracted, log),
@@ -157,7 +166,9 @@ async function buildMsi(options) {
     const published = await publishMsi(msi, output, parentIdentity, archive);
     return { output, workingDirectory: working, version: verified.version, packageArch: 'x64',
       bytes: published.bytes, sha256: published.sha256, releaseManifestSha256: verified.manifestSha256,
-      releaseFileCount: verified.fileCount, releaseOsSignatureVerified: true, installerOsSignatureVerified: false, administrativeExtractionVerified: true };
+      releaseFileCount: verified.fileCount, releaseOsSignatureVerified: true, installerOsSignatureVerified: false,
+      sourcePolicyVerified: true, productCode: sourcePolicy.productCode, packageCode: sourcePolicy.packageCode,
+      administrativeExtractionVerified: true };
   } catch (error) {
     throw Object.assign(error, { workingDirectory: working });
   }
