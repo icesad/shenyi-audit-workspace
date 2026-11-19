@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Activate an already-staged, schema-compatible release on a managed Linux host."""
+"""Activate or recover a schema-compatible release on a managed Linux host."""
 
 import argparse
 import ctypes
@@ -32,6 +32,20 @@ HEALTH_KEYS = {
     'backendCertificate', 'publicCertificate', 'tlsKeySeparation', 'databaseVolume',
 }
 ADVISORY_KEYS = {'backendCertificate', 'publicCertificate', 'databaseVolume'}
+RECOVERY_LAYOUTS = {
+    # (current holds the old release, name of the other directory)
+    'stopping-current': {(True, 'staged')},
+    # An automatic rollback may continue if it could not replace the journal.
+    'exchanging-directories': {(True, 'staged'), (False, 'staged'), (True, 'failed')},
+    'starting-candidate': {(False, 'staged'), (False, 'previous'), (True, 'staged'), (True, 'failed')},
+    'restoring-current': {(False, 'staged'), (True, 'staged'), (True, 'failed')},
+    'recovering-current': {(False, 'staged'), (False, 'previous'),
+                           (True, 'staged'), (True, 'previous'), (True, 'failed')},
+    'activated': {(False, 'previous')},
+    'rolled-back': {(True, 'failed')},
+    'recovered': {(True, 'failed')},
+}
+TERMINAL_STATES = {'activated', 'rolled-back', 'recovered'}
 
 
 def require(condition, message):
@@ -168,13 +182,14 @@ def rename_entry(rename, root_fd, source, target, flags):
         raise OSError(error, os.strerror(error), str(source))
 
 
-def validate_stage(staged, revision, archive_sha, root_device):
+def validate_stage(staged, revision, archive_sha, root_device, *, receipt_stage=None):
     info = owned_path(staged, stat.S_ISDIR, readonly=True)
     require(info.st_dev == root_device, 'The staged release must be on the release filesystem.')
     path = staged / '.shenyi-stage-receipt.json'
     owned_path(path, stat.S_ISREG, readonly=True)
     receipt = json.loads(read_file(path, 16 * 1024))
-    require(receipt['ok'] is True and receipt['offline'] is True and receipt['stageDir'] == str(staged)
+    require(receipt['ok'] is True and receipt['offline'] is True
+            and receipt['stageDir'] == str(receipt_stage if receipt_stage is not None else staged)
             and receipt['archive']['revision'] == revision and receipt['archive']['sha256'] == archive_sha,
             'The staged receipt does not match the approved revision and archive digest.')
     lock = staged / 'package-lock.json'
@@ -281,12 +296,138 @@ def activate(args, root_fd, env):
     return result
 
 
+def read_recovery_journal(args, root_device):
+    info = owned_path(JOURNAL, stat.S_ISREG)
+    require(info.st_nlink == 1 and info.st_dev == root_device, 'Untrusted activation journal file.')
+    report = json.loads(read_file(JOURNAL, 64 * 1024))
+    require(report['revision'] == args.revision and report['archiveSha256'] == args.archive_sha256
+            and report['status'] in RECOVERY_LAYOUTS and report['candidateDatabasePreflight'] == 'passed',
+            'The journal does not match the approved interrupted activation.')
+    for key in ('oldDirectoryIdentity', 'newDirectoryIdentity', 'databaseIdentity'):
+        value = report[key]
+        require(type(value) is list and len(value) == 2 and all(type(number) is int for number in value)
+                and value[0] >= 0 and value[1] > 0, f'Invalid journal identity: {key}.')
+    old, new = report['oldDirectoryIdentity'], report['newDirectoryIdentity']
+    require(old != new and old[0] == new[0] == root_device
+            and re.fullmatch(r'[0-9a-f]{64}', report['configSha256'])
+            and type(report['baselinePid']) is int and report['baselinePid'] > 0
+            and re.fullmatch(r'[0-9a-f]{32}', report['baselineInvocation']), 'Invalid baseline activation record.')
+    warnings = report['baselineWarningChecks']
+    require(type(warnings) is list and set(warnings) <= ADVISORY_KEYS and len(set(warnings)) == len(warnings),
+            'Invalid activation journal readiness warnings.')
+    if report['status'] in {'recovering-current', 'recovered'}:
+        require(report.get('recoveredFrom') in RECOVERY_LAYOUTS.keys() - TERMINAL_STATES - {'recovering-current'},
+                'Invalid original activation phase.')
+    return report
+
+
+def recovery_layout(directories, report):
+    existing = [(kind, path, identity(owned_path(path, stat.S_ISDIR, readonly=True)))
+                for kind, path in directories.items() if os.path.lexists(path)]
+    require(len(existing) == 2 and existing[0][0] == 'current',
+            'Unexpected activation directories. Preserve all release paths for review.')
+    _, _, current = existing[0]
+    kind, retained, other = existing[1]
+    old, new = report['oldDirectoryIdentity'], report['newDirectoryIdentity']
+    require((current, other) in ((old, new), (new, old))
+            and (current == old, kind) in RECOVERY_LAYOUTS[report['status']],
+            'Release directory identities or placement do not match the journal.')
+    return current == old, retained
+
+
+def stable_invocation(env):
+    status = service_status(env)
+    if stopped(status):
+        return None
+    require(status.get('ActiveState') == 'active' and status.get('ControlPID') == '0'
+            and status.get('Job', '') in {'', '0', '/'},
+            'A systemd operation is still in progress. Retry once the unit settles.')
+    active = process_status(env)
+    require(active == (int(status['MainPID']), status['InvocationID']),
+            'The running invocation changed during recovery preflight.')
+    return active
+
+
+def recover(args, root_fd, env):
+    root_device = os.fstat(root_fd).st_dev
+    report = read_recovery_journal(args, root_device)
+    phase = report['status']
+    staged = ROOT / f'staged-{args.revision}'
+    previous = ROOT / f'previous-{args.revision}'
+    failed = ROOT / f'failed-{args.revision}'
+    history = ROOT / f'activation-{args.revision}.json'
+    require(not os.path.lexists(history), 'An activation history file already exists. Preserve the journal for review.')
+    directories = {'current': CURRENT, 'staged': staged, 'previous': previous, 'failed': failed}
+    stamp = {key: report[key] for key in ('configSha256', 'databaseIdentity')}
+
+    def check_state(expected=None):
+        require(configuration_stamp() == stamp, 'Configuration or SQLite file identity changed since activation.')
+        layout = recovery_layout(directories, report)
+        require(expected is None or layout == expected, 'Release placement changed during recovery.')
+        return layout
+
+    old_current, retained = check_state()
+    old_path = CURRENT if old_current else retained
+    candidate = retained if old_current else CURRENT
+    owned_path(old_path / 'scripts/check-team-service.mjs', stat.S_ISREG, readonly=True)
+    owned_path(old_path / 'scripts/start-team-service.mjs', stat.S_ISREG, readonly=True)
+    require(validate_stage(candidate, args.revision, args.archive_sha256, root_device, receipt_stage=staged)
+            == report['newDirectoryIdentity'], 'The candidate directory changed during recovery preflight.')
+    active_before = stable_invocation(env)
+    check_state((old_current, retained))
+    warnings = set(report['baselineWarningChecks'])
+    rename = rename_operation()
+
+    if phase in TERMINAL_STATES:
+        require(report.get('retainedDirectory') == str(retained) and active_before is not None,
+                'The recorded outcome cannot be reconciled with the retained and running release.')
+        _, _, active = health_check(env, prior_warnings=warnings, limit=55, probe_root=old_path)
+        require(active == active_before == stable_invocation(env),
+                'The completed activation invocation changed during verification.')
+        check_state((old_current, retained))
+        # Keep the historical receipt intact even if a later restart changed the invocation.
+        result = report
+    else:
+        report.setdefault('recoveredFrom', phase)
+        report['status'] = 'recovering-current'
+        record(JOURNAL, report, root_fd)
+        if not old_current:
+            if active_before is not None:
+                stop_service(env)
+            require(stable_invocation(env) is None, 'The candidate must be stopped before restoring the prior release.')
+            check_state((False, retained))
+            rename_entry(rename, root_fd, CURRENT, retained, flags=2)
+            os.fsync(root_fd)
+        check_state((True, retained))
+        restored = stable_invocation(env)
+        if restored is None:
+            report['recoveryResetState'] = restart_previous(env)
+        health, _, active = health_check(env, prior_warnings=warnings, limit=55)
+        require(restored is None or active == restored, 'The previous release invocation changed during verification.')
+        check_state((True, retained))
+        if retained != failed:
+            rename_entry(rename, root_fd, retained, failed, flags=1)
+            os.fsync(root_fd)
+        retained = failed
+        report['status'] = 'recovered'
+        require(stable_invocation(env) == active, 'The release invocation changed before archiving the recovery result.')
+        check_state((True, retained))
+        result = {**report, 'currentPid': active[0], 'currentInvocation': active[1],
+                  'retainedDirectory': str(retained), 'health': health}
+        record(JOURNAL, result, root_fd)
+
+    rename_entry(rename, root_fd, JOURNAL, history, flags=1)
+    os.fsync(root_fd)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument('--revision', required=True)
     parser.add_argument('--archive-sha256', required=True)
     parser.add_argument('--same-schema', action='store_true', required=True)
     parser.add_argument('--edge-ca', type=Path)
+    parser.add_argument('--recover', action='store_true', help='Recover or reconcile a journaled activation.')
     args = parser.parse_args()
     try:
         require(os.geteuid() == 0 and re.fullmatch(r'[0-9a-f]{40}', args.revision)
@@ -304,11 +445,12 @@ def main():
         root_fd = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
             fcntl.flock(root_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            result = activate(args, root_fd, env)
+            operation = recover if args.recover else activate
+            result = operation(args, root_fd, env)
         finally:
             os.close(root_fd)
         print(json.dumps(result))
-        return 0 if result['status'] == 'activated' else 2
+        return 0 if args.recover or result['status'] == 'activated' else 2
     except (ValueError, OSError, AttributeError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(json.dumps({'status': 'failed', 'message': str(error)}), file=sys.stderr)
         return 1

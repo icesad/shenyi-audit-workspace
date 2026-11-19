@@ -234,7 +234,18 @@ journalctl -u shenyi-team-monitor.service -n 30 --no-pager
 
 启动候选后，使用上一版的探针检查两路 HTTPS、实例和进程。原有磁盘和证书临近阈值的提示可保留，新增提示或必要检查失败会停止变更。隔离环境可显式提供 `--edge-ca` 读取受信的边缘 CA，生产公有证书通常使用系统信任。 [systemd 服务状态与重启计数](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html)
 
-返回 `0` 时，旧版保存在 `previous-$release`。候选启动或探针失败且旧版已恢复时返回 `2`，候选保留在 `failed-$release`。两种结果均写入 `activation-$release.json`。返回 `1` 或进程意外退出时，在发布根核对结案回执及 `/opt/shenyi-team/.shenyi-activation.json`。未结案记录及其中的目录设备号和 inode 用于定位当前落位。遇到存储故障或无法证明已安全停服时，核对受管单元、进程、目录和实际库后再处置。SQLite 与配置保留在各自的原路径。
+激活返回 `0` 时，旧版保存在 `previous-$release`。候选启动或探针失败且旧版已恢复时返回 `2`，候选保留在 `failed-$release`。两种结果均写入 `activation-$release.json`。返回 `1` 或进程意外退出时，先核对结案回执及 `/opt/shenyi-team/.shenyi-activation.json`。日志仍在且结案回执尚未生成时，使用原批准版本、归档 SHA-256 和原信任设置执行恢复。
+
+```sh
+/usr/bin/python3 -I /opt/shenyi-team/release-tools/scripts/activate-linux-release.py \
+  --recover --revision "$release" --archive-sha256 "$approved_archive_sha256" --same-schema
+```
+
+恢复沿用发布锁，核对日志、候选暂存回执、目录设备号和 inode、配置摘要及 SQLite 文件身份。未结案的切换恢复上一版。上一版已正常运行时保留该调用；否则在确认候选已停止后，通过原子目录交换恢复并启动上一版。双路 HTTPS 校验通过后，候选保留在 `failed-$release`，结案状态为 `recovered`。日志若已写好 `activated`、`rolled-back` 或 `recovered` 终态，只在当前目录和服务重新核验通过后原样归档。恢复和归档成功均返回 `0`。
+
+遇到审批摘要不一致、目录或配置变化、SQLite 文件身份变化、systemd 仍有任务或双路 HTTPS 失败时，恢复返回 `1` 并保留可核验的目录和日志。排查完毕后可对同一日志再次执行恢复。SQLite 和配置保留在各自的原路径，候选已处理的业务仍留在当前库。结案回执已生成时以该回执及实时健康检查为准。 [目录持久化](https://man7.org/linux/man-pages/man2/fsync.2.html)
+
+隔离 Ubuntu 使用合成候选，在原子交换之前和之后分别终止实际激活进程。两次均恢复原目录、重启旧版、完成双路 HTTPS 复检及回执归档。使用错误归档摘要的恢复在任何变更前拒绝。停服后的 SQLite 哈希、文件身份、表结构和 2 KiB 合成原件与初始一致。虚拟机原有磁盘余量提示仍在默认探针报告内。 [演练记录](STATUS.md#2026-11-20-m7bf-linux-发布中断恢复)
 
 核对一条获准的正常业务操作后再恢复接入。若同时变更后端证书，核对受管服务已加载新密钥并通过双路 HTTPS 探针。单独更换对外证书时，按[对外证书续期流程](#续期-nginx-对外证书)完成验证。
 
