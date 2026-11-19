@@ -1,4 +1,8 @@
-# 当前状态 · M7AO Linux 发布归档独立验签
+# 当前状态 · M7AP Linux 签名包部署演练
+
+## 2026-11-19 M7AP Linux 签名包部署演练
+
+隔离 Ubuntu 已验证签名包暂存、离线依赖安装及切换。改动包在创建暂存目录前被拒绝，原服务继续运行。有效包的 581 个文件逐一核对，36 个生产依赖与锁文件一致。新 systemd 进程通过后端与 Nginx 边缘 HTTPS 检查。原设备绑定、SQLite 文件、2 KiB 原件及 21 张业务表摘要保持。81 项关联检查和独立复核通过，虚拟机正常关闭，两处旧预览前后观察一致。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-linux-signed-deploy-20261119/verification.json`。 [Linux 部署说明](LINUX_TEAM_DEPLOYMENT.md#发布归档签发与部署验签)
 
 ## 2026-11-19 M7AO Linux 发布归档独立验签
 

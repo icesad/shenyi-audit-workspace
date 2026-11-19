@@ -26,17 +26,25 @@ node scripts/linux-release-signature.mjs sign \
   --private-key "$release_private_key" --output "$release_dir/shenyi-team-${release}.ed25519"
 ```
 
-在 Linux 部署机上，从已审定渠道预置 `scripts/linux-release-signature.mjs` 和同目录的 `detached-release-signature.mjs`。将公钥保存在归档目录之外，按获准的发行记录设置 `$release`。以下核验只需 Node，无需安装 Git。
+在 Linux 部署机上，从已审定渠道预置 `scripts/linux-release-signature.mjs` 和同目录的 `detached-release-signature.mjs`。将公钥保存在归档目录之外，按获准的发行记录设置 `$release`。发布人员须控制归档路径，确保从核验到解包期间归档不可被替换或修改。将 `$stage_dir` 设为与 `current` 同一文件系统上的新目录。以下验签不依赖 Git。
 
 ```sh
 /opt/shenyi-team/node/bin/node /opt/shenyi-team/release-tools/scripts/linux-release-signature.mjs verify \
   --archive "$release_dir/shenyi-team-${release}.tar" --revision "$release" \
-  --public-key "$release_public_key" --signature "$release_dir/shenyi-team-${release}.ed25519"
+  --public-key "$release_public_key" --signature "$release_dir/shenyi-team-${release}.ed25519" &&
+  mkdir -- "$stage_dir" &&
+  (umask 022
+   tar --extract --no-same-owner --no-same-permissions \
+     --file "$release_dir/shenyi-team-${release}.tar" --directory "$stage_dir")
 ```
 
-成功回执记录提交标记、整包哈希、签名摘要和公钥指纹。签发前由发布人员确认归档由上面的白名单命令从审定的提交生成。验签成功后保持同一受保护的归档路径，再解包到新的暂存目录。验签失败时停止部署。归档验签、依赖安装和应用运行各留回执。
+成功回执记录提交标记、整包哈希、签名摘要和公钥指纹。签发前由发布人员确认归档由上面的白名单命令从审定的提交生成。验签、创建暂存目录或解包任一步失败时停止部署。归档验签、依赖安装和应用运行各留回执。
 
 在暂存发布目录以经过校验的 Node 24.15 或更高版本的 24.x 运行 `npm ci --omit=dev --ignore-scripts`。验收后交由发布人员把代码和依赖置于 root 持有的只读目录。首次配置须使用真实目录，`current` 及服务配置中的文件路径各级均使用实际路径。 [npm 锁定依赖安装](https://docs.npmjs.com/cli/v11/commands/npm-ci/) · [受管启动约束](MANAGED_TEAM_SERVICE.md)
+
+隔离网络的部署可用单独准备并核验的 npm 缓存，从暂存目录运行 `npm ci --offline --omit=dev --ignore-scripts --no-audit --no-fund --cache "$npm_cache"`。缺少缓存或锁文件完整性校验失败时停止切换。 [npm 离线模式](https://docs.npmjs.com/cli/v11/using-npm/config/#offline)
+
+隔离 Ubuntu 演练中，修改过的归档在创建暂存目录前被拒绝，原服务持续运行。有效包的 581 个文件逐一核对，36 个生产依赖按锁文件离线安装。随后切换到新 systemd 进程，后端和 Nginx 边缘 HTTPS 检查通过。原设备继续登录并签名读取同一 2 KiB 原件，SQLite 文件和 21 张业务表摘要保持。演练使用临时签名密钥及合成资料。
 
 | 位置 | 用途与权限 |
 | --- | --- |
