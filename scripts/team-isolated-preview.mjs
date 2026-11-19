@@ -13,7 +13,7 @@ import configuration from '../desktop/isolated-preview-config.cjs';
 import {prepareBillingPreview,BILLING_PREVIEW_ADMIN,BILLING_PREVIEW_OWNER,BILLING_PREVIEW_PASSWORD} from './team-billing-preview-fixture.mjs';
 import {preparePilotPreview} from './team-pilot-preview-fixture.mjs';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const {prepareIsolatedPreviewDirectory,writeIsolatedPreviewConfiguration}=configuration;
+const {prepareIsolatedPreviewDirectory,writeIsolatedPreviewConfiguration,loadOwnerReviewRuntime}=configuration;
 export function assertNode24(version=process.versions.node){if(typeof version!=='string'||!/^24\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(version)||Number(version.split('.')[1])<15)throw Error('请使用Node.js 24.15以上24.x启动独立候选预览。');}
 const DENY=new Set(['NODE_OPTIONS','NODE_PATH','NODE_DEBUG','NODE_DEBUG_NATIVE','VSCODE_INSPECTOR_OPTIONS','VSCODE_JS_DEBUG_OPTIONS','NODE_V8_COVERAGE','ELECTRON_LOG_FILE','ELECTRON_ENABLE_LOGGING','ELECTRON_ENABLE_STACK_DUMPING','ELECTRON_DISABLE_SANDBOX','NODE_EXTRA_CA_CERTS','NODE_TLS_REJECT_UNAUTHORIZED','ELECTRON_RUN_AS_NODE','SSL_CERT_FILE','SSL_CERT_DIR','NODE_USE_SYSTEM_CA','NODE_USE_ENV_PROXY','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','GLOBAL_AGENT_HTTP_PROXY']);
 export function candidateChildEnvironment({env=process.env,context}={}){
@@ -45,12 +45,13 @@ export async function createIsolatedPreviewService({rootDirectory,billingDemo=fa
   return Object.freeze({context,server:service.server,address:service.address,close,...(billing?{cases:billing.cases}:{}),...(pilot?{pilotCases:pilot.cases}:{})});
  }catch(error){service?.server.closeAllConnections();try{await service?.close();}finally{db?.close();}await record(prepared.directory,'startup-failed.json',{schemaVersion:1,candidateId:prepared.candidateId,code:typeof error?.code==='string'?error.code:'STARTUP_FAILED',failedAt:new Date().toISOString()});throw error;}
 }
-async function electronExecutable(){
+async function electronExecutable(portable){
+ if(portable)return portable.electronExecutable;
  const require=createRequire(path.join(ROOT,'desktop/package.json'));let executable;try{executable=require('electron');}catch{throw Error('请先按desktop/README.md安装既有Electron依赖。');}
  if(typeof executable!=='string'||!(await stat(executable)).isFile())throw Error('Electron运行时未完整安装，请参见desktop/README.md。');return executable;
 }
 export async function launchIsolatedTeamPreview({billingDemo=false,pilotDemo=false}={}){
- assertNode24();const executable=await electronExecutable(),owned=await createIsolatedPreviewService({billingDemo,pilotDemo}),{context}=owned;let child,log;
+ assertNode24();const portable=await loadOwnerReviewRuntime(),executable=await electronExecutable(portable),owned=await createIsolatedPreviewService({billingDemo,pilotDemo,...(portable?{rootDirectory:portable.rootDirectory}:{})}),{context}=owned;let child,log;
  try{
   log=createWriteStream(path.join(context.directory,'desktop-process.log'),{flags:'wx',mode:0o600});
   await new Promise((resolve,reject)=>{log.once('open',resolve);log.once('error',reject);});
