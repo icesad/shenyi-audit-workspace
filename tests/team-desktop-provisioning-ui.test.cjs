@@ -125,8 +125,52 @@ test('invalid pilot calendar times, nonfuture dates and unsafe seats never dispa
 test('native queued opening preserves pilot draft fields and password while a refresh completes',async t=>{
   const f=fixture(t,{listTeamProvisioningRequests:async()=>safe({requests:[pilotRequest()]})});await login(f);await until(()=>!!f.id('team-pilot-ends-'+REQUEST.id));f.id('team-provisioning-panel').querySelector('summary').click();reviewerProof(f);fillPilot(f);await until(()=>!f.id('team-provisioning-password').disabled);assert.equal(f.id('team-provisioning-password').value,PASSWORD);assert.equal(f.id('team-pilot-ends-'+REQUEST.id).value,PILOT_END);assert.equal(f.id('team-pilot-seats-'+REQUEST.id).value,'4');
 });
-test('wrong pilot password clears only proof and leaves the eligible draft available for retry',async t=>{
-  const f=fixture(t,{listTeamProvisioningRequests:async()=>safe({requests:[pilotRequest()]}),reviewTeamProvisioningRequest:async()=>fail('HTTP_403','当前密码验证未通过。')});await login(f);await openReview(f);reviewerProof(f);fillPilot(f);pilotButton(f).click();await until(()=>f.id('team-provisioning-message').textContent.includes('验证未通过'));assert.equal(f.id('workspace-view').hidden,false);assert.equal(f.id('team-provisioning-password').value,'');assert.equal(f.id('team-pilot-ends-'+REQUEST.id).value,PILOT_END);assert.equal(f.id('team-pilot-seats-'+REQUEST.id).value,'4');reviewerProof(f);assert.equal(pilotButton(f).disabled,false);
+test('wrong pilot password clears the secret, preserves the draft, and returns focus to the password field', async t => {
+  const f=fixture(t,{
+    listTeamProvisioningRequests:async()=>safe({requests:[pilotRequest()]}),
+    reviewTeamProvisioningRequest:async()=>fail('HTTP_403','当前密码验证未通过。'),
+  });
+  await login(f);
+  await openReview(f);
+  reviewerProof(f);
+  fillPilot(f);
+  const button=pilotButton(f),password=f.id('team-provisioning-password');
+  button.focus();
+  button.click();
+  await until(()=>f.id('team-provisioning-message').textContent.includes('验证未通过'));
+  assert.equal(f.id('workspace-view').hidden,false);
+  assert.equal(password.value,'');
+  assert.equal(f.id('team-pilot-ends-'+REQUEST.id).value,PILOT_END);
+  assert.equal(f.id('team-pilot-seats-'+REQUEST.id).value,'4');
+  assert.ok(f.d.activeElement===password,'the password field should be focused after verification fails');
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+  reviewerProof(f);
+  assert.equal(pilotButton(f).disabled,false);
+});
+test('failed pilot verification preserves focus when the user has moved away while waiting', async t => {
+  const response=deferred();
+  const f=fixture(t,{
+    listTeamProvisioningRequests:async()=>safe({requests:[pilotRequest()]}),
+    reviewTeamProvisioningRequest:()=>response.promise,
+  });
+  await login(f);
+  await openReview(f);
+  reviewerProof(f);
+  fillPilot(f);
+  const button=pilotButton(f),password=f.id('team-provisioning-password');
+  button.focus();
+  button.click();
+  await until(()=>count(f,'reviewTeamProvisioningRequest')===1);
+  const other=f.id('logout');
+  other.focus();
+  assert.ok(f.d.activeElement===other,'the user can leave the review while it is pending');
+  other.blur();
+  assert.equal(f.d.activeElement,f.d.body);
+  response.resolve(fail('HTTP_403','当前密码验证未通过。'));
+  await until(()=>!password.disabled && f.id('team-provisioning-message').textContent.includes('验证未通过'));
+  assert.ok(f.d.activeElement===f.d.body,'the failure must not reclaim focus after the user leaves the review control');
+  assert.equal(password.value,'');
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
 });
 test('uncertain pilot approval refreshes read-only facts without resubmitting or inventing failure',async t=>{
   let row=pilotRequest();const f=fixture(t,{listTeamProvisioningRequests:async()=>safe({requests:[row]}),reviewTeamProvisioningRequest:async input=>{row=pilotRequest({revision:4,pilot:{startsAt:Date.now(),endsAt:input.endsAt,seats:input.seats}});return fail('SERVICE_UNAVAILABLE','PRIVATE_UPSTREAM_DETAIL');}});await login(f);await openReview(f);reviewerProof(f);fillPilot(f);const before=count(f,'listTeamProvisioningRequests');pilotButton(f).click();await until(()=>f.id('team-provisioning-message').textContent.includes('未能确认试点批准'));assert.equal(count(f,'reviewTeamProvisioningRequest'),1);assert.equal(count(f,'listTeamProvisioningRequests'),before+1);assert.equal(pilotButton(f),null);assert.match(f.id('team-provisioning-list').textContent,/试点已批准/);assert.match(f.id('team-provisioning-message').textContent,/可能已完成.*已刷新/);assert.equal(f.d.body.textContent.includes('PRIVATE_UPSTREAM_DETAIL'),false);assert.equal(f.id('team-provisioning-password').value,'');
