@@ -14,6 +14,7 @@
 - `GET /api/teams/:teamId/billing/seat-orders` 列本团队订单。POST 创建带锁价的订单。
 - `GET /api/teams/:teamId/billing/seat-orders/:orderId` 返回订单和已兑现容量记录。
 - `POST /api/teams/:teamId/billing/seat-orders/:orderId/reconcile` 经可信查单来源补收款。
+- `POST /api/teams/:teamId/billing/seat-orders/:orderId/resume-fulfilment` 接受空 JSON，由当前持钥的本团队有效技术管理员恢复已验收款的兑现。原收款时间、锁定到期时刻及数量保持一致。报价和年期仍须满足原条件，关单及退款异常进入复核。
 - `GET /api/teams/:teamId/billing/seats` 返回按期限计算的当前余额。
 
 真实商户、实际退款与人工处理流程、桌面购买界面及年单容量续转仍待开发和验收。

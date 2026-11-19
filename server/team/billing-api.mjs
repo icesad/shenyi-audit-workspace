@@ -53,7 +53,7 @@ function billingAccess(request,options){
   return json({teams});
  });
 }
-function billingOverview(db,teamId,at,billingSimulation,expiryReminder=false){
+function billingOverview(db,teamId,at,billingSimulation,{expiryReminder,resumeFulfilment}){
  const {state,revision,startsAt,endsAt}=readSubscriptionState(db,teamId,at);
  const subscription={state,revision,startsAt,endsAt},remaining=endsAt-at;
  if(expiryReminder&&state==='active'&&remaining>0&&remaining<=RENEWAL_REMINDER_DAYS*MS_PER_DAY){
@@ -71,6 +71,7 @@ function billingOverview(db,teamId,at,billingSimulation,expiryReminder=false){
   ...summary,simulation:true,
   annualOffers:renewalSeats?billingSimulation.offers:[],renewalSeats,seatOffer,
   canReconcile,
+  ...(resumeFulfilment?{canResumeFulfilment:true}:{}),
   ...(billingSimulation.paymentExceptions&&canReconcile?{canReconcilePaymentExceptions:true}:{}),
   ...(billingSimulation.batchReconciliation&&canReconcile?{canReconcileBillingBatch:true}:{}),
  });
@@ -215,9 +216,9 @@ export async function handleBillingRequest(request,options={}){
   if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
   return billingAccess(request,{...options,now:options.now??Date.now});
  }
- const match=/^\/api\/teams\/([^/]+)\/billing\/(offers|orders|seats|seat-offer|seat-orders|renewal-seats|overview|reconciliation)(?:\/([^/]+)(\/reconcile)?)?$/.exec(url.pathname);
+ const match=/^\/api\/teams\/([^/]+)\/billing\/(offers|orders|seats|seat-offer|seat-orders|renewal-seats|overview|reconciliation)(?:\/([^/]+)(?:\/(reconcile|resume-fulfilment))?)?$/.exec(url.pathname);
  if(!match)return null;
- const [,teamId,kind,orderId,reconcile]=match;
+ const [,teamId,kind,orderId,action]=match;
  const isSeatOrder=kind==='seat-orders',isOrder=kind==='orders'||isSeatOrder;
  if(!matches(ID,teamId)||orderId&&(!isOrder||!matches(UUID,orderId)))deny();
  if(url.hash||url.href.endsWith('?')||(!isOrder||orderId)&&url.search)invalid();
@@ -229,14 +230,16 @@ export async function handleBillingRequest(request,options={}){
  if(kind==='overview'){
   if(!billingOverviewEnabled(options))unavailable();
  }else if(kind!=='seats'&&!billingSimulation)unavailable();
- const allowed=reconcile||kind==='reconciliation'?'POST':isOrder&&!orderId?'GET, POST':'GET';
+ const allowed=action||kind==='reconciliation'?'POST':isOrder&&!orderId?'GET, POST':'GET';
  if(!allowed.split(', ').includes(request.method))return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:allowed});
  const authorize=()=>actor(db,request,currentOptions,teamId,initial);
  const scoped=action=>transaction(db,()=>{const current=authorize(),result=action(current);authorize();return result;});
  if(kind==='reconciliation')return reconcileBatch(request,{db,teamId,options:currentOptions,now,scoped,authorize});
  if(kind==='seats')return scoped(()=>json({seats:readSeatCapacity(db,teamId,time(now))}));
- if(kind==='overview')return scoped(()=>billingOverview(db,teamId,time(now),billingSimulation,
-  request.headers.get('X-Shenyi-Billing-View')==='expiry-reminder-v1'));
+ if(kind==='overview')return scoped(()=>billingOverview(db,teamId,time(now),billingSimulation,{
+  expiryReminder:request.headers.get('X-Shenyi-Billing-View')==='expiry-reminder-v1',
+  resumeFulfilment:request.headers.get('X-Shenyi-Billing-Recovery')==='recorded-payment-v1',
+ }));
  if(kind==='offers')return scoped(()=>json({simulation:true,offers:billingSimulation.offers}));
  if(kind==='renewal-seats')return scoped(()=>{
   const unitAmountMinor=billingSimulation.annualSeatUnitAmountMinor;
@@ -251,8 +254,17 @@ export async function handleBillingRequest(request,options={}){
  const readOrder=isSeatOrder?readSeatOrder:readAnnualOrder;
  const readOrderRequest=isSeatOrder?readSeatOrderRequest:readAnnualOrderRequest;
  const listOrders=isSeatOrder?listSeatOrders:listAnnualOrders;
- if(reconcile){
+ if(action){
   await readJson(request,[]);
+  if(action==='resume-fulfilment'){
+   const fulfil=isSeatOrder?fulfilSeatOrder:fulfilAnnualOrder;
+   // The store owns the write transaction and checks both guards inside it.
+   const {order}=fulfil(db,orderId,{now,authorize(){
+    authorize();
+    if(!readOrder(db,teamId,orderId))deny();
+   }});
+   return json({simulation:true,order});
+  }
   const order=scoped(()=>{const found=readOrder(db,teamId,orderId);if(!found)deny();return found;});
   const evidence=lookupEvidence(billingSimulation,await lookup(billingSimulation,order),orderId,isSeatOrder?SEAT_PRODUCT:ANNUAL_PRODUCT);
   if(evidence?.record){

@@ -348,6 +348,28 @@ test('a late trusted exception response cannot populate a signed-out billing vie
   assert.equal(f.id('message').textContent, '');
 });
 
+test('only a verified eligible order can recover without a gateway lookup action', async t => {
+  const verified = order('current', 'payment-verified');
+  const pending = order('pending');
+  const exceptional = { ...order('exceptional', 'payment-verified'), paymentException: { kind: 'refund', occurredAt: termStart + 1 } };
+  const closed = { ...order('closed', 'payment-verified'), closure: { closedAt: termStart + 1, deadlineAt: termStart + 1 } };
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok({ ...snapshot(teamId), canReconcile: false, canResumeFulfilment: true }),
+    listBillingOrders: () => ok({ orders: [verified, pending, exceptional, closed], hasMore: false, nextCursor: null })
+  });
+  await f.open();
+  const actions = () => [...f.id('order-list').querySelectorAll('[data-billing-reconcile]')];
+  await until(() => actions().length === 1 && !actions()[0].disabled);
+  assert.equal(actions()[0].dataset.billingReconcile, 'current');
+  assert.equal(actions()[0].textContent, '恢复兑现');
+  actions()[0].click();
+  await until(() => f.id('message').textContent === '模拟订单已按原收款记录恢复兑现。');
+  assert.equal(actions().length, 0);
+  const calls = f.calls.filter(call => call.name === 'reconcileBillingOrder');
+  assert.equal(calls.length, 1);
+  assert.deepEqual({ ...calls[0].input }, { teamId: 'a', kind: 'annual', orderId: 'current', source: 'recorded-payment' });
+});
+
 test('reconciliation restores a replacement action for the same order or the order heading when the action ends', async t => {
   const responses = [order('current'), order('current', 'paid')];
   const f = fixture(t, {

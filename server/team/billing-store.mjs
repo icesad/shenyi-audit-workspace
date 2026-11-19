@@ -248,7 +248,11 @@ export function fulfilAnnualOrder(db,orderId,{now=Date.now,authorize}={}){
   const order=orderFact(db,orderId);if(!order)deny();const payment=paymentFact(db,order);if(!payment)conflict();const currentTime=at(now);if(currentTime<payment.confirmedAt)conflict();
   const plan=seatPlanFact(db,order);
   const current=readSubscriptionState(db,order.teamId,currentTime),prior=fulfilmentFact(db,order,payment);
-  if(prior)return{order:view(db,order),fulfilment:prior,subscription:termReceipt(db,order.teamId,prior.subscriptionRevision)};
+  if(prior){
+   const result={order:view(db,order),fulfilment:prior,subscription:termReceipt(db,order.teamId,prior.subscriptionRevision)};
+   authorize?.();
+   return result;
+  }
   assertBillingOrderOpenForFulfilment(db,ANNUAL_PRODUCT,order.id);
   assertBillingPaymentFulfillable(db,payment.receipt);
   assertAnnualPaymentTurn(db,order,payment);
@@ -274,6 +278,9 @@ export function fulfilAnnualOrder(db,orderId,{now=Date.now,authorize}={}){
    annualSeatGrantFact(db,checked,checkedPlan,payment,fulfilmentFact(db,checked,payment));
   }
   const finalOrder=orderFact(db,orderId),finalPayment=paymentFact(db,finalOrder),fulfilment=fulfilmentFact(db,finalOrder,finalPayment),head=readSubscriptionState(db,order.teamId,currentTime);
-  if(finalOrder.requestSha256!==order.requestSha256||finalPayment.paymentId!==payment.paymentId||fulfilment?.id!==id||head.revision!==subscription.revision||head.startsAt!==subscription.startsAt||head.endsAt!==subscription.endsAt)conflict();return{order:view(db,finalOrder),fulfilment,subscription};
+  if(finalOrder.requestSha256!==order.requestSha256||finalPayment.paymentId!==payment.paymentId||fulfilment?.id!==id||head.revision!==subscription.revision||head.startsAt!==subscription.startsAt||head.endsAt!==subscription.endsAt)conflict();
+  const result={order:view(db,finalOrder),fulfilment,subscription};
+  authorize?.();
+  return result;
  });
 }

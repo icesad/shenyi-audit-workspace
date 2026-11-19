@@ -4,7 +4,7 @@ const {isProxy}=require('node:util').types;
 const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const BILLING_ROOT='/api/auth/billing/access';
-const BILLING_PATH=/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/billing\/(?:overview|reconciliation|(?:orders|seat-orders)(?:\?limit=20(?:&after=([0-9a-f-]{36}))?|\/([0-9a-f-]{36})(?:\/reconcile)?)?)$/;
+const BILLING_PATH=/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/billing\/(?:overview|reconciliation|(?:orders|seat-orders)(?:\?limit=20(?:&after=([0-9a-f-]{36}))?|\/([0-9a-f-]{36})(?:\/(?:reconcile|resume-fulfilment))?)?)$/;
 const REFUND_ACCESS='/api/auth/refund-intake/access';
 const REFUND_PATH=/^\/api\/platform\/billing\/refund-intakes\/(?:annual|seat)\/([0-9a-f-]{36})(?:\?beforeRevision=([1-9][0-9]{0,15}))?$/;
 const REFUND_REFERENCE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
@@ -29,6 +29,8 @@ const BILLING_ERRORS=Object.freeze({
     BILLING_CONFLICT:'模拟订单或收款状态需要核对，请保留原订单。',
     SEAT_ORDER_CONFLICT:'模拟增购订单或收款状态需要核对，请保留原订单。',
     SEAT_ORDER_RECONCILIATION_REQUIRED:'模拟收款已记录，当前报价或期限需核对后处理席位。',
+    BILLING_PAYMENT_EXCEPTION_REVIEW_REQUIRED:'该模拟订单已有退款或拒付记录，请先核对异常。',
+    BILLING_ORDER_CLOSED_REVIEW_REQUIRED:'该模拟订单已超时关闭，后到的收款须单独复核。',
     SEAT_CAPACITY_EXHAUSTED:'可用席位不足，请核对已使用席位和预留邀请。',
     SEAT_CAPACITY_CHANGED:'席位状态已改变，请刷新后核对。',
     BILLING_REFUND_INTAKE_CONFLICT:'退款受理记录已更新，请重新核对原订单。',
@@ -173,7 +175,7 @@ function orderView(value,{teamId,kind,orderId,selection},reject){
 function overviewView(value,teamId,reject){
   const commonKeys=['teamId','simulation','subscription','seats'];
   const simulationKeys=['annualOffers','renewalSeats','seatOffer','canReconcile'];
-  const optionalKeys=['canReconcilePaymentExceptions','canReconcileBillingBatch'];
+  const optionalKeys=['canReconcilePaymentExceptions','canReconcileBillingBatch','canResumeFulfilment'];
   const overview=fields(value,commonKeys,reject,[...simulationKeys,...optionalKeys]);
   if(overview.teamId!==teamId||!boolean(overview.simulation))reject();
   const subscription=fields(overview.subscription,['state','revision','startsAt','endsAt'],reject,['renewalReminderDays']);
@@ -198,6 +200,10 @@ function overviewView(value,teamId,reject){
   if(Object.hasOwn(overview,'canReconcileBillingBatch')){
     if(overview.canReconcileBillingBatch!==true||!overview.canReconcile)reject();
     capabilities.canReconcileBillingBatch=true;
+  }
+  if(Object.hasOwn(overview,'canResumeFulfilment')){
+    if(overview.canResumeFulfilment!==true)reject();
+    capabilities.canResumeFulfilment=true;
   }
   const annualOffers=array(overview.annualOffers,10,reject).map(item=>offerView(item,'annual',reject));
   if(new Set(annualOffers.map(item=>item.id)).size!==annualOffers.length)reject();
@@ -323,10 +329,15 @@ function createBillingClient({request,failure}){
       return orderResponse(await request(route,{method:'POST',body}),{teamId,kind,selection:body});
     },
     async reconcileBillingOrder(input){
-      const {teamId,kind,orderId}=fields(input,['teamId','kind','orderId'],badInput);
-      if((kind!=='annual'&&kind!=='seat')||!match(UUID,orderId))badInput();
-      const route=scoped(teamId,kind)+'/'+orderId+'/reconcile';
-      return orderResponse(await request(route,{method:'POST',body:{}}),{teamId,kind,orderId});
+      const selection=fields(input,['teamId','kind','orderId'],badInput,['source']);
+      const {teamId,kind,orderId,source}=selection;
+      if((kind!=='annual'&&kind!=='seat')||!match(UUID,orderId)||
+        Object.hasOwn(selection,'source')&&source!=='recorded-payment')badInput();
+      const recovering=source==='recorded-payment';
+      const route=scoped(teamId,kind)+'/'+orderId+(recovering?'/resume-fulfilment':'/reconcile');
+      const result=orderResponse(await request(route,{method:'POST',body:{}}),{teamId,kind,orderId});
+      if(recovering&&result.order.status!=='paid')badResponse();
+      return result;
     },
     async reconcileBillingPage(input){
       const scope=fields(input,['teamId','kind'],badInput,['after']);

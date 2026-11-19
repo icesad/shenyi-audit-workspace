@@ -223,7 +223,11 @@ export function fulfilSeatOrder(db,id,{now=Date.now,authorize}={}){
   const payment=paymentFact(db,order);
   if(!payment)conflict();
   const prior=grantFact(db,order,payment);
-  if(prior)return{order:view(db,order),grant:prior};
+  if(prior){
+   const result={order:view(db,order),grant:prior};
+   authorize?.();
+   return result;
+  }
   assertBillingOrderOpenForFulfilment(db,PRODUCT,order.id);
   assertBillingPaymentFulfillable(db,payment.receipt);
   let latest=payment.confirmedAt;
@@ -252,6 +256,8 @@ export function fulfilSeatOrder(db,id,{now=Date.now,authorize}={}){
   if(finalOrder.requestSha256!==order.requestSha256||finalPayment.paymentId!==payment.paymentId
    ||!grant||grant.recordedAt!==written.recordedAt)conflict();
   fresh();
-  return{order:view(db,finalOrder),grant};
+  const result={order:view(db,finalOrder),grant};
+  authorize?.();
+  return result;
  });
 }

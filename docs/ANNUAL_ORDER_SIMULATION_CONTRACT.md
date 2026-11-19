@@ -16,6 +16,7 @@
 - GET/POST /api/teams/:teamId/billing/orders：有限分页；建单只接 requestId/offerId/offerRevision。
 - GET .../orders/:orderId：本团队最小回执。
 - POST .../orders/:orderId/reconcile：空JSON，可信服务端查单adapter，5秒上限；返回仍须验签及匹配请求订单。
+- `POST .../orders/:orderId/resume-fulfilment` 接受空 JSON。本团队有效技术管理员通过持钥核验后，可使用已保存的验款事实恢复兑现。使用原 `confirmedAt`，沿用年单顺序、席位承诺、关单和退款异常规则。已兑现时返回原回执，尚未验款时拒绝。
 - POST /api/billing/simulation/notifications：仅这一精确路径以HMAC替代用户设备证明；仍执行原Origin检查，拒绝查询参数、错误方法、非JSON及声明/实际超过16KiB的流。
 
 协议 shenyi-simulation-payment-v1 仅接精确规范十字段JSON：protocol/merchantId/eventId/transactionId/orderId/product/amountMinor/currency/status/paidAt。HMAC-SHA256输入为固定域 shenyi.billing.simulation.v1\0 加规范原字节，独立服务端密钥、严格小写64位hex与恒时比较。只接受 team-annual-renewal/CNY/succeeded，再核锁单商户、订单、产品、整数金额、币种；客户端成功页、设备签名或提交时间不能授期。查单也须可验签来源，无真实供应商实现。

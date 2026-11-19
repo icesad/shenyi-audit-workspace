@@ -421,6 +421,11 @@
         overview.canReconcilePaymentExceptions === true && !order.paymentException);
     }
 
+    function canResumeFulfilment(order) {
+      return overview?.simulation === true && overview.canResumeFulfilment === true &&
+        order?.status === 'payment-verified' && !order.paymentException && !order.closure;
+    }
+
     function orderRow(order, actionable = true) {
       const row = element('li', undefined, 'billing-order');
       const header = element('div');
@@ -454,10 +459,12 @@
       if (order.fulfilment) row.append(element('p', '续费期限 ' + date(order.fulfilment.renewalStartsAt) + ' 至 ' + date(order.fulfilment.endsAt) + '（北京时间）'));
       const grant = order.grant || order.renewalSeatGrant;
       if (grant) row.append(element('p', '席位 ' + grant.seats + ' 席适用期限 ' + date(grant.startsAt) + ' 至 ' + date(grant.endsAt) + '（北京时间）'));
-      if (actionable && canReconcileOrder(order)) {
-        const button = element('button', '核对订单状态', 'button');
+      for (const source of [undefined, 'recorded-payment']) {
+        if (!actionable || !(source ? canResumeFulfilment(order) : canReconcileOrder(order))) continue;
+        const button = element('button', source ? '恢复兑现' : '核对订单状态', 'button');
         button.type = 'button';
         button.dataset.billingReconcile = order.id;
+        if (source) button.dataset.billingSource = source;
         row.append(button);
       }
       return row;
@@ -581,10 +588,11 @@
       }
     }
 
-    async function reconcile(button) {
+    async function performOrderAction(button) {
       const orderId = button.dataset.billingReconcile;
+      const source = button.dataset.billingSource;
       const order = orders.find(item => item.id === orderId);
-      if (mutation || ordersRead || !canReconcileOrder(order)) return;
+      if (mutation || ordersRead || !(source ? canResumeFulfilment(order) : canReconcileOrder(order))) return;
       const at = capture();
       if (!currentView(at) || getContext().busy) return;
       const restoreFocus = trackActionFocus(button);
@@ -593,19 +601,19 @@
       clearOrderLookup();
       clearConfirmation();
       controls();
-      message('正在核对订单状态…');
+      message(source ? '正在按原收款记录恢复兑现…' : '正在核对订单状态…');
       try {
-        const result = await invoke('reconcileBillingOrder', { teamId: team, kind, orderId });
+        const result = await invoke('reconcileBillingOrder', { teamId: team, kind, orderId, ...(source ? { source } : {}) });
         if (!currentView(at)) return;
         if (result?.order?.id !== orderId || result.order.teamId !== team) throw new Error('Unexpected billing order');
         upsertOrder(result.order);
         if (result.order.closure) message('模拟订单 · ' + orderStateText(result.order.status, result.order.paymentException, true) + '。');
         else if (result.order.paymentException) message('模拟订单 · ' + paymentExceptionStates[result.order.paymentException.kind] + '。');
-        else if (order.status !== 'paid' && result.order.status === 'paid') await loadOverview({ success: '模拟订单已到账。', keepOrders: true });
+        else if (order.status !== 'paid' && result.order.status === 'paid') await loadOverview({ success: source ? '模拟订单已按原收款记录恢复兑现。' : '模拟订单已到账。', keepOrders: true });
         else message('模拟订单 · ' + orderStates[result.order.status] + '。');
       } catch (error) {
         if (!currentView(at) || handleSessionError(error)) return;
-        message(errorMessage(error, '暂时无法核对订单结果，请刷新订单后重试。'), true);
+        message(errorMessage(error, source ? '暂时无法确认兑现结果，请刷新后核对原订单。' : '暂时无法核对订单结果，请刷新订单后重试。'), true);
       } finally {
         const owned = mutation === operation;
         if (owned) mutation = null;
@@ -613,7 +621,7 @@
         restoreFocus?.(() => {
           if (!owned || !currentView(at) || !overview || getContext().busy) return null;
           const buttons = node('order-list').querySelectorAll('[data-billing-reconcile]');
-          return Array.from(buttons).find(action => action.dataset.billingReconcile === orderId && !action.disabled) ?? node('orders-heading');
+          return Array.from(buttons).find(action => action.dataset.billingReconcile === orderId && action.dataset.billingSource === source && !action.disabled) ?? node('orders-heading');
         });
       }
     }
@@ -726,7 +734,7 @@
     for (const move of ['start', 'next', 'retry']) node('batch-' + move).addEventListener('click', () => void reconcileBatch(move));
     node('order-list').addEventListener('click', event => {
       const button = event.target.closest('[data-billing-reconcile]');
-      if (button && !button.disabled) void reconcile(button);
+      if (button && !button.disabled) void performOrderAction(button);
     });
 
     return { update, reset, destroy() { panelObserver.disconnect(); reset(); } };

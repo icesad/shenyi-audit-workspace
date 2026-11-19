@@ -70,6 +70,36 @@ test('fixed billing paths and request bodies return only renderer-safe order fie
   ]);
 });
 
+test('saved-payment recovery uses fixed signed-order routes without accepting payment data',async()=>{
+  const {client,calls,responses}=fixture();
+  const scope={teamId:TEAM,orderId:ID,source:'recorded-payment'};
+  for(const [kind,collection,order] of [['annual','orders',ANNUAL_ORDER],['seat','seat-orders',SEAT_ORDER]]){
+    responses.push({simulation:true,order});
+    assert.equal((await client.reconcileBillingOrder({...scope,kind})).order.status,'paid');
+    assert.deepEqual(calls.at(-1),{route:'/api/teams/'+TEAM+'/billing/'+collection+'/'+ID+'/resume-fulfilment',options:{method:'POST',body:{}}});
+  }
+  for(const change of [{source:undefined},{source:'gateway'},{amountMinor:1},{confirmedAt:1}]){
+    await assert.rejects(client.reconcileBillingOrder({...scope,kind:'annual',...change}),{code:'INVALID_INPUT'});
+  }
+  assert.equal(calls.length,2);
+  responses.push({simulation:true,order:{...ANNUAL_ORDER,status:'payment-verified',fulfilment:null,renewalSeatGrant:null}});
+  await assert.rejects(client.reconcileBillingOrder({...scope,kind:'annual'}),{code:'INVALID_RESPONSE'});
+});
+
+test('the recovery capability is independent of lookup and unavailable in managed responses',async()=>{
+  const {client,responses}=fixture();
+  const overview={...OVERVIEW,canReconcile:false,canResumeFulfilment:true};
+  const scope={teamId:TEAM};
+  responses.push(overview);
+  assert.deepEqual(await client.getBillingOverview(scope),overview);
+  for(const value of [false,1,'true',null]){
+    responses.push({...overview,canResumeFulfilment:value});
+    await assert.rejects(client.getBillingOverview(scope),{code:'INVALID_RESPONSE'});
+  }
+  responses.push({teamId:TEAM,simulation:false,subscription:OVERVIEW.subscription,seats:OVERVIEW.seats,canResumeFulfilment:true});
+  await assert.rejects(client.getBillingOverview(scope),{code:'INVALID_RESPONSE'});
+});
+
 test('single-order reads use one fixed GET route and retain the safe projected order',async()=>{
   const {client,calls,responses}=fixture();
   for(const [kind,collection,source] of [['annual','orders',ANNUAL_ORDER],['seat','seat-orders',SEAT_ORDER]]){
@@ -167,7 +197,7 @@ test('renewal reminder rejects malformed, out-of-range and cross-state values wi
   assert.equal(reads,0);
 });
 
-test('expiry view opt-in is fixed by the protected overview transport and never sent on login, access or order operations',async t=>{
+test('overview opt-ins are fixed by the protected transport and never sent on login, access or order operations',async t=>{
   const {createBusinessRoleFixture,keyPair,PASSWORD}=require('./helpers/business-role-fixture.cjs');
   const {sign}=require('node:crypto'),proof=require('../shared/device-proof.cjs');
   const f=await createBusinessRoleFixture(t),pair=keyPair(),fingerprint=proof.parsePublicKey(pair.encoded).fingerprint,calls=[];
@@ -195,7 +225,10 @@ test('expiry view opt-in is fixed by the protected overview transport and never 
   const overviews=calls.filter(call=>call.route==='/api/teams/'+TEAM+'/billing/overview');assert.equal(overviews.length,1);
   assert.equal(overviews[0].method,'GET');assert.equal(overviews[0].body,undefined);assert.ok(overviews[0].headers.get('X-Shenyi-Device-Signature'));
   assert.ok(calls.some(call=>call.route==='/api/auth/login'));assert.ok(calls.some(call=>call.route.endsWith('/orders')&&call.method==='POST'));
-  for(const call of calls)assert.equal(call.headers.get('X-Shenyi-Billing-View'),call===overviews[0]?'expiry-reminder-v1':null,call.route);
+  for(const call of calls){
+    assert.equal(call.headers.get('X-Shenyi-Billing-View'),call===overviews[0]?'expiry-reminder-v1':null,call.route);
+    assert.equal(call.headers.get('X-Shenyi-Billing-Recovery'),call===overviews[0]?'recorded-payment-v1':null,call.route);
+  }
 });
 
 test('scoping, pagination, and DTO integrity fail before any unsupported data crosses to the renderer',async()=>{

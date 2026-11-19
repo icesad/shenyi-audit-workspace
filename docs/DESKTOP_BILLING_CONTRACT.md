@@ -10,6 +10,10 @@
 
 订单显示待收款、已核验收款待处理或已兑现。每次查单或核对均需当前设备证明和账务权限。核对通过已配置的可信合成来源完成，客户端没有收款确认入口。只有服务端兑现事务成功，订单才显示已兑现，期限和容量才相应生效。已核验待处理的年单可在释放承诺后核对原订单。
 
+订单列表中的「恢复兑现」用于已有验款记录、尚未兑现且无已知关单或退款异常的模拟订单。网关不可用时也可尝试，所用收款事实来自服务端账本。权限和订单归属在兑现事务开始和提交前重新核对。若原单仍须复核，保留原验款事实，按订单状态提示处理。重复操作返回原回执。
+
+支持恢复兑现的合成服务会在收到带 `X-Shenyi-Billing-Recovery: recorded-payment-v1` 的账务概览请求时返回 `canResumeFulfilment: true`。恢复通过既有核对订单 IPC 指定已保存收款来源。主进程仅在独立的 `resume-fulfilment` 路由发送空 JSON。查单核对仍可独立查询可信网关。
+
 `GET /api/auth/billing/access` 返回当前设备会话可操作的账务团队。`GET /api/teams/:teamId/billing/overview` 在一次读取中返回该团队的期限、席位和可用方案。带 `X-Shenyi-Billing-View: expiry-reminder-v1` 的账务概览请求在符合条件时会额外返回 `subscription.renewalReminderDays` 整数，范围为 1–30。服务端保持旧请求的响应字段，客户端也接受未返回该字段的旧服务。单笔查阅使用 `GET /api/teams/:teamId/billing/orders/:orderId` 或 `GET /api/teams/:teamId/billing/seat-orders/:orderId`。IPC 限定为查权限、查概览、列订单、查单笔、建单和核对订单，主进程校验参数及业务响应。受管服务提供只读概览，模拟订单操作由现有配置与授权单独控制。
 
 Windows 原生验收使用独立的 Electron 配置、合成账号和新建 SQLite，运行 `node desktop/billing-orders-smoke.cjs`。合成金额仅供流程测试。正式价格、真实支付和退款、官网收款入口及 macOS 原生验收仍待交付。

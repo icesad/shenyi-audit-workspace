@@ -174,7 +174,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     }
     const protectedRoute=linking||device?.required&&!device.isBootstrap(method,route);
     if(billing&&!protectedRoute)throw failure('DEVICE_NOT_READY','模拟账务需要当前已持钥核验的业务登录。');
-    const billingExpiryReminderView=billing&&protectedRoute&&authenticated&&!temporaryBearer&&method==='GET'&&body===undefined&&!binary&&route.endsWith('/overview');
+    const billingOverviewView=billing&&protectedRoute&&authenticated&&!temporaryBearer&&method==='GET'&&body===undefined&&!binary&&route.endsWith('/overview');
     if(protectedRoute&&(!authenticated||temporaryBearer&&!linking))throw failure('INVALID_INPUT','此操作需要当前已证明的设备会话。');
     const signed=linking?await wechatLinkProof(bytes):protectedRoute?await device.prepare(method,route,bytes):null;
     if(linking&&!signed)throw failure('DEVICE_NOT_READY','请先使用已经绑定的电脑确认微信关联。');
@@ -196,7 +196,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     materialCheck();beforeSend?.();let response;
     const target=requestUrl(route);
     try { onDispatch?.();response = await fetchImpl(target, {method, redirect: 'error', signal: transportSignal,
-      headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'}),...(signed?.headers??{}),...(billingExpiryReminderView?{'X-Shenyi-Billing-View':'expiry-reminder-v1'}:{})},
+      headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'}),...(signed?.headers??{}),...(billingOverviewView?{'X-Shenyi-Billing-View':'expiry-reminder-v1','X-Shenyi-Billing-Recovery':'recorded-payment-v1'}:{})},
       ...(serialized === undefined ? {} : {body: serialized})}); }
     catch { if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');signed?.assertCurrent();if(guardedHooks)materialCheck();if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('SERVICE_UNAVAILABLE', protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':(isolatedPreview?'无法连接独立合成预览，业务已暂停；请核对该候选窗口。':trusted?'无法连接受信HTTPS团队服务，业务已暂停；联网后请重新核验。':'无法连接本机团队服务，业务已暂停；联网后请重新核验。')); }
     if (at !== generation) {
