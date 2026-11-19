@@ -300,10 +300,14 @@ function createBillingClient({request,failure,websiteCheckout}){
       return overview.websiteCheckout===true?{...overview,websiteCheckoutReady:websiteCheckout?.configured===true}:overview;
     },
     async openWebsiteCheckout(input){
-      const selection=fields(input,['teamId'],badInput,['kind']),{teamId}=selection,kind=Object.hasOwn(selection,'kind')?selection.kind:'annual';if(!match(ID,teamId)||kind!=='annual'&&kind!=='seat')badInput();
+      const selection=fields(input,['teamId'],badInput,['kind','orderId']);
+      const {teamId,orderId}=selection,kind=Object.hasOwn(selection,'kind')?selection.kind:'annual';
+      const existingOrder=Object.hasOwn(selection,'orderId');
+      if(!match(ID,teamId)||(kind!=='annual'&&kind!=='seat')||(existingOrder&&!match(UUID,orderId)))badInput();
       if(websiteCheckout?.configured!==true||typeof websiteCheckout.capture!=='function'||typeof websiteCheckout.open!=='function')throw failure('WEBSITE_CHECKOUT_UNAVAILABLE','当前电脑尚未配置受信官网合成下单入口。');
       const check=websiteCheckout.capture();check();
-      const value=fields(await request('/api/teams/'+teamId+'/billing/'+(kind==='seat'?'website-seat-handoff':'website-handoff'),{method:'POST',body:{}}),['handoff','expiresAt'],badResponse);check();
+      const body=existingOrder?{orderId}:{};
+      const value=fields(await request('/api/teams/'+teamId+'/billing/'+(kind==='seat'?'website-seat-handoff':'website-handoff'),{method:'POST',body}),['handoff','expiresAt'],badResponse);check();
       if(typeof value.handoff!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(value.handoff)||Buffer.from(value.handoff,'base64url').length!==32||Buffer.from(value.handoff,'base64url').toString('base64url')!==value.handoff||!timestamp(value.expiresAt)||value.expiresAt<=websiteCheckout.now())badResponse();
       check();try{await websiteCheckout.open(value.handoff,kind);}catch{check();throw failure('WEBSITE_CHECKOUT_OPEN_FAILED','无法确认官网页面已打开，请核对浏览器后再操作。');}check();return {opened:true};
     },

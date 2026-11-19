@@ -60,10 +60,13 @@
   }
 
   function validContext(value) {
-    return exact(value, ['simulation', 'teamName', 'offer', 'termEndsAt', 'order']) && value.simulation === true &&
-      typeof value.teamName === 'string' && value.teamName.length > 0 && [...value.teamName].length <= 80 &&
-      value.teamName === value.teamName.toWellFormed() && !/[\p{Cc}\p{Cf}]/u.test(value.teamName) &&
-      exact(value.offer, ['id', 'revision', 'product', 'annualUnitAmountMinor', 'currency']) &&
+    const receiptContext = exact(value, ['simulation', 'teamName', 'receiptOnly', 'order']);
+    if ((!receiptContext && !exact(value, ['simulation', 'teamName', 'offer', 'termEndsAt', 'order'])) ||
+        value.simulation !== true || typeof value.teamName !== 'string' || value.teamName.length === 0 ||
+        [...value.teamName].length > 80 || value.teamName !== value.teamName.toWellFormed() ||
+        /[\p{Cc}\p{Cf}]/u.test(value.teamName)) return false;
+    if (receiptContext) return value.receiptOnly === true && validOrder(value.order);
+    return exact(value.offer, ['id', 'revision', 'product', 'annualUnitAmountMinor', 'currency']) &&
       identifier(value.offer.id) && integer(value.offer.revision, 1) && value.offer.product === 'team-seat-addition' &&
       integer(value.offer.annualUnitAmountMinor, 1) && value.offer.currency === 'CNY' &&
       (value.termEndsAt === null || timestamp(value.termEndsAt)) && (value.order === null || validOrder(value.order));
@@ -215,7 +218,7 @@
     if (kind === 'expired') {
       handoff = '';
       status('增购页授权已失效', operation === 'order' ?
-        '请先回桌面核对订单记录，再从“订阅与席位”重新打开官网增购页。' :
+        '请返回审易桌面客户端，在“订阅与席位”中核对订单列表，选中原订单后点击“在官网核对原单”。' :
         '请返回审易桌面客户端，从“订阅与席位”重新打开官网增购页。');
     } else if (operation === 'order') {
       status('订单结果尚未确认', '请先只读核对原订单。若期限或报价已变化，需要重新核对；页面不会自动重新提交。', true);

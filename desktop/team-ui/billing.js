@@ -129,12 +129,25 @@
         typeof api?.reconcileBillingPage === 'function';
     }
 
+    function websiteCheckoutReady() {
+      return overview?.simulation === true && overview.websiteCheckout === true && overview.websiteCheckoutReady === true &&
+        typeof api?.openWebsiteCheckout === 'function';
+    }
+
+    function canOpenWebsiteReceipt(order) {
+      if (!websiteCheckoutReady() || order?.teamId !== team || typeof order.id !== 'string' ||
+          orderIdPattern.exec(order.id)?.[0] !== order.id) return false;
+      if (kind === 'seat') return order.offer?.product === 'team-seat-addition';
+      const selectedSeats = order.renewalSeats?.selectedSeats;
+      return order.offer?.product === 'team-annual-renewal' && Number.isSafeInteger(selectedSeats) && selectedSeats >= 0;
+    }
+
     function controls() {
       const disabled = !currentScope(scope) || panel.hidden || !panel.open || !!getContext().busy || !!mutation;
       const annual = kind === 'annual';
       const simulation = overview?.simulation === true;
       const website = simulation && overview.websiteCheckout === true;
-      const websiteReady = website && overview.websiteCheckoutReady === true && typeof api?.openWebsiteCheckout === 'function';
+      const websiteReady = websiteCheckoutReady();
       const hasOffer = simulation && (annual ? overview.annualOffers.length > 0 : !!overview.seatOffer);
       const blocked = disabled || !!overviewRead;
       node('team').disabled = disabled || teams.length <= 1 || !!accessRead;
@@ -170,6 +183,12 @@
       node('order-lookup-submit').disabled = node('order-lookup-id').disabled || !!lookupRead;
       node('order-lookup-hint').textContent = '查询当前团队的' + orderNames[kind] + '订单，不改变订单状态。';
       for (const button of node('order-list').querySelectorAll('[data-billing-reconcile]')) button.disabled = disabled || !!ordersRead;
+      for (const list of ['order-list', 'order-lookup-result']) {
+        for (const button of node(list).querySelectorAll('[data-billing-website-receipt]')) {
+          button.hidden = !websiteReady;
+          button.disabled = blocked || !!accessRead || !!ordersRead || !!lookupRead || !websiteReady;
+        }
+      }
       const batchAvailable = canReconcileBatch();
       const batchBlocked = !batchAvailable || blocked || !!ordersRead || !!accessRead;
       node('batch-section').hidden = !batchAvailable;
@@ -471,6 +490,16 @@
       if (order.fulfilment) row.append(element('p', '续费期限 ' + date(order.fulfilment.renewalStartsAt) + ' 至 ' + date(order.fulfilment.endsAt) + '（北京时间）'));
       const grant = order.grant || order.renewalSeatGrant;
       if (grant) row.append(element('p', '席位 ' + grant.seats + ' 席适用期限 ' + date(grant.startsAt) + ' 至 ' + date(grant.endsAt) + '（北京时间）'));
+      if (canOpenWebsiteReceipt(order)) {
+        const at = capture();
+        const button = element('button', '在官网核对原单', 'button');
+        button.type = 'button';
+        button.dataset.billingWebsiteReceipt = order.id;
+        button.addEventListener('click', () => {
+          if (button.isConnected && currentView(at)) void openWebsiteCheckout(at.kind, { button, order });
+        });
+        row.append(button);
+      }
       for (const source of [undefined, 'recorded-payment']) {
         if (!actionable || !(source ? canResumeFulfilment(order) : canReconcileOrder(order))) continue;
         const button = element('button', source ? '恢复兑现' : '核对订单状态', 'button');
@@ -567,22 +596,32 @@
       drawOrders();
     }
 
-    async function openWebsiteCheckout(checkoutKind = 'annual') {
-      const seatCheckout = checkoutKind === 'seat', button = node(seatCheckout ? 'website-seat-checkout' : 'website-checkout');
-      if (checkoutKind !== 'annual' && checkoutKind !== 'seat' || button.hidden || button.disabled || overview?.simulation !== true || overview.websiteCheckout !== true || overview.websiteCheckoutReady !== true || typeof api?.openWebsiteCheckout !== 'function' || seatCheckout && (!overview.seatOffer || overview.subscription.state !== 'active') || !currentView(capture())) return;
-      const at = capture(), operation = {};
+    async function openWebsiteCheckout(checkoutKind = 'annual', receipt) {
+      const seatCheckout = checkoutKind === 'seat';
+      const button = receipt?.button ?? node(seatCheckout ? 'website-seat-checkout' : 'website-checkout');
+      const at = capture();
+      if ((checkoutKind !== 'annual' && !seatCheckout) || !currentView(at) || !websiteCheckoutReady() || button.hidden || button.disabled) return;
+      if (receipt) {
+        if (!button.isConnected || checkoutKind !== at.kind || !canOpenWebsiteReceipt(receipt.order) ||
+            mutation || accessRead || overviewRead || ordersRead || lookupRead || getContext().busy) return;
+      } else if (seatCheckout && (!overview.seatOffer || overview.subscription.state !== 'active')) return;
+      const operation = {};
+      const input = { teamId: at.team };
+      if (receipt || seatCheckout) input.kind = checkoutKind;
+      if (receipt) input.orderId = receipt.order.id;
       mutation = operation;
       clearConfirmation();
-      message(seatCheckout ? '正在请求受信官网的席位增购入口…' : '正在请求受信官网的合成下单入口…');
+      message(receipt ? '正在请求受信官网的原单查阅入口…' : seatCheckout ? '正在请求受信官网的席位增购入口…' : '正在请求受信官网的合成下单入口…');
       controls();
       try {
-        const value = await invoke('openWebsiteCheckout', { teamId: at.team, ...(seatCheckout ? { kind: 'seat' } : {}) });
+        const value = await invoke('openWebsiteCheckout', input);
         if (!currentView(at)) return;
         if (value?.opened !== true) throw new Error('Unexpected website handoff result');
-        message(seatCheckout ? '已请求打开官网合成席位增购页。生成订单后，请返回并刷新增购席位订单记录。' : '已请求打开官网合成下单页。生成订单后，请返回并刷新订单记录。');
+        message(receipt ? '已请求打开官网原单核对页。' : seatCheckout ? '已请求打开官网合成席位增购页。生成订单后，请返回并刷新增购席位订单记录。' : '已请求打开官网合成下单页。生成订单后，请返回并刷新订单记录。');
       } catch (error) {
         if (!currentView(at) || handleSessionError(error)) return;
-        if (permissionErrors.has(error?.code)) discardTeam();
+        if (receipt && (error?.code === 'HTTP_404' || error?.code === 'NOT_FOUND')) message('官网暂时无法查阅该订单。请刷新订单记录后核对。', true);
+        else if (permissionErrors.has(error?.code)) discardTeam();
         else message('无法确认官网页面已打开；入口可能已签发。请核对浏览器和订单记录后再操作，系统不会自动重试。', true);
       } finally {
         if (mutation === operation) mutation = null;

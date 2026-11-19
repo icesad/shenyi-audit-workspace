@@ -18,7 +18,7 @@ const states = [
   ['payment-review', '待复核（模拟）'],
 ];
 
-function fixture(t, kind, status, {revoked = false, deferRecovery = false} = {}) {
+function fixture(t, kind, status, {revoked = false, deferRecovery = false, reopen} = {}) {
   const annual = kind === 'annual';
   const asset = annual ? 'checkout' : 'checkout-seats';
   const page = annual ? '/checkout/' : '/checkout/seats/';
@@ -51,6 +51,7 @@ function fixture(t, kind, status, {revoked = false, deferRecovery = false} = {})
     assert.equal(request.credentials, 'omit');
     calls.push({url, method:request.method, body:JSON.parse(request.body), fragment:w.location.hash});
     if (url === contextPath) {
+      if (reopen) return Response.json(reopen({simulation:true, teamName:context.teamName, receiptOnly:true, order:original}));
       if (stored && revoked) return Response.json({error:{code:'WEBSITE_HANDOFF_UNAVAILABLE'}}, {status:403});
       if (stored && delayedRecovery) {
         recoverySignal = request.signal;
@@ -107,6 +108,54 @@ async function loseOrderResponse(f) {
 }
 
 for (const kind of ['annual', 'seat']) {
+  test(`${kind} checkout opens a receipt-only handoff without quoting or creating an order`, async t => {
+    const f = fixture(t, kind, 'paid', {reopen: context => context});
+    await until(() => !f.id('receipt-panel').hidden);
+    assert.equal(f.id('team-title').textContent, '合成团队');
+    assert.equal(f.id('receipt-id').textContent, f.original.id);
+    assert.equal(f.id('receipt-status').textContent, '已到账（模拟）');
+    assert.equal(f.id('receipt-amount').textContent, f.annual ? '¥210.00' : '¥125.76');
+    assert.equal(f.id('receipt-seats').textContent, '3 席');
+    assert.equal(f.id(f.formId).hidden, true);
+    assert.equal(f.id('checkout-fields').disabled, true);
+    assert.equal(f.id('recover-context').hidden, true);
+    if (!f.annual) {
+      assert.equal(f.id('quote-panel').hidden, true);
+      f.openQuote();
+    }
+    f.confirm();
+    f.id('recover-context').click();
+    await nextTurn();
+    assert.deepEqual(f.calls, [{url:f.contextPath, method:'POST', body:{handoff}, fragment:''}]);
+  });
+
+  const malformedReceipts = [
+    ['missing order', value => ({...value, order:null})],
+    ['invalid order identifier', value => ({...value, order:{...value.order, id:'/invalid'}})],
+    ['unknown order state', value => ({...value, order:{...value.order, status:'refunded'}})],
+    ['unexpected order field', value => ({...value, order:{...value.order, payer:'hidden'}})],
+    ['mixed offer and receipt', value => ({...value, offer:{}})],
+    ['inactive receipt-only marker', value => ({...value, receiptOnly:false})],
+  ];
+  if (kind === 'seat') {
+    malformedReceipts.push(['invalid order term', value => ({...value, order:{...value.order, termEndsAt:null}})]);
+  }
+  for (const [reason, reopen] of malformedReceipts) {
+    test(`${kind} checkout rejects a receipt-only context with ${reason}`, async t => {
+      const f = fixture(t, kind, 'paid', {reopen});
+      await until(() => f.id('status-panel').getAttribute('aria-busy') === 'false');
+      assert.equal(f.id('checkout-status-title').textContent, f.annual ? '暂时无法核对订单' : '暂时无法核对增购');
+      assert.equal(f.id('checkout-content').hidden, true);
+      assert.equal(f.id('receipt-panel').hidden, true);
+      assert.equal(f.id('receipt-id').textContent, '');
+      assert.equal(f.id('checkout-fields').disabled, true);
+      if (!f.annual) f.openQuote();
+      f.confirm();
+      await nextTurn();
+      assert.deepEqual(f.calls, [{url:f.contextPath, method:'POST', body:{handoff}, fragment:''}]);
+    });
+  }
+
   for (const [state, label] of states) {
     test(`${kind} checkout recovers the original ${state} receipt without a second order request`, async t => {
       const f = fixture(t, kind, state);
@@ -135,6 +184,7 @@ for (const kind of ['annual', 'seat']) {
     await loseOrderResponse(f);
     f.id('recover-context').click();
     await until(() => f.id('checkout-status-title').textContent.includes('授权已失效'));
+    assert.match(f.id('checkout-status').textContent, /在官网核对原单/);
     assert.equal(f.id('receipt-panel').hidden, true);
     assert.equal(f.id('receipt-id').textContent, '');
     assert.equal(f.id('recover-context').hidden, true);

@@ -1,6 +1,6 @@
 "use strict";
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {sign,verify}=require('node:crypto');
+const {createHash,sign,verify}=require('node:crypto');
 const {createTeamClient}=require('../desktop/team-client.cjs');
 const {createBillingClient,isBillingRoute}=require('../desktop/billing-client.cjs');
 const {createBusinessRoleFixture,keyPair,PASSWORD}=require('./helpers/business-role-fixture.cjs');
@@ -65,4 +65,49 @@ test('optional checkout kind is strict and malformed seat replies never reach a 
 test('seat checkout keeps generation guards across the server wait and the fake-browser wait',async t=>{
  const serverWait=deferred(),f=await fixture(t,{reply:()=>serverWait.promise}),pending=f.client.openWebsiteCheckout({teamId:TEAM,kind:'seat'});while(!f.calls.some(c=>c.route.endsWith('/website-seat-handoff')))await new Promise(r=>setImmediate(r));await f.client.logout();await f.client.login({username:'administrator-demo',password:PASSWORD});serverWait.resolve({handoff:CODE,expiresAt:f.f.clock.value+120000});await assert.rejects(pending,{code:'SESSION_CHANGED'});assert.deepEqual(f.opened,[]);
  const browserWait=deferred(),g=await fixture(t,{open:()=>browserWait.promise}),opening=g.client.openWebsiteCheckout({teamId:TEAM,kind:'seat'});while(!g.opened.length)await new Promise(r=>setImmediate(r));assert.equal(g.opened[0],ORIGIN+'/checkout/seats/#handoff='+CODE);await g.client.logout();browserWait.resolve();await assert.rejects(opening,{code:'SESSION_CHANGED'});
+});
+
+test('existing order handoffs sign only the exact order ID and selected route through the existing IPC',async t=>{
+ const f=await fixture(t),{registerDesktopBridge,APP_URL}=require('../desktop/bridge.cjs'),{EventEmitter}=require('node:events');
+ const handlers=new Map(),contents=new EventEmitter();
+ contents.mainFrame={url:APP_URL};
+ const event={sender:contents,senderFrame:contents.mainFrame};
+ const dispose=registerDesktopBridge({ipcMain:{handle:(n,fn)=>handlers.set(n,fn),removeHandler:n=>handlers.delete(n)},window:{webContents:contents},client:f.client,dialog:{}});
+ t.after(dispose);
+ const channel=handlers.get('shenyi:website-checkout-open');
+ const before=f.calls.length;
+ const orderId='abcdef01-0000-4000-8000-000000000001';
+ for(const [kind,suffix,websitePath] of [['annual','website-handoff','/checkout/'],['seat','website-seat-handoff','/checkout/seats/']]){
+  assert.deepEqual(await channel(event,{teamId:TEAM,kind,orderId}),{ok:true,value:{opened:true}});
+  const call=f.calls.at(-1),fields=f.signed.at(-1);
+  assert.equal(call.route,'/api/teams/'+TEAM+'/billing/'+suffix);
+  assert.equal(call.method,'POST');
+  assert.equal(call.body,JSON.stringify({orderId}));
+  assert.equal(fields.pathAndQuery,call.route);
+  assert.equal(fields.bodySha256,createHash('sha256').update(call.body).digest('hex'));
+  assert.ok(verify(null,proof.requestProofBytes(fields),f.pair.publicKey,Buffer.from(call.headers.get('X-Shenyi-Device-Signature'),'base64url')));
+  assert.equal(f.opened.at(-1),ORIGIN+websitePath+'#handoff='+CODE);
+ }
+ const requests=f.calls.slice(before);
+ assert.deepEqual(requests.filter(call=>call.method!=='GET').map(call=>call.route),[
+  '/api/teams/'+TEAM+'/billing/website-handoff','/api/teams/'+TEAM+'/billing/website-seat-handoff'
+ ]);
+ assert.ok(requests.filter(call=>call.method==='GET').every(call=>call.route==='/api/auth/methods'&&call.body===undefined));
+ assert.equal(f.opened.length,2);
+});
+
+test('supplied order IDs must be exact lowercase UUIDs before any handoff is requested',async t=>{
+ const f=await fixture(t),before=f.calls.length;
+ const orderId='abcdef01-0000-4000-8000-000000000001';
+ for(const value of [undefined,null,[],{},3,'',orderId.toUpperCase(),orderId+'\n',' '+orderId,orderId.replace('-4000-','-3000-'),'../'+orderId]){
+  await assert.rejects(f.client.openWebsiteCheckout({teamId:TEAM,kind:'seat',orderId:value}),{code:'INVALID_INPUT'});
+ }
+ await assert.rejects(f.client.openWebsiteCheckout({teamId:TEAM,kind:'other',orderId}),{code:'INVALID_INPUT'});
+ let reads=0;
+ const getter={teamId:TEAM};
+ Object.defineProperty(getter,'orderId',{enumerable:true,get(){reads++;return orderId;}});
+ await assert.rejects(f.client.openWebsiteCheckout(getter),{code:'INVALID_INPUT'});
+ assert.equal(reads,0);
+ assert.equal(f.calls.length,before);
+ assert.deepEqual(f.opened,[]);
 });

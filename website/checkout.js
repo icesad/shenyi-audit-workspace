@@ -60,7 +60,10 @@
   }
 
   function validContext(value) {
-    if (!exact(value, ['simulation', 'teamName', 'offer', 'pricing', 'order']) || value.simulation !== true || !text(value.teamName, 80)) return false;
+    const receiptContext = exact(value, ['simulation', 'teamName', 'receiptOnly', 'order']);
+    if ((!receiptContext && !exact(value, ['simulation', 'teamName', 'offer', 'pricing', 'order'])) ||
+        value.simulation !== true || !text(value.teamName, 80)) return false;
+    if (receiptContext) return value.receiptOnly === true && validOrder(value.order);
     const {offer, pricing, order} = value;
     return exact(offer, ['id', 'revision', 'product', 'amountMinor', 'currency']) &&
       typeof offer.id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(offer.id) &&
@@ -164,7 +167,9 @@
     if (closed) return;
     if (kind === 'expired') {
       handoff = '';
-      status('订单页授权已失效', '请返回审易桌面客户端，从“订阅与席位”重新打开官网订单页。');
+      status('订单页授权已失效', mutation ?
+        '请返回审易桌面客户端，在“订阅与席位”中核对订单列表，选中原订单后点击“在官网核对原单”。' :
+        '请返回审易桌面客户端，从“订阅与席位”重新打开官网订单页。');
     } else if (mutation) {
       status('订单结果尚未确认', '请求可能已被保存。请先只读核对原订单，页面不会自动重新提交。', true);
     } else {

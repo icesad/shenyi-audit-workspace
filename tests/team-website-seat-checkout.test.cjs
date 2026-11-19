@@ -250,6 +250,37 @@ test('subscription expiry denies issuance, quoting and uncommitted confirmation 
  assert.equal(f.orders().length,0);assert.deepEqual(f.facts(),before);
 });
 
+test('a saved seat receipt reopens read-only after the term ends and the current seat offer is removed',async t=>{
+ const f=await fixture(t,{remaining:180000}),first=await f.ticket(),quote=await f.q(first);
+ const saved=await f.create(first,quote.id);
+ assert.equal(saved.status,201,JSON.stringify(saved.data));
+ const orderId=saved.data.order.id;
+ f.clock.value=f.termEndsAt;
+ error(await f.context(first),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+ error(await f.handoff(),402,'SUBSCRIPTION_WRITE_UNAVAILABLE');
+ const {seatOffer,...billingSimulation}=f.billingSimulation;
+ assert.ok(seatOffer);
+ const settings={options:{billingSimulation}};
+ const grant=await f.handoff({...settings,body:{orderId}});
+ assert.equal(grant.status,201,JSON.stringify(grant.data));
+ const {n:writes}=f.db.prepare('SELECT total_changes() n').get();
+ const before=f.facts(),rows=f.orders();
+ const result=await f.context(grant.data,settings);
+ assert.equal(result.status,200,JSON.stringify(result.data));
+ assert.deepEqual(Object.keys(result.data).sort(),['order','receiptOnly','simulation','teamName']);
+ assert.equal(result.data.receiptOnly,true);
+ assert.deepEqual(result.data.order,saved.data.order);
+ noPrivate(result.data,f.admin);
+ error(await f.quote(grant.data,3,{},settings),403,'WEBSITE_RECEIPT_READ_ONLY');
+ error(await f.create(grant.data,quote.id,{},settings),403,'WEBSITE_RECEIPT_READ_ONLY');
+ error(await f.browser('/context',{handoff:grant.data.handoff},settings),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+ assert.equal(f.db.prepare('SELECT total_changes() n').get().n,writes);
+ f.clock.value=grant.data.expiresAt;
+ error(await f.context(grant.data,settings),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+ assert.deepEqual(f.orders(),rows);
+ assert.deepEqual(f.facts(),before);
+});
+
 for(const kind of ['role','lease','ticket-expiry'])test('live seat quote cannot be confirmed after '+kind+' revocation',async t=>{
  const f=await fixture(t),ticket=await f.ticket(),quoted=await f.q(ticket),before=f.facts();
  if(kind==='role')f.db.prepare("UPDATE team_operators SET status='revoked' WHERE user_id='administrator-demo'").run();

@@ -226,6 +226,44 @@ test('reading a handoff does not extend its maximum two-minute expiry',async t=>
  assert.equal(f.orderRows()[0].rows.length,0);assert.deepEqual(f.facts(),before);
 });
 
+test('a new read-only annual receipt handoff reopens the same order after the original handoff expires',async t=>{
+ const f=await fixture(t),first=await f.ticket();
+ const saved=await f.order(first);
+ assert.equal(saved.status,201);
+ const orderId=saved.data.order.id, phase=f.restart();
+ f.clock.value=first.expiresAt;
+ isError(await f.context(first,phase),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+
+ const grant=await f.handoff({...phase,body:{orderId}});
+ assert.equal(grant.status,201,JSON.stringify(grant.data));
+ assert.deepEqual(Object.keys(grant.data).sort(),['expiresAt','handoff']);
+ assert.notEqual(grant.data.handoff,first.handoff);
+ const before=f.facts(), rows=f.orderRows();
+ const changes=()=>f.db.prepare('SELECT total_changes() AS n').get().n;
+ const writes=changes();
+ const result=await f.context(grant.data,phase);
+ assert.equal(result.status,200,JSON.stringify(result.data));
+ assert.deepEqual(Object.keys(result.data).sort(),['order','receiptOnly','simulation','teamName']);
+ assert.equal(result.data.receiptOnly,true);
+ assert.equal(result.data.simulation,true);
+ assert.deepEqual(result.data.order,saved.data.order);
+ noPrivateFields(result.data,f.admin);
+ isError(await f.order(grant.data,{},phase),403,'WEBSITE_RECEIPT_READ_ONLY');
+ assert.equal(changes(),writes);
+ isError(await f.handoff({...phase,body:{orderId:randomUUID()}}),404,'NOT_FOUND');
+ isError(await f.handoff({...phase,root:'/api/teams/team-b/billing',body:{orderId}}),404,'NOT_FOUND');
+ isError(await f.handoff({...phase,session:await f.ready('manager-a'),body:{orderId}}),404,'NOT_FOUND');
+ assert.equal((await f.handoff({...phase,body:{orderId:'not-a-uuid'}})).status,400);
+ const anotherMerchant=f.restart();
+ anotherMerchant.options.billingSimulation={...f.billingSimulation,merchantId:'synthetic-different-merchant'};
+ isError(await f.handoff({...anotherMerchant,body:{orderId}}),404,'NOT_FOUND');
+ isError(await f.context(grant.data,anotherMerchant),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+ assert.equal((await f.api('/api/auth/logout',{method:'POST',session:f.admin,body:{}})).status,200);
+ isError(await f.context(grant.data,phase),403,'WEBSITE_HANDOFF_UNAVAILABLE');
+ assert.deepEqual(f.orderRows(),rows);
+ assert.deepEqual(f.facts(),before);
+});
+
 for(const change of ['role','lease','logout','credential'])test('replacement website candidate denies a previously valid handoff after '+change+' revocation',async t=>{
  const f=await fixture(t),ticket=await f.ticket(),before=f.facts();
  assert.equal((await f.context(ticket)).status,200);

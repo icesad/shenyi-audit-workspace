@@ -887,3 +887,122 @@ test('annual and seat website buttons share one pending mutation across close an
 test('seat handoff failure after a changed team or actor cannot affect the replacement view',async t=>{
  for(const change of ['team','actor']){const wait=deferred(),f=fixture(t,{getBillingOverview:({teamId})=>ok(seatWebsiteSnapshot(teamId)),openWebsiteCheckout:()=>wait.promise});await f.open();await until(()=>!f.id('website-seat-checkout').disabled);f.id('website-seat-checkout').click();if(change==='team')f.change('team','b');else{f.context.identity='next';f.context.actor='next:1';f.view.update();}wait.resolve(fail('SIGN_IN_REQUIRED'));await new Promise(r=>setTimeout(r,10));assert.deepEqual(f.callbacks,[]);assert.equal(f.id('message').textContent.includes('已请求打开官网合成席位增购页'),false);if(change==='team')assert.equal(f.id('team').value,'b');}
 });
+
+const websiteReceiptSelector = '[data-billing-website-receipt]';
+const websiteOpenInputs = f => f.calls.filter(call => call.name === 'openWebsiteCheckout').map(call => ({ ...call.input }));
+
+test('an eligible annual order row explicitly opens only its original order on the website', async t => {
+  const existing = { ...order(lookupId), renewalSeats: { selectedSeats: 0, defaultSeats: 8 } };
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok(websiteSnapshot(teamId)),
+    listBillingOrders: () => ok({ orders: [existing, order(otherLookupId)], hasMore: false, nextCursor: null }),
+    openWebsiteCheckout: () => ok({ opened: true })
+  });
+  await f.open();
+  const buttons = () => [...f.id('order-list').querySelectorAll(websiteReceiptSelector)];
+  await until(() => buttons().length === 1 && !buttons()[0].disabled);
+  const [button] = buttons();
+  assert.equal(button.textContent, '在官网核对原单');
+  assert.equal(button.closest('li').dataset.orderId, lookupId);
+  assert.deepEqual(websiteOpenInputs(f), []);
+  const previousCalls = f.calls.length;
+  button.click();
+  await until(() => f.id('message').textContent.includes('已请求打开官网原单核对页'));
+  assert.deepEqual(websiteOpenInputs(f), [{ teamId: 'a', kind: 'annual', orderId: lookupId }]);
+  assert.deepEqual(f.calls.slice(previousCalls).map(call => call.name), ['openWebsiteCheckout']);
+  assert.equal(button.disabled, false);
+  assert.equal(f.id('order-list').childElementCount, 2);
+});
+
+test('an expired team can reopen seat receipts from the list and exact lookup without enabling a new seat order', async t => {
+  const seatOrder = (id, teamId) => ({
+    ...order(id, 'pending', teamId), offer: { ...seat, amountMinor: 96000 }, quantity: 2,
+    quoteExpiresAt: termStart + 60000, termEndsAt: termEnd
+  });
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok(seatWebsiteSnapshot(teamId, {
+      subscription: { ...snapshot(teamId).subscription, state: 'expired' }, seatOffer: null
+    })),
+    listBillingOrders: ({ teamId, kind }) => ok({ orders: kind === 'seat' ? [seatOrder(otherLookupId, teamId)] : [], hasMore: false, nextCursor: null }),
+    getBillingOrder: ({ orderId, teamId }) => ok({ order: seatOrder(orderId, teamId) }),
+    openWebsiteCheckout: () => ok({ opened: true })
+  });
+  await f.open();
+  f.change('order-kind', 'seat');
+  await until(() => !!f.id('order-list').querySelector(websiteReceiptSelector));
+  assert.equal(f.id('website-seat-checkout').hidden, true);
+  assert.equal(f.id('website-seat-checkout').disabled, true);
+  lookUp(f, lookupId);
+  const lookupButton = () => f.id('order-lookup-result').querySelector(websiteReceiptSelector);
+  await until(() => lookupButton() && !lookupButton().disabled);
+  assert.equal(f.id('order-lookup-result').querySelector('[data-billing-reconcile]'), null);
+  assert.match(f.id('order-lookup-message').textContent, /仅供查阅/);
+  const listButton = f.id('order-list').querySelector(websiteReceiptSelector);
+  const previousCalls = f.calls.length;
+  listButton.click();
+  await until(() => !listButton.disabled);
+  lookupButton().click();
+  await until(() => !lookupButton().disabled);
+  assert.deepEqual(websiteOpenInputs(f), [
+    { teamId: 'a', kind: 'seat', orderId: otherLookupId },
+    { teamId: 'a', kind: 'seat', orderId: lookupId }
+  ]);
+  assert.deepEqual(f.calls.slice(previousCalls).map(call => call.name), ['openWebsiteCheckout', 'openWebsiteCheckout']);
+});
+
+test('website receipt actions stay scoped and single-flight across a lookup and a replacement view', async t => {
+  const lookupWait = deferred(), websiteWait = deferred();
+  const existing = { ...order(lookupId), renewalSeats: { selectedSeats: 5, defaultSeats: 8 } };
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok(websiteSnapshot(teamId)),
+    listBillingOrders: ({ teamId }) => ok({ orders: [{ ...existing, teamId }], hasMore: false, nextCursor: null }),
+    getBillingOrder: () => lookupWait.promise,
+    openWebsiteCheckout: () => websiteWait.promise
+  });
+  await f.open();
+  const rowButton = () => f.id('order-list').querySelector(websiteReceiptSelector);
+  await until(() => rowButton() && !rowButton().disabled);
+  const original = rowButton();
+  lookUp(f, lookupId);
+  assert.equal(original.disabled, true);
+  original.click();
+  assert.deepEqual(websiteOpenInputs(f), []);
+  lookupWait.resolve(ok({ order: existing }));
+  await until(() => !original.disabled);
+  original.click();
+  assert.equal(original.disabled, true);
+  assert.equal(f.id('order-lookup-result').querySelector(websiteReceiptSelector).disabled, true);
+  assert.equal(f.id('website-checkout').disabled, true);
+  original.click();
+  f.id('website-checkout').click();
+  assert.deepEqual(websiteOpenInputs(f), [{ teamId: 'a', kind: 'annual', orderId: lookupId }]);
+  f.change('team', 'b');
+  await until(() => rowButton() && rowButton() !== original);
+  assert.equal(f.id('order-lookup-result').childElementCount, 0);
+  assert.equal(rowButton().disabled, true);
+  original.click();
+  websiteWait.resolve(fail('SIGN_IN_REQUIRED'));
+  await until(() => !rowButton().disabled);
+  assert.deepEqual(f.callbacks, []);
+  assert.equal(f.id('message').textContent, '');
+  assert.equal(websiteOpenInputs(f).length, 1);
+});
+
+test('an unavailable original receipt leaves the current team and list in place', async t => {
+  const existing = { ...order(lookupId), renewalSeats: { selectedSeats: 5, defaultSeats: 8 } };
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok(websiteSnapshot(teamId)),
+    listBillingOrders: () => ok({ orders: [existing], hasMore: false, nextCursor: null }),
+    openWebsiteCheckout: () => fail('HTTP_404')
+  });
+  await f.open();
+  const button = () => f.id('order-list').querySelector(websiteReceiptSelector);
+  await until(() => button() && !button().disabled);
+  const original = button();
+  original.click();
+  await until(() => f.id('message').textContent.includes('暂时无法查阅该订单'));
+  assert.equal(f.id('team').value, 'a');
+  assert.equal(button(), original);
+  assert.equal(button().disabled, false);
+  assert.equal(websiteOpenInputs(f).length, 1);
+});

@@ -4,8 +4,8 @@ import {administratorTechnicalEligible} from './administrator-business-role-poli
 import {currentDeviceLease, deviceConflict, deviceServerId, digest} from './device-policy.mjs';
 import {ApiError, ID, deny, invalid, json, readJson, transaction} from './http-utils.mjs';
 import {safeMemberText} from './member-access-policy.mjs';
-import {createAnnualOrderWithinTransaction, readAnnualOrderRequest, readAnnualSeatRenewalDefaults} from './billing-store.mjs';
-import {createSeatOrderWithinTransaction, readSeatOrderQuote, readSeatOrderRequest} from './seat-order-store.mjs';
+import {createAnnualOrderWithinTransaction, readAnnualOrder, readAnnualOrderRequest, readAnnualSeatRenewalDefaults} from './billing-store.mjs';
+import {createSeatOrderWithinTransaction, readSeatOrder, readSeatOrderQuote, readSeatOrderRequest} from './seat-order-store.mjs';
 import {readSubscriptionState} from './subscription-store.mjs';
 
 const WEB_CONTEXT = '/api/website-checkout/context';
@@ -14,7 +14,7 @@ const SEAT_CONTEXT = '/api/website-checkout/seat-context';
 const SEAT_QUOTE = '/api/website-checkout/seat-quote';
 const SEAT_ORDERS = '/api/website-checkout/seat-orders';
 const ISSUER = /^\/api\/teams\/([A-Za-z0-9][A-Za-z0-9_-]{0,127})\/billing\/website(-seat)?-handoff$/;
-const QUOTE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const TTL_MS = 120_000;
 const SEAT_QUOTE_TTL_MS = 60_000;
 const MAX_OUTSTANDING = 256;
@@ -108,7 +108,9 @@ export async function handleWebsiteCheckoutHandoff(request, options) {
   if (methodError) return methodError;
   const context = options.deviceContext;
   if (!context) throw new ApiError(403,'DEVICE_PROOF_REQUIRED','请从已绑定设备打开官网订单页。');
-  await readJson(request,[],1024);
+  const body = await readJson(request,['orderId'],1024);
+  const orderId = Object.hasOwn(body,'orderId') ? body.orderId : undefined;
+  if (orderId !== undefined && !match(UUID,orderId)) invalid();
   const {db,websiteCheckout,billingSimulation} = options, teamId = route[1];
   return transaction(db,() => {
     const at = serverTime(options);
@@ -118,7 +120,9 @@ export async function handleWebsiteCheckoutHandoff(request, options) {
         deviceServerId(db) !== context.serverId) deviceConflict();
     if (!administratorTechnicalEligible(db,actor.userId,teamId)) deny();
     const seat = route[2] === '-seat';
-    if (seat) {
+    if (orderId !== undefined) {
+      existingReceipt(db,seat,teamId,orderId,billingSimulation.merchantId);
+    } else if (seat) {
       if (!billingSimulation.seatOffer) unavailable();
       if (readSubscriptionState(db,teamId,at).state !== 'active') termUnavailable();
     }
@@ -132,6 +136,7 @@ export async function handleWebsiteCheckoutHandoff(request, options) {
       serverId:context.serverId, deviceId:actor.deviceId, bindingRevision:actor.bindingRevision,
       keyFingerprint:actor.keyFingerprint, credentialRevision:actor.credentialRevision, identityEpoch:actor.identityEpoch,
       credentialProof:credentialProof(handoff,actor.passwordHash), issuedAt:at, seat,
+      ...(orderId === undefined ? {} : {orderId}),
     };
     assertCurrent(db,{...scope,expiresAt},handoff,at);
     db.prepare(`INSERT INTO team_website_checkout_handoffs
@@ -166,6 +171,12 @@ function projectedSeatOrder(order) {
     status:receiptStatus(order),currency:'CNY',termEndsAt:order.termEndsAt,quoteExpiresAt:order.quoteExpiresAt};
 }
 
+function existingReceipt(db, seat, teamId, orderId, merchantId) {
+  const order = (seat ? readSeatOrder : readAnnualOrder)(db,teamId,orderId);
+  if (!order || order.merchantId !== merchantId || (!seat && !integer(order.renewalSeats?.selectedSeats))) deny();
+  return seat ? projectedSeatOrder(order) : projectedOrder(order);
+}
+
 function seatCheckout(path, body, state, options, at) {
   const {db,billingSimulation} = options, {ticket,quote,handoffHash} = state;
   const offer = billingSimulation.seatOffer;
@@ -187,7 +198,7 @@ function seatCheckout(path, body, state, options, at) {
     if (db.prepare('UPDATE team_website_checkout_handoffs SET quote_json=? WHERE handoff_hash=?').run(saved,handoffHash).changes !== 1) conflict();
     return json({simulation:true,quote:value});
   }
-  if (!match(QUOTE_ID,body.quoteId)) invalid();
+  if (!match(UUID,body.quoteId)) invalid();
   if (quote?.value.id !== body.quoteId) conflict();
   if (existing) return json({simulation:true,order:projectedSeatOrder(existing)},201);
   const {seats,expiresAt,amountMinor,termEndsAt} = quote.value;
@@ -225,6 +236,13 @@ export async function handleWebsiteCheckoutBrowser(request, options) {
     const ticket = {...JSON.parse(row.scope_json),requestId:row.request_id,expiresAt:row.expires_at};
     if (ticket.seat !== Boolean(seatKeys)) expired();
     assertCurrent(db,ticket,body.handoff,at);
+    if (ticket.orderId !== undefined) {
+      if (url.pathname !== (ticket.seat ? SEAT_CONTEXT : WEB_CONTEXT)) {
+        throw new ApiError(403,'WEBSITE_RECEIPT_READ_ONLY','此订单页授权仅供核对原订单。');
+      }
+      return json({simulation:true,teamName:teamName(db,ticket.teamId),receiptOnly:true,
+        order:existingReceipt(db,ticket.seat,ticket.teamId,ticket.orderId,billingSimulation.merchantId)});
+    }
     if (seatKeys) {
       const quote = row.quote_json === null ? null : JSON.parse(row.quote_json);
       return seatCheckout(url.pathname,body,{ticket,quote,handoffHash},options,at);
