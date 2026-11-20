@@ -8,7 +8,7 @@
   <link rel="icon" type="image/png" href="./assets/brand-shenyi.png">
   <link rel="stylesheet" href="./styles.css">
 </head>
-<body>
+<body class="homepage">
   <a class="skip-link" href="#main">跳到主要内容</a>
   <header class="site-header" id="top">
     <div class="shell masthead">
@@ -29,12 +29,22 @@
     <section class="hero" aria-labelledby="hero-title">
       <div class="shell hero-inner">
         <div class="hero-copy">
-          <h1 id="hero-title"><span>审计团队的</span><wbr><span>资料采集工作台</span></h1>
+          <h1 id="hero-title"><span>审计团队的</span> <span>资料采集工作台</span></h1>
           <p class="lead">负责人分派任务，成员按授权提交资料。</p>
           <div class="hero-actions">
             <a class="button primary" href="#workflow">查看工作流程</a>
             <a class="button secondary" href="#releases">版本与下载</a>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="workflow" class="section workflow" aria-labelledby="workflow-title" tabindex="-1">
+      <div class="shell section-grid">
+        <div class="section-intro">
+          <p class="eyebrow">产品与权限</p>
+          <h2 id="workflow-title">一项任务，<br>从指派到提交</h2>
+          <p>项目、任务和资料按具体授权开放。职级与团队管理身份各有权限边界。</p>
         </div>
         <figure class="workspace-figure" aria-labelledby="workspace-preview-caption">
           <div class="workbench">
@@ -62,16 +72,6 @@
           </div>
           <figcaption id="workspace-preview-caption">界面示意 · 采用合成任务</figcaption>
         </figure>
-      </div>
-    </section>
-
-    <section id="workflow" class="section workflow" aria-labelledby="workflow-title" tabindex="-1">
-      <div class="shell section-grid">
-        <div class="section-intro">
-          <p class="eyebrow">产品与权限</p>
-          <h2 id="workflow-title">一项任务，<br>从指派到提交</h2>
-          <p>项目、任务和资料按具体授权开放。职级与团队管理身份各有权限边界。</p>
-        </div>
         <ol class="steps">
           <li><h3>分派采集任务</h3><p>获项目授权的经理或合伙人，可向本团队实习生和助理分派任务。</p></li>
           <li><h3>按任务提交资料</h3><p>实习生和助理仅查看被指派的任务、采集要求和本人的提交记录。</p></li>
