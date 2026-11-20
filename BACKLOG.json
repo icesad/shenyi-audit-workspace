@@ -3,7 +3,7 @@
   "updatedAt":"2026-11-20",
   "scopeRule": "只改用户明确点名范围；未提及页面、布局、字段、公式与存储键保持原样",
   "items": [
-    {"id":"COLLAB-001","title":"私有GitHub源码仓库与跨设备协作文档","status":"in_progress","acceptance":["远程Private验证","安全源码快照","Windows/Mac运行说明","新手教程","实际push与远程SHA核对"]},
+    {"id":"COLLAB-001","title":"私有GitHub源码仓库与跨设备协作文档","status":"in_progress","branch":"codex/team-collaboration-handoff-20261120","documents":["docs/COLLABORATION_HANDOFF.md","docs/GITHUB_BEGINNER_MI.md"],"acceptance":["远程Private验证","安全源码快照","Windows/Mac运行说明","新手教程","实际push与远程SHA核对"]},
     {"id":"COLLAB-002","title":"邀请米老师并完成首个反馈/验收练习","status":"in_progress","needs":"邀请已接受，GitHub 已核对仓库读权限和写权限均生效。首份业务提交或脱敏反馈待协作者发起。","acceptance":["按授权邀请并接受","能看见私有仓库","完成一条脱敏Issue"]},
     {"id":"TEAM-M5-WEBSITE-ANNUAL-DEADLINE","title":"官网模拟年费订单锁定付款截止时间","status":"local_candidate_verified","dependsOn":["TEAM-M5"],"implementation":"05df7aa87cb73756657eb0d3db25e7c4e8520a7c","checks":{"relatedPass":51,"independentPass":7,"loopbackHttpsPass":1,"enteredMain":false,"published":false},"evidence":"D:/codex-temp/shenyi-website-annual-deadline-20261120/verification.json"},
     {"id":"TEAM-M5-OFFICIAL-PAYMENT-PREPARATION","title":"微信支付 Native 首发收款及本地通知验证","status":"local_notification_verified","dependsOn":["TEAM-M5"],"channel":"wechat-pay-native-v3","documents":["docs/PAYMENT_CHANNEL_PREPARATION.md"],"checks":{"relatedPass":37,"independentPass":9,"managedPaymentRemainsDisabled":true,"officialProviderLiveVerified":false,"enteredMain":false,"published":false},"next":"正式订单与主动查单接入，独立支付账本和权益事务验收","evidence":"D:/codex-temp/shenyi-wechat-native-notification-20261120/verification.json"},

@@ -2,7 +2,7 @@
 
 私有协作开发仓库：<https://github.com/icesad/shenyi-audit-workspace>。
 
-**米老师先看：[GitHub 零基础教程](docs/GITHUB_BEGINNER_MI.md)**。只提需求、看效果和验收，暂时不必安装开发工具。
+**你和米老师先看 [当前双人开发交接](docs/COLLABORATION_HANDOFF.md)**。里面有最新协作分支、分工、运行和提交步骤。只看文档或反馈问题时可用 [GitHub 零基础教程](docs/GITHUB_BEGINNER_MI.md)。
 
 ## 这里放什么
 
@@ -15,6 +15,7 @@
 | 我要做什么 | 看这里 |
 |---|---|
 | 第一次用 GitHub、给开发者反馈 | [米老师新手教程](docs/GITHUB_BEGINNER_MI.md) |
+| 拉取当前候选、分工和提交第一条 PR | [双人开发交接](docs/COLLABORATION_HANDOFF.md) |
 | Mac / Windows 安装、运行、测试 | [开发与运行](docs/DEVELOPMENT.md) |
 | 换电脑、两个人改同一软件 | [跨设备协作规则](docs/COLLABORATION.md) |
 | 看模块和文件对应关系 | [架构与数据边界](docs/ARCHITECTURE.md) |
@@ -42,6 +43,7 @@ npm run dev
 ## 分支和发布
 
 - `main`：以原线上 v61 为应用基线，新增协作工具和文档；不是重新设计软件。
+- `codex/team-collaboration-handoff-20261120` 是本阶段两人开任务分支的起点。 [接手步骤](docs/COLLABORATION_HANDOFF.md)
 - `work/report-four-sources`：保留此前已实现、尚未在原站点发布的成本导航和四来源报告页修改，待业务验收；不作为已经完成的正式报告功能。
 - GitHub 提交/合并 **不会自动发布原网站**。发布由负责人独立执行并记录结果。
 - 现有布局和业务规则只按明确需求修改；没有说到的地方不自行扩展。

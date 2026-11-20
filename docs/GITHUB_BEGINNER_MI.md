@@ -1,6 +1,8 @@
 # 米老师的 GitHub 零基础协作教程
 
-适用：审易协作开发；苹果电脑优先，Windows 同样可用。更新：2026-11-14。
+适用审易协作开发，苹果电脑优先，Windows 同样可用。更新于 2026-11-20。
+
+米老师现在可用 `mixue117` 打开私有仓库。接续本轮开发时，先看 [当前双人开发交接](COLLABORATION_HANDOFF.md) 中的协作基线和分工。
 
 **先读这句话：不会写代码，也可以参与。米老师先做「提需求、反馈问题、验收」即可，不需要先学终端命令。**
 
@@ -137,8 +139,8 @@ GitHub Desktop 下载完代码，并不会自动启动软件。请按仓库的 `
 
 1. 在 Desktop 确认 **Current Repository** 是审易仓库。
 2. 检查 **Changes**：若还有上次未提交修改，先停下处理，不要丢弃，也不要覆盖。
-3. 切到 `main` 主分支，点击 **Fetch origin**；出现 **Pull origin** 时继续点击，等待完成。
-4. 点击 **Current Branch → New Branch**，以最新 `main` 为基础建自己的分支，例如 `docs/mi-feedback-20261114`。
+3. 点击 **Fetch origin**，切到 [当前交接](COLLABORATION_HANDOFF.md) 约定的协作基线。如果出现 **Pull origin**，点击并等同步完成。
+4. 点击 **Current Branch → New Branch**，从当前基线建自己的分支，例如 `docs/mi-report-feedback`。
 5. 按已讨论的 Issue 修改文件。**不要直接改 main，不要顺手改没被要求的页面。**
 
 分支操作以 [官方 Desktop 分支说明](https://docs.github.com/en/desktop/making-changes-in-a-branch/managing-branches-in-github-desktop) 为准；Fetch 和 Pull 的区别见 [官方同步说明](https://docs.github.com/en/desktop/working-with-your-remote-repository-on-github-or-github-enterprise/syncing-your-branch-in-github-desktop)。
@@ -149,7 +151,7 @@ GitHub Desktop 下载完代码，并不会自动启动软件。请按仓库的 `
 2. 若看到客户账套、证照、公章、合同原件、导出包或 `.env`，**不要提交，先通知负责人**。
 3. 在 **Summary** 写清楚，例如 `docs: 补充立项验收步骤（#12）`，点击 **Commit to 当前分支**。
 4. 点击 **Publish branch**（首次发布分支）或 **Push origin**（已有远程分支）。仅 Commit 而没 Push，其他电脑和同事看不到。
-5. 点击 **Preview Pull Request / Create Pull Request**，检查目标是 `main`、来源是自己的分支。
+5. 点击 **Preview Pull Request / Create Pull Request**。目标选择 [当前交接](COLLABORATION_HANDOFF.md) 约定的协作基线，来源选择自己的分支。
 6. 在网页填写改动内容、关联 Issue、测试结果以及「未改哪些地方」，发起 PR。
 7. 由负责人检查、测试后合并。米老师不确定时，不自行点击合并按钮。
 
@@ -169,7 +171,7 @@ GitHub Desktop 下载完代码，并不会自动启动软件。请按仓库的 `
 
 - 使用自己的同一 GitHub 账号登录；首次用 B 电脑时 Clone，已有仓库时 Fetch/Pull。
 - 如果继续自己尚未合并的工作，切到约定的同一工作分支再 Pull，不要误在 `main` 接着改。
-- 如果开始新任务，先更新 `main`，再建新分支。
+- 如果开始新任务，先更新 [当前交接](COLLABORATION_HANDOFF.md) 的协作基线，再建新分支。
 - 按开发文档安装环境；不搬 `node_modules`、浏览器缓存或整套旧电脑配置。
 - 不在 A、B 两台电脑同时改同一个工作分支。若确有并行工作，各建分支并约定文件范围。
 
