@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 整合评审包的原生底稿迁入与历史导出
+
+同一 `652bcff` Windows 整合评审 ZIP 已实测自带合成底稿。真实系统对话框选择立项来源和完整包，迁入版本 1，新填写生成版本 2，再从历史版本 1 原生另存。独立核对历史填写、公式、原件和既有冻结，当前版本仍为 2。原包采集一键暴露 Windows 退出暂存锁，修复后重打包，以真实共享锁验证等待与正常关停。底稿相关 100 项与清理相关 36 项通过。证据见 `D:/codex-temp/shenyi-integrated-workpaper-20261120/verification.json`。 [底稿走查指南](PILOT_WORKPAPER_REHEARSAL.md)
+
 ## 2026-11-20 含新版官网的 Windows 双人评审包
 
 使用已提交源码 `652bcff` 离线构建新 Windows x64 便携评审 ZIP，包含新版官网。新旧包的 2,484 项载荷独立逐个核对，变化为官网 HTML、CSS 和构建时重生成的两份合成底稿。全新解压后官网桌面与手机预览正常，实际订阅一键在同包生成两笔模拟订单并在授权到期后重开原回执。独立冷验、包前后校验及 71 项相关回归通过。ZIP 与 SHA-256 见 `D:/codex-temp/shenyi-integrated-review-20261120/verification.json`。 [双人走查](PILOT_OWNER_REVIEW.md)
