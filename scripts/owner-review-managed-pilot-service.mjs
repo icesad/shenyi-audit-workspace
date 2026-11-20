@@ -10,6 +10,7 @@ import configuration from '../desktop/isolated-preview-config.cjs';
 import deviceDirectories from '../desktop/device-key-directory.cjs';
 import {bootstrapManagedOwner} from '../server/team/managed-owner-bootstrap.mjs';
 import {startManagedTeamServer} from '../server/team/managed-service.mjs';
+import {listenOnLoopback} from '../server/team/team-http-listener.mjs';
 import {createOwnerReviewCheckoutCertificate} from './owner-review-checkout-certificate.mjs';
 
 const {loadOwnerReviewRuntime}=configuration;
@@ -125,9 +126,8 @@ export async function createOwnerReviewManagedPilot(options={}){
   for(const table of ['teams','team_memberships','team_operators','team_sessions','team_device_bindings','team_subscription_events','team_seat_capacity_grants'])check(db.prepare('SELECT COUNT(*) n FROM '+table).get().n===0);
   phase='ephemeral-public-ca-and-synthetic-original';const certificate=createOwnerReviewCheckoutCertificate(),original=originalBytes(candidateId);
   await publish(caFile,certificate.ca,chain);await publish(originalFile,original,chain);
-  phase='reserve-loopback-port';reservation=createReservation();
-  await new Promise((resolve,reject)=>{reservation.once('error',reject);reservation.listen({host:'127.0.0.1',port:0,exclusive:true},resolve);});
-  const port=reservation.address()?.port;check(Number.isInteger(port)&&port>=1024&&port<=65535&&![8773,8774].includes(port));
+  phase='reserve-loopback-port';reservation=createReservation(socket=>socket.destroy());
+  const {port}=await listenOnLoopback(reservation,0,{exclusive:true});
   apiBase='https://127.0.0.1:'+port;const profile=Object.freeze({schemaVersion:1,apiBase,serverId});
   // The production factory accepts a port rather than a reserved socket. Retire
   // that owned reservation exactly once before binding the final HTTPS server.

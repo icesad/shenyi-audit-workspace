@@ -4,7 +4,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {DatabaseSync} = require('node:sqlite');
-const {request: httpRequest} = require('node:http');
+const {createServer, request: httpRequest} = require('node:http');
 const {pathToFileURL} = require('node:url');
 const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..');
@@ -39,6 +39,35 @@ function raw(f, route, headers) {
     request.on('error', reject); request.end(JSON.stringify({username: 'intern-a', password: PASSWORD}));
   });
 }
+
+test('automatic loopback binding closes unusable ports before publishing a Fetch origin', async t => {
+  const {startLoopbackTeamListener} = await at('team-http-listener.mjs');
+  const refusedPorts = [1719, 8774];
+  let listenCount = 0;
+  let closeCount = 0;
+  const service = await startLoopbackTeamListener({
+    createServer(handler) {
+      const server = createServer(handler);
+      const realAddress = server.address.bind(server);
+      server.on('listening', () => { listenCount++; });
+      server.on('close', () => { closeCount++; });
+      server.address = () => {
+        const address = realAddress();
+        const reportedPort = refusedPorts[listenCount - 1];
+        return address && reportedPort ? {...address, port: reportedPort} : address;
+      };
+      return server;
+    },
+    protocol:'http', port:0,
+    resolveTarget: (incoming, origin) => new URL(incoming.url, origin),
+    dispatch: () => new Response('ready'),
+  });
+  t.after(() => service.close());
+  assert.ok(listenCount > refusedPorts.length);
+  assert.equal(closeCount, listenCount - 1);
+  assert.equal(service.address.port, service.server.address().port);
+  assert.equal(await (await fetch(service.address.url)).text(), 'ready');
+});
 
 test('loopback HTTP supports login, authorized collection upload/download and real session logout', async t => {
   const f = await fixture(t);

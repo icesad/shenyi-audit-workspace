@@ -4,10 +4,10 @@ import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { listenOnLoopback } from '../server/team/team-http-listener.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const host = '127.0.0.1';
-const reservedBusinessPorts = new Set([8773, 8774, 10139]);
 const publicFiles = [
   { source: 'website/index.html', name: 'index.html', type: 'text/html; charset=utf-8' },
   { source: 'website/styles.css', name: 'styles.css', type: 'text/css; charset=utf-8' },
@@ -52,7 +52,7 @@ export async function startWebsitePreview({ rootDirectory = root } = {}) {
     response.setHeader('x-content-type-options', 'nosniff');
     response.setHeader('x-robots-tag', 'noindex, nofollow');
 
-    if (request.headers.host !== expectedHost) {
+    if (!expectedHost || request.headers.host !== expectedHost) {
       response.writeHead(400).end();
       return;
     }
@@ -68,19 +68,8 @@ export async function startWebsitePreview({ rootDirectory = root } = {}) {
     response.writeHead(200, { 'content-type': file.type, 'content-length': file.bytes.length });
     response.end(request.method === 'HEAD' ? undefined : file.bytes);
   });
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, host, () => {
-      expectedHost = `${host}:${server.address().port}`;
-      server.off('error', reject);
-      resolve();
-    });
-  });
-  const { port } = server.address();
-  if (reservedBusinessPorts.has(port)) {
-    await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-    throw new Error('系统分配了既有业务入口端口，请重新启动官网预览。');
-  }
+  const { port } = await listenOnLoopback(server, 0);
+  expectedHost = `${host}:${port}`;
   return { server, url: `http://${expectedHost}/` };
 }
 

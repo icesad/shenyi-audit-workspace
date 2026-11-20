@@ -3,6 +3,38 @@ import {pipeline} from 'node:stream/promises';
 import {json} from './http-utils.mjs';
 
 const host = '127.0.0.1';
+// See https://fetch.spec.whatwg.org/#port-blocking. The three legacy local
+// entry points are also reserved when an automatic preview port is selected.
+const unavailablePreviewPorts = new Set([
+  1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566,
+  6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080,
+  8773, 8774, 10139,
+]);
+
+export async function listenOnLoopback(server, port, {exclusive = false} = {}) {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    await new Promise((resolve, reject) => {
+      const onError = error => {
+        server.off('listening', onListening);
+        reject(error);
+      };
+      const onListening = () => {
+        server.off('error', onError);
+        resolve();
+      };
+      server.once('error', onError);
+      server.once('listening', onListening);
+      server.listen({host, port, exclusive});
+    });
+    const bound = server.address();
+    if (port !== 0 || (bound.port >= 1024 && !unavailablePreviewPorts.has(bound.port))) return bound;
+    await new Promise((resolve, reject) => {
+      server.close(error => error ? reject(error) : resolve());
+      server.closeAllConnections?.();
+    });
+  }
+  throw new Error('系统未分配到可用的本机预览端口。');
+}
 
 // Finish bounded early-denied bodies without retaining or parsing their bytes.
 async function discardBeforeResponse(incoming, request) {
@@ -38,7 +70,7 @@ export async function startLoopbackTeamListener({createServer, protocol, port, r
     try {
       let response, request;
       try {
-        const target = resolveTarget(incoming, origin);
+        const target = origin && resolveTarget(incoming, origin);
         if (!target) response = json({error:{code:'HOST_DENIED',message:'请求地址无效。'}}, 403);
         else {
           const options = {method:incoming.method, headers:incoming.headers, signal:controller.signal};
@@ -78,11 +110,7 @@ export async function startLoopbackTeamListener({createServer, protocol, port, r
   server.headersTimeout = 5000;
   server.keepAliveTimeout = 5000;
   server.maxRequestsPerSocket = 100;
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(port, host, () => { server.off('error', reject); resolve(); });
-  });
-  const bound = server.address();
+  const bound = await listenOnLoopback(server, port);
   origin = `${protocol}://${host}:${bound.port}`;
   const address = {host, port:bound.port, url:origin};
   const close = () => new Promise((resolve, reject) => {
