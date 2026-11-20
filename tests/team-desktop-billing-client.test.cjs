@@ -241,6 +241,7 @@ test('overview opt-ins are fixed by the protected transport and never sent on lo
   for(const call of calls){
     assert.equal(call.headers.get('X-Shenyi-Billing-View'),call===overviews[0]?'expiry-reminder-v1':null,call.route);
     assert.equal(call.headers.get('X-Shenyi-Billing-Recovery'),call===overviews[0]?'recorded-payment-v1':null,call.route);
+    assert.equal(call.headers.get('X-Shenyi-Billing-Batch'),call===overviews[0]?'resumable-v1':null,call.route);
     assert.equal(call.headers.get('X-Shenyi-Website-Checkout'),call===overviews[0]?'candidate-v1':null,call.route);
   }
 });
@@ -433,6 +434,35 @@ test('batch reconciliation projects trusted closure and rejects a conflicting cl
   }
 });
 
+test('resumable batch capability is optional and requires the existing simulated batch authority',async()=>{
+  const {client,responses}=fixture();
+  const legacy={...OVERVIEW,canReconcileBillingBatch:true};
+  responses.push(legacy,{...legacy,canResumeBillingBatch:true});
+  assert.deepEqual(await client.getBillingOverview({teamId:TEAM}),legacy);
+  assert.deepEqual(await client.getBillingOverview({teamId:TEAM}),{...legacy,canResumeBillingBatch:true});
+  for(const response of [
+    ...[false,null,undefined,'true',1].map(canResumeBillingBatch=>({...legacy,canResumeBillingBatch})),
+    {...OVERVIEW,canResumeBillingBatch:true},
+    {...legacy,canReconcile:false,canResumeBillingBatch:true},
+    {teamId:TEAM,simulation:false,subscription:OVERVIEW.subscription,seats:OVERVIEW.seats,canResumeBillingBatch:true},
+  ]){responses.push(response);await assert.rejects(client.getBillingOverview({teamId:TEAM}),{code:'INVALID_RESPONSE'});}
+});
+
+test('batch request IDs are canonical optional UUIDs without changing the existing response projection',async()=>{
+  const {client,calls,responses}=fixture();
+  responses.push(RECONCILIATION_PAGE,{...RECONCILIATION_PAGE,kind:'seat',results:[]});
+  assert.deepEqual(await client.reconcileBillingPage({teamId:TEAM,kind:'annual',requestId:REQUEST}),{results:[RECONCILIATION_ROW],nextCursor:null});
+  assert.deepEqual(await client.reconcileBillingPage({teamId:TEAM,kind:'seat',after:ID,requestId:OPERATION}),{results:[],nextCursor:null});
+  assert.deepEqual(calls,[
+    {route:RECONCILIATION_ROUTE,options:{method:'POST',body:{kind:'annual',requestId:REQUEST}}},
+    {route:RECONCILIATION_ROUTE,options:{method:'POST',body:{kind:'seat',after:ID,requestId:OPERATION}}},
+  ]);
+  for(const requestId of [undefined,null,'',1,REQUEST+'\n',REQUEST.replace('-4000-','-1000-'),'ABCDEF01-0000-4000-8000-000000000000',REQUEST+'/reconcile']){
+    await assert.rejects(client.reconcileBillingPage({teamId:TEAM,kind:'annual',requestId}),{code:'INVALID_INPUT'});
+  }
+  assert.equal(calls.length,2);
+});
+
 test('batch selectors and result rows reject unexpected fields, stale cursors and contradictory order states',async()=>{
   const {client,calls,responses}=fixture();
   const scope={teamId:TEAM,kind:'annual'};
@@ -521,6 +551,10 @@ test('billing signed transport requires login and only forwards locally fixed er
   assert.equal(billingErrorMessage(403,'BILLING_CONFLICT'),undefined);
   assert.equal(billingErrorMessage(409,'toString'),undefined);
   assert.equal(billingErrorMessage(409,'arbitrary gateway error'),undefined);
+  assert.match(billingErrorMessage(409,'BILLING_RECONCILIATION_CONFLICT'),/已保存记录/);
+  assert.match(billingErrorMessage(409,'BILLING_RECONCILIATION_BUSY'),/稍后重试本批/);
+  assert.match(billingErrorMessage(503,'BILLING_RECONCILIATION_RECEIPT_FAILED'),/沿用原请求/);
+  assert.equal(billingErrorMessage(403,'BILLING_RECONCILIATION_CONFLICT'),undefined);
 });
 
 const INTAKE_ROUTE='/api/platform/billing/refund-intakes/annual/'+ID;

@@ -27,6 +27,8 @@ const BILLING_ERRORS=Object.freeze({
     BILLING_OFFER_CHANGED:'模拟账务方案已改变，请刷新后重新核对。',
     BILLING_RENEWAL_SEATS_RECONCILIATION_REQUIRED:'模拟续费席位无法确认，请核对已使用席位、预留邀请及待处理订单。',
     BILLING_CONFLICT:'模拟订单或收款状态需要核对，请保留原订单。',
+    BILLING_RECONCILIATION_BUSY:'本团队已有一批订单正在核对，请稍后重试本批。',
+    BILLING_RECONCILIATION_CONFLICT:'本批核对请求与已保存记录不一致，请核对团队、订单类型及批次。',
     SEAT_ORDER_CONFLICT:'模拟增购订单或收款状态需要核对，请保留原订单。',
     SEAT_ORDER_RECONCILIATION_REQUIRED:'模拟收款已记录，当前报价或期限需核对后处理席位。',
     BILLING_PAYMENT_EXCEPTION_REVIEW_REQUIRED:'该模拟订单已有退款或拒付记录，请先核对异常。',
@@ -36,7 +38,7 @@ const BILLING_ERRORS=Object.freeze({
     BILLING_REFUND_INTAKE_CONFLICT:'退款受理记录已更新，请重新核对原订单。',
     BILLING_REFUND_INTAKE_PAYMENT_REQUIRED:'原订单尚未确认收款，请重新核对原订单。',
   },
-  503:{BILLING_UNAVAILABLE:'模拟账务暂不可用，请稍后核对。'},
+  503:{BILLING_UNAVAILABLE:'模拟账务暂不可用，请稍后核对。',BILLING_RECONCILIATION_RECEIPT_FAILED:'本批核对结果保存未确认，请沿用原请求重试。'},
 });
 
 const match=(pattern,value)=>typeof value==='string'&&pattern.exec(value)?.[0]===value;
@@ -175,7 +177,7 @@ function orderView(value,{teamId,kind,orderId,selection},reject){
 function overviewView(value,teamId,reject){
   const commonKeys=['teamId','simulation','subscription','seats'];
   const simulationKeys=['annualOffers','renewalSeats','seatOffer','canReconcile'];
-  const optionalKeys=['canReconcilePaymentExceptions','canReconcileBillingBatch','canResumeFulfilment','websiteCheckout'];
+  const optionalKeys=['canReconcilePaymentExceptions','canReconcileBillingBatch','canResumeBillingBatch','canResumeFulfilment','websiteCheckout'];
   const overview=fields(value,commonKeys,reject,[...simulationKeys,...optionalKeys]);
   if(overview.teamId!==teamId||!boolean(overview.simulation))reject();
   if(Object.hasOwn(overview,'websiteCheckout')&&(!overview.simulation||overview.websiteCheckout!==true))reject();
@@ -202,6 +204,10 @@ function overviewView(value,teamId,reject){
   if(Object.hasOwn(overview,'canReconcileBillingBatch')){
     if(overview.canReconcileBillingBatch!==true||!overview.canReconcile)reject();
     capabilities.canReconcileBillingBatch=true;
+  }
+  if(Object.hasOwn(overview,'canResumeBillingBatch')){
+    if(overview.canResumeBillingBatch!==true||overview.canReconcileBillingBatch!==true)reject();
+    capabilities.canResumeBillingBatch=true;
   }
   if(Object.hasOwn(overview,'canResumeFulfilment')){
     if(overview.canResumeFulfilment!==true)reject();
@@ -355,10 +361,12 @@ function createBillingClient({request,failure,websiteCheckout}){
       return result;
     },
     async reconcileBillingPage(input){
-      const scope=fields(input,['teamId','kind'],badInput,['after']);
-      const {teamId,kind,after}=scope;
-      if(!match(ID,teamId)||(kind!=='annual'&&kind!=='seat')||Object.hasOwn(scope,'after')&&!match(UUID,after))badInput();
+      const scope=fields(input,['teamId','kind'],badInput,['after','requestId']);
+      const {teamId,kind,after,requestId}=scope;
+      if(!match(ID,teamId)||(kind!=='annual'&&kind!=='seat')||Object.hasOwn(scope,'after')&&!match(UUID,after)||
+        Object.hasOwn(scope,'requestId')&&!match(UUID,requestId))badInput();
       const body=after===undefined?{kind}:{kind,after};
+      if(requestId!==undefined)body.requestId=requestId;
       const route='/api/teams/'+teamId+'/billing/reconciliation';
       return reconciliationPageView(await request(route,{method:'POST',body}),scope,badResponse);
     },

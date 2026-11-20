@@ -204,7 +204,7 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     materialCheck();beforeSend?.();let response;
     const target=requestUrl(route);
     try { onDispatch?.();response = await fetchImpl(target, {method, redirect: 'error', signal: transportSignal,
-      headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'}),...(signed?.headers??{}),...(billingOverviewView?{'X-Shenyi-Billing-View':'expiry-reminder-v1','X-Shenyi-Billing-Recovery':'recorded-payment-v1','X-Shenyi-Billing-Source':'approved-pilot-v1','X-Shenyi-Website-Checkout':'candidate-v1'}:{})},
+      headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'}),...(signed?.headers??{}),...(billingOverviewView?{'X-Shenyi-Billing-View':'expiry-reminder-v1','X-Shenyi-Billing-Recovery':'recorded-payment-v1','X-Shenyi-Billing-Source':'approved-pilot-v1','X-Shenyi-Website-Checkout':'candidate-v1','X-Shenyi-Billing-Batch':'resumable-v1'}:{})},
       ...(serialized === undefined ? {} : {body: serialized})}); }
     catch { if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');signed?.assertCurrent();if(guardedHooks)materialCheck();if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('SERVICE_UNAVAILABLE', protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':(isolatedPreview?'无法连接独立合成预览，业务已暂停；请核对该候选窗口。':trusted?'无法连接受信HTTPS团队服务，业务已暂停；联网后请重新核验。':'无法连接本机团队服务，业务已暂停；联网后请重新核验。')); }
     if (at !== generation) {

@@ -620,6 +620,127 @@ test('batch responses from a coalesced reopen, changed team, or ended session ca
   assert.equal(f.id('batch-message').textContent, '');
 });
 
+test('resumable batch retries keep a failed UUID and cursor while a completed manual retry creates a fresh request',async t=>{
+  const first=deferred();let attempts=0;
+  const results=Array.from({length:8},(_,index)=>batchRow(index,'no-evidence'));
+  const page={results,nextCursor:batchId(7)};
+  const f=fixture(t,{
+    getBillingOverview:({teamId})=>ok({...snapshot(teamId),canReconcileBillingBatch:true,canResumeBillingBatch:true}),
+    reconcileBillingPage:({after})=>++attempts===1?first.promise:ok(after?{results:[batchRow(8,'no-evidence')],nextCursor:null}:page),
+  });
+  const calls=()=>f.calls.filter(call=>call.name==='reconcileBillingPage').map(call=>({...call.input}));
+  await f.open();await until(()=>!f.id('batch-start').disabled);
+  f.id('batch-start').click();f.id('batch-start').click();assert.equal(attempts,1);
+  const original=calls()[0];assert.match(original.requestId,/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
+  first.resolve(fail('BILLING_RECONCILIATION_RECEIPT_FAILED'));await until(()=>!f.id('batch-retry').hidden&&!f.id('batch-retry').disabled);
+  assert.match(f.id('batch-message').textContent,/沿用原请求/);
+  f.id('batch-retry').click();await until(()=>!f.id('batch-next').disabled);
+  assert.deepEqual(calls()[1],original);
+  f.id('batch-retry').click();await until(()=>calls().length===3&&!f.id('batch-next').disabled);
+  assert.notEqual(calls()[2].requestId,original.requestId);
+  assert.equal(Object.hasOwn(calls()[2],'after'),false);
+  f.id('batch-next').click();await until(()=>calls().length===4&&!f.id('batch-next').disabled);
+  assert.equal(calls()[3].after,batchId(7));assert.equal(calls()[3].kind,'annual');
+  assert.notEqual(calls()[3].requestId,calls()[2].requestId);
+  assert.equal(f.id('batch-next').hidden,true);
+});
+
+test('one uncertain batch resumes only after the same owner and actual binding recover from a transient pause',async t=>{
+  const first=deferred();let attempts=0;
+  const f=fixture(t,{
+    getBillingOverview:({teamId})=>ok({...snapshot(teamId),canReconcileBillingBatch:true,canResumeBillingBatch:true}),
+    reconcileBillingPage:()=>++attempts===1?first.promise:ok({results:[],nextCursor:null}),
+  });
+  Object.assign(f.context,{binding:'same-public-device-binding',paused:false});
+  const calls=()=>f.calls.filter(call=>call.name==='reconcileBillingPage').map(call=>({...call.input}));
+  await f.open();await until(()=>!f.id('batch-start').disabled);f.id('batch-start').click();const original=calls()[0];
+  Object.assign(f.context,{ready:false,paused:true,actor:'undefined:2',device:'paused:2',teamId:''});f.view.update();
+  assert.equal(f.panel.hidden,true);first.resolve(fail('SERVICE_UNAVAILABLE'));await new Promise(resolve=>setTimeout(resolve,10));
+  Object.assign(f.context,{ready:false,paused:false,actor:'undefined:2',device:'same-binding:3'});f.view.update();
+  Object.assign(f.context,{ready:true,paused:false,actor:'admin:3',device:'same-binding:3',teamId:'a'});f.view.update();
+  await f.open();await until(()=>!f.id('batch-retry').hidden&&!f.id('batch-retry').disabled);
+  assert.equal(calls().length,1);assert.match(f.id('batch-message').textContent,/不会自动提交/);
+  f.id('batch-retry').click();await until(()=>calls().length===2&&!f.id('batch-retry').disabled);
+  assert.deepEqual(calls()[1],original);assert.deepEqual(f.callbacks,[]);
+});
+
+test('uncertain batch IDs are retired on deliberate close, order kind, account, or actual device changes',async t=>{
+  for(const change of ['close','kind','team','account','binding','actor','paused-binding','logout']){
+    const f=fixture(t,{
+      getBillingOverview:({teamId})=>ok({...snapshot(teamId),canReconcileBillingBatch:true,canResumeBillingBatch:true}),
+      reconcileBillingPage:()=>fail('NETWORK'),
+    });
+    Object.assign(f.context,{binding:'first-public-binding',paused:false});
+    const calls=()=>f.calls.filter(call=>call.name==='reconcileBillingPage').map(call=>({...call.input}));
+    await f.open();await until(()=>!f.id('batch-start').disabled);f.id('batch-start').click();
+    await until(()=>!f.id('batch-retry').hidden&&!f.id('batch-retry').disabled);const original=calls()[0];
+    if(change==='close'){f.panel.querySelector('summary').click();await f.open();}
+    else if(change==='kind')f.change('order-kind','seat');
+    else if(change==='team')f.change('team','b');
+    else if(change==='paused-binding'){
+      Object.assign(f.context,{ready:false,paused:true,actor:'undefined:2',device:'paused:2'});f.view.update();
+      Object.assign(f.context,{ready:true,paused:false,actor:'admin:3',device:'different-device:3',binding:'different-public-binding'});f.view.update();await f.open();
+    }
+    else if(change==='logout'){
+      f.view.reset();Object.assign(f.context,{actor:'admin:new-login',device:'device:new-login'});f.view.update();await f.open();
+    }
+    else{
+      if(change==='account')f.context.identity='next-account';
+      if(change==='binding')f.context.binding='different-public-binding';
+      f.context.actor='admin:changed';f.context.device='device:changed';f.view.update();await f.open();
+    }
+    await until(()=>!f.id('batch-start').disabled);assert.equal(f.id('batch-retry').hidden,true,change);
+    f.id('batch-start').click();await until(()=>calls().length===2&&!f.id('batch-retry').disabled);
+    assert.notEqual(calls()[1].requestId,original.requestId,change);
+  }
+});
+
+test('a paused non-default team seat batch restores its authorized scope and cursor after a late successful response',async t=>{
+  const pending=deferred();let attempts=0;
+  const first={results:Array.from({length:8},(_,index)=>batchRow(index,'no-evidence')),nextCursor:batchId(7)};
+  const second={results:[batchRow(8,'matched','paid')],nextCursor:null};
+  const f=fixture(t,{
+    getBillingOverview:({teamId})=>ok({...snapshot(teamId),canReconcileBillingBatch:true,canResumeBillingBatch:true}),
+    reconcileBillingPage:()=>++attempts===1?ok(first):attempts===2?pending.promise:ok(second),
+  });
+  Object.assign(f.context,{binding:'same-public-device-binding',paused:false});
+  const calls=()=>f.calls.filter(call=>call.name==='reconcileBillingPage').map(call=>({...call.input}));
+  await f.open();f.change('team','b');await until(()=>!f.id('batch-start').disabled);
+  f.change('order-kind','seat');await until(()=>!f.id('batch-start').disabled);f.id('batch-start').click();
+  await until(()=>!f.id('batch-next').hidden&&!f.id('batch-next').disabled);f.id('batch-next').click();
+  const original=calls()[1];assert.equal(original.teamId,'b');assert.equal(original.kind,'seat');assert.equal(original.after,batchId(7));
+  Object.assign(f.context,{ready:false,paused:true,actor:'undefined:2',device:'paused:2',teamId:''});f.view.update();
+  assert.equal(f.panel.hidden,true);assert.equal(f.id('order-kind').value,'annual');assert.equal(f.id('team').value,'');
+  pending.resolve(ok(second));await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(f.id('batch-results').childElementCount,0);assert.equal(f.id('batch-message').textContent,'');
+  Object.assign(f.context,{ready:true,paused:false,actor:'admin:3',device:'same-binding:3',teamId:'a'});f.view.update();
+  await f.open();await until(()=>!f.id('batch-retry').hidden&&!f.id('batch-retry').disabled);
+  assert.equal(f.id('team').value,'b');assert.equal(f.id('order-kind').value,'seat');assert.equal(calls().length,2);
+  assert.equal(f.calls.filter(call=>call.name==='listBillingOrders').at(-1).input.kind,'seat');
+  f.id('batch-retry').click();await until(()=>calls().length===3&&!f.id('batch-retry').disabled);
+  assert.deepEqual(calls()[2],original);assert.deepEqual(f.callbacks,[]);
+});
+
+test('a paused batch is retired when fresh billing discovery no longer authorizes its original team',async t=>{
+  let allowed=teams;
+  const f=fixture(t,{
+    getBillingAccess:()=>ok({teams:allowed}),
+    getBillingOverview:({teamId})=>ok({...snapshot(teamId),canReconcileBillingBatch:true,canResumeBillingBatch:true}),
+    reconcileBillingPage:()=>fail('NETWORK'),
+  });
+  Object.assign(f.context,{binding:'same-public-device-binding',paused:false});
+  const calls=()=>f.calls.filter(call=>call.name==='reconcileBillingPage').map(call=>({...call.input}));
+  await f.open();f.change('team','b');await until(()=>!f.id('batch-start').disabled);
+  f.change('order-kind','seat');await until(()=>!f.id('batch-start').disabled);f.id('batch-start').click();
+  await until(()=>!f.id('batch-retry').hidden&&!f.id('batch-retry').disabled);const original=calls()[0];
+  Object.assign(f.context,{ready:false,paused:true,actor:'undefined:2',device:'paused:2',teamId:''});f.view.update();allowed=[teams[0]];
+  Object.assign(f.context,{ready:true,paused:false,actor:'admin:3',device:'same-binding:3',teamId:'a'});f.view.update();
+  await f.open();await until(()=>!f.id('batch-start').disabled);
+  assert.equal(f.id('team').value,'a');assert.equal(f.id('order-kind').value,'annual');assert.equal(f.id('batch-retry').hidden,true);
+  f.id('batch-start').click();await until(()=>calls().length===2&&!f.id('batch-retry').disabled);
+  assert.notEqual(calls()[1].requestId,original.requestId);assert.equal(calls()[1].teamId,'a');assert.equal(calls()[1].kind,'annual');
+});
+
 const lookupId = 'abcdef01-0000-4000-8000-000000000001';
 const otherLookupId = 'abcdef02-0000-4000-8000-000000000002';
 const lookupCalls = f => f.calls.filter(call => call.name === 'getBillingOrder');

@@ -34,6 +34,9 @@
     SUBSCRIPTION_REQUIRED: '需要有效的团队年订阅才能增购席位。',
     BILLING_OFFER_CHANGED: '账务选项已更新，请刷新订阅与席位后重新核对。',
     BILLING_CONFLICT: '团队账务状态已变化，请刷新后重新核对。',
+    BILLING_RECONCILIATION_BUSY: '本团队已有一批订单正在核对，请稍后重试本批。',
+    BILLING_RECONCILIATION_CONFLICT: '本批核对请求与已保存记录不一致，请核对团队、订单类型及批次。',
+    BILLING_RECONCILIATION_RECEIPT_FAILED: '本批核对结果保存未确认，请沿用原请求重试。',
     BILLING_RENEWAL_SEATS_RECONCILIATION_REQUIRED: '续费席位需要重新核对。请刷新订阅与席位，减少到已占用数量以下前先释放相应席位。',
     SEAT_CAPACITY_EXHAUSTED: '拟续费席位低于已启用成员与有效邀请的合计数量。请先释放相应席位。',
     SEAT_CAPACITY_CHANGED: '席位已变化，请刷新订阅与席位后重新核对。',
@@ -71,7 +74,7 @@
     let scope = '', identity = '', revision = 0, accessRead = null, team = '', teams = [];
     let overview = null, overviewRead = null, ordersRead = null, orders = [], nextCursor = null, pageCursor = null, previousCursors = [];
     let kind = 'annual', confirmation = null, mutation = null;
-    let batchReport = null, failedBatch = null;
+    let batchReport = null, failedBatch = null, batchIntent = null;
     let lookupRead = null;
     let intents = new Map();
 
@@ -272,6 +275,31 @@
       batchMessage();
     }
 
+    function sameBatchBinding(intent, context = getContext()) {
+      return intent && intent.identity === context.identity && typeof context.binding === 'string' && context.binding &&
+        intent.binding === context.binding;
+    }
+
+    function updateBatchIntent(context) {
+      if (!batchIntent) return;
+      if (!sameBatchBinding(batchIntent, context)) { batchIntent = null; return; }
+      if (context.paused === true) { batchIntent.paused = true; return; }
+      // The approved device snapshot can become ready before enter() reveals the
+      // workspace. Preserve only an intent already suspended on this binding.
+      if (!context.ready) { if (!batchIntent.paused) batchIntent = null; return; }
+      if (!batchIntent.paused && (batchIntent.actor !== context.actor || batchIntent.contextTeamId !== context.teamId)) batchIntent = null;
+    }
+
+    function restoreBatchIntent() {
+      if (!sameBatchBinding(batchIntent) || overview?.canResumeBillingBatch !== true ||
+          batchIntent.teamId !== team || batchIntent.kind !== kind) return;
+      failedBatch = { after: batchIntent.after, requestId: batchIntent.requestId };
+      batchIntent.actor = getContext().actor;
+      batchIntent.contextTeamId = getContext().teamId;
+      batchIntent.paused = false;
+      batchMessage('本批结果尚未确认。可手动重试本批，系统会沿用原核对请求，不会自动提交。');
+    }
+
     function clearOverview() {
       revision++;
       overview = null;
@@ -310,10 +338,12 @@
       identity = '';
       mutation = null;
       intents = new Map();
+      batchIntent = null;
       clearScope();
     }
 
     function discardTeam() {
+      batchIntent = null;
       setTeams(teams.filter(candidate => candidate.id !== team));
       clearOverview();
       if (panel.open && !panel.hidden) void loadOverview();
@@ -326,6 +356,12 @@
       try {
         const value = await invoke('getBillingAccess');
         if (accessRead !== read || !currentScope(read.scope)) return;
+        if (batchIntent?.paused && sameBatchBinding(batchIntent)) {
+          if (value.teams.some(candidate => candidate.id === batchIntent.teamId)) {
+            team = batchIntent.teamId;
+            kind = node('order-kind').value = batchIntent.kind;
+          } else batchIntent = null;
+        }
         const oldTeam = team;
         setTeams(value.teams);
         if (oldTeam !== team) clearOverview();
@@ -342,7 +378,9 @@
     }
 
     function update() {
-      const next = supported ? keys(getContext()) : { owner: '', view: '' };
+      const context = getContext();
+      updateBatchIntent(context);
+      const next = supported ? keys(context) : { owner: '', view: '' };
       if (next.owner !== identity) {
         reset();
         identity = next.owner;
@@ -431,6 +469,7 @@
         overview = value;
         if (!canReconcileBatch()) clearBatch();
         drawOverview(keepDraft);
+        restoreBatchIntent();
         message(success);
         if (!overview.simulation) {
           clearConfirmation();
@@ -732,6 +771,14 @@
       if (!currentView(at) || getContext().busy) return;
       const restoreFocus = trackActionFocus(button);
       const after = move === 'next' ? batchReport.nextCursor : move === 'retry' ? (failedBatch ?? batchReport).after : null;
+      const requestId = move === 'retry' && failedBatch?.requestId ? failedBatch.requestId
+        : overview.canResumeBillingBatch === true ? window.crypto.randomUUID() : undefined;
+      const context = getContext();
+      const intent = requestId && typeof context.binding === 'string' && context.binding ? {
+        identity: context.identity, actor: context.actor, binding: context.binding, contextTeamId: context.teamId,
+        teamId: team, kind, after, requestId, paused: false
+      } : null;
+      batchIntent = intent;
       const operation = {};
       mutation = operation;
       clearOrderLookup();
@@ -739,8 +786,9 @@
       batchMessage('正在批量核对' + orderNames[kind] + '订单…');
       controls();
       try {
-        const value = await invoke('reconcileBillingPage', { teamId: team, kind, ...(after ? { after } : {}) });
+        const value = await invoke('reconcileBillingPage', { teamId: team, kind, ...(after ? { after } : {}), ...(requestId ? { requestId } : {}) });
         if (!currentView(at)) return;
+        if (batchIntent === intent) batchIntent = null;
         batchReport = { ...value, after };
         failedBatch = null;
         drawBatch();
@@ -752,7 +800,7 @@
         if (!currentView(at) || handleSessionError(error)) return;
         if (permissionErrors.has(error?.code)) discardTeam();
         else {
-          failedBatch = { after };
+          failedBatch = { after, ...(requestId ? { requestId } : {}) };
           batchMessage(errorMessage(error, '暂时无法完成本批核对，请重试本批。'), true);
         }
       } finally {
@@ -769,7 +817,11 @@
 
     function panelOpenChanged() {
       if (panel.open && !panel.hidden && currentScope(scope)) void loadOverview();
-      else clearOverview();
+      else {
+        const context = getContext();
+        if (!sameBatchBinding(batchIntent, context) || context.paused !== true && !(panel.hidden && batchIntent?.paused)) batchIntent = null;
+        clearOverview();
+      }
     }
 
     const panelObserver = new MutationObserver(panelOpenChanged);
@@ -778,12 +830,14 @@
     node('team').addEventListener('change', () => {
       const selected = node('team').value;
       if (!teams.some(candidate => candidate.id === selected)) return;
+      batchIntent = null;
       team = selected;
       void loadOverview();
     });
     node('order-kind').addEventListener('change', () => {
       if (overview?.simulation !== true || !Object.hasOwn(orderNames, node('order-kind').value)) return;
       kind = node('order-kind').value;
+      batchIntent = null;
       revision++;
       clearOrders();
       clearBatch();
