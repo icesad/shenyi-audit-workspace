@@ -1,11 +1,14 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const {spawn} = require('node:child_process');
 const {createHash} = require('node:crypto');
+const {once} = require('node:events');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const {test} = require('node:test');
+const {setTimeout: delay} = require('node:timers/promises');
 
 const payload = {
   'README-Owner-Review.md': 'Synthetic reviewer instructions.\n',
@@ -105,6 +108,36 @@ test('preserves the Windows Zone.Identifier stream on the staged Electron execut
 
   await assertMissing(staged.executable);
   assert.deepEqual(await fs.readFile(sourceStream), zone);
+  assert.deepEqual(await f.verify(), before);
+});
+
+test('waits for a transient Windows sharing lock when removing a staged executable', {
+  skip:process.platform !== 'win32',
+}, async t => {
+  const f = await fixture(t);
+  const before = await f.verify();
+  const staged = await f.stage();
+  const powershell = path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const holder = spawn(powershell, ['-NoProfile', '-NonInteractive', '-Command', [
+    "$ErrorActionPreference = 'Stop'",
+    '$file = [IO.File]::Open($env:SHENYI_LOCK_TEST_FILE, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)',
+    "try { [Console]::WriteLine('locked'); $null = [Console]::ReadLine() } finally { $file.Dispose() }",
+  ].join('; ')], {
+    env:{...process.env, SHENYI_LOCK_TEST_FILE:staged.executable},
+    stdio:['pipe', 'pipe', 'ignore'],
+    windowsHide:true,
+  });
+  const exited = once(holder, 'exit');
+  t.after(async () => {
+    holder.stdin.end();
+    await exited;
+  });
+  const [ready] = await once(holder.stdout, 'data', {signal:AbortSignal.timeout(10000)});
+  assert.equal(ready.toString().trim(), 'locked');
+
+  const releasing = delay(120).then(() => holder.stdin.end());
+  await Promise.all([staged.close(), releasing, exited]);
+  await assertMissing(staged.executable);
   assert.deepEqual(await f.verify(), before);
 });
 

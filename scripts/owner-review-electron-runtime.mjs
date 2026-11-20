@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { copyFile, lstat, mkdir, mkdtemp, open, realpath, rmdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { verifyWindowsOwnerReview } from './verify-windows-owner-review.mjs';
 
 const runtimePrefix = 'runtime/electron/';
@@ -9,6 +10,7 @@ const manifestLimit = 2 * 1024 * 1024;
 const noFollow = constants.O_NOFOLLOW ?? 0;
 const identityFields = ['dev', 'ino', 'mode'];
 const fileFields = [...identityFields, 'nlink', 'size', 'mtimeNs', 'ctimeNs'];
+const windowsUnlinkDelays = [50, 100, 200, 400, 800];
 
 function requireRuntime(condition, message) {
   if (!condition) throw new Error(message);
@@ -113,9 +115,22 @@ async function cleanStage(runRoot, runInfo, directories, files) {
   for (const entry of files) await assertState(entry.filename, entry.info, 'file');
   for (const { filename, info } of files) {
     const parent = path.dirname(filename);
-    await assertState(parent, directories.get(parent), 'directory');
-    await assertState(filename, info, 'file');
-    await unlink(filename);
+    for (let attempt = 0; ; attempt++) {
+      await assertState(runRoot, runInfo, 'directory');
+      for (let directory = parent; !samePath(directory, runRoot); directory = path.dirname(directory)) {
+        await assertState(directory, directories.get(directory), 'directory');
+      }
+      await assertState(filename, info, 'file');
+      try {
+        await unlink(filename);
+        break;
+      } catch (error) {
+        // Windows can hold the executable briefly after its process exits.
+        if (process.platform !== 'win32' || error.code !== 'EBUSY' ||
+            attempt >= windowsUnlinkDelays.length) throw error;
+      }
+      await delay(windowsUnlinkDelays[attempt]);
+    }
   }
   for (const [directory, info] of [...directories].reverse()) {
     await assertState(directory, info, 'directory');
