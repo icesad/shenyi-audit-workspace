@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 同一测试 MSI 的管理提取复验
+
+原测试 MSI 已用 Windows Installer 完成管理提取，2,007 个文件逐字节匹配原签前 ZIP，系统目标产品仍未注册。正式签名和实机安装升级待验。证据见 `D:/codex-temp/shenyi-exact-msi-admin-rerun-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-同一测试-msi-的管理提取复验)
+
 ## 2026-11-20 当前 Linux 候选首次部署
 
 当前 Git Linux 归档已在隔离 Ubuntu 完成实验签名、离线暂存、新库初始化及服务重启。两路 HTTPS 和合成负责人的原密钥重登录通过。证据见 `D:/codex-temp/shenyi-linux-current-first-deploy-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-当前-linux-候选首次部署)
