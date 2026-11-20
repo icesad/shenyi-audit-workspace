@@ -2,9 +2,11 @@
 """Activate or recover a schema-compatible release on a managed Linux host."""
 
 import argparse
+import base64
 import ctypes
 import fcntl
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -15,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from urllib.parse import urlsplit
 
 
 ROOT = Path('/opt/shenyi-team')
@@ -30,6 +33,13 @@ staged_tree = run_path(str(Path(__file__).resolve().with_name('linux-release-tre
 SYSTEMCTL = Path('/usr/bin/systemctl')
 RUNUSER = Path('/usr/sbin/runuser')
 TIMEOUT = Path('/usr/bin/timeout')
+OPENSSL = Path('/usr/bin/openssl')
+BEGIN_CERTIFICATE = b'-----BEGIN CERTIFICATE-----'
+END_CERTIFICATE = b'-----END CERTIFICATE-----'
+PEM_CERTIFICATE = re.compile(BEGIN_CERTIFICATE + rb'\s+([A-Za-z0-9+/=\s]+?)' + END_CERTIFICATE)
+BACKEND_TLS_MISMATCH = ('The configured backend TLS chain differs from the running service. '
+                        'Complete TLS changes before activating a release.')
+BACKEND_TLS_UNVERIFIED = 'The running backend TLS chain could not be verified before stopping the current service.'
 HEALTH_KEYS = {
     'backendReadiness', 'backendIdentity', 'publicIdentity', 'publicReadinessHidden', 'publicHealthHidden',
     'backendCertificate', 'publicCertificate', 'tlsKeySeparation', 'databaseVolume',
@@ -94,7 +104,7 @@ def startup_input_stamp():
 
     listed = owned_path(CONFIG, stat.S_ISREG)
     profile = json.loads(read_file(CONFIG, 64 * 1024))
-    inputs = [file_state(listed)]
+    inputs = [file_state(listed), file_state(owned_path(BACKEND_CA, stat.S_ISREG))]
     for field in ('tlsCertificate', 'tlsKey', 'smsProfile', 'wechatProfile', 'wechatNativeCallbackProfile', 'wechatNativeWebsiteProfile'):
         filename = profile.get(field)
         try:
@@ -260,6 +270,43 @@ def check_candidate_startup(staged, env):
     raise ValueError('The candidate startup preflight failed before stopping the current service.')
 
 
+def certificate_chain_digests(contents):
+    blocks = PEM_CERTIFICATE.findall(contents)
+    require(blocks and len(blocks) == contents.count(BEGIN_CERTIFICATE) == contents.count(END_CERTIFICATE),
+            BACKEND_TLS_UNVERIFIED)
+    return tuple(hashlib.sha256(base64.b64decode(b''.join(block.split()), validate=True)).digest() for block in blocks)
+
+
+def assert_backend_tls_unchanged(env):
+    # Probe the live service under verification and compare the certificates it
+    # actually sends. An on-disk startup check cannot identify a pending change.
+    try:
+        profile = json.loads(read_file(CONFIG, 64 * 1024))
+        origin = urlsplit(profile['apiBase'])
+        hostname, port = origin.hostname, profile['listenPort']
+        require(origin.scheme == 'https' and hostname and re.fullmatch(r'[A-Za-z0-9.:-]+', hostname)
+                and type(port) is int and 1 <= port <= 65535, BACKEND_TLS_UNVERIFIED)
+        certificate = Path(profile['tlsCertificate'])
+        owned_path(certificate, stat.S_ISREG)
+        configured = certificate_chain_digests(read_file(certificate, 128 * 1024))
+        owned_path(OPENSSL, stat.S_ISREG)
+        try:
+            host_ip = ipaddress.ip_address(hostname)
+        except ValueError:
+            name_check = ['-servername', hostname, '-verify_hostname', hostname]
+        else:
+            name_check = ['-noservername', '-verify_ip', str(host_ip)]
+        handshake = subprocess.run([OPENSSL, 's_client', '-connect', f'127.0.0.1:{port}', '-showcerts',
+                                    '-verify_return_error', '-verifyCAfile', BACKEND_CA,
+                                    '-min_protocol', 'TLSv1.2', *name_check],
+                                   stdin=subprocess.DEVNULL, capture_output=True, timeout=8, env=env)
+        require(handshake.returncode == 0 and len(handshake.stdout) <= 512 * 1024, BACKEND_TLS_UNVERIFIED)
+        served = certificate_chain_digests(handshake.stdout)
+    except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError):
+        raise ValueError(BACKEND_TLS_UNVERIFIED) from None
+    require(configured == served, BACKEND_TLS_MISMATCH)
+
+
 def activation_paths(revision, change_id):
     suffix = revision
     if change_id is not None:
@@ -287,6 +334,7 @@ def activate(args, root_fd, env):
     owned_path(CURRENT / 'scripts/check-team-service.mjs', stat.S_ISREG, readonly=True)
     _, warnings, baseline = health_check(env, prior_warnings=None, limit=15)
     check_candidate_startup(staged, env)
+    assert_backend_tls_unchanged(env)
     confirmed = validate_stage(staged, revision, args.archive_sha256, root_device)
     require(configuration_stamp() == stamp and startup_input_stamp() == startup_inputs and process_status(env) == baseline
             and confirmed == (new_identity, tree),
@@ -295,7 +343,7 @@ def activate(args, root_fd, env):
               'newDirectoryIdentity': new_identity, 'stagedTree': tree,
               'baselinePid': baseline[0], 'baselineInvocation': baseline[1],
               'baselineWarningChecks': sorted(warnings), 'candidateDatabasePreflight': 'passed',
-              'candidateStartupPreflight': 'passed', **stamp}
+              'candidateStartupPreflight': 'passed', 'backendTlsPreflight': 'unchanged', **stamp}
     if change_id is not None:
         report['changeId'] = change_id
     record(JOURNAL, {**report, 'status': 'stopping-current'}, root_fd)

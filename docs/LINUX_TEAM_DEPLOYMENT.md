@@ -261,7 +261,7 @@ journalctl -u shenyi-team-monitor.service -n 30 --no-pager
 
 ## 变更与回滚
 
-停机变更前先停止接入新业务并等待进行中的上传和导出完成。备份代码版本、配置和数据库，核对候选与上一版本均兼容当前库。候选已签名并完成暂存后，在获准窗口用同一可信渠道预置 `scripts/activate-linux-release.py` 及同目录的 `scripts/linux-release-tree.py`，以发布管理员身份执行。使用支持 `renameat2` 原子目录交换的 Linux 文件系统，`current` 和候选均使用同一文件系统上的实际目录。 [Linux 目录交换](https://man7.org/linux/man-pages/man2/rename.2.html)
+停机变更前先停止接入新业务并等待进行中的上传和导出完成。备份代码版本、配置和数据库，核对候选与上一版本均兼容当前库。候选签名和暂存完成后，在获准窗口用同一可信渠道预置 `scripts/activate-linux-release.py` 及同目录的 `scripts/linux-release-tree.py`，以发布管理员身份执行。激活使用 `/usr/bin/openssl` 3.0 或支持相同参数的更新版本。`current` 和候选使用支持 `renameat2` 原子目录交换的同一文件系统。 [Linux 目录交换](https://man7.org/linux/man-pages/man2/rename.2.html)
 
 ```sh
 /usr/bin/python3 -I /opt/shenyi-team/release-tools/scripts/activate-linux-release.py \
@@ -273,6 +273,8 @@ journalctl -u shenyi-team-monitor.service -n 30 --no-pager
 停服前以 `shenyi-team` 运行候选的 `start-team-service.mjs --check-startup --config /etc/shenyi-team/service.json`。它以只读模式检查 SQLite 实例和所需库结构，包括已启用的审核式恢复或微信结构，并复用正式启动的证书、私钥和短信／微信配置校验。预检完成即退出，端口监听和双路 HTTPS 仍在切换后检查，供应商联调需使用相应授权环境。激活工具在停服前再次核对候选目录及预检所用配置文件状态。失败时保留当前服务与候选。发布人员可在候选目录以服务账号重跑同一命令，查看固定错误码。只核对库结构时可继续使用 `--check-database`。涉及迁移时，单独验证新旧版兼容性。
 
 候选预检的进程时限为 30 秒，计入冷加载正式服务依赖的时间，超时在停服前退出。SQLite 使用 WAL 模式时，只读连接可能创建 `-wal` 和 `-shm` 旁文件。 [SQLite WAL 文档](https://sqlite.org/wal.html#read_only_databases)
+
+候选启动预检通过后，激活工具通过回环 TLS 核验后端域名或 IP，并使用部署的后端 CA。比较运行中后端发送的有序证书链与配置文件中链的证书摘要，PEM 行折叠差异不影响比较。握手失败、证书链不一致，或预检期间配置、证书、CA 与 systemd 调用发生变化，都会在写入切换日志和停止现有服务之前退出。正常进入切换的回执包含 `backendTlsPreflight: unchanged`。若有待生效的后端证书或信任链变更，先在独立窗口完成该变更并复核双路 HTTPS，再启用代码候选。 [OpenSSL 证书链与身份核验](https://docs.openssl.org/3.0/man1/openssl-s_client/#options)
 
 隔离 Ubuntu 中，要求不存在的表和忽略退出信号的候选均在停服前被拒绝，原服务调用标识及 SQLite 字节一致。兼容候选的独立预检用时约 1.1 秒，随后切换通过双路 HTTPS 检查。此轮使用已准备的演练目录核验激活流程。证据见 `D:/codex-temp/shenyi-m7-db-preflight-20261119/verification.json`。
 
@@ -305,7 +307,7 @@ journalctl -u shenyi-team-monitor.service -n 30 --no-pager
 
 编号为 1 至 32 位小写字母和数字，可包含中间的短横线。同一版本的同一编号只结案一次。结案记录与保留目录分别为 `activation-$release-$approved_change_id.json`、`previous-$release-$approved_change_id`，自动回退后的候选保留在 `failed-$release-$approved_change_id`。操作仍执行停服前预检、原子目录交换、双路 HTTPS 复检和异常自动回退。若此次变更在结案前中断，原 `--recover` 命令须同时传入相同的 `--change-id`。未使用编号的既有变更仍按原命令恢复。
 
-核对一条获准的正常业务操作后再恢复接入。若同时变更后端证书，核对受管服务已加载新密钥并通过双路 HTTPS 探针。单独更换对外证书时，按[对外证书续期流程](#续期-nginx-对外证书)完成验证。
+核对一条获准的正常业务操作后再恢复接入。若需变更后端证书，先在独立窗口验证后端已加载新证书并通过双路 HTTPS 探针。更换对外证书按[对外证书续期流程](#续期-nginx-对外证书)验收。
 
 隔离 Ubuntu 验证了错误审批摘要在停服前被拒绝。模拟 systemd 启动失败后，原目录恢复，旧版重新启动并通过双路 HTTPS，故障候选留存。另一份测试密钥签名的候选随后成功启用，旧版目录保留。三个 systemd 调用标识各异，Nginx、配置和 SQLite 文件身份及字节保持。
 

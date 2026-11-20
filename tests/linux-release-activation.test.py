@@ -12,6 +12,7 @@ import sys
 import tempfile
 from types import ModuleType, SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 
 if os.name == 'nt':
@@ -64,6 +65,8 @@ class Deployment:
         release.CURRENT = release.ROOT / 'current'
         release.JOURNAL = release.ROOT / '.shenyi-activation.json'
         release.CONFIG = directory / 'service.json'
+        release.BACKEND_CA = directory / 'backend-ca.pem'
+        release.BACKEND_CA.write_bytes(b'synthetic backend trust anchor\n')
         release.owned_path = self.owned_fixture_path
         release.staged_tree = fixture_tree
         self.database = directory / 'team.sqlite'
@@ -123,6 +126,8 @@ class Deployment:
         self.candidate_commands = []
         self.candidate_exit = 0
         self.candidate_stdout = '{"event":"startup-ready"}\n'
+        self.backend_tls_checks = []
+        self.backend_tls_error = None
         self.cut_after_exchange = False
         self.cut_after_retention = False
         self.report = {
@@ -146,6 +151,8 @@ class Deployment:
         release.process_status = self.process_status
         self.check_candidate_startup_impl = release.check_candidate_startup
         release.check_candidate_startup = self.check_candidate_startup
+        self.backend_tls_impl = release.assert_backend_tls_unchanged
+        release.assert_backend_tls_unchanged = self.assert_backend_tls_unchanged
         release.run = self.run_candidate
         release.service = self.service
         release.stop_service = self.stop_service
@@ -186,6 +193,14 @@ class Deployment:
     def run_candidate(self, command, timeout, env):
         self.candidate_commands.append((command, timeout, env))
         return subprocess.CompletedProcess(command, self.candidate_exit, self.candidate_stdout)
+
+    def assert_backend_tls_unchanged(self, env):
+        self.backend_tls_checks.append({
+            'invocation': self.process_status(env), 'startupChecksCompleted': len(self.candidate_commands),
+            'journalExists': self.journal.exists(), 'actions': list(self.actions),
+        })
+        if self.backend_tls_error is not None:
+            raise self.backend_tls_error
 
     def service(self, args, env, timeout):
         if args != ['start'] or self.identity(self.current) != self.new_id:
@@ -428,6 +443,11 @@ class RecoveryTests(unittest.TestCase):
         ], 40, {})])
         self.assertEqual(result['candidateStartupPreflight'], 'passed')
         self.assertEqual(result['candidateDatabasePreflight'], 'passed')
+        self.assertEqual(result['backendTlsPreflight'], 'unchanged')
+        self.assertEqual(f.backend_tls_checks, [{
+            'invocation': (101, BASELINE_INVOCATION), 'startupChecksCompleted': 1,
+            'journalExists': False, 'actions': [],
+        }])
         self.assertEqual(f.actions, ['stop', 'exchange', 'start', 'retain', 'record'])
 
     def test_failed_or_invalid_startup_receipt_cannot_stop_the_current_service(self):
@@ -438,6 +458,84 @@ class RecoveryTests(unittest.TestCase):
                 f.candidate_exit, f.candidate_stdout = exit_code, stdout
                 self.assert_activation_refused(f, preflight_started=True)
                 self.assertEqual(len(f.candidate_commands), 1)
+                self.assertEqual(f.backend_tls_checks, [])
+
+    def test_backend_tls_chain_rejection_preserves_running_release_and_database(self):
+        for reason in ('configured and presented chains differ', 'upstream chain is invalid'):
+            with self.subTest(reason=reason):
+                f, _ = self.fresh_deployment()
+                f.backend_tls_error = ValueError(reason)
+                before_database = f.release.configuration_stamp()['databaseIdentity']
+                self.assert_activation_refused(f, preflight_started=True)
+                self.assertEqual(f.backend_tls_checks, [{
+                    'invocation': (101, BASELINE_INVOCATION), 'startupChecksCompleted': 1,
+                    'journalExists': False, 'actions': [],
+                }])
+                self.assertEqual(f.release.configuration_stamp()['databaseIdentity'], before_database)
+
+    def test_startup_input_change_during_backend_tls_probe_cannot_stop_the_current_service(self):
+        for input_name in ('configured chain', 'Nginx CA'):
+            with self.subTest(input=input_name):
+                f, _ = self.fresh_deployment()
+                certificate = f.release.CONFIG.with_name('backend-chain.pem')
+                certificate.write_bytes(b'synthetic preflight chain\n')
+                write_json(f.release.CONFIG, {'database': str(f.database), 'tlsCertificate': str(certificate)})
+                path_to_change = certificate if input_name == 'configured chain' else f.release.BACKEND_CA
+                before = path_to_change.stat()
+                stamp = f.release.startup_input_stamp()
+
+                def mutate_during_tls_check(env):
+                    f.assert_backend_tls_unchanged(env)
+                    self.change_same_size(path_to_change)
+                    os.utime(path_to_change, ns=(before.st_atime_ns, before.st_mtime_ns - 1_000_000_000))
+
+                f.release.assert_backend_tls_unchanged = mutate_during_tls_check
+                self.assert_activation_refused(f, preflight_started=True)
+                self.assertEqual(len(f.backend_tls_checks), 1)
+                self.assertNotEqual(f.release.startup_input_stamp(), stamp)
+
+    def test_backend_tls_guard_uses_verified_loopback_and_matches_chain_order(self):
+        f, _ = self.fresh_deployment()
+        release = f.release
+        release.OPENSSL = f.release.CONFIG.with_name('openssl-fixture')
+        release.OPENSSL.write_bytes(b'stubbed process, never executed\n')
+        certificate = release.CONFIG.with_name('backend-chain.pem')
+        # Stub the already-verified subprocess boundary with ordered, distinct
+        # certificate byte strings. The Ubuntu rehearsal exercises real X.509.
+        leaf = b'-----BEGIN CERTIFICATE-----\nY2VydDE=\n-----END CERTIFICATE-----\n'
+        intermediate = b'-----BEGIN CERTIFICATE-----\nY2VydDI=\n-----END CERTIFICATE-----\n'
+        certificate.write_bytes(leaf + intermediate)
+        env = {'LANG': 'C'}
+        common = [release.OPENSSL, 's_client', '-connect', '127.0.0.1:9443', '-showcerts',
+                  '-verify_return_error', '-verifyCAfile', release.BACKEND_CA, '-min_protocol', 'TLSv1.2']
+
+        def configure(host):
+            write_json(release.CONFIG, {'database': str(f.database), 'apiBase': 'https://' + host,
+                                        'listenPort': 9443, 'tlsCertificate': str(certificate)})
+
+        def probe(result, expected_name_check, expected_error=None):
+            with patch.object(release.subprocess, 'run', return_value=result) as run:
+                if expected_error is None:
+                    f.backend_tls_impl(env)
+                else:
+                    with self.assertRaises(ValueError) as failure:
+                        f.backend_tls_impl(env)
+                    self.assertEqual(str(failure.exception), expected_error)
+                run.assert_called_once_with(common + expected_name_check, stdin=subprocess.DEVNULL,
+                                            capture_output=True, timeout=8, env=env)
+
+        dns = 'team.shenyi.example'
+        configure(dns)
+        dns_check = ['-servername', dns, '-verify_hostname', dns]
+        received = b'Certificate chain\n' + (leaf + intermediate).replace(b'\n', b'\r\n')
+        probe(subprocess.CompletedProcess([], 0, received, b''), dns_check)
+        probe(subprocess.CompletedProcess([], 0, intermediate + leaf, b''), dns_check, release.BACKEND_TLS_MISMATCH)
+        probe(subprocess.CompletedProcess([], 1, received, b'synthetic verification fault'), dns_check,
+              release.BACKEND_TLS_UNVERIFIED)
+        probe(subprocess.CompletedProcess([], 0, leaf + release.BEGIN_CERTIFICATE, b''), dns_check,
+              release.BACKEND_TLS_UNVERIFIED)
+        configure('127.0.0.1')
+        probe(subprocess.CompletedProcess([], 0, received, b''), ['-noservername', '-verify_ip', '127.0.0.1'])
 
     def test_startup_probe_timeout_cannot_stop_the_current_service(self):
         f, _ = self.fresh_deployment()
