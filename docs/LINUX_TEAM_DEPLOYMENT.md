@@ -114,6 +114,8 @@ printf "Exit status %s\n" "$check_status"
 
 官网内容需回退时，把 `current` 用同样的原子替换步骤指回先前已验证的发布目录，再用上一版获准的基线、摘要和同一官网 origin 回读验证。首次启用出现故障时，将官网 include 移到 `conf.d` 匹配范围之外，校验并重新加载 Nginx，确认官网入口关闭且团队 API 健康。两种回退均使用原团队服务和数据库。
 
+隔离 Ubuntu 已执行本节的 HTTPS 核验。在真实 Nginx 上发布原版、切换到长度相同但摘要不同的合成首页，再原子回退。官网核验依次退出 0、1、0，错误基线摘要在请求前被拒绝，重复使用已有回执路径时原文件保持。预置合成团队 API 的三次健康核验均通过。证据见 `D:/codex-temp/shenyi-website-release-live-20261120/verification.json`。
+
 ### 启动前检查文件权限
 
 在服务文件及 SQLite 已安装后，发布管理员可用 root 执行权限检查。它按随包的 `shenyi-team.service`、`/etc/shenyi-team/service.json` 和 `/var/lib/shenyi-team` 布局核对。

@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 隔离 Linux 官网发布回读
+
+当前官网及发布核验脚本在隔离 Ubuntu 的实际 Nginx 上通过原版、内容不符及回退验证。预置合成团队 API 在三阶段均健康。验收记录位于 `D:/codex-temp/shenyi-website-release-live-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-隔离-linux-官网发布回读)
+
 ## 2026-11-20 双平台签名前候选
 
 完成 Windows x64、Apple 芯片 Mac 和 Intel Mac 的完整签前候选。三份构件的应用内容和源提交已经核对，正式签名、公证和实机安装升级待验。签前交接位于 `D:/codex-temp/shenyi-release-inputs-20261120/release-delivery/签名前交接.md`。 [持续开发检查点](../进度.md#2026-11-20-双平台签名前候选)
