@@ -5,7 +5,7 @@ const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:
 const {DatabaseSync}=require('node:sqlite'),{createHash}=require('node:crypto');
 const {pathToFileURL}=require('node:url'),{spawn}=require('node:child_process');
 const ROOT=path.resolve(__dirname,'../..');
-const BASE=process.platform==='win32'?path.resolve('D:/codex-temp/shenyi-team-backup-20261118/boundary-tests'):path.join(require('node:fs').realpathSync(os.tmpdir()),'shenyi-team-offline-backup-boundary-tests');
+const BASE=path.join(require('node:fs').realpathSync(os.tmpdir()),'shenyi-team-offline-backup-boundary-tests');
 const api=()=>import(pathToFileURL(path.join(ROOT,'server/team/offline-backup.mjs')).href);
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 let seed;

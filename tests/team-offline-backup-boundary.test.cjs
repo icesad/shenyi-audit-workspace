@@ -27,9 +27,9 @@ for(const [name,value]of [['demo','false'],['prototype-version','other-prototype
 });
 test('relative and noncanonical source/output paths are refused before any successful artifact',async()=>{
  const f=await fixture('canonical'),{createOfflineBackup}=await api();
- const badSources=[path.relative(ROOT,f.sourceDatabase),':memory:',f.directory+path.sep+'.'+path.sep+'source.sqlite'];
+ const badSources=[path.relative(f.directory,f.sourceDatabase),':memory:',f.directory+path.sep+'.'+path.sep+'source.sqlite'];
  for(const sourceDatabase of badSources)await rejectUnchanged(f,()=>createOfflineBackup({sourceDatabase,outputRoot:f.outputRoot}));
- for(const outputRoot of [path.relative(ROOT,f.outputRoot),f.directory+path.sep+'.'+path.sep+'artifacts'])await rejectUnchanged(f,()=>createOfflineBackup({sourceDatabase:f.sourceDatabase,outputRoot}));
+ for(const outputRoot of [path.relative(f.directory,f.outputRoot),f.directory+path.sep+'.'+path.sep+'artifacts'])await rejectUnchanged(f,()=>createOfflineBackup({sourceDatabase:f.sourceDatabase,outputRoot}));
  assert.deepEqual(await successMarkers(f.outputRoot),[]);
 });
 test('output inside the checkout is refused and does not create a repository directory',async()=>{
@@ -87,8 +87,8 @@ test('CLI create, verify and rehearse operate on real files with offline summari
 });
 test('CLI rejects unknown/repeated flags, extra arguments and relative paths without success output',async()=>{
  const f=await fixture('cli-invalid'),before=await fileHash(f.sourceDatabase);
- const variants=[[],['start'],['create','--source',f.sourceDatabase,'--output-root',f.outputRoot,'--overwrite'],['create','--source',f.sourceDatabase,'--source',f.sourceDatabase,'--output-root',f.outputRoot],['create','--source',f.sourceDatabase,'extra'],['create','--source',path.relative(ROOT,f.sourceDatabase),'--output-root',f.outputRoot],['verify','--bundle','relative-bundle']];
- for(const args of variants){const child=await cli(args);assert.notEqual(child.code,0,JSON.stringify(args));assert.ok(!child.stdout.includes('"offlineOnly":true'));}
+ const variants=[[],['start'],['create','--source',f.sourceDatabase,'--output-root',f.outputRoot,'--overwrite'],['create','--source',f.sourceDatabase,'--source',f.sourceDatabase,'--output-root',f.outputRoot],['create','--source',f.sourceDatabase,'extra'],['create','--source',path.relative(f.directory,f.sourceDatabase),'--output-root',f.outputRoot],['verify','--bundle','relative-bundle']];
+ for(const args of variants){const child=await cli(args,{cwd:f.directory});assert.notEqual(child.code,0,JSON.stringify(args));assert.ok(!child.stdout.includes('"offlineOnly":true'));}
  assert.equal(await fileHash(f.sourceDatabase),before);assert.deepEqual(await successMarkers(f.outputRoot),[]);
 });
 
