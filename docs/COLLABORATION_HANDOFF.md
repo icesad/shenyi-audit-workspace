@@ -6,7 +6,8 @@
 | --- | --- |
 | 仓库 | 私有的 [icesad/shenyi-audit-workspace](https://github.com/icesad/shenyi-audit-workspace) |
 | 本阶段协作基线 | [`codex/team-collaboration-handoff-20261120`](https://github.com/icesad/shenyi-audit-workspace/tree/codex/team-collaboration-handoff-20261120) |
-| 本轮代码与验收记录 | [`456d8d9`](https://github.com/icesad/shenyi-audit-workspace/commit/456d8d97c89992f2c1362bea30811956b60b9f79)。实际拉取版本以协作分支顶端为准 |
+| 已验收的构件源码 | [`704959f`](https://github.com/icesad/shenyi-audit-workspace/commit/704959f6284c961ebda48d386f88c1d6e4883a71)，对应 Windows 评审包、macOS 双架构签前包和 Linux 演练构件 |
+| 本轮同步内容 | 三平台验收记录、四职级与新员工换机验收，以及 [`a5b0521`](https://github.com/icesad/shenyi-audit-workspace/commit/a5b0521a31fff97fa39f6195eb6a356ccccfd302) 的受管短信合成集成测试。协作开发以远端分支顶端为准 |
 | 当前收款候选 | 官网报价、锁单、扫码付款、查单与超时关单。Windows 客户端可打开或继续官网购买，也可在获准绑定的新电脑上查阅同队微信订单并打开原单。 |
 | 米老师的 GitHub 账号 | `mixue117`，已核对具有本仓库读写权限 |
 | 历史四来源报告 | `work/report-four-sources`，仍在草稿 PR #2，等待业务验收。 [查看草稿](https://github.com/icesad/shenyi-audit-workspace/pull/2) |
@@ -25,7 +26,7 @@
 - **产品负责人**负责桌面易用性、组织和项目权限、账号与设备、订阅席位、官网及上线，负责技术验收与版本集成。接到业务分支后，先核对共同改动的入口、项目权限和数据兼容，再复跑对应工作流。收款上线目前还要确认正式价格目录和商户配置。 [支付接入说明](PAYMENT_CHANNEL_PREPARATION.md)
 - 业务跨到权限、存储或界面时，两人先在 Issue 约定改动的文件、接口和验收人。底稿的专业复核、新冻结和重开规则由米老师确认。现有底稿查阅、填写、导出权限和版本保存按已有合同与验收记录执行。 [底稿三权与业务边界](WORKPAPER_ACCESS_CONTRACT.md) · [模块入口和文件](ARCHITECTURE.md)
 
-四来源报告的历史草稿位于 `work/report-four-sources@894078b`。米老师可在 PR #2 复核四类来源、底稿填写、草稿保存和 Word 导出。选择要保留的历史改动后，在 Issue 写明采用的提交、业务规则和验收样例，再从协作基线开独立集成分支提交新 PR。米老师签收业务结果，产品负责人核对现有立项、账表、权限及底稿入口的回归。 [历史草稿 PR #2](https://github.com/icesad/shenyi-audit-workspace/pull/2) · [报告合并预演记录](STATUS.md#2026-11-20-历史报告草稿隔离合并预演)
+四来源报告的历史草稿位于 `work/report-four-sources@894078b`。米老师可在 PR #2 复核四类来源、底稿填写、草稿保存和 Word 导出。选定要保留的提交、专业规则和验收样例后，从当前协作基线开独立集成分支并发起新 PR。米老师确认业务结果，产品负责人复核立项、账表、权限及底稿入口。 [历史草稿 PR #2](https://github.com/icesad/shenyi-audit-workspace/pull/2) · [报告合并预演记录](STATUS.md#2026-11-20-历史报告草稿隔离合并预演)
 
 ## 把代码取到自己的电脑
 
@@ -73,7 +74,7 @@ npm ci --ignore-scripts
 npm run dev
 ```
 
-工作台在 `http://127.0.0.1:8773/`。官网静态预览可另外运行 `node scripts/website-preview.mjs`，Windows 也可双击 `Start-Website-Preview.cmd`。按终端输出打开本机地址，用 `Ctrl+C` 停止自己启动的服务。
+工作台在 `http://127.0.0.1:8773/`。端口已有审核预览时保留原进程，另用下方独立团队入口走查。官网静态预览可另外运行 `node scripts/website-preview.mjs`，Windows 也可双击 `Start-Website-Preview.cmd`。按终端输出打开本机地址，用 `Ctrl+C` 停止自己启动的服务。
 
 在仓库根目录安装桌面依赖：
 
@@ -83,6 +84,8 @@ npm --prefix desktop run setup
 ```
 
 Windows 可双击 `Start-Team-Candidate-Preview.cmd` 打开独立合成桌面。该入口需要可写的 D 盘。缺少 D 盘时可先用浏览器工作台。macOS 可在根目录运行 `node scripts/team-isolated-preview.mjs`，实机仍待验收。官网合成订单一键演练使用完整解压的 Windows 双人评审包中的 `Start-Team-Website-Checkout-Candidate.cmd`，需要包内的 Node 运行时。微信 Native 付款流程需要独立的受管 HTTPS 配置。共享库保全备份和隔离升级预演已有记录，实际共享库切换仍待验。 [桌面依赖](../desktop/README.md#本机运行) · [开发环境](DEVELOPMENT.md) · [独立团队桌面预览](ISOLATED_CANDIDATE_PREVIEW.md) · [官网预览及下单演练](../website/README.md)
+
+两位负责人可按同一个合成案例走查采集、权限和原件预览。Windows 使用 `Start-Team-Pilot-Candidate.cmd`，源码入口也可运行 `node scripts/team-isolated-preview.mjs --pilot-demo`。各自启动时会得到独立合成库，可把观察结果记在同一份双人评审单。 [共同走查步骤](TEAM_PILOT_REHEARSAL.md) · [双人评审单](PILOT_OWNER_REVIEW.md)
 
 开发者可从仓库根目录复跑项目检查和直接相关回归。
 
@@ -96,6 +99,7 @@ npm run test:tools
 | 修改范围 | 可复跑的合成用例 |
 | --- | --- |
 | 项目授权、采集任务、团队底稿 | `node --test tests/team-project-access-core.test.cjs tests/team-task-management-core.test.cjs tests/team-workpaper-http-resume.test.cjs` |
+| 首管理员与受邀员工激活、员工换机 | `node --test tests/team-managed-onboarding-sms.test.cjs tests/team-device-replacement.test.cjs tests/team-device-replacement-proof.test.cjs tests/team-desktop-device-replacement-client.test.cjs` |
 | 官网扫码付款、桌面账务、换机找回原单 | `node --test tests/team-wechat-native-website.test.cjs tests/team-desktop-billing-client.test.cjs tests/team-desktop-website-checkout.test.cjs tests/team-desktop-billing-ui.test.cjs tests/team-managed-service-config.test.cjs` |
 | 微信账单和 Linux 监控 | `node --test tests/team-wechat-native-fund-bill-parser.test.cjs tests/team-wechat-native-reconciliation-cli.test.cjs tests/team-service-release-check.test.cjs` |
 
@@ -129,13 +133,15 @@ node --test tests/team-wechat-native-trade-bill-parser.test.cjs tests/team-wecha
 
 | 范围 | 已验证 | 待实际验收 |
 | --- | --- | --- |
-| Windows `e28ae2a`、`b31d0bb`、`456d8d9` | 一键合成评审包和 MSI 管理映像已有原生实启记录。实测四职级采集和撤权、年订自然到期后用同一经理会话恢复、新设备首次绑定后找回前任原单。找单使用源码客户端实测。 | 当前源码重建正式签名 MSI，验证安装、升级和回退。 |
-| macOS `e28ae2a`、`f4fe9e2` | Apple 芯片和 Intel 两包已离线签前核验。正式接收工具的用例覆盖同版本或旧版本在暂存前被拒绝。 | Developer ID 签名、公证、Mac 实机安装、绑定和升级。 |
-| Linux `2b4b825`、`8c50b8c`、`3b0883b` | 隔离 Ubuntu 实测签名部署、账本加密恢复、回退与定时监控。停服前会核对运行中后端 TLS 证书链与待启动配置，两种不匹配均在停服前被拦截。 | 国内云生产配置、外部告警送达、正式证书、真实商户及回调。 |
-| 首队试点 `f7f9217` | 受管预检核对至少一位合格审核员仍可首次绑定或保有有效设备绑定。 | 产品负责人批准首家试点，并填写限时到期时间、席位上限。 |
+| Windows `704959f` | 一键评审包实测合成订单恢复。独立打包客户端实测新设备首次绑定后找回同队原单、空库四职级采集与撤权，以及新受邀员工由同队管理员审批换机。换机使用同一台 Windows 的三套独立配置。 | 正式签名 MSI 安装、升级和回退，以及两台电脑之间实际换机。 |
+| macOS `704959f` | Apple 芯片和 Intel 两份候选均完成离线签前与接收检查。独立接收核对架构、交接签名和版本限制。 | Developer ID 签名、公证、Mac 实机安装、绑定和升级。 |
+| Linux `704959f` | Ubuntu 24.04 隔离环境实测签名激活、账本加密恢复和回滚。 | 国内云生产配置、外部告警送达、正式证书、真实商户及回调。 |
+| 首队试点 | 空库实测首管理员开通、首队四席、邀请预留及四职级任务。受管短信配置覆盖管理员和员工两条激活链路，使用合成供应商。 | 产品负责人批准首家试点并填写到期时间与席位上限，随后验收真实短信送达及获准团队样例。 |
 | 审计业务 | 已有历史报告预演和合成结果可复跑。 | 米老师确认采用的专业规则及合并范围，双方签收。实际共享库升级和获准资料试点单独安排。 |
 
-协作者从 GitHub 拉取源码、文档和合成测试，在各自电脑复跑。安装评审包、受管演练日志和原有预览由原开发机保管。 [最新验收记录](STATUS.md) · [Windows 管理映像实测](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-管理映像客户端的团队资料实测) · [macOS 接收步骤](MACOS_DESKTOP_CANDIDATE.md#2026-11-20-协作版本签前交接) · [Linux 发布和回退](LINUX_TEAM_DEPLOYMENT.md#重新启用已签版本)
+协作者从 GitHub 拉取源码、文档和合成测试，在各自电脑复跑。安装评审包、受管演练日志和原有预览由原开发机保管。 [Windows 评审包](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-21-当前协作版本的-windows-评审-zip-与独立客户端) · [macOS 接收](MACOS_DESKTOP_CANDIDATE.md#2026-11-21-当前协作提交的-macos-双架构签前交接) · [Ubuntu 发布恢复](LINUX_TEAM_DEPLOYMENT.md#2026-11-21-当前协作提交的-ubuntu-发布恢复与回滚)
+
+团队走查已记录四职级的任务和原件范围、审批与激活顺序、停服核对结果，以及短信的复跑命令。 [四职级走查](PILOT_MANAGED_FIRST_TASK.md#2026-11-21-当前协作提交的-windows-空库四职级验收) · [新员工换机验收](DEVICE_REPLACEMENT.md#2026-11-21-当前-windows-候选的新员工换机闭环) · [短信激活联测](MANAGED_TEAM_SERVICE.md#首管理员和员工激活联测)
 
 生产价格目录、增购折算分母、订单时效和退款后权益处置由产品负责人确认。上线申请以已确认的上海企业同主体收款为基础，先核对域名和阿里云资源，再按属地手续与正式回执推进。 [上线申请与域名服务器步骤](LAUNCH_INITIAL_APPLICATION_PACKET.md) · [商业化路线图](COMMERCIALIZATION_ROADMAP.md)
 
