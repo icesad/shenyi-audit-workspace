@@ -25,7 +25,7 @@ async function fixture(t){
  const restart=(origin=SITE)=>({origin,urlOrigin:origin,options:{websiteCheckout:createWebsiteCheckoutCandidate({origin})}});
  const options={db:f.db,now:()=>f.clock.value,serviceMode:'local-preview',identityProviders:{deviceProofRequired:true},subscriptionEnforcement:'team-management-v1',seatCapacityEnforcement:'invitation-reservations-v1',billingSimulation,websiteCheckout};
  const dispatch=async(request,overrides={})=>{const response=await handleTeamApplicationRequest(request,{...options,...overrides});return {status:response.status,data:await response.json(),headers:response.headers};};
- const desktop=(route,body={},settings={})=>dispatch(f.makeRequest(route,{method:settings.method??'POST',session:settings.session??admin,body:settings.method==='GET'?undefined:body}),settings.options);
+ const desktop=(route,body={},settings={})=>dispatch(f.makeRequest(route,{method:settings.method??'POST',session:settings.session??admin,headers:settings.headers,body:settings.method==='GET'?undefined:body}),settings.options);
  const handoff=(settings={})=>desktop((settings.root??ROOT)+'/website-handoff',settings.body??{},settings);
  const browser=(suffix,body,settings={})=>{
   const headers={'Content-Type':'application/json',...(settings.origin===null?{}:{Origin:settings.origin??SITE}),...settings.headers};
@@ -290,12 +290,92 @@ test('candidate feature is absent in default or managed mode and requires its is
 test('opted-in candidate disables desktop purchase and all simulated event routes but default desktop creation remains available',async t=>{
  const f=await fixture(t),before=f.facts(),body={requestId:randomUUID(),offerId:OFFER.id,offerRevision:OFFER.revision,selectedSeats:SEATS};
  isError(await f.desktop(ROOT+'/orders',body),403,'WEBSITE_CHECKOUT_REQUIRED');
+ isError(await f.desktop(ROOT+'/seat-orders',{}),403,'WEBSITE_CHECKOUT_REQUIRED');
  for(const suffix of ['notifications','payment-exceptions','order-closures']){
   const response=await f.dispatch(new Request('http://127.0.0.1:8774/api/billing/simulation/'+suffix,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}));isError(response,404,'NOT_FOUND');
  }
  assert.equal(f.orderRows()[0].rows.length,0);
  const normal=await f.desktop(ROOT+'/orders',body,{options:{websiteCheckout:null}});assert.equal(normal.status,201,JSON.stringify(normal.data));assert.equal(normal.data.order.status,'pending');
  assert.deepEqual(f.facts(),before);
+});
+
+function verifiedCapture(f, order){
+ const {merchantId}=f.billingSimulation;
+ return {protocol:'shenyi-simulation-payment-v1',merchantId,eventId:randomUUID(),transactionId:randomUUID(),
+  orderId:order.id,product:OFFER.product,amountMinor:order.amountMinor,currency:'CNY',status:'succeeded',paidAt:f.clock.value};
+}
+
+test('website orders can be reconciled by their device-verified team administrator',async t=>{
+ const f=await fixture(t);
+ const before=f.facts(),ticket=await f.ticket(),created=await f.order(ticket);
+ assert.equal(created.status,201);
+ const order=created.data.order;
+ assert.equal(order.status,'pending');
+ assert.deepEqual(f.facts(),before);
+ const {signSimulationPayment}=await source('billing-simulation.mjs');
+ const signed=signSimulationPayment(verifiedCapture(f,order),f.billingSimulation);
+ const lookups=[];
+ const options={billingSimulation:{...f.billingSimulation,batchReconciliation:true,lookupPayment(current){
+  lookups.push(current.id);
+  return current.id===order.id?signed:null;
+ }}};
+ const overview=await f.desktop(ROOT+'/overview',{}, {method:'GET',headers:{'X-Shenyi-Website-Checkout':'candidate-v1'},options});
+ assert.equal(overview.status,200);
+ assert.equal(overview.data.websiteCheckout,true);
+ assert.equal(overview.data.canReconcile,true);
+ assert.equal(overview.data.canReconcileBillingBatch,true);
+ const reconcile=ROOT+'/orders/'+order.id+'/reconcile';
+ const batch=ROOT+'/reconciliation';
+ isError(await f.desktop(reconcile),503,'BILLING_UNAVAILABLE');
+ isError(await f.desktop(batch,{kind:'annual'}),503,'BILLING_UNAVAILABLE');
+ const manager=await f.ready('manager-a');
+ for(const [route,input] of [[reconcile,{}],[batch,{kind:'annual'}]]){
+  isError(await f.desktop(route,input,{session:manager,options}),404,'NOT_FOUND');
+  isError(await f.desktop(route.replace('team-a','team-b'),input,{options}),404,'NOT_FOUND');
+ }
+ assert.deepEqual(lookups,[]);
+ assert.deepEqual(f.facts(),before);
+ const single=await f.desktop(reconcile,{}, {options});
+ assert.equal(single.status,200,JSON.stringify(single.data));
+ assert.equal(single.data.order.status,'paid');
+ const after=f.facts();
+ assert.equal(after.find(row=>row.name==='team_annual_fulfilments').count,1);
+ const checked=await f.desktop(batch,{kind:'annual'},{options});
+ assert.equal(checked.status,200,JSON.stringify(checked.data));
+ assert.deepEqual(checked.data.results,[{orderId:order.id,outcome:'matched',status:'paid',paymentException:false}]);
+ assert.deepEqual(lookups,[order.id,order.id]);
+ assert.deepEqual(f.facts(),after);
+ const original=await f.context(ticket);
+ assert.equal(original.status,200);
+ assert.deepEqual(original.data.order,{...order,status:'paid'});
+});
+
+test('website order recovery uses the stored verification without an available lookup adapter',async t=>{
+ const f=await fixture(t),ticket=await f.ticket(),created=await f.order(ticket);
+ assert.equal(created.status,201);
+ const order=created.data.order,route=ROOT+'/orders/'+order.id+'/resume-fulfilment';
+ const missing=await f.desktop(route);
+ assert.equal(missing.status,409,JSON.stringify(missing.data));
+ const {recordVerifiedAnnualPayment}=await source('billing-store.mjs');
+ const {signSimulationPayment,verifySimulationPaymentEnvelope}=await source('billing-simulation.mjs');
+ f.clock.value+=1000;
+ const confirmedAt=f.clock.value;
+ const {body,signature}=signSimulationPayment(verifiedCapture(f,order),f.billingSimulation);
+ recordVerifiedAnnualPayment(f.db,verifySimulationPaymentEnvelope(body,signature,f.billingSimulation),{now:()=>f.clock.value});
+ f.clock.value+=1000;
+ isError(await f.desktop(route,{confirmedAt:0}),400,'INVALID_INPUT');
+ const manager=await f.ready('manager-a');
+ isError(await f.desktop(route,{}, {session:manager}),404,'NOT_FOUND');
+ assert.equal(f.facts().find(row=>row.name==='team_annual_fulfilments').count,0);
+ assert.equal((await f.context(ticket)).data.order.status,'payment-verified');
+ const recovered=await f.desktop(route);
+ assert.equal(recovered.status,200,JSON.stringify(recovered.data));
+ assert.equal(recovered.data.order.status,'paid');
+ assert.equal(recovered.data.order.confirmedAt,confirmedAt);
+ const after=f.facts();
+ assert.deepEqual((await f.desktop(route)).data,recovered.data);
+ assert.deepEqual(f.facts(),after);
+ assert.deepEqual((await f.context(ticket)).data.order,{...order,status:'paid'});
 });
 
 test('a real final seat-plan INSERT failure leaves no partial order or consumed intention and retry creates one pending order',async t=>{

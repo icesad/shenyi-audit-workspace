@@ -233,9 +233,10 @@ export async function handleBillingRequest(request,options={}){
  if(kind==='overview'){
   if(!billingOverviewEnabled(options))unavailable();
  }else if(kind!=='seats'&&!billingSimulation)unavailable();
- const allowed=action||kind==='reconciliation'?'POST':isOrder&&!orderId?'GET, POST':'GET';
+ const reconcilesExistingOrders=kind==='reconciliation'||action==='reconcile'||action==='resume-fulfilment';
+ const allowed=reconcilesExistingOrders?'POST':isOrder&&!orderId?'GET, POST':'GET';
  if(!allowed.split(', ').includes(request.method))return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:allowed});
- if(options.websiteCheckoutActive&&request.method==='POST')throw new ApiError(403,'WEBSITE_CHECKOUT_REQUIRED','请在官网候选订单页操作。');
+ if(options.websiteCheckoutActive&&request.method==='POST'&&!reconcilesExistingOrders)throw new ApiError(403,'WEBSITE_CHECKOUT_REQUIRED','请在官网候选订单页操作。');
  const authorize=()=>actor(db,request,currentOptions,teamId,initial);
  const scoped=action=>transaction(db,()=>{const current=authorize(),result=action(current);authorize();return result;});
  if(kind==='reconciliation')return reconcileBatch(request,{db,teamId,options:currentOptions,now,scoped,authorize});
