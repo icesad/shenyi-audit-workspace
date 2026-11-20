@@ -1,5 +1,9 @@
 # 审易 GOAL · 团队商业化接续版
 
+## 2026-11-20 审易官网首屏与窄屏导航
+
+官网首页首屏与窄屏导航已交付本地候选。Windows Chrome 五种窗口宽度、放大字号、官网一键及 99 项相关回归通过。正式发布与双人签收继续按既定条件验收。 [本地验收](docs/STATUS.md#2026-11-20-审易官网首屏与窄屏导航)
+
 ## 2026-11-20 M8X 空库四职级评审
 
 Windows 受管试点评审包增加两名固定的合成员工候选，可在同一干净演练中从只有一名负责人开通团队，经四份邀请完成四名员工激活与各自电脑绑定。两席首件路线继续可用。四席实机分别核对实习生、助理、经理和合伙人的任务与资料权限。评审 ZIP 位于 `C:/Users/icesa/Documents/ShenyiM8FourRoles1120/release-accepted/Shenyi-Owner-Review-Win-x64.zip`。证据见 `C:/Users/icesa/Documents/ShenyiM8FourRoles1120/verification.json`。
