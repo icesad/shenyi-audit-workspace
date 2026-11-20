@@ -260,12 +260,20 @@ def check_candidate_startup(staged, env):
     raise ValueError('The candidate startup preflight failed before stopping the current service.')
 
 
+def activation_paths(revision, change_id):
+    suffix = revision
+    if change_id is not None:
+        require(isinstance(change_id, str) and re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?', change_id),
+                'Use a change ID of 1 to 32 lowercase letters, digits or internal hyphens.')
+        suffix = f'{revision}-{change_id}'
+    return ROOT / f'previous-{suffix}', ROOT / f'failed-{suffix}', ROOT / f'activation-{suffix}.json'
+
+
 def activate(args, root_fd, env):
     revision = args.revision
+    change_id = getattr(args, 'change_id', None)
     staged = ROOT / f'staged-{revision}'
-    previous = ROOT / f'previous-{revision}'
-    failed = ROOT / f'failed-{revision}'
-    history = ROOT / f'activation-{revision}.json'
+    previous, failed, history = activation_paths(revision, change_id)
     require(all(not os.path.lexists(path) for path in (JOURNAL, previous, failed, history)),
             'An activation record, retained directory or unfinished change already exists.')
     root_device = os.fstat(root_fd).st_dev
@@ -288,6 +296,8 @@ def activate(args, root_fd, env):
               'baselinePid': baseline[0], 'baselineInvocation': baseline[1],
               'baselineWarningChecks': sorted(warnings), 'candidateDatabasePreflight': 'passed',
               'candidateStartupPreflight': 'passed', **stamp}
+    if change_id is not None:
+        report['changeId'] = change_id
     record(JOURNAL, {**report, 'status': 'stopping-current'}, root_fd)
 
     try:
@@ -340,11 +350,12 @@ def activate(args, root_fd, env):
     return result
 
 
-def read_recovery_journal(args, root_device):
+def read_recovery_journal(args, root_device, change_id):
     info = owned_path(JOURNAL, stat.S_ISREG)
     require(info.st_nlink == 1 and info.st_dev == root_device, 'Untrusted activation journal file.')
     report = json.loads(read_file(JOURNAL, 64 * 1024))
     require(report['revision'] == args.revision and report['archiveSha256'] == args.archive_sha256
+            and ('changeId' in report) == (change_id is not None) and report.get('changeId') == change_id
             and report['status'] in RECOVERY_LAYOUTS and report['candidateDatabasePreflight'] == 'passed'
             and report.get('candidateStartupPreflight', 'passed') == 'passed',
             'The journal does not match the approved interrupted activation.')
@@ -395,12 +406,11 @@ def stable_invocation(env):
 
 def recover(args, root_fd, env):
     root_device = os.fstat(root_fd).st_dev
-    report = read_recovery_journal(args, root_device)
+    change_id = getattr(args, 'change_id', None)
+    previous, failed, history = activation_paths(args.revision, change_id)
+    report = read_recovery_journal(args, root_device, change_id)
     phase = report['status']
     staged = ROOT / f'staged-{args.revision}'
-    previous = ROOT / f'previous-{args.revision}'
-    failed = ROOT / f'failed-{args.revision}'
-    history = ROOT / f'activation-{args.revision}.json'
     require(not os.path.lexists(history), 'An activation history file already exists. Preserve the journal for review.')
     directories = {'current': CURRENT, 'staged': staged, 'previous': previous, 'failed': failed}
     stamp = {key: report[key] for key in ('configSha256', 'databaseIdentity')}
@@ -474,6 +484,7 @@ def main():
     parser.add_argument('--archive-sha256', required=True)
     parser.add_argument('--same-schema', action='store_true', required=True)
     parser.add_argument('--edge-ca', type=Path)
+    parser.add_argument('--change-id', help='Use an independent deployment record for this change.')
     parser.add_argument('--recover', action='store_true', help='Recover or reconcile a journaled activation.')
     args = parser.parse_args()
     try:
