@@ -244,6 +244,8 @@ node scripts/check-windows-release-msi.mjs `
   --app-payload-sha256 $approvedAppPayloadSha256
 ```
 
+正式接收命令必须同时提供获准的 MSI 摘要和签前应用负载摘要。漏填或格式错误时，命令会在创建临时目录前停止。
+
 该命令核对同一独立临时副本的摘要、Authenticode、时间戳和审易 MSI 结构。外层校验全部通过后，Windows Installer 用 `/a` 生成临时管理映像。工具在该映像核对清单、发行文件、Ed25519 签名和程序签名，核对载荷数量、大小、版本及获准应用负载摘要一致后给出回执。回执含两层摘要、匹配的 `appPayloadSha256`、发布者、ProductCode、PackageCode、版本及 `systemInstallPerformed: false`。摘要不一致时停止验收并核对构建输入。完成后清理本次临时目录。 [Windows Installer 管理提取](https://learn.microsoft.com/en-us/windows/win32/msi/administrative-installation)
 
 临时目录默认建在本机用户主目录。可用 `--scratch-root` 指定已有的受保护本地目录。工具先核对祖先目录的所有者和变更权限，再为新目录关闭权限继承，仅允许当前用户、SYSTEM 和本机管理员访问。父目录允许其他人员删除或改权时，在读取 MSI 之前拒绝。

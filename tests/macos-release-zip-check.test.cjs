@@ -23,6 +23,7 @@ async function fixture(t) {
   const { checkMacosReleaseZip } = await import('../scripts/check-macos-release-zip.mjs');
   return { directory, temporaryRoot, bytes, checkMacosReleaseZip, input: {
     archive, sha256: createHash('sha256').update(bytes).digest('hex'), python: process.execPath,
+    appPayloadSha256: 'a'.repeat(64),
     teamId: 'A1B2C3D4E5', bundleId: 'cn.example.shenyi', version: '0.61.0', arch: 'arm64',
   } };
 }
@@ -32,7 +33,7 @@ function archiveReceipt({ input, bytes }) {
     format: 'shenyi-macos-release-zip', archiveSha256: input.sha256, archiveBytes: bytes.length,
     archiveEntries: 28, symlinks: 4, appFiles: 8, bundleIdentifier: input.bundleId,
     arch: input.arch, version: input.version,
-    ...(input.appPayloadSha256 === undefined ? {} : { appPayloadSha256: input.appPayloadSha256 }),
+    appPayloadSha256: input.appPayloadSha256,
   };
 }
 
@@ -57,10 +58,7 @@ function commandBoundary(f, { verify, extract, native } = {}) {
         calls.push('verify ZIP');
         privateZip = args[3];
         const expectedArgs = ['-I', verifier, '--verify-release', privateZip, f.input.arch, f.input.version,
-          '--bundle-id', f.input.bundleId, '--sha256', f.input.sha256];
-        if (f.input.appPayloadSha256 !== undefined) {
-          expectedArgs.push('--app-payload-sha256', f.input.appPayloadSha256);
-        }
+          '--bundle-id', f.input.bundleId, '--sha256', f.input.sha256, '--app-payload-sha256', f.input.appPayloadSha256];
         assert.deepEqual(args, expectedArgs);
         assert.notEqual(privateZip, f.input.archive);
         const relative = path.relative(f.temporaryRoot, privateZip);
@@ -121,6 +119,7 @@ test('receipt binds one held archive copy to extraction and native app assessmen
   assert.equal(result.appLaunched, false);
   assert.equal(result.archiveSha256, f.input.sha256);
   assert.equal(result.archiveBytes, f.bytes.length);
+  assert.equal(result.appPayloadSha256, f.input.appPayloadSha256);
   assert.equal(result.archiveEntries, 28);
   assert.equal(result.symlinks, 4);
   assert.equal(result.appFiles, 8);
@@ -166,33 +165,28 @@ test('unusable or mismatching ZIP verifier responses cannot reach extraction', a
   }
 });
 
-test('approved application payload is verified on the held ZIP before extraction and kept in the receipt', async t => {
+test('missing or invalid approved payload digest stops before staging or release commands', async t => {
   const f = await fixture(t);
-  f.input.appPayloadSha256 = 'a'.repeat(64);
   const model = commandBoundary(f);
-  const result = await checkFixture(f, model);
-  assert.deepEqual(model.calls, ['verify ZIP', 'extract approved ZIP', 'assess expanded application']);
-  assert.equal(result.appPayloadSha256, f.input.appPayloadSha256);
-  assert.equal(result.archiveSha256, f.input.sha256);
-});
-
-test('invalid expected payload digest is rejected before running any release commands', async t => {
-  const f = await fixture(t);
-  f.input.appPayloadSha256 = 'A'.repeat(64);
-  const model = commandBoundary(f);
-  await assert.rejects(checkFixture(f, model));
+  const { appPayloadSha256: _approvedDigest, ...withoutDigest } = f.input;
+  await fs.rmdir(f.temporaryRoot);
+  await assert.rejects(f.checkMacosReleaseZip(withoutDigest, model.options), { code: 'INVALID_ARGUMENTS' });
+  for (const appPayloadSha256 of [null, '', 'A'.repeat(64), 'a'.repeat(63), 123]) {
+    await assert.rejects(f.checkMacosReleaseZip({ ...withoutDigest, appPayloadSha256 }, model.options),
+      { code: 'INVALID_ARGUMENTS' });
+  }
+  await assert.rejects(fs.lstat(f.temporaryRoot), { code: 'ENOENT' });
   assert.deepEqual(model.calls, []);
 });
 
 test('missing or different approved application payload evidence stops before extraction and signature assessment', async t => {
   const f = await fixture(t);
-  f.input.appPayloadSha256 = 'a'.repeat(64);
   for (const [label, appPayloadSha256] of [['missing', undefined], ['mismatched', 'b'.repeat(64)]]) {
     await t.test(label, async () => {
       const model = commandBoundary(f, {
         verify: ({ receipt }) => JSON.stringify({ ...receipt, appPayloadSha256 }),
       });
-      await assert.rejects(checkFixture(f, model));
+      await assert.rejects(checkFixture(f, model), { code: 'ARCHIVE_RECEIPT_MISMATCH' });
       assert.deepEqual(model.calls, ['verify ZIP']);
     });
   }

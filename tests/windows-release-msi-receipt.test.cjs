@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -44,7 +45,7 @@ async function fixture(t, hooks = {}, app = approvedApp) {
   const expected = {
     msi: path.join(root, 'original delivery.msi'), sha256: digest(inputBytes),
     publicKey: path.join(root, 'independent publisher key.pem'), publisherSha256,
-    version: testerVersion, installedVersion,
+    version: testerVersion, installedVersion, appPayloadSha256: appPayloadSha256(approvedApp),
   };
   const events = [];
   await fs.mkdir(temporaryRoot);
@@ -208,7 +209,7 @@ test('a receipt binds the approved input to one private MSI through source inspe
   assert.equal(receipt.packageCode, packageCode);
   assert.equal(receipt.releaseFileCount, 2);
   assert.equal(receipt.releaseBytes, executableBytes.length + approvedApp.length);
-  assert.equal(Object.hasOwn(receipt, 'appPayloadSha256'), false);
+  assert.equal(receipt.appPayloadSha256, f.expected.appPayloadSha256);
   assert.ok(!JSON.stringify(receipt).includes(JSON.stringify(f.state.workspace).slice(1, -1)));
   await f.cleaned();
 });
@@ -216,7 +217,7 @@ test('a receipt binds the approved input to one private MSI through source inspe
 test('the approved application digest is checked and reported after both signatures', async t => {
   const f = await fixture(t);
   const approvedDigest = appPayloadSha256(approvedApp);
-  const receipt = await f.receive({ appPayloadSha256: approvedDigest });
+  const receipt = await f.receive({ appPayloadSha256: approvedDigest.toUpperCase() });
   assert.deepEqual(f.events, ['outer', 'inspect', 'extract', 'inner', 'manifest']);
   assert.equal(receipt.appPayloadSha256, approvedDigest);
   assert.equal(receipt.systemInstallPerformed, false);
@@ -227,7 +228,7 @@ test('an independently approved application digest cannot match stale same-versi
   assert.equal(previousApp.length, approvedApp.length);
   assert.equal(fixtureManifest(previousApp).length, manifestBytes.length);
   const f = await fixture(t, {}, previousApp);
-  const oldReceipt = await f.receive();
+  const oldReceipt = await f.receive({ appPayloadSha256: appPayloadSha256(previousApp) });
   assert.equal(oldReceipt.version, testerVersion);
   assert.equal(oldReceipt.releaseOsSignatureVerified, true);
   assert.equal(oldReceipt.installerOsSignatureVerified, true);
@@ -246,13 +247,30 @@ test('an approved digest still requires application evidence from the verified m
   await f.cleaned();
 });
 
-test('a malformed approved application digest stops before workspace protection', async t => {
+test('an omitted or malformed approved application digest stops before workspace protection', async t => {
   const f = await fixture(t);
-  for (const appPayloadSha256 of [null, '', 'g'.repeat(64), '1'.repeat(63), 123]) {
+  for (const appPayloadSha256 of [undefined, null, '', 'g'.repeat(64), '1'.repeat(63), 123]) {
     await assert.rejects(f.receive({ appPayloadSha256 }), { code: 'INVALID_ARGUMENTS' });
   }
   assert.equal(f.state.protectedWorkspace, '');
   assert.deepEqual(f.events, []);
+  await f.cleaned();
+});
+
+test('the Windows CLI requires the approved application digest before looking for the MSI', {
+  skip: process.platform !== 'win32',
+}, async t => {
+  const f = await fixture(t);
+  const { sha256, publicKey, publisherSha256, version, installedVersion } = f.expected;
+  const checker = path.resolve(__dirname, '../scripts/check-windows-release-msi.mjs');
+  const missingMsi = path.join(f.root, 'missing release.msi');
+  const result = spawnSync(process.execPath, [checker, '--msi', missingMsi, '--msi-sha256', sha256,
+    '--public-key', publicKey, '--publisher-sha256', publisherSha256, '--version', version,
+    '--installed-version', installedVersion, '--scratch-root', f.temporaryRoot], { encoding: 'utf8', timeout: 15_000 });
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, '');
+  assert.equal(JSON.parse(result.stderr).code, 'INVALID_ARGUMENTS');
   await f.cleaned();
 });
 

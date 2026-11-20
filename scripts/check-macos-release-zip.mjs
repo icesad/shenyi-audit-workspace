@@ -24,7 +24,7 @@ function fail(code, message) {
 }
 
 function invalidArguments() {
-  fail('INVALID_ARGUMENTS', '请指定正式 ZIP、可信 SHA-256、Python 的绝对路径及获准的发行身份、版本和架构。');
+  fail('INVALID_ARGUMENTS', '请指定正式 ZIP、归档与获准应用负载的 SHA-256、Python 的绝对路径及发行身份、版本和架构。');
 }
 
 function absolute(value) {
@@ -91,12 +91,11 @@ async function systemCommand(program, args) {
 
 async function verifyCopiedArchive(run, copy, byteLength, expected) {
   const { python, sha256, arch, bundleId, version, appPayloadSha256 } = expected;
-  const payloadArgs = appPayloadSha256 === undefined ? [] : ['--app-payload-sha256', appPayloadSha256];
   let receipt;
   try {
     const { stdout } = await run(python, [
       '-I', archiveChecker, '--verify-release', copy, arch, version, '--bundle-id', bundleId, '--sha256', sha256,
-      ...payloadArgs,
+      '--app-payload-sha256', appPayloadSha256,
     ]);
     receipt = JSON.parse(stdout);
   } catch {
@@ -107,12 +106,10 @@ async function verifyCopiedArchive(run, copy, byteLength, expected) {
       receipt.arch !== arch || receipt.version !== version || bundleIdentifier !== bundleId ||
       ![archiveEntries, symlinks, appFiles].every(Number.isSafeInteger) || appFiles < 1 || symlinks < 0 ||
       appFiles + symlinks > archiveEntries ||
-      (appPayloadSha256 !== undefined && receipt.appPayloadSha256 !== appPayloadSha256)) {
+      receipt.appPayloadSha256 !== appPayloadSha256) {
     fail('ARCHIVE_RECEIPT_MISMATCH', '归档核验回执与本次获准发行记录不一致。');
   }
-  const verified = { archiveSha256, archiveBytes, archiveEntries, symlinks, appFiles };
-  if (appPayloadSha256 !== undefined) verified.appPayloadSha256 = appPayloadSha256;
-  return verified;
+  return { archiveSha256, archiveBytes, archiveEntries, symlinks, appFiles, appPayloadSha256 };
 }
 
 async function assertPrivateArchiveUnchanged(copy, sealed, expectedSha256, byteLength) {
@@ -140,8 +137,7 @@ export async function checkMacosReleaseZip(expected, {
   const { archive, sha256, python, teamId, bundleId, version, arch, appPayloadSha256 } = expected ?? {};
   if (!absolute(archive) || path.resolve(archive) !== archive || path.extname(archive).toLowerCase() !== '.zip' ||
       !absolute(python) || typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256) ||
-      (appPayloadSha256 !== undefined && (typeof appPayloadSha256 !== 'string' ||
-        !/^[a-f0-9]{64}$/.test(appPayloadSha256))) ||
+      typeof appPayloadSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(appPayloadSha256) ||
       !hasMacosReleaseIdentity({ teamId, bundleId, version, arch })) invalidArguments();
 
   const workspace = await mkdtemp(path.join(await realpath(temporaryRoot), 'shenyi-release-zip-'));
