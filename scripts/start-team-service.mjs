@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createPrivateKey } from 'node:crypto';
 import { constants } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
@@ -8,12 +9,12 @@ import { assertManagedDatabaseReady } from '../server/team/managed-database-read
 import { createAliyunSms } from '../server/team/aliyun-sms.mjs';
 import { createWechatOpenPlatform } from '../server/team/wechat-open-platform.mjs';
 import { assertWechatNativeBillingReady } from '../server/team/wechat-native-billing.mjs';
-import { APP_ID, MERCHANT_ID, createWechatSignatureVerifier, matches } from '../server/team/wechat-native-protocol.mjs';
+import { APP_ID, MERCHANT_ID, createWechatSignatureVerifier, isRsa2048Key, matches } from '../server/team/wechat-native-protocol.mjs';
 import { sqliteExistingFileUri } from '../server/team/sqlite-existing-file.mjs';
 
 const checkout = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fields = ['schemaVersion', 'database', 'apiBase', 'serverId', 'listenPort', 'tlsCertificate', 'tlsKey'];
-const optionalFields = ['smsProfile', 'reviewedRecovery', 'wechatProfile', 'wechatNativeCallbackProfile'];
+const optionalFields = ['smsProfile', 'reviewedRecovery', 'wechatProfile', 'wechatNativeCallbackProfile', 'wechatNativeWebsiteProfile'];
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const configCode = 'MANAGED_SERVICE_CONFIGURATION_INVALID';
 const messages = {
@@ -26,6 +27,7 @@ const messages = {
   MANAGED_SMS_INVALID: '短信服务配置无效。请检查独立配置文件及模板。',
   MANAGED_WECHAT_INVALID: '微信扫码服务配置无效。请检查独立配置文件、应用和回调域名。',
   MANAGED_WECHAT_NATIVE_CALLBACK_NOT_READY: '微信支付通知配置或账本未就绪。',
+  MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY: '微信支付官网订单页配置未就绪。',
   MANAGED_SERVICE_LISTEN_FAILED: '团队服务未能监听配置的本机端口。',
   MANAGED_SERVICE_STOP_FAILED: '团队服务关闭未完成。',
 };
@@ -133,14 +135,20 @@ export async function loadManagedServiceConfiguration(filename) {
     const smsProfile = Object.hasOwn(value, 'smsProfile') ? localPath(value.smsProfile) : undefined;
     const wechatProfile = Object.hasOwn(value, 'wechatProfile') ? localPath(value.wechatProfile) : undefined;
     const wechatNativeCallbackProfile = Object.hasOwn(value, 'wechatNativeCallbackProfile') ? localPath(value.wechatNativeCallbackProfile) : undefined;
+    const wechatNativeWebsiteProfile = Object.hasOwn(value, 'wechatNativeWebsiteProfile') ? localPath(value.wechatNativeWebsiteProfile) : undefined;
     if ((Object.hasOwn(value, 'reviewedRecovery') && typeof value.reviewedRecovery !== 'boolean') ||
       (value.reviewedRecovery === true && !smsProfile)) fail(configCode);
     if (smsProfile) filenames.push(smsProfile);
     if (wechatProfile) filenames.push(wechatProfile);
     if (wechatNativeCallbackProfile) filenames.push(wechatNativeCallbackProfile);
+    if (wechatNativeWebsiteProfile) {
+      if (!wechatNativeCallbackProfile) fail(configCode);
+      filenames.push(wechatNativeWebsiteProfile);
+    }
     if (filenames.some((name, index) => inside(repository, name) || filenames.slice(0, index).some(previous => !path.relative(previous, name)))) fail(configCode);
     return Object.freeze({ ...value, database, tlsCertificate, tlsKey, ...(smsProfile ? { smsProfile } : {}),
-      ...(wechatProfile ? { wechatProfile } : {}), ...(wechatNativeCallbackProfile ? { wechatNativeCallbackProfile } : {}) });
+      ...(wechatProfile ? { wechatProfile } : {}), ...(wechatNativeCallbackProfile ? { wechatNativeCallbackProfile } : {}),
+      ...(wechatNativeWebsiteProfile ? { wechatNativeWebsiteProfile } : {}) });
   } catch {
     fail(configCode);
   }
@@ -208,6 +216,26 @@ async function loadWechatNativeCallback(filename) {
   }
 }
 
+async function loadWechatNativeWebsite(filename) {
+  if (filename === undefined) return;
+  const code = 'MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY';
+  let bytes;
+  try {
+    if (Object.hasOwn(process.env, 'NODE_TLS_REJECT_UNAUTHORIZED') && process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '1') fail(code);
+    bytes = await readLocalFile(filename, 16 * 1024, code);
+    const {schemaVersion, provider, certificateSerial, merchantPrivateKey, ...unknown} = parseProfile(bytes,code);
+    if (schemaVersion !== 1 || provider !== 'wechat-pay-native-v3' || Object.keys(unknown).length !== 0 ||
+        !matches(/^[A-Fa-f0-9]{1,64}$/,certificateSerial) || typeof merchantPrivateKey !== 'string') fail(code);
+    const key = createPrivateKey(merchantPrivateKey);
+    if (!isRsa2048Key(key,'private')) fail(code);
+    return {certificateSerial,merchantPrivateKey:key};
+  } catch {
+    fail(code);
+  } finally {
+    bytes?.fill(0);
+  }
+}
+
 function databaseReadinessOptions({ reviewedRecovery = false, wechatProfile }) {
   return { reviewedRecovery, wechatEnabled: wechatProfile !== undefined };
 }
@@ -252,15 +280,17 @@ async function openManagedDatabase(configuration) {
 async function withManagedServiceInputs(filename, use) {
   const configuration = await loadManagedServiceConfiguration(filename);
   const { serverId, apiBase, listenPort: port, tlsCertificate, tlsKey, smsProfile, reviewedRecovery = false,
-    wechatProfile, wechatNativeCallbackProfile } = configuration;
+    wechatProfile, wechatNativeCallbackProfile, wechatNativeWebsiteProfile } = configuration;
   let key, smsProvider, wechatNativeCallback;
   try {
     smsProvider = await loadSmsProvider(smsProfile);
     const wechat = await loadWechatProvider(wechatProfile, apiBase);
     wechatNativeCallback = await loadWechatNativeCallback(wechatNativeCallbackProfile);
+    const wechatNativeWebsite = await loadWechatNativeWebsite(wechatNativeWebsiteProfile);
     const cert = await readLocalFile(tlsCertificate, 128 * 1024, 'MANAGED_TLS_INVALID');
     key = await readLocalFile(tlsKey, 32 * 1024, 'MANAGED_TLS_INVALID');
-    return await use(configuration, { apiBase, port, serverId, cert, key, ...smsProvider, reviewedRecovery, wechat, wechatNativeCallback });
+    return await use(configuration, { apiBase, port, serverId, cert, key, ...smsProvider, reviewedRecovery, wechat,
+      wechatNativeCallback, wechatNativeWebsite });
   } finally {
     key?.fill(0);
     smsProvider?.phonePepper.fill(0);
@@ -301,6 +331,11 @@ async function main(args) {
         await checkManagedDatabase(configuration);
       }
       checkManagedServiceStartup(inputs);
+      if (inputs.wechatNativeWebsite) {
+        const {checkWechatNativeWebsiteAssets} = await import('../server/team/wechat-native-website.mjs');
+        try { await checkWechatNativeWebsiteAssets(); }
+        catch { fail('MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY'); }
+      }
     });
     console.log(JSON.stringify({ event: firstPilot ? 'pilot-ready' : 'startup-ready' }));
     return;

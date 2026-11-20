@@ -40,6 +40,7 @@ import {billingSimulationConfiguration} from './billing-simulation.mjs';
 import {handleBillingRequest,handleBillingSimulationNotification,SIMULATION_NOTIFICATION_PATH,SIMULATION_PAYMENT_EXCEPTION_PATH,SIMULATION_ORDER_CLOSURE_PATH} from './billing-api.mjs';
 import {handleBillingRefundIntakeRequest} from './billing-refund-intake-api.mjs';
 import {handleWebsiteCheckoutBrowser,handleWebsiteCheckoutHandoff,isWebsiteCheckoutBrowserPath,websiteCheckoutAvailable} from './website-checkout.mjs';
+import {isNativeWebsiteIssuerPath} from './wechat-native-website.mjs';
 
 /** Team application boundary shared by the local preview and managed service. */
 export async function handleTeamApplicationRequest(request, options = {}) {
@@ -56,7 +57,7 @@ export async function handleTeamApplicationRequest(request, options = {}) {
   // HEAD never carries a body, including metadata/origin/auth/clock errors.
   return new Response(request.method==='HEAD'?null:response.body,{status:response.status,statusText:response.statusText,headers});
 }
-async function applicationResponse(request, {db, now = Date.now,identityProviders={},subscriptionEnforcement='disabled',billingSimulation=null,seatCapacityEnforcement='disabled',serviceMode='local-preview',websiteCheckout} = {}) {
+async function applicationResponse(request, {db, now = Date.now,identityProviders={},subscriptionEnforcement='disabled',billingSimulation=null,seatCapacityEnforcement='disabled',serviceMode='local-preview',websiteCheckout,nativeWebsitePayment} = {}) {
   let releaseDeviceBody;
   try {
     const managedService=serviceMode==='managed-service';
@@ -66,6 +67,8 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
     const at = now();
     if (!Number.isSafeInteger(at) || at < 0) throw new Error('Invalid clock');
     const url=new URL(request.url);
+    const nativeHandoff=isNativeWebsiteIssuerPath(url.pathname);
+    if(nativeHandoff&&(!managedService||!nativeWebsitePayment))return json({error:{code:'NOT_FOUND',message:'无法访问此资源。'}},404);
     const websiteCheckoutPath=isWebsiteCheckoutBrowserPath(url.pathname);
     const simulationPath=[SIMULATION_NOTIFICATION_PATH,SIMULATION_PAYMENT_EXCEPTION_PATH,SIMULATION_ORDER_CLOSURE_PATH].includes(url.pathname);
     if(managedService&&(websiteCheckoutPath||simulationPath))return json({error:{code:'NOT_FOUND',message:'无法访问此资源。'}},404);
@@ -98,6 +101,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
     const deviceAuthorization=await authorizeDeviceRequest(request,options);
     releaseDeviceBody=deviceAuthorization.release;
     request=deviceAuthorization.request;options.deviceContext=deviceAuthorization.context;
+    if(nativeHandoff)return await nativeWebsitePayment.issue(request,options.deviceContext);
     return await handleWebsiteCheckoutHandoff(request,options)
       || (!options.websiteCheckoutActive && await handleBillingRefundIntakeRequest(request,options))
       || await handleBillingRequest(request,options)

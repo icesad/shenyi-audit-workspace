@@ -8,7 +8,9 @@ import {assertDatabaseIdentity, assertManagedDatabaseReady} from './managed-data
 import {isWechatConfigured} from './wechat-api.mjs';
 import {serviceUnavailable, startLoopbackTeamListener} from './team-http-listener.mjs';
 import {handleWechatNativeCallback, WECHAT_NATIVE_NOTIFY_PATH} from './wechat-native-callback.mjs';
-import {assertWechatNativeBillingReady, createWechatNativePaymentReceiver, withWechatNativeCallbackLockBudget} from './wechat-native-billing.mjs';
+import {assertWechatNativeBillingReady, createWechatNativeBilling, createWechatNativePaymentReceiver, withWechatNativeCallbackLockBudget} from './wechat-native-billing.mjs';
+import {createWechatNativeWebsite, isNativeWebsitePath} from './wechat-native-website.mjs';
+import {isWechatNativeNotifyUrl} from './wechat-native-orders.mjs';
 
 export {assertManagedDatabaseReady};
 
@@ -18,6 +20,7 @@ const messages = {
   MANAGED_TLS_INVALID: '本机团队服务 TLS 配置无效。',
   MANAGED_SERVICE_LISTEN_FAILED: '本机团队服务无法监听指定端口。',
   MANAGED_WECHAT_NATIVE_CALLBACK_NOT_READY: '微信支付通知配置或账本未就绪。',
+  MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY: '微信支付官网订单页配置未就绪。',
 };
 const recoveryRoutes = new Set([
   '/api/auth/recovery-requests/capabilities', '/api/auth/recovery-requests',
@@ -76,16 +79,28 @@ function validateManagedServiceOptions({apiBase, port = 0, serverId, sms, phoneP
   return {origin, hasSms, wechatEnabled, readinessOptions:{reviewedRecovery,wechatEnabled}};
 }
 
+function websiteNotifyUrl(origin, website, callback) {
+  if (!website || !callback) fail('MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY');
+  const {fetchImpl, notifyUrl} = website;
+  const callbackUrl = origin.origin + WECHAT_NATIVE_NOTIFY_PATH;
+  // Only the isolated, injected transport uses an example callback domain.
+  if (origin.hostname === 'localhost' && typeof fetchImpl === 'function' &&
+      notifyUrl === 'https://shenyi.example.invalid' + WECHAT_NATIVE_NOTIFY_PATH) return notifyUrl;
+  if ((notifyUrl !== undefined && notifyUrl !== callbackUrl) || !isWechatNativeNotifyUrl(callbackUrl)) fail('MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY');
+  return callbackUrl;
+}
+
 /** Validate the same provider settings and TLS context without creating a listener. */
 export function checkManagedServiceStartup(options) {
   const {origin} = validateManagedServiceOptions(options);
+  if (options.wechatNativeWebsite !== undefined) websiteNotifyUrl(origin,options.wechatNativeWebsite,options.wechatNativeCallback);
   try { createSecureContext(checkedTlsOptions(origin, options.key, options.cert)); }
   catch { fail('MANAGED_TLS_INVALID'); }
 }
 
 /** Loopback-only HTTPS listener for a separately provisioned non-demo database. */
 export async function startManagedTeamServer({db, apiBase, port = 0, serverId, key, cert, sms, phonePepper,
-  reviewedRecovery = false, wechat, wechatNativeCallback} = {}) {
+  reviewedRecovery = false, wechat, wechatNativeCallback, wechatNativeWebsite} = {}) {
   const {origin, hasSms, wechatEnabled, readinessOptions} = validateManagedServiceOptions({apiBase, port, serverId, sms, phonePepper, reviewedRecovery, wechat});
   assertManagedDatabaseReady(db, serverId, readinessOptions);
   let receiveWechatNativeNotification;
@@ -96,6 +111,17 @@ export async function startManagedTeamServer({db, apiBase, port = 0, serverId, k
     } catch { fail('MANAGED_WECHAT_NATIVE_CALLBACK_NOT_READY'); }
   }
   const tlsOptions = checkedTlsOptions(origin, key, cert);
+  let nativeWebsitePayment;
+  if (wechatNativeWebsite !== undefined) {
+    try {
+      if (!receiveWechatNativeNotification) fail('MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY');
+      const {certificateSerial, merchantPrivateKey, fetchImpl} = wechatNativeWebsite;
+      const notifyUrl = websiteNotifyUrl(origin,wechatNativeWebsite,wechatNativeCallback);
+      const billing = createWechatNativeBilling({...wechatNativeCallback, db,
+        certificateSerial, merchantPrivateKey, fetchImpl, notifyUrl});
+      nativeWebsitePayment = await createWechatNativeWebsite({db,origin:origin.origin,billing});
+    } catch { fail('MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY'); }
+  }
   const pepper = hasSms ? Buffer.from(phonePepper) : undefined;
   const identityProviders = Object.freeze({deviceProofRequired:true, reviewedRecovery,
     ...(hasSms ? {sms:Object.freeze({send:sms.send.bind(sms)}), phonePepper:pepper} : {}),
@@ -106,7 +132,7 @@ export async function startManagedTeamServer({db, apiBase, port = 0, serverId, k
   const settings = Object.freeze({
     db, serviceMode:'managed-service', identityProviders,
     subscriptionEnforcement:'team-management-v1', seatCapacityEnforcement:'invitation-reservations-v1',
-    billingSimulation:null,
+    billingSimulation:null, nativeWebsitePayment,
   });
   try {
     const service = await startLoopbackTeamListener({
@@ -144,6 +170,12 @@ export async function startManagedTeamServer({db, apiBase, port = 0, serverId, k
           return finish(await handleWechatNativeCallback(request, receiveWechatNativeNotification));
         }
         assertDatabaseIdentity(db, serverId);
+        if (isNativeWebsitePath(new URL(request.url).pathname)) {
+          if (!nativeWebsitePayment) return json({error:{code:'NOT_FOUND',message:'无法访问此资源。'}},404);
+          try { assertWechatNativeBillingReady(db); }
+          catch { return serviceUnavailable(); }
+          return await nativeWebsitePayment.serve(request);
+        }
         if (reviewedRecovery || wechatEnabled) {
           const pathname = new URL(request.url).pathname;
           if ((reviewedRecovery && (recoveryRoutes.has(pathname) || recoveryDecisionRoute.test(pathname))) ||

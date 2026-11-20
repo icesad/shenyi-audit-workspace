@@ -328,9 +328,10 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
       return current.payment ? current : {...current, state: result.state};
     },
     receiveNotification,
-    fulfilPayment(access) {
+    fulfilPayment(access, {authorize} = {}) {
       const scope = {...access};
       return write(db, () => {
+        authorize?.();
         const result = readOrder(scope);
         const {order, payment} = result;
         if (!payment) conflict();
@@ -356,6 +357,7 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
         if (finalTime < at || finalTime >= endsAt) needsReview();
         if (annual) assertAnnualCapacity(order.teamId, order.seats, finalTime);
         else readSeatCapacity(db, order.teamId, finalTime);
+        authorize?.();
         const saved = readOrder(scope);
         if (saved.payment?.fulfilment?.fulfilledAt !== at) conflict();
         return saved;

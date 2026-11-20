@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>订单付款 · 审易</title>
+  <link rel="icon" href="/api/website-pay/brand.png" type="image/png">
+  <link rel="stylesheet" href="/api/website-pay/payment.css">
+  <script src="/api/website-pay/payment.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <header class="site-header">
+    <div class="shell masthead">
+      <img src="/api/website-pay/brand.png" width="47" height="38" alt="">
+      <span>审易</span>
+    </div>
+  </header>
+
+  <main id="main" class="shell" tabindex="-1">
+    <h1>订单付款</h1>
+    <p class="lead">核对原订单金额后，使用微信扫一扫付款。</p>
+
+    <section id="payment-status" class="payment-status" aria-labelledby="status-title" aria-busy="true">
+      <div role="status" aria-live="polite" aria-atomic="true">
+        <h2 id="status-title">正在核对订单页授权</h2>
+        <p id="status-detail">请稍候。</p>
+      </div>
+      <button type="button" class="button secondary" id="retry-order" hidden>重新核对订单</button>
+    </section>
+
+    <div id="payment-content" class="payment-grid" hidden>
+      <section class="panel order-panel" aria-labelledby="order-title">
+        <h2 id="order-title"></h2>
+        <p id="team-name" class="team-name"></p>
+        <div class="total">
+          <span>订单金额</span>
+          <strong id="order-amount"></strong>
+        </div>
+        <dl class="order-details">
+          <div><dt>订单编号</dt><dd id="order-id"></dd></div>
+          <div><dt>席位数</dt><dd id="order-seats"></dd></div>
+          <div><dt>付款截止（北京时间）</dt><dd id="order-expires"></dd></div>
+        </dl>
+      </section>
+
+      <section class="panel scan-panel" aria-labelledby="scan-title">
+        <h2 id="scan-title">微信支付</h2>
+        <p id="scan-instructions">请先核对订单，再获取本单付款码。</p>
+        <figure id="payment-qr" hidden>
+          <img id="payment-qr-image" width="232" height="232" alt="当前订单的微信付款二维码">
+          <figcaption>用微信扫一扫，付款后点击查询付款结果。</figcaption>
+        </figure>
+        <div class="payment-actions">
+          <button type="button" class="button primary" id="show-qr">获取付款二维码</button>
+          <button type="button" class="button secondary" id="check-payment">查询付款结果</button>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

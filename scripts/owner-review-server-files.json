@@ -111,6 +111,7 @@
   "server/team/wechat-native-notification.mjs",
   "server/team/wechat-native-orders.mjs",
   "server/team/wechat-native-protocol.mjs",
+  "server/team/wechat-native-website.mjs",
   "server/team/website-checkout-schema.sql",
   "server/team/website-checkout.mjs",
   "server/team/workpaper-access-api.mjs",

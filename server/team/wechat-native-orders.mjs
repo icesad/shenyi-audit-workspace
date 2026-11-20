@@ -15,7 +15,7 @@ const NATIVE_STATES = new Set(['NOTPAY', 'CLOSED', 'REFUND', 'SUCCESS']);
 const invalidOrder = () => { throw new ApiError(400, 'WECHAT_NATIVE_LOCK_INVALID', '微信支付订单资料或付款期限无效。'); };
 const providerUnavailable = () => { throw new ApiError(502, 'WECHAT_NATIVE_PROVIDER_UNAVAILABLE', '暂时无法核实微信支付订单状态。'); };
 
-function validNotifyUrl(value) {
+export function isWechatNativeNotifyUrl(value) {
   if (typeof value !== 'string' || value.length > 255) return false;
   try {
     const url = new URL(value);
@@ -68,7 +68,7 @@ export function createWechatNativeOrders({
   appId, merchantId, certificateSerial, merchantPrivateKey, keys, notifyUrl, fetchImpl = globalThis.fetch, now = Date.now,
 }) {
   if (!matches(APP_ID, appId) || !matches(MERCHANT_ID, merchantId) || !matches(/^[A-Fa-f0-9]{1,64}$/, certificateSerial) ||
-      !validNotifyUrl(notifyUrl) || typeof fetchImpl !== 'function' || typeof now !== 'function') {
+      !isWechatNativeNotifyUrl(notifyUrl) || typeof fetchImpl !== 'function' || typeof now !== 'function') {
     throw new TypeError('Invalid WeChat Pay order configuration');
   }
   const privateKey = typeof merchantPrivateKey === 'string' ? createPrivateKey(merchantPrivateKey) : merchantPrivateKey;

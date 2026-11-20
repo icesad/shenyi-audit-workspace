@@ -95,7 +95,7 @@ def startup_input_stamp():
     listed = owned_path(CONFIG, stat.S_ISREG)
     profile = json.loads(read_file(CONFIG, 64 * 1024))
     inputs = [file_state(listed)]
-    for field in ('tlsCertificate', 'tlsKey', 'smsProfile', 'wechatProfile', 'wechatNativeCallbackProfile'):
+    for field in ('tlsCertificate', 'tlsKey', 'smsProfile', 'wechatProfile', 'wechatNativeCallbackProfile', 'wechatNativeWebsiteProfile'):
         filename = profile.get(field)
         try:
             info = Path(filename).lstat() if isinstance(filename, str) and Path(filename).is_absolute() else None

@@ -81,15 +81,15 @@ function credentialProof(handoff, passwordHash) {
     .update('shenyi.website.checkout.credential.v1\0').update(passwordHash).digest('hex');
 }
 
-function assertCurrent(db, ticket, handoff, at) {
+export function assertWebsiteHandoffCurrent(db, ticket, handoff, at) {
   if (at < ticket.issuedAt || at >= ticket.expiresAt || deviceServerId(db) !== ticket.serverId) expired();
   const source = db.prepare(`SELECT lease.lease_id, binding.key_fingerprint, credential.revision AS credential_revision,
     credential.password_hash, COALESCE(epoch.version,0) AS identity_epoch
-    FROM team_device_leases lease JOIN team_sessions session ON session.token_hash=lease.auth_session_hash
-    JOIN team_users account ON account.user_id=lease.user_id AND session.user_id=account.user_id
-    JOIN team_device_bindings binding ON binding.device_id=lease.device_id AND binding.user_id=account.user_id
-    JOIN team_credentials credential ON credential.user_id=account.user_id
-    LEFT JOIN team_recovery_identity_epochs epoch ON epoch.user_id=account.user_id
+    FROM main.team_device_leases lease JOIN main.team_sessions session ON session.token_hash=lease.auth_session_hash
+    JOIN main.team_users account ON account.user_id=lease.user_id AND session.user_id=account.user_id
+    JOIN main.team_device_bindings binding ON binding.device_id=lease.device_id AND binding.user_id=account.user_id
+    JOIN main.team_credentials credential ON credential.user_id=account.user_id
+    LEFT JOIN main.team_recovery_identity_epochs epoch ON epoch.user_id=account.user_id
     WHERE lease.lease_id=? AND lease.auth_session_hash=? AND lease.device_id=? AND lease.user_id=?
       AND lease.binding_revision=? AND binding.revision=lease.binding_revision AND binding.status='active'
       AND lease.revoked_at IS NULL AND session.revoked_at IS NULL AND account.status='active'
@@ -98,6 +98,23 @@ function assertCurrent(db, ticket, handoff, at) {
   if (!source || source.key_fingerprint !== ticket.keyFingerprint || source.credential_revision !== ticket.credentialRevision ||
       source.identity_epoch !== ticket.identityEpoch || credentialProof(handoff,source.password_hash) !== ticket.credentialProof ||
       !administratorTechnicalEligible(db,ticket.userId,ticket.teamId)) expired();
+}
+
+export function websiteHandoffScope(db, request, context, {teamId, handoff, at}) {
+  const actor = currentDeviceLease(db, request, at);
+  if (actor.userId !== context.userId || actor.stamp !== context.stamp || actor.leaseId !== context.leaseId ||
+      actor.deviceId !== context.deviceId || actor.bindingRevision !== context.bindingRevision ||
+      deviceServerId(db) !== context.serverId) deviceConflict();
+  if (!administratorTechnicalEligible(db,actor.userId,teamId)) deny();
+  const expiresAt = Math.min(at + TTL_MS,actor.leaseExpiresAt);
+  const scope = {
+    teamId, userId:actor.userId, leaseId:actor.leaseId, sessionBinding:actor.sessionBinding,
+    serverId:context.serverId, deviceId:actor.deviceId, bindingRevision:actor.bindingRevision,
+    keyFingerprint:actor.keyFingerprint, credentialRevision:actor.credentialRevision, identityEpoch:actor.identityEpoch,
+    credentialProof:credentialProof(handoff,actor.passwordHash), issuedAt:at, expiresAt,
+  };
+  assertWebsiteHandoffCurrent(db,scope,handoff,at);
+  return scope;
 }
 
 export async function handleWebsiteCheckoutHandoff(request, options) {
@@ -114,11 +131,8 @@ export async function handleWebsiteCheckoutHandoff(request, options) {
   const {db,websiteCheckout,billingSimulation} = options, teamId = route[1];
   return transaction(db,() => {
     const at = serverTime(options);
-    const actor = currentDeviceLease(db, request, at);
-    if (actor.userId !== context.userId || actor.stamp !== context.stamp || actor.leaseId !== context.leaseId ||
-        actor.deviceId !== context.deviceId || actor.bindingRevision !== context.bindingRevision ||
-        deviceServerId(db) !== context.serverId) deviceConflict();
-    if (!administratorTechnicalEligible(db,actor.userId,teamId)) deny();
+    const handoff = randomBytes(32).toString('base64url'), requestId = randomUUID();
+    const {expiresAt, ...deviceScope} = websiteHandoffScope(db,request,context,{teamId,handoff,at});
     const seat = route[2] === '-seat';
     if (orderId !== undefined) {
       existingReceipt(db,seat,teamId,orderId,billingSimulation.merchantId);
@@ -129,16 +143,10 @@ export async function handleWebsiteCheckoutHandoff(request, options) {
     db.prepare('DELETE FROM team_website_checkout_handoffs WHERE expires_at<=?').run(at);
     const outstanding = db.prepare('SELECT count(*) AS count FROM team_website_checkout_handoffs').get().count;
     if (outstanding >= MAX_OUTSTANDING) throw new ApiError(429,'WEBSITE_HANDOFF_LIMIT','订单页授权过多，请稍后再试。');
-    const handoff = randomBytes(32).toString('base64url');
-    const expiresAt = Math.min(at + TTL_MS,actor.leaseExpiresAt), requestId = randomUUID();
     const scope = {
-      teamId, userId:actor.userId, leaseId:actor.leaseId, sessionBinding:actor.sessionBinding,
-      serverId:context.serverId, deviceId:actor.deviceId, bindingRevision:actor.bindingRevision,
-      keyFingerprint:actor.keyFingerprint, credentialRevision:actor.credentialRevision, identityEpoch:actor.identityEpoch,
-      credentialProof:credentialProof(handoff,actor.passwordHash), issuedAt:at, seat,
+      ...deviceScope, seat,
       ...(orderId === undefined ? {} : {orderId}),
     };
-    assertCurrent(db,{...scope,expiresAt},handoff,at);
     db.prepare(`INSERT INTO team_website_checkout_handoffs
       (handoff_hash,origin,merchant_id,request_id,expires_at,scope_json) VALUES (?,?,?,?,?,?)`)
       .run(digest(handoff),websiteCheckout.origin,billingSimulation.merchantId,requestId,expiresAt,JSON.stringify(scope));
@@ -211,7 +219,7 @@ function seatCheckout(path, body, state, options, at) {
     requestId:ticket.requestId,merchantId:billingSimulation.merchantId},{now:()=>at});
   const confirmedAt = serverTime(options);
   if (confirmedAt < at || confirmedAt >= expiresAt) conflict();
-  assertCurrent(db,ticket,body.handoff,confirmedAt);
+  assertWebsiteHandoffCurrent(db,ticket,body.handoff,confirmedAt);
   return json({simulation:true,order:projectedSeatOrder(order)},201);
 }
 
@@ -235,7 +243,7 @@ export async function handleWebsiteCheckoutBrowser(request, options) {
     if (!row || at >= row.expires_at) expired();
     const ticket = {...JSON.parse(row.scope_json),requestId:row.request_id,expiresAt:row.expires_at};
     if (ticket.seat !== Boolean(seatKeys)) expired();
-    assertCurrent(db,ticket,body.handoff,at);
+    assertWebsiteHandoffCurrent(db,ticket,body.handoff,at);
     if (ticket.orderId !== undefined) {
       if (url.pathname !== (ticket.seat ? SEAT_CONTEXT : WEB_CONTEXT)) {
         throw new ApiError(403,'WEBSITE_RECEIPT_READ_ONLY','此订单页授权仅供核对原订单。');
@@ -268,7 +276,7 @@ export async function handleWebsiteCheckoutBrowser(request, options) {
       renewalSeats:{unitAmountMinor,selectedSeats:body.selectedSeats},
       closeAfterMs:billingSimulation.timeoutClosure?.annualTimeoutMs});
     if (order.offer.amountMinor !== body.expectedAmountMinor) conflict();
-    assertCurrent(db,ticket,body.handoff,serverTime(options));
+    assertWebsiteHandoffCurrent(db,ticket,body.handoff,serverTime(options));
     return json({simulation:true,order:projectedOrder(order)},201);
   });
 }
