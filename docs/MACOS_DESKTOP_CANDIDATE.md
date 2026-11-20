@@ -4,7 +4,7 @@
 
 ## 2026-11-20 当前签前候选交接
 
-Apple 芯片和 Intel 的 0.61.0 签前候选来自提交 `e90c663`，包含批量对账中断续接的客户端改动。交接 ZIP 位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/mac-handoff/delivery/Shenyi-macOS-Signing-Handoff-0.61.0-e90c663.zip`，SHA-256 为 `69b8a2c6338ff376461543310ff4177ac8f0772da39fbfbe92f35da7a40143fb`。外层包含两架构原 ZIP、清单、校验工具和实机签收表。通过可信渠道独立获取预期 SHA-256 后核对归档，然后依包内 README 验证各架构。
+Apple 芯片和 Intel 的 0.61.0 签前候选来自提交 `e90c663`，包含批量对账中断续接的客户端改动。交接 ZIP 位于 `D:/codex-temp/shenyi-macos-native-payload-20261120/handoff/delivery/Shenyi-macOS-Signing-Handoff-0.61.0-e90c663-tools-f231992.zip`，SHA-256 为 `f7cea5c3f22183fea881aa3aca9011ab1b028839b6a3a5741473111b153ea71a`。外层包含两架构原 ZIP、清单、校验工具和实机签收表。 两份候选原 ZIP 与旧交接字节一致。当前接收工具对应提交 `f231992`，正式 ZIP 接收回执要求实际解包负载通过核验。通过可信渠道独立获取预期 SHA-256 后核对归档，然后依包内 README 验证各架构。
 
 独立验收从空目录复核两个原 ZIP、清单、架构和应用文件。两架构分别拒绝错架构和未签交付。Apple Developer ID 签名、公证、真实 Mac 安装及升级待验。 [签前交接和验收记录](STATUS.md#2026-11-20-刷新-windows-和-macos-签前候选)
 
