@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 新版 Windows 四职级与项目撤权
+
+新版 Windows 评审 ZIP 的四职级合成业务、原生文件上传及项目撤权已验证。撤权后合伙人重新登录仍在团队内，原件请求为 404，经理继续读取同一原件。249 项相关回归通过。证据见 `D:/codex-temp/shenyi-owner-current-role-revoke-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-新版-windows-四职级与项目撤权)
+
 ## 2026-11-20 隔离 Linux 官网发布回读
 
 当前官网及发布核验脚本在隔离 Ubuntu 的实际 Nginx 上通过原版、内容不符及回退验证。预置合成团队 API 在三阶段均健康。验收记录位于 `D:/codex-temp/shenyi-website-release-live-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-隔离-linux-官网发布回读)
