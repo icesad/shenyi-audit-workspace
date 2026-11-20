@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 import configuration from '../desktop/isolated-preview-config.cjs';
 import {createOwnerReviewManagedPilot} from './owner-review-managed-pilot-service.mjs';
 import {candidateChildEnvironment} from './team-isolated-preview.mjs';
+import {stageOwnerReviewElectronRuntime} from './owner-review-electron-runtime.mjs';
 
 const {loadOwnerReviewRuntime} = configuration;
 
@@ -33,14 +34,15 @@ async function launch() {
     const label = purpose === 'first-admin' ? '首管理员激活' : '受邀员工激活';
     console.log('本轮验证码 '+phone+' '+label+' '+code);
   }});
-  let log, desktop, exited;
+  let log, desktop, exited, runtime;
   const stop = () => {
     if (desktop && desktop.exitCode === null && desktop.signalCode === null && !desktop.killed) desktop.kill();
   };
   try {
     const env = await desktopEnvironment(run);
     log = await open(path.join(run.directory, 'desktop-process.log'), 'wx', 0o600);
-    desktop = spawn(portable.electronExecutable, [path.join(portable.appRoot, 'desktop'), '--user-data-dir='+run.desktopDataDirectory],
+    runtime = await stageOwnerReviewElectronRuntime(portable, run.directory);
+    desktop = spawn(runtime.executable, [path.join(portable.appRoot, 'desktop'), '--user-data-dir='+run.desktopDataDirectory],
       {cwd: portable.appRoot, windowsHide: false, stdio: ['ignore', log.fd, log.fd], env});
     const started = new Promise((resolve, reject) => {
       desktop.once('spawn', resolve);
@@ -74,7 +76,9 @@ async function launch() {
       stop();
       await exited;
       await log?.close();
-    } finally { await run.close(); }
+    } finally {
+      try { await run.close(); } finally { await runtime?.close(); }
+    }
   }
 }
 

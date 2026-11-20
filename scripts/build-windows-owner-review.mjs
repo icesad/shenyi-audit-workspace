@@ -16,6 +16,7 @@ const nodeDirectory = 'node-v' + nodeVersion + '-win-x64';
 const nodeZipSha256 = 'd2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5';
 const reviewFiles = new Map([
   ['scripts/verify-windows-owner-review.mjs', 'scripts/verify-windows-owner-review.mjs'],
+  ['scripts/owner-review-electron-runtime.mjs', 'scripts/owner-review-electron-runtime.mjs'],
   ['scripts/team-isolated-preview.mjs', 'scripts/team-isolated-preview.mjs'],
   ['scripts/team-billing-preview-fixture.mjs', 'scripts/team-billing-preview-fixture.mjs'],
   ['scripts/team-pilot-preview-fixture.mjs', 'scripts/team-pilot-preview-fixture.mjs'],

@@ -11,6 +11,7 @@ import {initializeTeamDatabase,seedDemoTeamData} from '../server/team/database.m
 import {startTeamServer} from '../server/team/dev-server.mjs';
 import configuration from '../desktop/isolated-preview-config.cjs';
 import {prepareBillingPreview,BILLING_PREVIEW_ADMIN,BILLING_PREVIEW_OWNER,BILLING_PREVIEW_PASSWORD} from './team-billing-preview-fixture.mjs';
+import {stageOwnerReviewElectronRuntime} from './owner-review-electron-runtime.mjs';
 import {preparePilotPreview} from './team-pilot-preview-fixture.mjs';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const {prepareIsolatedPreviewDirectory,writeIsolatedPreviewConfiguration,loadOwnerReviewRuntime}=configuration;
@@ -45,17 +46,18 @@ export async function createIsolatedPreviewService({rootDirectory,billingDemo=fa
   return Object.freeze({context,server:service.server,address:service.address,close,...(billing?{cases:billing.cases}:{}),...(pilot?{pilotCases:pilot.cases}:{})});
  }catch(error){service?.server.closeAllConnections();try{await service?.close();}finally{db?.close();}await record(prepared.directory,'startup-failed.json',{schemaVersion:1,candidateId:prepared.candidateId,code:typeof error?.code==='string'?error.code:'STARTUP_FAILED',failedAt:new Date().toISOString()});throw error;}
 }
-async function electronExecutable(portable){
- if(portable)return portable.electronExecutable;
+async function electronExecutable(){
  const require=createRequire(path.join(ROOT,'desktop/package.json'));let executable;try{executable=require('electron');}catch{throw Error('请先按desktop/README.md安装既有Electron依赖。');}
  if(typeof executable!=='string'||!(await stat(executable)).isFile())throw Error('Electron运行时未完整安装，请参见desktop/README.md。');return executable;
 }
 export async function launchIsolatedTeamPreview({billingDemo=false,pilotDemo=false}={}){
- assertNode24();const portable=await loadOwnerReviewRuntime(),executable=await electronExecutable(portable),owned=await createIsolatedPreviewService({billingDemo,pilotDemo,...(portable?{rootDirectory:portable.rootDirectory}:{})}),{context}=owned;let child,log;
+ assertNode24();const portable=await loadOwnerReviewRuntime(),developerExecutable=portable?null:await electronExecutable(),owned=await createIsolatedPreviewService({billingDemo,pilotDemo,...(portable?{rootDirectory:portable.rootDirectory}:{})}),{context}=owned;let child,log,runtime,exited;
  try{
+  if(portable)runtime=await stageOwnerReviewElectronRuntime(portable,context.directory);
   log=createWriteStream(path.join(context.directory,'desktop-process.log'),{flags:'wx',mode:0o600});
   await new Promise((resolve,reject)=>{log.once('open',resolve);log.once('error',reject);});
-  child=spawn(executable,[path.join(ROOT,'desktop'),'--user-data-dir='+context.desktopDataDirectory],{cwd:ROOT,windowsHide:false,stdio:['ignore','pipe','pipe'],env:candidateChildEnvironment({context})});
+  child=spawn(runtime?.executable??developerExecutable,[path.join(ROOT,'desktop'),'--user-data-dir='+context.desktopDataDirectory],{cwd:ROOT,windowsHide:false,stdio:['ignore','pipe','pipe'],env:candidateChildEnvironment({context})});
+  exited=new Promise(resolve=>child.once('close',resolve));
   child.stdout.pipe(log,{end:false});child.stderr.pipe(log,{end:false});
   console.log('审易 · 独立合成候选预览；每次启动新建环境，关闭后资料保留。');
   if(owned.cases){
@@ -71,11 +73,15 @@ export async function launchIsolatedTeamPreview({billingDemo=false,pilotDemo=fal
   console.log('请勿导入真实客户资料。原审核预览及共享库未被连接或升级。');
   let childError=false;const stop=()=>{if(child.exitCode===null)child.kill();};process.once('SIGINT',stop);process.once('SIGTERM',stop);
   child.once('error',()=>{childError=true;});
-  const code=await new Promise(resolve=>child.once('close',resolve));process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);
+  const code=await exited;process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);
   await new Promise((resolve,reject)=>log.end(error=>error?reject(error):resolve()));await owned.close();
   if(childError||code!==0)throw Error('候选桌面进程未正常启动或已异常退出；新环境已停止，合成资料保留。');
   return {directory:context.directory,closed:true};
  }catch(error){if(child&&child.exitCode===null)child.kill();log?.end();await owned.close();throw error;}
+ finally{
+  await exited;
+  await runtime?.close();
+ }
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const billingDemo=process.argv.length===3&&process.argv[2]==='--billing-demo',pilotDemo=process.argv.length===3&&process.argv[2]==='--pilot-demo';

@@ -4,6 +4,7 @@ import {randomBytes, randomUUID} from 'node:crypto';
 import {mkdir, open, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {stageOwnerReviewElectronRuntime} from './owner-review-electron-runtime.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import configuration from '../desktop/isolated-preview-config.cjs';
 import {initializeTeamDatabase, seedDemoTeamData} from '../server/team/database.mjs';
@@ -95,16 +96,20 @@ async function launch() {
   const portable = await loadOwnerReviewRuntime();
   if (!portable) throw new Error('请在完整的 Windows 双人评审包内双击官网下单演练入口。');
   const run = await createOwnerReviewWebsiteCheckout();
-  let log;
+  let log, runtime, child, exited;
+  const stop = () => { if (child?.exitCode === null && child.signalCode === null) child.kill(); };
   try {
     log = await open(path.join(run.directory,'desktop-process.log'),'wx',0o600);
     const env = candidateChildEnvironment({context:run});
     delete env.SHENYI_ISOLATED_PREVIEW_CONFIG;
     Object.assign(env,{SHENYI_OWNER_REVIEW_WEBSITE_CHECKOUT:'1',SHENYI_TEAM_SERVICE_CONFIG:run.configFile,
       NODE_EXTRA_CA_CERTS:run.caFile});
-    const child = spawn(portable.electronExecutable,[path.join(portable.appRoot,'desktop'),'--user-data-dir='+run.desktopDataDirectory],
+    runtime = await stageOwnerReviewElectronRuntime(portable, run.directory);
+    child = spawn(runtime.executable,[path.join(portable.appRoot,'desktop'),'--user-data-dir='+run.desktopDataDirectory],
       {cwd:portable.appRoot,windowsHide:false,stdio:['ignore',log.fd,log.fd],env});
-    const stop = () => { if (child.exitCode === null) child.kill(); };
+    let failed = false;
+    child.once('error',()=>{failed=true;});
+    exited = new Promise(resolve=>child.once('close',resolve));
     process.once('SIGINT',stop);
     process.once('SIGTERM',stop);
     console.log('审易 · 官网下单演练。请使用演练账号登录并绑定当前电脑。');
@@ -112,14 +117,18 @@ async function launch() {
     console.log('本机地址 '+run.address.url+'，本次演练记录 '+run.directory);
     console.log('官网演练地址 '+run.checkoutAddress.url);
     console.log('打开「订阅与席位」走查官网年费和增购。本次演练无收款，关闭桌面窗口即停止服务。');
-    let failed = false;
-    child.once('error',()=>{failed=true;});
-    const code = await new Promise(resolve=>child.once('close',resolve));
-    process.removeListener('SIGINT',stop);
-    process.removeListener('SIGTERM',stop);
+    const code = await exited;
     if (failed || code !== 0) throw new Error('官网下单演练的桌面程序未正常退出。请查看本次日志。');
   } finally {
-    try { await log?.close(); } finally { await run.close(); }
+    process.removeListener('SIGINT',stop);
+    process.removeListener('SIGTERM',stop);
+    try {
+      stop();
+      await exited;
+      await log?.close();
+    } finally {
+      try { await run.close(); } finally { await runtime?.close(); }
+    }
   }
 }
 
