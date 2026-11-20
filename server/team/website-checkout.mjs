@@ -225,7 +225,7 @@ export async function handleWebsiteCheckoutBrowser(request, options) {
   }
   const create = url.pathname === WEB_ORDERS;
   const seatKeys = seatRoutes.get(url.pathname);
-  const body = await readJson(request,seatKeys ?? (create?['handoff','offerId','offerRevision','selectedSeats']:['handoff']),4096);
+  const body = await readJson(request,seatKeys ?? (create?['handoff','offerId','offerRevision','selectedSeats','expectedAmountMinor']:['handoff']),4096);
   if (!match(/^[A-Za-z0-9_-]{43}$/,body.handoff) || Buffer.from(body.handoff,'base64url').toString('base64url') !== body.handoff) expired();
   const handoffHash = digest(body.handoff);
   return transaction(db,() => {
@@ -255,16 +255,18 @@ export async function handleWebsiteCheckoutBrowser(request, options) {
         pricing:{defaultSeats:defaults.defaultSeats,committedSeats:defaults.committedSeats,unitAmountMinor},
         order:existing?projectedOrder(existing):null});
     }
-    if (!match(ID,body.offerId) || !integer(body.offerRevision,1) || !integer(body.selectedSeats)) invalid();
+    if (!match(ID,body.offerId) || !integer(body.offerRevision,1) || !integer(body.selectedSeats) ||
+        !integer(body.expectedAmountMinor,1)) invalid();
     if (existing) {
       if (existing.offer.id !== body.offerId || existing.offer.revision !== body.offerRevision ||
-          existing.renewalSeats?.selectedSeats !== body.selectedSeats) conflict();
+          existing.renewalSeats?.selectedSeats !== body.selectedSeats || existing.offer.amountMinor !== body.expectedAmountMinor) conflict();
       return json({simulation:true,order:projectedOrder(existing)},201);
     }
     if (body.offerId !== offer.id || body.offerRevision !== offer.revision) conflict();
     const order = createAnnualOrderWithinTransaction(db,{teamId:ticket.teamId,actorId:ticket.userId,
       requestId:ticket.requestId,merchantId:billingSimulation.merchantId,offer},{now:()=>at,
       renewalSeats:{unitAmountMinor,selectedSeats:body.selectedSeats}});
+    if (order.offer.amountMinor !== body.expectedAmountMinor) conflict();
     assertCurrent(db,ticket,body.handoff,serverTime(options));
     return json({simulation:true,order:projectedOrder(order)},201);
   });

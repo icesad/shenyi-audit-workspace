@@ -6,7 +6,7 @@ const {randomBytes,randomUUID,createHash}=require('node:crypto');
 const {createBusinessRoleFixture,PASSWORD,source}=require('./helpers/business-role-fixture.cjs');
 const SITE='https://127.0.0.1:14443',ROOT='/api/teams/team-a/billing',WEB='/api/website-checkout';
 const OFFER={id:'synthetic-website-year',revision:7,product:'team-annual-renewal',amountMinor:12345,currency:'CNY'};
-const UNIT=2500,SEATS=8,DAY=86400000;
+const UNIT=2500,SEATS=8,TOTAL=OFFER.amountMinor+UNIT*SEATS,DAY=86400000;
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const isError=(result,status,code)=>{assert.equal(result.status,status,JSON.stringify(result.data));assert.equal(result.data.error.code,code);};
 
@@ -32,7 +32,7 @@ async function fixture(t){
   return dispatch(new Request((settings.urlOrigin??SITE)+WEB+suffix,{method:settings.method??'POST',headers,body:JSON.stringify(body)}),settings.options);
  };
  const context=(ticket,settings)=>browser('/context',{handoff:ticket.handoff},settings);
- const order=(ticket,change={},settings)=>browser('/orders',{handoff:ticket.handoff,offerId:OFFER.id,offerRevision:OFFER.revision,selectedSeats:SEATS,...change},settings);
+ const order=(ticket,change={},settings)=>browser('/orders',{handoff:ticket.handoff,offerId:OFFER.id,offerRevision:OFFER.revision,selectedSeats:SEATS,expectedAmountMinor:TOTAL,...change},settings);
  const financial=['team_annual_verified_payments','team_annual_fulfilments','team_seat_orders','team_seat_verified_payments','team_seat_order_grants','team_billing_payment_exceptions','team_billing_order_closures','team_subscription_events','team_subscription_heads','team_seat_capacity_grants','team_memberships','team_project_grants','team_admin_grants'];
  const names=new Set(f.db.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all().map(row=>row.name));
  const facts=()=>financial.filter(name=>names.has(name)).map(name=>{const rows=f.db.prepare('SELECT * FROM '+name+' ORDER BY rowid').all();return {name,count:rows.length,sha256:hash(JSON.stringify(rows))};});
@@ -68,14 +68,51 @@ test('held technical administrator hands off an annual website intention whose b
  assert.deepEqual(f.facts(),before);assert.equal(f.db.prepare('PRAGMA quick_check').get().quick_check,'ok');assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(),[]);
 });
 
-test('same browser intention is idempotent under concurrent posts and rejects changing seats or offer revision',async t=>{
+test('same browser intention is idempotent under concurrent posts and rejects changing seats, amount or offer revision',async t=>{
  const f=await fixture(t),ticket=await f.ticket(),before=f.facts();
  const [a,b]=await Promise.all([f.order(ticket),f.order(ticket)]);assert.equal(a.status,201,JSON.stringify(a.data));assert.equal(b.status,201,JSON.stringify(b.data));assert.deepEqual(a.data,b.data);
  assert.equal(f.orderRows()[0].rows.length,1);assert.equal(f.orderRows()[1].rows.length,1);
  const original=f.orderRows();
- for(const change of [{selectedSeats:SEATS+1},{offerRevision:OFFER.revision+1},{offerId:'other-synthetic-offer'}]){
+ for(const change of [{selectedSeats:SEATS+1},{offerRevision:OFFER.revision+1},{offerId:'other-synthetic-offer'},{expectedAmountMinor:TOTAL+1}]){
   isError(await f.order(ticket,change),409,'WEBSITE_CHECKOUT_CONFLICT');assert.deepEqual(f.orderRows(),original);
  }
+ assert.deepEqual(f.facts(),before);
+});
+
+test('an annual order without confirmed amount is rejected before any order can be saved',async t=>{
+ const f=await fixture(t),ticket=await f.ticket(),orders=f.orderRows(),before=f.facts();
+ const repriced=f.restart();
+ repriced.options.billingSimulation={...f.billingSimulation,annualSeatUnitAmountMinor:UNIT+500};
+ assert.equal((await f.context(ticket)).data.pricing.unitAmountMinor,UNIT);
+ const legacy=await f.order(ticket,{expectedAmountMinor:undefined},repriced);
+ assert.equal(legacy.status,400,JSON.stringify(legacy.data));
+ assert.deepEqual(f.orderRows(),orders);
+ assert.deepEqual(f.facts(),before);
+});
+
+test('a stale confirmed annual amount cannot commit after checkout restart with the same offer revision',async t=>{
+ const f=await fixture(t),ticket=await f.ticket(),before=f.facts(),orders=f.orderRows();
+ const shown=await f.context(ticket);
+ assert.equal(shown.status,200);
+ assert.deepEqual(shown.data.offer,OFFER);
+ assert.equal(shown.data.offer.amountMinor+shown.data.pricing.unitAmountMinor*SEATS,TOTAL);
+ const replacement=f.restart();
+ replacement.options.billingSimulation={...f.billingSimulation,annualSeatUnitAmountMinor:UNIT+500};
+ isError(await f.order(ticket,{},replacement),409,'WEBSITE_CHECKOUT_CONFLICT');
+ assert.deepEqual(f.orderRows(),orders);
+ assert.deepEqual(f.facts(),before);
+
+ const refreshed=await f.context(ticket,replacement);
+ assert.equal(refreshed.status,200);
+ assert.equal(refreshed.data.order,null);
+ assert.deepEqual(refreshed.data.offer,shown.data.offer);
+ const confirmed=refreshed.data.offer.amountMinor+refreshed.data.pricing.unitAmountMinor*SEATS;
+ assert.notEqual(confirmed,TOTAL);
+ const created=await f.order(ticket,{expectedAmountMinor:confirmed},replacement);
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ safeOrder(created.data.order,confirmed,SEATS);
+ assert.equal(f.orderRows()[0].rows.length,1);
+ assert.equal(f.orderRows()[1].rows.length,1);
  assert.deepEqual(f.facts(),before);
 });
 
@@ -95,11 +132,13 @@ test('a replacement website candidate at the same origin recovers the committed 
  safeOrder(committed.data.order,OFFER.amountMinor+UNIT*SEATS,SEATS);
  const original=f.orderRows(),replacement=f.restart();
  assert.notEqual(replacement.options.websiteCheckout,f.websiteCheckout);
+ replacement.options.billingSimulation={...f.billingSimulation,annualSeatUnitAmountMinor:UNIT+500};
  const changes=()=>f.db.prepare('SELECT total_changes() AS count').get().count;
  const beforeRecovery=changes();
  const recovered=await f.context(ticket,replacement);
  assert.equal(recovered.status,200,JSON.stringify(recovered.data));
  assert.deepEqual(recovered.data.order,committed.data.order);
+ assert.equal(recovered.data.pricing.unitAmountMinor,UNIT+500);
  noPrivateFields(recovered.data,f.admin);
  const replay=await f.order(ticket,{},replacement);
  assert.equal(replay.status,201,JSON.stringify(replay.data));
@@ -192,7 +231,7 @@ test('annual checkout recovers a lost order response after a trusted settlement 
 
 test('website never accepts client prices, identities, currency or alternate seat-product fields',async t=>{
  const f=await fixture(t),ticket=await f.ticket(),before=f.facts(),orders=f.orderRows();
- for(const change of [{amountMinor:1},{merchantId:'another-merchant'},{actorId:'manager-a'},{teamId:'team-b'},{currency:'USD'},{quantity:1},{selectedSeats:-1},{selectedSeats:1.5}]){
+ for(const change of [{amountMinor:1},{merchantId:'another-merchant'},{actorId:'manager-a'},{teamId:'team-b'},{currency:'USD'},{quantity:1},{selectedSeats:-1},{selectedSeats:1.5},{expectedAmountMinor:0},{expectedAmountMinor:-1},{expectedAmountMinor:1.5},{expectedAmountMinor:'32345'}]){
   const result=await f.order(ticket,change);assert.equal(result.status,400,JSON.stringify(result.data));assert.deepEqual(f.orderRows(),orders);
  }
  assert.equal((await f.browser('/context',{handoff:ticket.handoff,teamId:'team-b'})).status,400);

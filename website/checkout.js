@@ -250,6 +250,7 @@
     try {
       const value = await request('/api/website-checkout/orders', {
         handoff, offerId: context.offer.id, offerRevision: context.offer.revision, selectedSeats: quote.seats,
+        expectedAmountMinor: quote.total,
       });
       if (closed) return;
       if (!exact(value, ['simulation', 'order']) || value.simulation !== true || !validOrder(value.order) ||

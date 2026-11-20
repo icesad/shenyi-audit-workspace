@@ -18,7 +18,7 @@ const states = [
   ['payment-review', '待复核（模拟）'],
 ];
 
-function fixture(t, kind, status, {revoked = false, deferRecovery = false, reopen} = {}) {
+function fixture(t, kind, status, {revoked = false, deferRecovery = false, reopen, refreshedAnnualUnitAmountMinor} = {}) {
   const annual = kind === 'annual';
   const asset = annual ? 'checkout' : 'checkout-seats';
   const page = annual ? '/checkout/' : '/checkout/seats/';
@@ -29,14 +29,17 @@ function fixture(t, kind, status, {revoked = false, deferRecovery = false, reope
   const offer = annual ? {id:'synthetic-year', revision:1, product:'team-annual-renewal', amountMinor:12_000, currency:'CNY'} :
     {id:'synthetic-seat', revision:1, product:'team-seat-addition', annualUnitAmountMinor:8_600, currency:'CNY'};
   const quote = {id:'8c2e8232-6b98-44ea-ab2f-d6935f43d624', seats, amountMinor:12_576, termEndsAt, expiresAt:at+60_000};
+  const initialAnnualUnitAmountMinor = 3_000;
+  const initialAnnualTotal = annual ? offer.amountMinor + seats * initialAnnualUnitAmountMinor : null;
   const original = {
-    id: 'synthetic-' + kind + '-original', amountMinor: annual ? 21_000 : quote.amountMinor,
+    id: 'synthetic-' + kind + '-original', amountMinor: annual ?
+      offer.amountMinor + seats * (refreshedAnnualUnitAmountMinor ?? initialAnnualUnitAmountMinor) : quote.amountMinor,
     seats, createdAt: at, status, currency: 'CNY',
     ...(annual ? {} : {termEndsAt, quoteExpiresAt:at+900_000}),
   };
   const context = {
     simulation: true, teamName: '合成团队', offer, order: null,
-    ...(annual ? {pricing:{defaultSeats:seats, committedSeats:1, unitAmountMinor:3_000}} : {termEndsAt}),
+    ...(annual ? {pricing:{defaultSeats:seats, committedSeats:1, unitAmountMinor:initialAnnualUnitAmountMinor}} : {termEndsAt}),
   };
   const dom = new JSDOM(fs.readFileSync(path.join(site, asset + '.html'), 'utf8'), {
     url: 'https://127.0.0.1:14443' + page + '#handoff=' + handoff, runScripts: 'outside-only',
@@ -49,7 +52,8 @@ function fixture(t, kind, status, {revoked = false, deferRecovery = false, reope
   const delayedRecovery = deferRecovery ? Promise.withResolvers() : null;
   w.fetch = async (url, request) => {
     assert.equal(request.credentials, 'omit');
-    calls.push({url, method:request.method, body:JSON.parse(request.body), fragment:w.location.hash});
+    const body = JSON.parse(request.body);
+    calls.push({url, method:request.method, body, fragment:w.location.hash});
     if (url === contextPath) {
       if (reopen) return Response.json(reopen({simulation:true, teamName:context.teamName, receiptOnly:true, order:original}));
       if (stored && revoked) return Response.json({error:{code:'WEBSITE_HANDOFF_UNAVAILABLE'}}, {status:403});
@@ -61,6 +65,15 @@ function fixture(t, kind, status, {revoked = false, deferRecovery = false, reope
     }
     if (url === route + 'seat-quote' && !annual) return Response.json({simulation:true, quote});
     if (url === orderPath) {
+      if (refreshedAnnualUnitAmountMinor !== undefined) {
+        assert.equal(annual, true);
+        context.pricing.unitAmountMinor = refreshedAnnualUnitAmountMinor;
+        if (body.expectedAmountMinor !== original.amountMinor) {
+          return Response.json({error:{code:'WEBSITE_CHECKOUT_CONFLICT'}}, {status:409});
+        }
+        stored = original;
+        return Response.json({simulation:true, order:stored});
+      }
       stored = original;
       throw new Error('Synthetic transport failure after saving the original order');
     }
@@ -74,7 +87,8 @@ function fixture(t, kind, status, {revoked = false, deferRecovery = false, reope
     pageTransition: (type) => w.dispatchEvent(new w.PageTransitionEvent(type, {persisted:true})),
     recoveryAborted: () => recoverySignal?.aborted,
     releaseRecovery: () => delayedRecovery.resolve(),
-    orderBody: annual ? {handoff, offerId:offer.id, offerRevision:offer.revision, selectedSeats:seats} : {handoff, quoteId:quote.id},
+    orderBody: annual ? {handoff, offerId:offer.id, offerRevision:offer.revision, selectedSeats:seats,
+      expectedAmountMinor:initialAnnualTotal} : {handoff, quoteId:quote.id},
     openQuote() {
       const input = id('seat-quantity');
       input.value = String(seats);
@@ -93,7 +107,7 @@ async function until(predicate) {
   assert.fail('Checkout did not reach the expected UI state');
 }
 
-async function loseOrderResponse(f) {
+async function submitWithoutConfirmedReceipt(f) {
   await until(() => !f.id('checkout-fields').disabled);
   if (!f.annual) {
     f.openQuote();
@@ -106,6 +120,34 @@ async function loseOrderResponse(f) {
   f.confirm();
   assert.deepEqual(f.calls.filter(call => call.url === f.orderPath).map(call => call.body), [f.orderBody]);
 }
+
+test('annual checkout requires a new confirmation at the refreshed total after a stale amount', async t => {
+  const f = fixture(t, 'annual', 'pending', {refreshedAnnualUnitAmountMinor:3_500});
+  await until(() => !f.id('checkout-fields').disabled);
+  assert.equal(f.id('order-total').textContent, '¥210.00');
+
+  await submitWithoutConfirmedReceipt(f);
+  await nextTurn();
+  assert.deepEqual(f.calls.map(call => call.url), [f.contextPath, f.orderPath]);
+  assert.equal(f.id('receipt-panel').hidden, true);
+
+  f.id('recover-context').click();
+  await until(() => !f.id('checkout-fields').disabled);
+  await nextTurn();
+  assert.equal(f.id('order-total').textContent, '¥225.00');
+  assert.equal(f.id('seat-unit-amount').textContent, '¥35.00 / 席 / 年');
+  assert.equal(f.id('receipt-panel').hidden, true);
+  assert.deepEqual(f.calls.map(call => call.url), [f.contextPath, f.orderPath, f.contextPath]);
+
+  f.id('create-order').click();
+  await until(() => !f.id('receipt-panel').hidden);
+  assert.deepEqual(f.calls.map(call => call.url), [f.contextPath, f.orderPath, f.contextPath, f.orderPath]);
+  assert.deepEqual(f.calls.at(-1).body, {...f.orderBody, expectedAmountMinor:22_500});
+  assert.equal(f.id('receipt-id').textContent, f.original.id);
+  assert.equal(f.id('receipt-seats').textContent, '3 席');
+  assert.equal(f.id('receipt-amount').textContent, '¥225.00');
+  assert.equal(f.id('checkout-fields').disabled, true);
+});
 
 for (const kind of ['annual', 'seat']) {
   test(`${kind} checkout opens a receipt-only handoff without quoting or creating an order`, async t => {
@@ -159,7 +201,7 @@ for (const kind of ['annual', 'seat']) {
   for (const [state, label] of states) {
     test(`${kind} checkout recovers the original ${state} receipt without a second order request`, async t => {
       const f = fixture(t, kind, state);
-      await loseOrderResponse(f);
+      await submitWithoutConfirmedReceipt(f);
       f.id('recover-context').click();
       await until(() => !f.id('receipt-panel').hidden);
       assert.equal(f.id('checkout-status-title').textContent, '原订单已确认');
@@ -181,7 +223,7 @@ for (const kind of ['annual', 'seat']) {
 
   test(`${kind} checkout refuses a receipt after the handoff has been revoked`, async t => {
     const f = fixture(t, kind, 'paid', {revoked:true});
-    await loseOrderResponse(f);
+    await submitWithoutConfirmedReceipt(f);
     f.id('recover-context').click();
     await until(() => f.id('checkout-status-title').textContent.includes('授权已失效'));
     assert.match(f.id('checkout-status').textContent, /在官网核对原单/);
@@ -196,7 +238,7 @@ for (const kind of ['annual', 'seat']) {
 
   test(`${kind} checkout removes the recovered receipt before a cached page can be restored`, async t => {
     const f = fixture(t, kind, 'paid');
-    await loseOrderResponse(f);
+    await submitWithoutConfirmedReceipt(f);
     f.id('recover-context').click();
     await until(() => !f.id('receipt-panel').hidden);
     assert.equal(f.id('receipt-id').textContent, f.original.id);
@@ -221,7 +263,7 @@ for (const kind of ['annual', 'seat']) {
 
   test(`${kind} checkout ignores an in-flight recovery response after leaving the page`, async t => {
     const f = fixture(t, kind, 'paid', {deferRecovery:true});
-    await loseOrderResponse(f);
+    await submitWithoutConfirmedReceipt(f);
     f.id('recover-context').click();
     await until(() => f.recoveryAborted() === false);
     const requestCount = f.calls.length;
