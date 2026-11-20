@@ -10,6 +10,10 @@ const assets = [
   { route: '/assets/brand-shenyi.png', file: 'assets/brand-shenyi.png', type: 'image/png' },
 ];
 const checkoutRoutes = ['/checkout', '/checkout/', '/checkout/seats/'];
+const excludedRoutes = [
+  '/api/auth/methods', '/api/website-checkout/context', '/api/website-checkout/seat-context',
+  '/ready', '/health', '/index.html', '/download', '/download/Shenyi.exe',
+];
 const digestPattern = /^[0-9a-f]{64}$/;
 const commitPattern = /^[0-9a-f]{40}$/;
 const maxBaselineBytes = 64 * 1024;
@@ -175,9 +179,9 @@ function probe(origin, spec) {
       response.on('error', interrupted);
       response.on('aborted', interrupted);
 
-      if (spec.denied) {
+      if (spec.denialCode) {
         finish(httpStatus === 404 ? { status: 'verified', ...transport }
-          : { status: 'failed', code: 'CHECKOUT_STATUS_MISMATCH', ...transport }, response);
+          : { status: 'failed', code: spec.denialCode, ...transport }, response);
         return;
       }
       if (httpStatus !== 200) {
@@ -232,7 +236,11 @@ async function main() {
   }
   const { origin, baseline, baselineSha256 } = argumentsOf(args);
   const { sourceCommit, checks: expectedAssets } = await readBaseline(baseline, baselineSha256);
-  const specs = [...expectedAssets, ...checkoutRoutes.map(route => ({ route, denied: true }))];
+  const specs = [
+    ...expectedAssets,
+    ...checkoutRoutes.map(route => ({ route, denialCode: 'CHECKOUT_STATUS_MISMATCH' })),
+    ...excludedRoutes.map(route => ({ route, denialCode: 'EXCLUDED_ROUTE_STATUS_MISMATCH' })),
+  ];
   const checks = await Promise.all(specs.map(spec => probe(origin, spec)));
   const verified = checks.every(check => check.status === 'verified');
   process.exitCode = verified ? 0 : 1;

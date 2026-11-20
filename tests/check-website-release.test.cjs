@@ -15,12 +15,14 @@ const repository = path.join(__dirname, '..');
 const cli = path.join(repository, 'scripts/check-website-release.mjs');
 const sourceCommit = '9c31347d80a9b1918f549567cd58aef21b9ef89b';
 const paymentRoutes = ['/checkout', '/checkout/', '/checkout/seats/'];
+const excludedRoutes = ['/api/auth/methods', '/api/website-checkout/context', '/api/website-checkout/seat-context',
+  '/ready', '/health', '/index.html', '/download', '/download/Shenyi.exe'];
 const assets = [
   {route:'/', file:'index.html', contentType:'text/html; charset=utf-8', source:'website/index.html'},
   {route:'/styles.css', file:'styles.css', contentType:'text/css; charset=utf-8', source:'website/styles.css'},
   {route:'/assets/brand-shenyi.png', file:'assets/brand-shenyi.png', contentType:'image/png', source:'dist/brand-shenyi.png'},
 ];
-const routes = [...assets.map(asset => asset.route), ...paymentRoutes].sort();
+const routes = [...assets.map(asset => asset.route), ...paymentRoutes, ...excludedRoutes].sort();
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const cleanEnvironment = Object.fromEntries(Object.entries(process.env).filter(([name]) =>
   !/^(?:NODE_|SSL_CERT|OPENSSL_|(?:HTTPS?|ALL|NO|GLOBAL_AGENT_HTTP)_PROXY$)/i.test(name)));
@@ -158,7 +160,7 @@ function checkFailure(result, {route, code, transportCode} = {}) {
   if (transportCode) assert.equal(check.transportCode, transportCode, JSON.stringify(check));
 }
 
-test('valid baseline verifies the exact three static GETs and three excluded checkout routes', async t => {
+test('valid baseline verifies the three static GETs and fixed excluded routes', async t => {
   const f = await fixture(t);
   const result = await run(f);
   assert.equal(result.exitCode, 0, JSON.stringify(result.verdict));
@@ -264,6 +266,33 @@ for (const route of paymentRoutes) {
     assert.ok(f.requests.some(request => request.route === route));
   });
 }
+
+test('static publication refuses a cohosted API, health, direct index or download response', async t => {
+  const f = await fixture(t);
+  const redirected = '/download';
+  const target = '/unexpected-download-target';
+  const bytes = Buffer.from('private fixture must not appear in the report');
+  for (const route of excludedRoutes) {
+    f.changes.set(route, {status:200, contentType:'text/plain', bytes});
+  }
+  f.changes.set(redirected, {status:302, contentType:'text/plain', bytes, location:target});
+  const result = await run(f);
+  checkFailure(result);
+  assert.deepEqual(f.requests.map(request => request.route).sort(), routes);
+  assert.ok(!f.requests.some(request => request.route === target));
+  assert.ok(!result.stdout.includes(bytes.toString()));
+  for (const check of result.verdict.checks) {
+    if (!excludedRoutes.includes(check.path)) {
+      assert.equal(check.status, 'verified', JSON.stringify(check));
+      continue;
+    }
+    assert.equal(check.status, 'failed');
+    assert.equal(check.code, 'EXCLUDED_ROUTE_STATUS_MISMATCH');
+    assert.equal(check.httpStatus, check.path === redirected ? 302 : 200);
+    assert.equal(check.bytes, undefined);
+    assert.equal(check.sha256, undefined);
+  }
+});
 
 test('redirected asset fails without following even a trusted same-origin Location', async t => {
   const f = await fixture(t);
