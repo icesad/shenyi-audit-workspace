@@ -3,6 +3,7 @@ import {ANNUAL_PRODUCT,SEAT_PRODUCT,signSimulationPayment,verifySimulationPaymen
 import {signSimulationOrderClosure} from '../server/team/billing-order-closure.mjs';
 import {signSimulationPaymentException} from '../server/team/billing-payment-exception.mjs';
 import {createAnnualOrderWithinTransaction} from '../server/team/billing-store.mjs';
+import {initializeBillingBatchReceiptStore} from '../server/team/billing-batch-receipt-store.mjs';
 import {transaction} from '../server/team/http-utils.mjs';
 import {hashPassword} from '../server/team/passwords.mjs';
 import {recordSeatCapacityGrantWithinTransaction} from '../server/team/seat-capacity-store.mjs';
@@ -132,7 +133,8 @@ export async function prepareBillingPreview(db,{now=Date.now}={}){
   const billingSimulation={
     mode:'simulation-v1',merchantId:'synthetic-billing-preview',signingKey:randomBytes(32),
     offers:Object.freeze([annualOffer]),seatOffer,annualSeatUnitAmountMinor:seatOffer.annualUnitAmountMinor,
-    paymentExceptions:true,batchReconciliation:true,refundIntake:true,timeoutClosure:Object.freeze({annualTimeoutMs:HOUR}),
+    paymentExceptions:true,batchReconciliation:true,batchReconciliationReceipts:true,
+    refundIntake:true,timeoutClosure:Object.freeze({annualTimeoutMs:HOUR}),
   };
   const orderRequest=()=>({teamId:TEAM_ID,actorId:BILLING_PREVIEW_ADMIN,requestId:randomUUID(),merchantId:billingSimulation.merchantId});
   const annualOrder=at=>createAnnualOrderWithinTransaction(db,{...orderRequest(),offer:annualOffer},{
@@ -144,6 +146,7 @@ export async function prepareBillingPreview(db,{now=Date.now}={}){
   const refundPaymentTime=refundOrderTime+1000;
   const refundSeat=transaction(db,()=>{
     requireFreshDemo(db);
+    initializeBillingBatchReceiptStore(db);
     addDemoAccounts(db,passwordHashes);
     appendSubscriptionTermWithinTransaction(db,{...initialTerm,operationId:randomUUID(),expectedRevision:0},{now:()=>initialTerm.startsAt});
     recordSeatCapacityGrantWithinTransaction(db,{...initialTerm,grantId:randomUUID(),seats:6},{now:()=>initialTerm.startsAt});

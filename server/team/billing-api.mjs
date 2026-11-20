@@ -12,11 +12,14 @@ import {recordVerifiedBillingOrderClosure,recordVerifiedBillingOrderClosureWithi
 import {readSeatCapacity} from './seat-capacity-store.mjs';
 import {readSubscriptionState} from './subscription-store.mjs';
 import {currentTermIsPilot} from './pilot-approval.mjs';
+import {openBillingBatchReceipt,recordBillingBatchVerification,assertBillingBatchVerification,
+ finishBillingBatchItem} from './billing-batch-receipt-store.mjs';
 
 export const SIMULATION_NOTIFICATION_PATH='/api/billing/simulation/notifications';
 export const SIMULATION_PAYMENT_EXCEPTION_PATH='/api/billing/simulation/payment-exceptions';
 export const SIMULATION_ORDER_CLOSURE_PATH='/api/billing/simulation/order-closures';
 const RECONCILIATION_PAGE_SIZE=8;
+const RECEIPT_WRITE_FAILED='BILLING_RECONCILIATION_RECEIPT_FAILED';
 const MS_PER_DAY=86_400_000,RENEWAL_REMINDER_DAYS=30;
 const reconcilingTeams=new WeakMap();
 const unavailable=()=>{throw new ApiError(503,'BILLING_UNAVAILABLE','模拟账务尚未配置或暂不可用。');};
@@ -54,7 +57,7 @@ function billingAccess(request,options){
   return json({teams});
  });
 }
-function billingOverview(db,teamId,at,billingSimulation,{expiryReminder,resumeFulfilment,pilotSource,websiteCheckout}){
+function billingOverview(db,teamId,at,billingSimulation,{expiryReminder,resumeFulfilment,resumeBatch,pilotSource,websiteCheckout}){
  const current=readSubscriptionState(db,teamId,at),{state,revision,startsAt,endsAt}=current;
  const subscription={state,revision,startsAt,endsAt},remaining=endsAt-at;
  if(pilotSource&&!billingSimulation&&currentTermIsPilot(db,current))subscription.pilot=true;
@@ -77,6 +80,7 @@ function billingOverview(db,teamId,at,billingSimulation,{expiryReminder,resumeFu
   ...(resumeFulfilment?{canResumeFulfilment:true}:{}),
   ...(billingSimulation.paymentExceptions&&canReconcile?{canReconcilePaymentExceptions:true}:{}),
   ...(billingSimulation.batchReconciliation&&canReconcile?{canReconcileBillingBatch:true}:{}),
+  ...(resumeBatch&&billingSimulation.batchReconciliationReceipts?{canResumeBillingBatch:true}:{}),
  });
 }
 function renewalSeatSelectionMatches(order,selectedSeats){
@@ -84,11 +88,11 @@ function renewalSeatSelectionMatches(order,selectedSeats){
  if(!plan)return selectedSeats===undefined;
  return (selectedSeats??plan.defaultSeats)===plan.selectedSeats;
 }
-function recordCapture(db,receipt,now,options,authorize){
+function recordCapture(db,receipt,now,options,authorize,onRecorded){
  const seat=receipt.product===SEAT_PRODUCT;
  if(seat&&!seatOrderingEnabled(options))unavailable();
  const record=seat?recordVerifiedSeatPayment:recordVerifiedAnnualPayment;
- record(db,receipt,{now,authorize});
+ return record(db,receipt,{now,authorize,onRecorded});
 }
 function fulfilCapture(db,receipt,now,authorize){
  const fulfil=receipt.product===SEAT_PRODUCT?fulfilSeatOrder:fulfilAnnualOrder;
@@ -175,11 +179,109 @@ function applyBatchLookup(result,order,context){
  return 'inspect-capture';
 }
 
+function batchItemResult(current,outcome){
+ const {id:orderId,status}=current;
+ const paymentException=!!current.paymentException;
+ if(outcome==='inspect-capture'){
+  if(paymentException||status==='payment-verified')outcome='awaiting-review';
+  else outcome=status==='paid'?'matched':'local-failure';
+ }
+ if(outcome==='inspect-closure'){
+  if(status==='closed')outcome='closed';
+  else outcome=status==='payment-verified'?'awaiting-review':'local-failure';
+ }
+ return {orderId,outcome,status,paymentException};
+}
+
+function writeReceiptProgress(action){
+ try{return action();}
+ catch{throw new ApiError(503,RECEIPT_WRITE_FAILED,'暂时无法保存对账进度，请重试原批次。');}
+}
+
+async function reconcileRecordedBatch(input,{db,teamId,options,now,scoped,authorize,list,read,product}){
+ const {billingSimulation}=options,{kind,requestId}=input,after=input.after??null;
+ const {scope,items,nextCursor,orders}=scoped(({userId:actorId})=>{
+  const scope={teamId,actorId,requestId,kind,after,merchantId:billingSimulation.merchantId};
+  const selection=openBillingBatchReceipt(db,scope,()=>list(db,teamId,{limit:RECONCILIATION_PAGE_SIZE,after}),time(now));
+  const orders=selection.items.filter(item=>item.progress==='pending').map(item=>{
+   const order=read(db,teamId,item.orderId);if(!order)deny();return order;
+  });
+  return {scope,...selection,orders};
+ });
+ const found=await Promise.allSettled(orders.map(order=>lookup(billingSimulation,order)));
+ const evidenceByOrder=new Map(orders.map((order,index)=>[order.id,found[index]]));
+ const fulfil=product===SEAT_PRODUCT?fulfilSeatOrder:fulfilAnnualOrder;
+ const currentOrder=id=>{const order=read(db,teamId,id);if(!order)deny();return order;};
+ const finish=(progress,order,outcome)=>{
+  const result=batchItemResult(order,outcome);
+  writeReceiptProgress(()=>finishBillingBatchItem(db,scope,progress,result,time(now)));
+  return result;
+ };
+ function finishVerified(orderId,payment){
+  // Check the pinned payment while each owned entitlement transaction holds its write lock.
+  const guard=()=>{
+   authorize();
+   writeReceiptProgress(()=>assertBillingBatchVerification(db,scope,orderId,payment));
+  };
+  let result;
+  try{
+   fulfil(db,orderId,{now,authorize:guard,onFulfilled({order}){result=finish('verified',order,'inspect-capture');}});
+   return result;
+  }catch(error){
+   if(!(error instanceof ApiError&&error.status===409))throw error;
+   return scoped(()=>{
+    guard();
+    return finish('verified',currentOrder(orderId),'inspect-capture');
+   });
+  }
+ }
+ function finishPending(orderId,lookupResult){
+  const terminal=outcome=>scoped(()=>finish('pending',currentOrder(orderId),outcome));
+  if(lookupResult.status==='rejected')return terminal('lookup-unavailable');
+  let evidence;
+  try{evidence=lookupEvidence(billingSimulation,lookupResult.value,orderId,product);}
+  catch{return terminal('evidence-rejected');}
+  if(!evidence)return terminal('no-evidence');
+  if(evidence.record){
+   try{
+    return scoped(()=>{
+     evidence.record(db,evidence.receipt,{now});
+     return finish('pending',currentOrder(orderId),evidence.closure?'inspect-closure':'awaiting-review');
+    });
+   }catch(error){
+    if(error.code===RECEIPT_WRITE_FAILED)throw error;
+    return terminal(rejectedWrite(error));
+   }
+  }
+  let payment;
+  try{
+   recordCapture(db,evidence.receipt,now,options,authorize,({paymentId,receiptSha256,confirmedAt})=>{
+    authorize();
+    payment={paymentId,receiptSha256,confirmedAt};
+    writeReceiptProgress(()=>recordBillingBatchVerification(db,scope,orderId,payment,time(now)));
+   });
+  }catch(error){
+   if(error.code===RECEIPT_WRITE_FAILED)throw error;
+   return terminal(rejectedWrite(error));
+  }
+  return finishVerified(orderId,payment);
+ }
+ const results=[];
+ for(const item of items){
+  authorize();
+  if(item.progress==='complete')results.push(item.result);
+  else if(item.progress==='verified')results.push(finishVerified(item.orderId,item.payment));
+  else results.push(finishPending(item.orderId,evidenceByOrder.get(item.orderId)));
+ }
+ return scoped(()=>json({simulation:true,teamId,kind,results,nextCursor}));
+}
+
 async function reconcileBatch(request,{db,teamId,options,now,scoped,authorize}){
  const {billingSimulation}=options;
  if(billingSimulation.batchReconciliation!==true)unavailable();
- const input=await readJson(request,['kind','after']);
- if(!['annual','seat'].includes(input.kind)||(input.after!==undefined&&!matches(UUID,input.after)))invalid();
+ const input=await readJson(request,billingSimulation.batchReconciliationReceipts?['kind','after','requestId']:['kind','after']);
+ if(!['annual','seat'].includes(input.kind)||(input.after!==undefined&&!matches(UUID,input.after))||
+    (input.requestId!==undefined&&!matches(UUID,input.requestId)))invalid();
  const seat=input.kind==='seat';
  if(seat&&!seatOrderingEnabled(options))unavailable();
  const list=seat?listSeatOrders:listAnnualOrders,read=seat?readSeatOrder:readAnnualOrder;
@@ -190,24 +292,18 @@ async function reconcileBatch(request,{db,teamId,options,now,scoped,authorize}){
  if(active.has(teamId))throw new ApiError(409,'BILLING_RECONCILIATION_BUSY','该团队已有一批账务正在核对。');
  active.add(teamId);
  try{
+  if(input.requestId!==undefined){
+   return await reconcileRecordedBatch(input,{db,teamId,options,now,scoped,authorize,list,read,product});
+  }
   const {orders,hasMore}=scoped(()=>list(db,teamId,{limit:RECONCILIATION_PAGE_SIZE,after:input.after??null}));
   const found=await Promise.allSettled(orders.map(order=>lookup(billingSimulation,order)));
   const results=[];
   for(const [index,order] of orders.entries()){
    authorize();
-   let outcome=applyBatchLookup(found[index],order,{db,options,now,product,scoped,authorize});
+   const outcome=applyBatchLookup(found[index],order,{db,options,now,product,scoped,authorize});
    const current=scoped(()=>read(db,teamId,order.id));
    if(!current)deny();
-   const paymentException=!!current.paymentException;
-   if(outcome==='inspect-capture'){
-    if(paymentException||current.status==='payment-verified')outcome='awaiting-review';
-    else outcome=current.status==='paid'?'matched':'local-failure';
-   }
-   if(outcome==='inspect-closure'){
-    if(current.status==='closed')outcome='closed';
-    else outcome=current.status==='payment-verified'?'awaiting-review':'local-failure';
-   }
-   results.push({orderId:order.id,outcome,status:current.status,paymentException});
+   results.push(batchItemResult(current,outcome));
   }
   return scoped(()=>json({simulation:true,teamId,kind:input.kind,results,nextCursor:hasMore?orders.at(-1).id:null}));
  }finally{active.delete(teamId);}
@@ -244,6 +340,7 @@ export async function handleBillingRequest(request,options={}){
  if(kind==='overview')return scoped(()=>billingOverview(db,teamId,time(now),billingSimulation,{
   expiryReminder:request.headers.get('X-Shenyi-Billing-View')==='expiry-reminder-v1',
   resumeFulfilment:request.headers.get('X-Shenyi-Billing-Recovery')==='recorded-payment-v1',
+  resumeBatch:request.headers.get('X-Shenyi-Billing-Batch')==='resumable-v1',
   pilotSource:options.serviceMode==='managed-service'&&request.headers.get('X-Shenyi-Billing-Source')==='approved-pilot-v1',
   websiteCheckout:options.websiteCheckoutActive&&request.headers.get('X-Shenyi-Website-Checkout')==='candidate-v1',
  }));

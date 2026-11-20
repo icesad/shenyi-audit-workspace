@@ -196,7 +196,7 @@ export function listSeatOrders(db,team,{limit=20,after=null}={}){teamId(team);if
 
 // Only an authenticated trusted gateway adapter may supply this exact receipt.
 // Save the verified inbox before attempting fulfilment, including late receipts.
-export function recordVerifiedSeatPayment(db,receipt,{now=Date.now,authorize}={}){
+export function recordVerifiedSeatPayment(db,receipt,{now=Date.now,authorize,onRecorded}={}){
  const value=validateSimulationPaymentReceipt(receipt);
  const bytes=simulationReceiptBytes(value),hash=digest(bytes);
  if(typeof now!=='function')invalid();
@@ -213,6 +213,7 @@ export function recordVerifiedSeatPayment(db,receipt,{now=Date.now,authorize}={}
    if(collisions.length!==1)conflict();
    const prior=paymentValue(db,collisions[0],order);
    if(prior.receiptSha256!==hash)conflict();
+   onRecorded?.(prior);
    return prior;
   }
   if(one(db,'SELECT 1 FROM team_seat_capacity_grants WHERE grant_id=?',order.id))conflict();
@@ -227,10 +228,11 @@ export function recordVerifiedSeatPayment(db,receipt,{now=Date.now,authorize}={}
   const saved=paymentFact(db,order);
   if(!saved||saved.paymentId!==id||saved.confirmedAt!==confirmedAt||saved.receiptSha256!==hash
    ||one(db,'SELECT 1 FROM team_seat_capacity_grants WHERE grant_id=?',order.id))conflict();
+  onRecorded?.(saved);
   return saved;
  });
 }
-export function fulfilSeatOrder(db,id,{now=Date.now,authorize}={}){
+export function fulfilSeatOrder(db,id,{now=Date.now,authorize,onFulfilled}={}){
  orderId(id);
  if(typeof now!=='function')invalid();
  return own(db,()=>{
@@ -243,6 +245,7 @@ export function fulfilSeatOrder(db,id,{now=Date.now,authorize}={}){
   if(prior){
    const result={order:view(db,order),grant:prior};
    authorize?.();
+   onFulfilled?.(result);
    return result;
   }
   assertBillingOrderOpenForFulfilment(db,PRODUCT,order.id);
@@ -275,6 +278,7 @@ export function fulfilSeatOrder(db,id,{now=Date.now,authorize}={}){
   fresh();
   const result={order:view(db,finalOrder),grant};
   authorize?.();
+  onFulfilled?.(result);
   return result;
  });
 }

@@ -19,7 +19,7 @@ function fields(value,required,optional=[]){
 export function billingSimulationConfiguration(value=null,{subscriptionEnforcement,identityProviders,seatCapacityEnforcement}={}){
  if(value===null)return null;
  try{
-  const v=fields(value,['mode','merchantId','signingKey','offers'],['lookupPayment','seatOffer','annualSeatUnitAmountMinor','paymentExceptions','batchReconciliation','refundIntake','timeoutClosure']);
+  const v=fields(value,['mode','merchantId','signingKey','offers'],['lookupPayment','seatOffer','annualSeatUnitAmountMinor','paymentExceptions','batchReconciliation','batchReconciliationReceipts','refundIntake','timeoutClosure']);
   if(v.mode!=='simulation-v1'||!matches(ID,v.merchantId)||types.isProxy(v.signingKey)||!Buffer.isBuffer(v.signingKey)||v.signingKey.length<32||v.signingKey.length>128||subscriptionEnforcement!=='team-management-v1'||identityProviders?.deviceProofRequired!==true)throw Error();
   if(!Array.isArray(v.offers)||types.isProxy(v.offers)||Object.getPrototypeOf(v.offers)!==Array.prototype||v.offers.length<1||v.offers.length>10)throw Error();
   const ds=Object.getOwnPropertyDescriptors(v.offers);
@@ -43,6 +43,8 @@ export function billingSimulationConfiguration(value=null,{subscriptionEnforceme
   if(v.paymentExceptions!==undefined&&typeof v.paymentExceptions!=='boolean')throw Error();
   if(v.batchReconciliation!==undefined&&typeof v.batchReconciliation!=='boolean')throw Error();
   if(v.batchReconciliation===true&&typeof v.lookupPayment!=='function')throw Error();
+  if(v.batchReconciliationReceipts!==undefined&&(typeof v.batchReconciliationReceipts!=='boolean'||
+     v.batchReconciliationReceipts&&v.batchReconciliation!==true))throw Error();
   if(v.refundIntake!==undefined&&typeof v.refundIntake!=='boolean')throw Error();
   let timeoutClosure;
   if(v.timeoutClosure!==undefined){
@@ -55,6 +57,7 @@ export function billingSimulationConfiguration(value=null,{subscriptionEnforceme
     ...(seatOffer===undefined?{}:{seatOffer}),
     ...(v.paymentExceptions===true?{paymentExceptions:true}:{}),
     ...(v.batchReconciliation===true?{batchReconciliation:true}:{}),
+    ...(v.batchReconciliationReceipts===true?{batchReconciliationReceipts:true}:{}),
     ...(v.refundIntake===true?{refundIntake:true}:{}),
     ...(timeoutClosure?{timeoutClosure}:{}),
     ...(annualSeatUnitAmountMinor===undefined?{}:{annualSeatUnitAmountMinor})});

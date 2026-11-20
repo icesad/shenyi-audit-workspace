@@ -200,7 +200,7 @@ export function listAnnualOrders(db,teamId,{limit=20,after=null}={}){
 
 // Called only after the server gateway verifies HMAC. Repeat passive validation
 // and locked-order matching here; never accept a browser's success assertion.
-export function recordVerifiedAnnualPayment(db,receipt,{now=Date.now,authorize}={}){
+export function recordVerifiedAnnualPayment(db,receipt,{now=Date.now,authorize,onRecorded}={}){
  const value=validateSimulationPaymentReceipt(receipt),bytes=simulationReceiptBytes(value),hash=digest(bytes);if(value.product!==ANNUAL_PRODUCT||typeof now!=='function')invalid();
  return ownTransaction(db,()=>{
   authorize?.();
@@ -210,7 +210,12 @@ export function recordVerifiedAnnualPayment(db,receipt,{now=Date.now,authorize}=
   assertBillingCaptureCompatible(db,value);
   if(one(db,'SELECT 1 FROM team_seat_verified_payments WHERE event_id=? OR transaction_id=?',value.eventId,value.transactionId))conflict();
   const collisions=all(db,'SELECT * FROM team_annual_verified_payments WHERE order_id=? OR event_id=? OR transaction_id=?',value.orderId,value.eventId,value.transactionId);
-  if(collisions.length){if(collisions.length!==1)conflict();const old=paymentValue(collisions[0],order);if(old.receiptSha256!==hash)conflict();return old;}
+  if(collisions.length){
+   if(collisions.length!==1)conflict();
+   const old=paymentValue(collisions[0],order);if(old.receiptSha256!==hash)conflict();
+   onRecorded?.(old);
+   return old;
+  }
   if(plan&&one(db,'SELECT 1 FROM team_seat_capacity_grants WHERE grant_id=?',order.id))conflict();
   const closure=readBillingOrderClosure(db,ANNUAL_PRODUCT,order.id);
   const paymentId=randomUUID(),confirmedAt=at(now);
@@ -218,6 +223,7 @@ export function recordVerifiedAnnualPayment(db,receipt,{now=Date.now,authorize}=
   if(db.prepare('INSERT INTO team_annual_verified_payments(payment_id,order_id,team_id,event_id,transaction_id,receipt_json,receipt_sha256,confirmed_at) VALUES (?,?,?,?,?,?,?,?)').run(paymentId,order.id,order.teamId,value.eventId,value.transactionId,bytes.toString('utf8'),hash,confirmedAt).changes!==1)conflict();
   const payment=paymentFact(db,order);if(!payment||payment.paymentId!==paymentId||payment.confirmedAt!==confirmedAt||payment.receiptSha256!==hash)conflict();
   if(plan&&one(db,'SELECT 1 FROM team_seat_capacity_grants WHERE grant_id=?',order.id))conflict();
+  onRecorded?.(payment);
   return payment;
  });
 }
@@ -242,7 +248,7 @@ function assertAnnualPaymentTurn(db,order,payment){
  conflict();
 }
 
-export function fulfilAnnualOrder(db,orderId,{now=Date.now,authorize}={}){
+export function fulfilAnnualOrder(db,orderId,{now=Date.now,authorize,onFulfilled}={}){
  requireOrderId(orderId);if(typeof now!=='function')invalid();return ownTransaction(db,()=>{
   authorize?.();
   const order=orderFact(db,orderId);if(!order)deny();const payment=paymentFact(db,order);if(!payment)conflict();const currentTime=at(now);if(currentTime<payment.confirmedAt)conflict();
@@ -251,6 +257,7 @@ export function fulfilAnnualOrder(db,orderId,{now=Date.now,authorize}={}){
   if(prior){
    const result={order:view(db,order),fulfilment:prior,subscription:termReceipt(db,order.teamId,prior.subscriptionRevision)};
    authorize?.();
+   onFulfilled?.(result);
    return result;
   }
   assertBillingOrderOpenForFulfilment(db,ANNUAL_PRODUCT,order.id);
@@ -281,6 +288,7 @@ export function fulfilAnnualOrder(db,orderId,{now=Date.now,authorize}={}){
   if(finalOrder.requestSha256!==order.requestSha256||finalPayment.paymentId!==payment.paymentId||fulfilment?.id!==id||head.revision!==subscription.revision||head.startsAt!==subscription.startsAt||head.endsAt!==subscription.endsAt)conflict();
   const result={order:view(db,finalOrder),fulfilment,subscription};
   authorize?.();
+  onFulfilled?.(result);
   return result;
  });
 }

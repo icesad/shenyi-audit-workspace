@@ -9,6 +9,8 @@
   "server/team/application-api.mjs",
   "server/team/auth-api.mjs",
   "server/team/billing-api.mjs",
+  "server/team/billing-batch-receipt-schema.sql",
+  "server/team/billing-batch-receipt-store.mjs",
   "server/team/billing-order-closure-schema.sql",
   "server/team/billing-order-closure-store.mjs",
   "server/team/billing-order-closure.mjs",

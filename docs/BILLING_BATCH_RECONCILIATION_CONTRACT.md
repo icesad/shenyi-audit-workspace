@@ -6,7 +6,7 @@
 
 ## 服务端接口
 
-严格团队账务启用 `batchReconciliation: true` 并配置可信模拟查单来源时，概览提供 `canReconcileBillingBatch: true`。已通过设备核验的本团队技术管理员可调用 `POST /api/teams/:teamId/billing/reconciliation`，请求 JSON 只接受 `kind`（`annual` 或 `seat`）和可选的 `after`。同团队已有一批正在执行时返回 409，服务端查单单笔最长等待 5 秒。
+严格团队账务启用 `batchReconciliation: true` 并配置可信模拟查单来源时，概览提供 `canReconcileBillingBatch: true`。已通过设备核验的本团队技术管理员可调用 `POST /api/teams/:teamId/billing/reconciliation`，请求 JSON 接受 `kind`（`annual` 或 `seat`）和可选的 `after`。同团队已有一批正在执行时返回 409，服务端查单单笔最长等待 5 秒。
 
 响应包含本批最少必要的订单编号、核对结果、当前收款状态及是否有异常复核记录，以及可继续的游标。核对结果包括以下状态。
 
@@ -17,5 +17,13 @@
 - `lookup-unavailable` 表示查单来源未能响应。
 - `evidence-rejected` 表示凭据未通过核验或无法与原订单、收款记录匹配。
 - `local-failure` 表示本地处理未完成，可复核后重试。
+
+## 重试未收到结果的合成批次
+
+独立账务演练已初始化批次回执表并启用 `batchReconciliationReceipts: true`。桌面发送 `X-Shenyi-Billing-Batch: resumable-v1` 协商能力，只有启用此功能的服务才返回 `canResumeBillingBatch: true`。此时发起批次可带 `requestId`（UUIDv4）。旧客户端不带该字段时仍使用原请求和响应格式。
+
+服务器首次受理时固定该批的订单和下一批游标。使用同一请求编号重试时，服务器复用对应团队、审核账号、订单类型、游标及合成商户的一批记录。当前会话、设备证明及技术管理员权限仍须有效。其他类型、游标或商户使用原请求编号会返回 `BILLING_RECONCILIATION_CONFLICT`。
+
+验款事实与单笔验款进度一起提交。恢复已验款的一笔时，从原账本核对收款标识、摘要和确认时间，随后把权益与当笔结果一起提交。保存进度失败会返回 `BILLING_RECONCILIATION_RECEIPT_FAILED`，该次提交回滚。已验款的进度保留后续恢复依据。已完成的批次直接返回原结果，后续订单变化通过正常查询或发起新一批核对获得。回执只保留责任账号、订单标识、验款引用、时间和固定结果字段。
 
 本候选沿用[模拟退款和拒付账本](PAYMENT_EXCEPTION_CONTRACT.md)。首版退款由产品负责人受理，团队客户端保留原订单查询和核对。正式商户账单接入、退款处理和已生效权益处置另行确认。

@@ -126,3 +126,88 @@ test('overlapping batches do not duplicate upstream work and a revoked waiting a
  assert.equal(f.count('team_annual_verified_payments'),0);
  assert.equal(f.count('team_subscription_events'),0);
 });
+
+test('a resumable batch commits verification before fulfilment and replays only the frozen receipt',async t=>{
+ const f=await fixture(t);
+ const {initializeBillingBatchReceiptStore}=await source('billing-batch-receipt-store.mjs');
+ initializeBillingBatchReceiptStore(f.db);
+ const first=await f.create(),firstPayment=f.capture(first),requestId=randomUUID();
+ f.returned.set(first.id,f.signed(firstPayment));
+ const input={kind:'annual',requestId};
+ const options={billingSimulation:{...f.billingSimulation,batchReconciliationReceipts:true}};
+ const items=()=>f.db.prepare('SELECT order_id,progress,payment_id,confirmed_at,result_json FROM team_billing_reconciliation_items ORDER BY ordinal').all();
+ const readOverview=(headers={})=>f.request(root+'/overview',{headers},options);
+ assert.equal(Object.hasOwn((await readOverview()).body,'canResumeBillingBatch'),false);
+ assert.equal((await readOverview({'X-Shenyi-Billing-Batch':'resumable-v1'})).body.canResumeBillingBatch,true);
+ assert.equal((await f.reconcile(input)).status,400);
+
+ f.db.exec(`CREATE TRIGGER synthetic_fail_batch_result BEFORE UPDATE ON team_billing_reconciliation_items
+   WHEN OLD.progress='verified' AND NEW.progress='complete'
+   BEGIN SELECT RAISE(ABORT,'synthetic receipt writer failure'); END;`);
+ const failed=await f.reconcile(input,options);
+ assert.equal(failed.status,503,JSON.stringify(failed));
+ assert.equal(failed.body.error.code,'BILLING_RECONCILIATION_RECEIPT_FAILED');
+ assert.equal(f.count('team_annual_verified_payments'),1);
+ assert.equal(f.count('team_annual_fulfilments'),0);
+ assert.equal(f.count('team_subscription_events'),0);
+ const verified=items();
+ assert.deepEqual(verified.map(item=>[item.order_id,item.progress,item.confirmed_at,item.result_json]),[[first.id,'verified',f.clock.value,null]]);
+ assert.deepEqual(f.calls,[first.id]);
+
+ f.db.exec('DROP TRIGGER synthetic_fail_batch_result');
+ const second=await f.create();
+ f.returned.set(first.id,new Error('the original lookup cannot be repeated'));
+ f.clock.value+=2000;
+ for(const changed of [{...input,after:second.id},{...input,kind:'seat'}]){
+  const conflict=await f.reconcile(changed,options);
+  assert.equal(conflict.status,409);
+  assert.equal(conflict.body.error.code,'BILLING_RECONCILIATION_CONFLICT');
+ }
+ const otherMerchant={billingSimulation:{...options.billingSimulation,merchantId:'another-synthetic-merchant'}};
+ assert.equal((await f.reconcile(input,otherMerchant)).status,409);
+ assert.deepEqual(items(),verified);
+ const done=await f.reconcile(input,options);
+ assert.equal(done.status,200,JSON.stringify(done));
+ assert.deepEqual(done.body.results,[{orderId:first.id,outcome:'matched',status:'paid',paymentException:false}]);
+ assert.equal(done.body.nextCursor,null);
+ assert.equal(f.count('team_annual_orders'),2);
+ assert.equal(f.count('team_annual_verified_payments'),1);
+ assert.equal(f.count('team_annual_fulfilments'),1);
+ assert.equal(f.count('team_subscription_events'),1);
+ assert.deepEqual(f.calls,[first.id]);
+ const committed=items();
+ assert.equal(committed[0].progress,'complete');
+ assert.equal(committed[0].payment_id,verified[0].payment_id);
+ assert.equal(committed[0].confirmed_at,verified[0].confirmed_at);
+ assert.deepEqual(JSON.parse(committed[0].result_json),done.body.results[0]);
+ assert.deepEqual(await f.reconcile(input,options),done);
+ assert.deepEqual(items(),committed);
+ f.db.prepare("UPDATE team_operators SET status='revoked' WHERE user_id=?").run(f.admin.account.id);
+ assert.notEqual((await f.reconcile(input,options)).status,200);
+ assert.deepEqual(items(),committed);
+ assert.deepEqual(f.calls,[first.id]);
+});
+
+test('a failed verification checkpoint cannot leave an untracked capture',async t=>{
+ const f=await fixture(t);
+ const {initializeBillingBatchReceiptStore}=await source('billing-batch-receipt-store.mjs');
+ initializeBillingBatchReceiptStore(f.db);
+ const order=await f.create();
+ f.returned.set(order.id,f.signed(f.capture(order)));
+ const options={billingSimulation:{...f.billingSimulation,batchReconciliationReceipts:true}};
+ const input={kind:'annual',requestId:randomUUID()};
+ f.db.exec(`CREATE TRIGGER synthetic_fail_batch_verification BEFORE UPDATE ON team_billing_reconciliation_items
+   WHEN NEW.progress='verified' BEGIN SELECT RAISE(ABORT,'synthetic verification checkpoint failure'); END;`);
+ const failed=await f.reconcile(input,options);
+ assert.equal(failed.status,503,JSON.stringify(failed));
+ assert.equal(failed.body.error.code,'BILLING_RECONCILIATION_RECEIPT_FAILED');
+ assert.equal(f.count('team_annual_verified_payments'),0);
+ assert.equal(f.count('team_annual_fulfilments'),0);
+ assert.equal(f.db.prepare('SELECT progress FROM team_billing_reconciliation_items').get().progress,'pending');
+ f.db.exec('DROP TRIGGER synthetic_fail_batch_verification');
+ const recovered=await f.reconcile(input,options);
+ assert.equal(recovered.status,200,JSON.stringify(recovered));
+ assert.equal(f.count('team_annual_verified_payments'),1);
+ assert.equal(f.count('team_annual_fulfilments'),1);
+ assert.deepEqual(f.calls,[order.id,order.id]);
+});
