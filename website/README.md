@@ -46,6 +46,12 @@ Windows 双人评审包完整解压后，双击 [Start-Team-Website-Checkout-Can
 
 合成订单用于查验金额和编号，不触发收款、订阅变更或席位到账。商户付款和正式部署仍待验收。原官网一键入口提供静态预览。
 
+## 微信 Native 原单付款候选
+
+已锁定的微信 Native 原单可从受管 HTTPS 付款页查看，点击后生成二维码、验签查单，并在符合条件时核对权益到账。授权由本团队技术管理员通过设备签名申请，最长有效两分钟。当前用合成商户和隔离 SQLite 复验。此前的 Windows 一键官网入口用于合成下单演练。
+
+微信付款页在配置独立商户资料后启用，默认关闭。开发者可在仓库根目录运行 `node --test tests/team-wechat-native-website.test.cjs`。正式报价建单和客户端付款入口仍待接入。 [受管启动配置与接口](../docs/PAYMENT_CHANNEL_PREPARATION.md#授权官网原单付款)
+
 ## 发布前核对
 
 本机审阅时，可对照四角色采集演练和合成账务验收核对官网说法。 [采集演练](../docs/TEAM_PILOT_REHEARSAL.md) · [账务验收](../docs/M5_LOCAL_ACCEPTANCE.md)

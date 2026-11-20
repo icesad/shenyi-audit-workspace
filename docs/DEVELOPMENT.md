@@ -1,19 +1,21 @@
 # 开发、运行与测试
 
+协作开发先从 [当前双人交接](COLLABORATION_HANDOFF.md) 确认应取的分支。GitHub 的默认分支为 `main`。
+
 ## 1. 环境和首次准备
 
-- Windows 或 macOS，Node.js 24.x（至少 24.15，建议团队使用同一小版本）。当前基线在 Windows Node 24.21.0 准备。
+- Windows 或 macOS，Node.js 24.x（至少 24.15，建议团队使用同一小版本）。协作候选在 Windows Node 24.22.1 复验。
 - Git / GitHub Desktop；浏览器先使用当前版本 Chrome 或 Edge。Safari 需要独立实机验收，不能以 Chromium 回归代替。
 - 克隆私有仓库需要被邀请的个人 GitHub 账号。不要把仓库下载到放客户账套的目录。
 
 ```sh
 git clone https://github.com/icesad/shenyi-audit-workspace.git
 cd shenyi-audit-workspace
-npm ci
+npm ci --ignore-scripts
 npm run dev
 ```
 
-打开 `http://127.0.0.1:8773/`。`Ctrl+C` 停止服务。首次装依赖需要联网，以后静态前端可本机运行。不要在不同电脑间复制 `node_modules`，分别执行 `npm ci`。
+打开 `http://127.0.0.1:8773/`。`Ctrl+C` 停止本次启动的服务。首次装依赖需要联网，以后静态前端可本机运行。两台电脑各自执行 `npm ci --ignore-scripts` 安装锁定的依赖。
 
 端口被占用时先确认是不是自己此前启动的服务，不要随意结束不认识的进程，也不要自动改端口。已有业务资料与浏览器 origin 绑定：`localhost`、`127.0.0.1`、不同端口、file地址、线上站点分别使用不同数据区。
 

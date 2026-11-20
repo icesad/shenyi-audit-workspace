@@ -29,10 +29,10 @@
 
 ## 本机运行（开发者）
 
-使用 Node.js **24.15 或更高的 24.x**；本次准备环境为 24.21.0。
+使用 Node.js **24.15 或更高的 24.x**。协作候选复验环境为 24.22.1。
 
 ```sh
-npm ci
+npm ci --ignore-scripts
 npm run dev
 ```
 
@@ -43,7 +43,7 @@ npm run dev
 ## 分支和发布
 
 - `main`：以原线上 v61 为应用基线，新增协作工具和文档；不是重新设计软件。
-- `codex/team-collaboration-handoff-20261120` 是本阶段两人开任务分支的起点。 [接手步骤](docs/COLLABORATION_HANDOFF.md)
+- `codex/team-collaboration-handoff-20261120` 是本阶段两人开任务分支的起点，已包含团队应用、官网和微信 Native 原单付款候选。 [接手步骤](docs/COLLABORATION_HANDOFF.md)
 - `work/report-four-sources`：保留此前已实现、尚未在原站点发布的成本导航和四来源报告页修改，待业务验收；不作为已经完成的正式报告功能。
 - GitHub 提交/合并 **不会自动发布原网站**。发布由负责人独立执行并记录结果。
 - 现有布局和业务规则只按明确需求修改；没有说到的地方不自行扩展。
