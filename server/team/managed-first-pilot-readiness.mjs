@@ -11,6 +11,7 @@ const requiredColumns = {
   team_platform_reviewers: 'user_id, permission, status, revision',
   team_profiles: 'team_id, name',
   team_credentials: 'user_id, username, display_name, password_hash, revision',
+  team_device_bindings: 'user_id, status',
   team_administrator_business_roles: 'team_id, user_id, role, status, member_role',
   team_provisioning_requests: 'request_id, team_id, team_name, admin_phone, status, revision, created_by, created_at, approved_by, approved_at, reviewer_revision, credential_revision, credential_fingerprint, token_hash, expires_at, activated_at, activated_by',
   team_first_administrator_challenges: challengeColumns + ', request_id',
@@ -76,10 +77,15 @@ function hasVerifiedPhone(row, now) {
 
 function hasFirstPilotReviewer(db, now) {
   if (!Number.isSafeInteger(now) || now <= 0) return false;
+  // Protected reviewers can enroll their first device, but a history without
+  // an active binding requires a replacement that their role cannot request.
   const candidates = db.prepare(`SELECT pilot.user_id, pilot.revision, contact.phone, contact.verified_at,
       contact.revision AS phone_revision FROM main.team_pilot_approval_reviewers AS pilot
     JOIN main.team_phone_credentials AS contact ON contact.user_id=pilot.user_id
-    WHERE pilot.permission='team.pilot.approve' AND pilot.status='active'`);
+    WHERE pilot.permission='team.pilot.approve' AND pilot.status='active'
+      AND (NOT EXISTS (SELECT 1 FROM main.team_device_bindings AS history WHERE history.user_id=pilot.user_id)
+        OR EXISTS (SELECT 1 FROM main.team_device_bindings AS binding
+          WHERE binding.user_id=pilot.user_id AND binding.status='active'))`);
   for (const candidate of candidates.iterate()) {
     if (!validRevision(candidate.revision) || !hasVerifiedPhone(candidate, now)) continue;
     const opening = platformReviewer(db, candidate.user_id);

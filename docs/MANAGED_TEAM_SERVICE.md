@@ -40,7 +40,9 @@ node scripts/start-team-service.mjs --config 'D:/shenyi-service/service.json'
 node scripts/start-team-service.mjs --check-pilot-readiness --config /etc/shenyi-team/service.json
 ```
 
-退出码 `0` 和 `{"event":"pilot-ready"}` 表示本机已通过启动配置、TLS、短信配置、开通与激活结构、试点审批结构和审核员资格检查。至少一位有效审核员须有已验证手机号，且同时具备团队开通与试点审批权限。随后按正常流程登录审核账号和绑定电脑。命令只读打开 SQLite，结束时关闭连接，期间无需启动监听器或发送短信。供应商真实送达、负责人确认和试点授权按各自流程验收。
+退出码 `0` 和 `{"event":"pilot-ready"}` 表示本机已通过启动配置、TLS、短信配置、开通与激活结构、试点审批结构和审核员资格检查。至少一位有效审核员须有已验证手机号、团队开通与试点审批权限，并且从未绑定电脑或仍有有效绑定。仅剩已撤销的绑定记录时，该账号无法首次登记，首版也不支持此类审核账号申请换机。没有其他符合条件的审核员时，预检返回 `MANAGED_PILOT_REVIEWER_NOT_READY`。
+
+命令只读打开 SQLite，结束时关闭连接，期间无需启动监听器或发送短信。已绑定的审核员仍须在持有设备密钥的电脑上完成正常登录和设备验证。供应商真实送达、负责人确认和试点授权按各自流程验收。
 
 | 错误码 | 核对项 |
 | --- | --- |

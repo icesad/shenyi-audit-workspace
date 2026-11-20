@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
-const { randomUUID, createHash } = require('node:crypto');
+const { randomUUID, createHash, generateKeyPairSync } = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { DatabaseSync } = require('node:sqlite');
@@ -432,6 +432,32 @@ test('first pilot preflight requires local SMS, activation schema and an eligibl
   edit(db => db.exec("UPDATE team_credentials SET password_hash='invalid-format' WHERE user_id='pilot-reviewer'"));
   await check({code:'MANAGED_PILOT_REVIEWER_NOT_READY'});
   edit(db => db.prepare("UPDATE team_credentials SET password_hash=? WHERE user_id='pilot-reviewer'").run(passwordHash));
+  // A reviewer without binding history can still complete normal first enrollment.
+  await check();
+  const deviceId = randomUUID();
+  const deviceKey = generateKeyPairSync('ed25519').publicKey.export({format:'der',type:'spki'});
+  const encodedDeviceKey = deviceKey.toString('base64url');
+  const fingerprint = createHash('sha256').update(deviceKey).digest('hex');
+  edit(db => db.prepare(`INSERT INTO team_device_bindings
+    (device_id,user_id,public_key,key_fingerprint,display_name,platform,status,revision,bound_at)
+    VALUES (?,'pilot-reviewer',?,?,'合成审核员电脑','win32','active',1,?)`)
+    .run(deviceId,encodedDeviceKey,fingerprint,Date.now()-1000));
+  await check();
+  edit(db => db.prepare("UPDATE team_device_bindings SET status='revoked',revision=2,revoked_at=? WHERE device_id=?")
+    .run(Date.now(),deviceId));
+  await check({code:'MANAGED_PILOT_REVIEWER_NOT_READY'});
+  await check({mode:'--check-startup'});
+  edit(db => {
+    db.prepare("INSERT INTO team_users (user_id,status) VALUES ('pilot-reviewer-standby','active')").run();
+    db.prepare(`INSERT INTO team_credentials(user_id,username,display_name,password_hash)
+      VALUES ('pilot-reviewer-standby','pilot-reviewer-standby','合成备用审核员',?)`).run(passwordHash);
+    db.prepare(`INSERT INTO team_phone_credentials(user_id,phone,verified_at)
+      VALUES ('pilot-reviewer-standby','+8613800138001',?)`).run(Date.now());
+    db.prepare(`INSERT INTO team_platform_reviewers(user_id,permission,status)
+      VALUES ('pilot-reviewer-standby','team.provision','active')`).run();
+    db.prepare(`INSERT INTO team_pilot_approval_reviewers(user_id,permission,status)
+      VALUES ('pilot-reviewer-standby','team.pilot.approve','active')`).run();
+  });
   await check();
   let activitySchema;
   edit(db => {
