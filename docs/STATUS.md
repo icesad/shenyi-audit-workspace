@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 当前 Linux 候选带数据升级与回退
+
+当前 Linux 签名候选已在隔离 Ubuntu 用原合成库走完整升级和操作员回退。同一已绑设备三阶段签名读取原件均返回 200，原件、21 张业务表、SQLite 结构和绑定一致。59 项定向回归通过。生产库及正式发布仍待验。证据见 `D:/codex-temp/shenyi-linux-current-upgrade-rollback-20261120/run-1/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-当前-linux-候选带数据升级与回退)
+
 ## 2026-11-20 同一测试 MSI 的管理提取复验
 
 原测试 MSI 已用 Windows Installer 完成管理提取，2,007 个文件逐字节匹配原签前 ZIP，系统目标产品仍未注册。正式签名和实机安装升级待验。证据见 `D:/codex-temp/shenyi-exact-msi-admin-rerun-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-同一测试-msi-的管理提取复验)
