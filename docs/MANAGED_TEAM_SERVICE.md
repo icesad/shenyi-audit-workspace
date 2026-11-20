@@ -113,6 +113,18 @@ try {
 
 使用 STS 临时凭据时同时配置 `securityToken`。四种用途配置已审批的 `SMS_` 模板 ID，模板参数为六位验证码 `code`。挑战只在供应商接受后才能用于验证，拒绝或超时按既有流程记为发送失败。 [阿里云 V3 请求签名](https://help.aliyun.com/zh/sdk/product-overview/v3-request-structure-and-signature)
 
+### 首管理员和员工激活联测
+
+在仓库根目录用 Node.js 24.15 或更新的 24.x 运行以下命令。测试用本机 OpenSSL 生成临时 TLS 证书。
+
+```sh
+node --test tests/team-managed-onboarding-sms.test.cjs
+```
+
+测试用受管服务的正常入口读取仓库外的独立短信配置，并以真实回环 HTTPS 完成首管理员及受邀员工激活。短信适配器生成请求，合成供应商分别拒绝和接受两种用途的发送。联测核对模板、号码规范化、ACS3 请求签名及配置中 pepper 生成的验证码 HMAC。
+
+等待或拒绝的验证码均无法激活。供应商拒绝时只记发送失败，团队、账号、邀请及审计记录保持原状。明确申请新验证码并收到接受响应后，激活只生效一次。测试停服后读库核对授权、审计记录和会话撤销。正式模板审批和手机送达仍需在获准环境验收。
+
 ## 可选审核式密码恢复
 
 在主服务配置中同时设置 `smsProfile` 和 `"reviewedRecovery": true`。省略 `reviewedRecovery` 或设为 `false` 时，审核式密码恢复关闭，其他已配置的短信功能可继续使用。启用时，缺少短信配置、短信配置无效或数据库缺少必要的恢复结构都会阻止启动。
