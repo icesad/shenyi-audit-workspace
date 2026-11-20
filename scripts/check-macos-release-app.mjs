@@ -25,12 +25,18 @@ function invalidArguments() {
   fail('INVALID_ARGUMENTS', '请指定绝对 .app 路径、发行 Team ID、正式 Bundle ID、三段版本号及 arm64 或 x64。');
 }
 
+export function parseMacosReleaseVersion(version) {
+  const match = typeof version === 'string' && /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.exec(version);
+  if (!match || match[0] !== version) return null;
+  const components = match.slice(1).map(Number);
+  return components.every(Number.isSafeInteger) ? components : null;
+}
+
 export function hasMacosReleaseIdentity({ teamId, bundleId, version, arch }) {
   return typeof teamId === 'string' && /^[A-Z0-9]{10}$/.test(teamId) &&
     typeof bundleId === 'string' && bundleId.length <= 255 && bundleId.toLowerCase() !== candidateId &&
     /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(bundleId) &&
-    typeof version === 'string' && /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(version) &&
-    version.split('.').every(part => Number.isSafeInteger(Number(part))) && architectures.has(arch);
+    parseMacosReleaseVersion(version) !== null && architectures.has(arch);
 }
 
 function validate(expected) {

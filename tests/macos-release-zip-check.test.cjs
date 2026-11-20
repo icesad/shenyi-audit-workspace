@@ -24,7 +24,7 @@ async function fixture(t) {
   return { directory, temporaryRoot, bytes, checkMacosReleaseZip, input: {
     archive, sha256: createHash('sha256').update(bytes).digest('hex'), python: process.execPath,
     appPayloadSha256: 'a'.repeat(64),
-    teamId: 'A1B2C3D4E5', bundleId: 'cn.example.shenyi', version: '0.61.0', arch: 'arm64',
+    teamId: 'A1B2C3D4E5', bundleId: 'cn.example.shenyi', version: '0.61.0', installedVersion: '0.60.0', arch: 'arm64',
   } };
 }
 
@@ -139,10 +139,62 @@ test('receipt binds one held archive copy to extraction and native app assessmen
   assert.equal(result.teamId, f.input.teamId);
   assert.equal(result.bundleId, f.input.bundleId);
   assert.equal(result.version, f.input.version);
+  assert.equal(result.installedVersion, f.input.installedVersion);
   assert.equal(result.mainExecutableArch, f.input.arch);
   assert.equal(result.appTreeSha256, '2'.repeat(64));
   assert.ok(!Object.hasOwn(result, 'app'));
   assert.ok(!JSON.stringify(result).includes('private-staging'));
+});
+
+test('final ZIP receipt records a first install and compares version segments numerically', async t => {
+  for (const [version, installedVersion] of [
+    ['0.61.0', '0.0.0'],
+    ['10.0.0', '9.99.99'],
+    ['1.10.0', '1.9.99'],
+    ['1.0.10', '1.0.9'],
+  ]) {
+    await t.test(`${installedVersion} to ${version}`, async t => {
+      const f = await fixture(t);
+      Object.assign(f.input, { version, installedVersion });
+      const model = commandBoundary(f);
+      const result = await checkFixture(f, model);
+      assert.equal(result.version, version);
+      assert.equal(result.installedVersion, installedVersion);
+      assert.equal(result.extractedAppPayloadVerified, true);
+    });
+  }
+});
+
+test('invalid final ZIP versions fail before reading the archive, staging or running native commands', async t => {
+  const f = await fixture(t);
+  const model = commandBoundary(f);
+  const input = { ...f.input, archive: path.join(f.directory, 'missing release.zip') };
+  await fs.rmdir(f.temporaryRoot);
+  for (const field of ['version', 'installedVersion']) {
+    const absent = { ...input };
+    delete absent[field];
+    await assert.rejects(f.checkMacosReleaseZip(absent, model.options), { code: 'INVALID_ARGUMENTS' }, `${field} absent`);
+    for (const value of [null, '', 1, '0.60', '0.60.0-rc1', '00.60.0', '0.060.0', '0.60.00',
+      '0.60.0\n', '0.60.0\r\n', '0.60.1e2', '9007199254740992.0.0']) {
+      await assert.rejects(f.checkMacosReleaseZip({ ...input, [field]: value }, model.options),
+        { code: 'INVALID_ARGUMENTS' }, `${field} = ${JSON.stringify(value)}`);
+    }
+  }
+  await assert.rejects(fs.lstat(f.temporaryRoot), { code: 'ENOENT' });
+  assert.deepEqual(model.calls, []);
+});
+
+test('same or older final ZIP versions are refused before reading the archive, staging or running native commands', async t => {
+  const f = await fixture(t);
+  const model = commandBoundary(f);
+  const input = { ...f.input, archive: path.join(f.directory, 'missing release.zip') };
+  await fs.rmdir(f.temporaryRoot);
+  for (const installedVersion of ['0.61.0', '0.61.1', '0.100.0', '1.0.0']) {
+    await assert.rejects(f.checkMacosReleaseZip({ ...input, installedVersion }, model.options),
+      { code: 'CANDIDATE_VERSION_NOT_NEWER' }, `${input.version} cannot replace ${installedVersion}`);
+  }
+  await assert.rejects(fs.lstat(f.temporaryRoot), { code: 'ENOENT' });
+  assert.deepEqual(model.calls, []);
 });
 
 test('wrong trusted digest and linked inputs are refused before running external commands', async t => {
@@ -299,7 +351,8 @@ test('non-Mac host cannot produce a native receipt or start any commands', async
     for (const payloadArgs of [[], ['--app-payload-sha256', 'a'.repeat(64)]]) {
       const cli = spawnSync(process.execPath, [wrapper, '--archive', f.input.archive, '--sha256', f.input.sha256,
         '--python', f.input.python, '--team-id', f.input.teamId, '--bundle-id', f.input.bundleId,
-        '--version', f.input.version, '--arch', f.input.arch, ...payloadArgs], { encoding: 'utf8', timeout: 15_000 });
+        '--version', f.input.version, '--installed-version', f.input.installedVersion,
+        '--arch', f.input.arch, ...payloadArgs], { encoding: 'utf8', timeout: 15_000 });
       assert.equal(cli.error, undefined);
       assert.equal(cli.status, 1);
       assert.equal(cli.stdout, '');

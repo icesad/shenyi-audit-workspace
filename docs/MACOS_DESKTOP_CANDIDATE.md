@@ -136,12 +136,13 @@ node scripts/check-macos-release-zip.mjs \
   --archive "$release_zip" --sha256 "$approved_sha256" --python "$trusted_python" \
   --app-payload-sha256 "$approved_app_payload_sha256" \
   --team-id "$team_id" --bundle-id "$bundle_id" --version "$version" --arch "$arch" \
+  --installed-version "$highest_accepted_version" \
   > "$receipt_file"
 ```
 
-正式接收命令必须同时提供获准的 ZIP 摘要和签前应用负载摘要。漏填或格式错误时，命令会在创建临时目录前停止。结构检查可单独用于诊断，正式接收以同时核对两份获准摘要的 Mac 回执为准。
+正式接收需要获准的 ZIP 摘要、签前应用负载摘要和已接受版本。`$highest_accepted_version` 取自该安装环境的可信发行记录，即使当前运行版本已回退，也使用曾接受的最高版本。只有首次接收且无既往记录时使用 `0.0.0`。漏填或格式错误在创建临时目录前拒绝。发行版本与已接受版本相同或更早时返回 `CANDIDATE_VERSION_NOT_NEWER`。结构检查可单独用于诊断。
 
-该入口将受信 ZIP 的字节复制到私有临时目录，核对结构后用 macOS `ditto` 解包。在检查 Developer ID、Gatekeeper 和公证票据前后，工具都从解包得到的实际应用文件重新计算负载摘要，并与获准摘要及归档回执中的文件数核对。完整回执中的 `extractedAppPayloadVerified` 应为 `true`。回执还记录 ZIP 摘要、应用签名及应用树摘要。核验会清理临时副本，应用启动、下载安装、Keychain 和升级仍在正式实机流程中留证。
+该入口将受信 ZIP 的字节复制到私有临时目录，核对结构后用 macOS `ditto` 解包。在检查 Developer ID、Gatekeeper 和公证票据前后，工具都从解包得到的实际应用文件重新计算负载摘要，并与获准摘要及归档回执中的文件数核对。完整回执中的 `extractedAppPayloadVerified` 应为 `true`。回执的 `installedVersion` 记录本次比较采用的版本，另有 ZIP 摘要、应用签名及应用树摘要。接收人员负责维护可信发行记录。应用启动、下载安装、Keychain 和升级仍在正式实机流程中留证。
 
 ## 已签名应用的只读核验
 

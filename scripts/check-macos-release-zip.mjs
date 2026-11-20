@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { checkMacosReleaseApp, hasMacosReleaseIdentity } from './check-macos-release-app.mjs';
+import { checkMacosReleaseApp, hasMacosReleaseIdentity, parseMacosReleaseVersion } from './check-macos-release-app.mjs';
 
 const exec = promisify(execFile);
 const bundleName = 'Shenyi.app';
@@ -17,6 +17,7 @@ const options = new Map([
   ['--archive', 'archive'], ['--sha256', 'sha256'], ['--python', 'python'],
   ['--app-payload-sha256', 'appPayloadSha256'],
   ['--team-id', 'teamId'], ['--bundle-id', 'bundleId'], ['--version', 'version'], ['--arch', 'arch'],
+  ['--installed-version', 'installedVersion'],
 ]);
 
 function fail(code, message) {
@@ -24,7 +25,7 @@ function fail(code, message) {
 }
 
 function invalidArguments() {
-  fail('INVALID_ARGUMENTS', '请指定正式 ZIP、归档与获准应用负载的 SHA-256、Python 的绝对路径及发行身份、版本和架构。');
+  fail('INVALID_ARGUMENTS', '请指定正式 ZIP、归档与获准应用负载的 SHA-256、Python 的绝对路径、发行身份、发行版本、已接受版本及架构。');
 }
 
 function absolute(value) {
@@ -150,11 +151,17 @@ export async function checkMacosReleaseZip(expected, {
   platform = process.platform, run = systemCommand, checkApp = checkMacosReleaseApp, temporaryRoot = tmpdir(),
 } = {}) {
   if (platform !== 'darwin') fail('MACOS_REQUIRED', '最终 ZIP 的 Apple 签名核验须在真实 macOS 上运行。');
-  const { archive, sha256, python, teamId, bundleId, version, arch, appPayloadSha256 } = expected ?? {};
+  const { archive, sha256, python, teamId, bundleId, version, arch, appPayloadSha256, installedVersion } = expected ?? {};
+  const installed = parseMacosReleaseVersion(installedVersion);
   if (!absolute(archive) || path.resolve(archive) !== archive || path.extname(archive).toLowerCase() !== '.zip' ||
       !absolute(python) || typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256) ||
       typeof appPayloadSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(appPayloadSha256) ||
-      !hasMacosReleaseIdentity({ teamId, bundleId, version, arch })) invalidArguments();
+      !installed || !hasMacosReleaseIdentity({ teamId, bundleId, version, arch })) invalidArguments();
+  const release = parseMacosReleaseVersion(version);
+  const changedComponent = release.findIndex((component, index) => component !== installed[index]);
+  if (changedComponent === -1 || release[changedComponent] < installed[changedComponent]) {
+    fail('CANDIDATE_VERSION_NOT_NEWER', '正式发行版本须高于已接受的版本。');
+  }
 
   const workspace = await mkdtemp(path.join(await realpath(temporaryRoot), 'shenyi-release-zip-'));
   const workspaceOrigin = await lstat(workspace, { bigint: true });
@@ -187,7 +194,7 @@ export async function checkMacosReleaseZip(expected, {
     await assertPrivateArchiveUnchanged(copy, sealed, sha256, byteLength);
     await verifyExtractedPayload(run, candidate, python, receipt);
     const { app, ...appReceipt } = result;
-    return { ...appReceipt, ...receipt, kind: 'shenyi-macos-native-release-zip-check', archive, archiveVerified: true,
+    return { ...appReceipt, ...receipt, kind: 'shenyi-macos-native-release-zip-check', archive, archiveVerified: true, installedVersion,
       extractedAppPayloadVerified: true };
   } finally {
     const current = await lstat(workspace, { bigint: true });
