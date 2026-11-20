@@ -4,7 +4,7 @@
 
 米老师的 `mixue117` 已有私有仓库的读取和写入权限。用这个账号登录后就能看文档、下载代码或上传自己的业务分支，可以跳过下文的注册和邀请步骤。第一次同步时，用 GitHub Desktop 选 `codex/team-collaboration-handoff-20261120`。已有业务代码时，先按交接文档登记原版本和涉及文件，再确定导入方式。 [打开当前协作分支](https://github.com/icesad/shenyi-audit-workspace/tree/codex/team-collaboration-handoff-20261120) · [当前双人开发交接](COLLABORATION_HANDOFF.md)
 
-已有业务代码时，先按交接文档保留原版本，再用 GitHub Desktop 从协作分支新建自己的业务分支。只提需求、反馈或验收时，用 GitHub 网页即可。 [第一份业务提交](COLLABORATION_HANDOFF.md#分工和第一份业务提交)
+已经安装 GitHub Desktop 时，点 **Fetch origin → Current Branch → 协作分支**。如显示 **Pull origin**，先更新，再选 **New Branch**。在新分支上传一项业务修改，开 PR 时将目标分支选为协作分支。已有业务代码先保留原版本。 [三步接手](COLLABORATION_HANDOFF.md#从同一版本开始) · [第一份业务提交](COLLABORATION_HANDOFF.md#分工和第一份业务提交)
 
 项目仓库：[审易协作仓库](https://github.com/icesad/shenyi-audit-workspace)。这是代码与开发文档的存放处，**不是审易软件的使用网址，也不是客户资料上传入口**。仓库地址、邀请及发布状态，以负责人实际通知为准。
 

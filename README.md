@@ -2,7 +2,7 @@
 
 私有协作开发仓库：<https://github.com/icesad/shenyi-audit-workspace>。
 
-**从私有协作分支开始。** 米老师用 `mixue117` 拉取代码，在自己的业务分支提交。产品负责人也从同一基线开任务分支。交接文档列出首份业务代码如何提交、怎样在本机验收，以及 PR 的目标分支。 [双人开发交接](docs/COLLABORATION_HANDOFF.md) · [GitHub 零基础教程](docs/GITHUB_BEGINNER_MI.md)
+**协作开发从 `codex/team-collaboration-handoff-20261120` 开始。** 米老师用 `mixue117` 和产品负责人各从同一版本开任务分支。交接页包含 GitHub Desktop 和终端步骤、本机启动、首份业务 PR 以及验收口径。 [双人开发交接](docs/COLLABORATION_HANDOFF.md) · [米老师 GitHub 教程](docs/GITHUB_BEGINNER_MI.md)
 
 ## 这里放什么
 

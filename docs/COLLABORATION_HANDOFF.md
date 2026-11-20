@@ -1,17 +1,23 @@
 # 审易双人开发交接
 
-更新于 2026-11-21。两位开发者从同一协作分支各开任务分支。协作基线提供团队客户端、服务端、官网及合成测试。米老师可以先交接一项已有的审计业务改动，双方用同一提交和同一合成样例验收。
+更新于 2026-11-21。协作基线包含团队客户端、服务端、官网和合成测试。米老师负责审计规则，产品负责人负责应用和上线。双方从同一个提交各开任务分支，并用同一合成样例验收。
 
 | 项目 | 当前交接点 |
 | --- | --- |
 | 仓库 | 私有的 [icesad/shenyi-audit-workspace](https://github.com/icesad/shenyi-audit-workspace) |
 | 本阶段协作基线 | [`codex/team-collaboration-handoff-20261120`](https://github.com/icesad/shenyi-audit-workspace/tree/codex/team-collaboration-handoff-20261120) |
-| 本轮代码与验收记录 | [`8c50b8c`](https://github.com/icesad/shenyi-audit-workspace/commit/8c50b8c4bf38282c36e5622ea205ae4250d1f800)，以协作分支顶端提交为实际拉取版本 |
-| 当前收款候选 | 官网报价、锁单、扫码付款、查单与超时关单。Windows 客户端可打开或继续官网购买。各阶段提交和实际验收范围见下文。 |
+| 本轮代码与验收记录 | [`456d8d9`](https://github.com/icesad/shenyi-audit-workspace/commit/456d8d97c89992f2c1362bea30811956b60b9f79)。实际拉取版本以协作分支顶端为准 |
+| 当前收款候选 | 官网报价、锁单、扫码付款、查单与超时关单。Windows 客户端可打开或继续官网购买，也可在获准绑定的新电脑上查阅同队微信订单并打开原单。 |
 | 米老师的 GitHub 账号 | `mixue117`，已核对具有本仓库读写权限 |
 | 历史四来源报告 | `work/report-four-sources`，仍在草稿 PR #2，等待业务验收。 [查看草稿](https://github.com/icesad/shenyi-audit-workspace/pull/2) |
 
-两人的任务 PR 都以协作分支为目标。本次候选待合入 `main` 和发布验收。
+## 从同一版本开始
+
+1. **米老师**用 `mixue117` 登录 GitHub Desktop，先保留旧业务目录和未提交修改。克隆仓库或点击 **Fetch origin**，切到 `codex/team-collaboration-handoff-20261120`，再从这个版本新建自己的业务分支。 [GitHub Desktop 图文步骤](GITHUB_BEGINNER_MI.md)
+2. **产品负责人**从同一协作分支另开应用任务分支。双方在 Issue 写清各自改动的文件、合成样例、预期结果和验收人。米老师已有业务代码时，先记录原版本和文件清单，一次交接一个业务改动。
+3. 各自在 GitHub Desktop 选择 **Publish branch** 或 **Push origin**。新 PR 的 **base** 选择 `codex/team-collaboration-handoff-20261120`，**compare** 选择自己的任务分支。米老师验收审计结果，产品负责人验收应用、权限和兼容性。
+
+当前为私有协作候选。合入 `main` 和正式发布分别验收。
 
 ## 分工和第一份业务提交
 
@@ -40,6 +46,13 @@ git switch --create codex/team-collaboration-handoff-20261120 --track origin/cod
 ```
 
 本地已有同名协作分支时，用 `git switch codex/team-collaboration-handoff-20261120` 和 `git pull --ff-only` 更新。切换前运行 `git status --short --branch`，先在原工作分支保存已有修改。如果无法快进，保留本地提交并请产品负责人一起核对。
+
+完成同步后，用以下命令核对两台电脑的工作起点。第一行显示当前提交，第二行显示本机最近取到的远端协作提交。两行一致时，双方可以把这个提交号记在各自的 Issue。
+
+```sh
+git rev-parse --short HEAD
+git rev-parse --short origin/codex/team-collaboration-handoff-20261120
+```
 
 **开自己的任务分支。** 下面以 Issue #123 作命令示例，实际使用项目中的 Issue 编号。
 
@@ -83,7 +96,7 @@ npm run test:tools
 | 修改范围 | 可复跑的合成用例 |
 | --- | --- |
 | 项目授权、采集任务、团队底稿 | `node --test tests/team-project-access-core.test.cjs tests/team-task-management-core.test.cjs tests/team-workpaper-http-resume.test.cjs` |
-| 官网扫码付款、桌面账务 | `node --test tests/team-wechat-native-website.test.cjs tests/team-desktop-billing-ui.test.cjs` |
+| 官网扫码付款、桌面账务、换机找回原单 | `node --test tests/team-wechat-native-website.test.cjs tests/team-desktop-billing-client.test.cjs tests/team-desktop-website-checkout.test.cjs tests/team-desktop-billing-ui.test.cjs tests/team-managed-service-config.test.cjs` |
 | 微信账单和 Linux 监控 | `node --test tests/team-wechat-native-fund-bill-parser.test.cjs tests/team-wechat-native-reconciliation-cli.test.cjs tests/team-service-release-check.test.cjs` |
 
 ## 官网与微信支付进度
@@ -96,6 +109,7 @@ npm run test:tools
 | `27de470` | 到期未付款原单可显式请求关闭。已请求出码的订单按验签查询、关单和复查确认。覆盖本机合成应答及隔离账本迁移。 |
 | `8ca7a91` | 按北京时间账单日申请、下载和核验普通商户 `ALL` 账单，只读核对订单和收款。463 项相关检查及独立复跑的 18 项检查通过，零失败或跳过。 |
 | `021ad76` | 从该账单选定单笔退款，以本应用原单、可信收款和微信验签查询核对当前状态。合成环境中 474 项相关检查和 29 项独立复跑通过。真实退款执行、期限或席位处置仍待确认。 |
+| [`456d8d9`](https://github.com/icesad/shenyi-audit-workspace/commit/456d8d97c89992f2c1362bea30811956b60b9f79) | 新装或获准换机后，团队技术管理员可翻页查看当前支付配置下的本团队微信订单，包含由前任技术管理员创建的原单。受管服务未配置价格目录时仍可查阅已有订单。Windows 源码客户端与 Chrome 已通过独立合成受管 HTTPS 验收。 |
 | `6fa09e8`、`96008cd` | 只读核对基本账户资金账单和较早账单日退款。跨日退款专项共有 492 项相关检查通过。 |
 
 金额不符、缺单或退款等差异写入受控对账报告。真实商户账单、实际差异处置和退款执行仍待验收。拉取协作分支后，可按对账文件查看远端最新相关提交。 [支付接入与对账说明](PAYMENT_CHANNEL_PREPARATION.md#商户交易账单对账) · [阶段记录与测试证据](../进度.md)
@@ -115,9 +129,10 @@ node --test tests/team-wechat-native-trade-bill-parser.test.cjs tests/team-wecha
 
 | 范围 | 已验证 | 待实际验收 |
 | --- | --- | --- |
-| Windows `e28ae2a` | 双人评审包一键运行合成订单。桌面重启后可恢复官网原单并核对权益到账。直接运行 Windows Installer 管理映像验证双团队隔离，使用该映像的精确副本验收四职级采集、原生选件上传、预览和撤权。 | 正式签名 MSI 的安装、升级及回退。 |
-| macOS `e28ae2a` | Apple 芯片和 Intel 两包均完成离线签前核验。 | Developer ID 签名、公证、Mac 实机安装、绑定和升级。 |
-| Linux `2b4b825`、`8c50b8c` | 隔离 Ubuntu 实测签名部署、账本加密恢复和回退。Linux 监控通过 10 次实际 systemd 定时调用，覆盖低磁盘、停服、恢复及旧版兼容。 | 国内云生产配置、外部告警送达、正式证书、真实商户及回调。 |
+| Windows `e28ae2a`、`b31d0bb`、`456d8d9` | 一键合成评审包和 MSI 管理映像已有原生实启记录。实测四职级采集和撤权、年订自然到期后用同一经理会话恢复、新设备首次绑定后找回前任原单。找单使用源码客户端实测。 | 当前源码重建正式签名 MSI，验证安装、升级和回退。 |
+| macOS `e28ae2a`、`f4fe9e2` | Apple 芯片和 Intel 两包已离线签前核验。正式接收工具的用例覆盖同版本或旧版本在暂存前被拒绝。 | Developer ID 签名、公证、Mac 实机安装、绑定和升级。 |
+| Linux `2b4b825`、`8c50b8c`、`3b0883b` | 隔离 Ubuntu 实测签名部署、账本加密恢复、回退与定时监控。停服前会核对运行中后端 TLS 证书链与待启动配置，两种不匹配均在停服前被拦截。 | 国内云生产配置、外部告警送达、正式证书、真实商户及回调。 |
+| 首队试点 `f7f9217` | 受管预检核对至少一位合格审核员仍可首次绑定或保有有效设备绑定。 | 产品负责人批准首家试点，并填写限时到期时间、席位上限。 |
 | 审计业务 | 已有历史报告预演和合成结果可复跑。 | 米老师确认采用的专业规则及合并范围，双方签收。实际共享库升级和获准资料试点单独安排。 |
 
 协作者从 GitHub 拉取源码、文档和合成测试，在各自电脑复跑。安装评审包、受管演练日志和原有预览由原开发机保管。 [最新验收记录](STATUS.md) · [Windows 管理映像实测](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-管理映像客户端的团队资料实测) · [macOS 接收步骤](MACOS_DESKTOP_CANDIDATE.md#2026-11-20-协作版本签前交接) · [Linux 发布和回退](LINUX_TEAM_DEPLOYMENT.md#重新启用已签版本)

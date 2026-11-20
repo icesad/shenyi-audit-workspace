@@ -6,11 +6,11 @@
 
 ## 提交步骤
 
-1. 开工前先 Fetch / Pull，确认本机无未提交修改。
+1. 开工前先检查 `git status --short --branch`。已有修改留在原工作分支。运行 `git fetch origin`，从 `origin/codex/team-collaboration-handoff-20261120` 为本次任务开分支。已有本地协作分支时，用 `git pull --ff-only` 更新。 [具体命令](docs/COLLABORATION_HANDOFF.md#把代码取到自己的电脑)
 2. 一件事一个分支，例如 `fix/123-contract-download`、`docs/mi-onboarding`。
 3. 只用合成或获准脱敏资料测试，核对实际改动文件。
 4. 本机运行检查与相关回归；涉及原件的验收单独记录，缺原件不能写通过。
-5. Commit → Push → Pull Request（PR）。标题写具体改动，描述附 Issue、范围及测试结果。
+5. Commit → Push → Pull Request（PR）。目标分支选 `codex/team-collaboration-handoff-20261120`。标题写具体改动，描述附 Issue、范围及测试结果。
 6. 负责人审查代码，米老师按验收步骤检查业务效果；通过后由负责人合并。
 
 禁止：共享密码、向 main 强制推送、先删旧文件再处理冲突、把另一台电脑的整个目录覆盖过来、把工作中的业务资料放进仓库。
