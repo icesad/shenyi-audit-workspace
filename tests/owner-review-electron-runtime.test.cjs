@@ -88,6 +88,26 @@ test('stages only the verified Electron runtime and retains diagnostics outside 
   assert.equal(await fs.readFile(f.manifestPath, 'utf8'), f.manifest);
 });
 
+test('preserves the Windows Zone.Identifier stream on the staged Electron executable', {
+  skip:process.platform !== 'win32',
+}, async t => {
+  const f = await fixture(t);
+  const before = await f.verify();
+  const sourceStream = f.portable.electronExecutable + ':Zone.Identifier';
+  const zone = Buffer.from('[ZoneTransfer]\r\nZoneId=3\r\nHostUrl=https://download.example.test/review.zip\r\n');
+  await fs.writeFile(sourceStream, zone, {flag:'wx'});
+  assert.deepEqual(await f.verify(), before);
+
+  const staged = await f.stage();
+  const stagedStream = staged.executable + ':Zone.Identifier';
+  assert.deepEqual(await fs.readFile(stagedStream), zone);
+  await staged.close();
+
+  await assertMissing(staged.executable);
+  assert.deepEqual(await fs.readFile(sourceStream), zone);
+  assert.deepEqual(await f.verify(), before);
+});
+
 test('rejects a same-size runtime hash mismatch without staging or changing source bytes', async t => {
   const f = await fixture(t);
   const altered = payload['runtime/electron/electron.exe'].replace('Electron', 'electron');

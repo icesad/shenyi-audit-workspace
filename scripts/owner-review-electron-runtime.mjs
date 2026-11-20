@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, mkdtemp, open, realpath, rmdir, unlink } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, mkdtemp, open, realpath, rmdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { verifyWindowsOwnerReview } from './verify-windows-owner-review.mjs';
 
@@ -76,51 +76,30 @@ async function copyRuntimeFile(source, destination, expected, buffer, files) {
   const input = await open(source, constants.O_RDONLY | noFollow);
   try {
     requireRuntime(equalStats(before, await input.stat({ bigint: true }), fileFields), '评审运行时源文件在打开时发生变化。');
-    const output = await open(destination, constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | noFollow, 0o600);
-    const entry = { filename: destination, info: null };
-    let writing = true;
+    // Native Windows copying also carries the source file's alternate data streams.
+    await copyFile(source, destination, constants.COPYFILE_EXCL);
+    const copied = await ordinary(destination, 'file');
+    requireRuntime(copied.size === BigInt(expected.bytes) &&
+      equalStats(before, await input.stat({ bigint: true }), fileFields), '评审运行时源文件或副本在复制期间发生变化。');
+    const output = await open(destination, constants.O_RDONLY | noFollow);
     try {
-      entry.info = await output.stat({ bigint: true });
-      files.push(entry);
-      let length = 0;
-      for (;;) {
-        const { bytesRead } = await input.read(buffer, 0, buffer.length, length);
-        if (!bytesRead) break;
-        requireRuntime(length + bytesRead <= expected.bytes, '评审运行时源文件大小发生变化。');
-        let offset = 0;
-        while (offset < bytesRead) {
-          const { bytesWritten } = await output.write(buffer, offset, bytesRead - offset, length + offset);
-          requireRuntime(bytesWritten > 0, '评审运行时副本写入不完整。');
-          offset += bytesWritten;
-        }
-        length += bytesRead;
-      }
-      entry.info = await output.stat({ bigint: true });
-      writing = false;
-      requireRuntime(length === expected.bytes && entry.info.size === BigInt(expected.bytes) &&
-        equalStats(before, await input.stat({ bigint: true }), fileFields), '评审运行时源文件在复制期间发生变化。');
+      requireRuntime(equalStats(copied, await output.stat({ bigint: true }), fileFields), '评审运行时副本在打开时发生变化。');
       const digest = createHash('sha256');
       let position = 0;
       for (;;) {
         const { bytesRead } = await output.read(buffer, 0, buffer.length, position);
         if (!bytesRead) break;
         position += bytesRead;
-        requireRuntime(position <= length, '评审运行时副本大小发生变化。');
+        requireRuntime(position <= expected.bytes, '评审运行时副本大小发生变化。');
         digest.update(buffer.subarray(0, bytesRead));
       }
-      requireRuntime(position === length && digest.digest('hex') === expected.sha256 &&
-        equalStats(entry.info, await output.stat({ bigint: true }), fileFields), '评审运行时副本与清单不符。');
+      requireRuntime(position === expected.bytes && digest.digest('hex') === expected.sha256 &&
+        equalStats(copied, await output.stat({ bigint: true }), fileFields), '评审运行时副本与清单不符。');
       await assertState(source, before, 'file');
-      await assertState(destination, entry.info, 'file');
+      await assertState(destination, copied, 'file');
+      files.push({ filename: destination, info: copied });
     } finally {
-      try {
-        if (writing && entry.info) {
-          const current = await output.stat({ bigint: true });
-          if (current.nlink === 1n && equalStats(entry.info, current, identityFields)) entry.info = current;
-        }
-      } finally {
-        await output.close();
-      }
+      await output.close();
     }
   } finally {
     await input.close();
