@@ -69,6 +69,7 @@ export async function createOwnerReviewWebsiteCheckout({appRoot,now=Date.now}={}
       mode:'simulation-v1',merchantId:'owner-review-checkout',signingKey:randomBytes(32),
       offers:[{id:'annual-demo',revision:1,product:'team-annual-renewal',amountMinor:128_000,currency:'CNY'}],
       annualSeatUnitAmountMinor:20_000,
+      timeoutClosure:{annualTimeoutMs:15*60*1000},
       seatOffer:{id:'seat-demo',revision:1,annualUnitAmountMinor:20_000,currency:'CNY'},
     }});
     const {profile,server,address,checkoutAddress} = service;

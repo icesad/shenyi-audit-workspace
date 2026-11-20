@@ -28,7 +28,7 @@ Linux HTTPS 部署见仓库 `docs/LINUX_TEAM_DEPLOYMENT.md` 的「官网静态�
 
 Windows 双人评审包完整解压后，双击 [Start-Team-Website-Checkout-Candidate.cmd](../Start-Team-Website-Checkout-Candidate.cmd)。用启动窗口显示的合成账号登录并绑定本轮电脑，再从「订阅与席位」打开专用官网窗口。桌面和官网分别连接本轮专用的回环 HTTPS 地址。关闭桌面应用后，两处监听均停止。
 
-本团队技术管理员可在已绑定的客户端展开「订阅与席位」，点击「在官网生成合成订单」。官网显示团队、年费和席位，确认后生成一笔待处理的团队年费订单，并显示原订单编号。回到客户端刷新可核对订单。
+本团队技术管理员可在已绑定的客户端展开「订阅与席位」，点击「在官网生成合成订单」。官网显示团队、年费和席位，确认后生成一笔待处理的团队年费订单，并显示原订单编号。回到客户端刷新可核对同号订单和以北京时间显示的付款截止时间。评审包以建单时刻加 15 分钟计算该期限，订单状态以可信渠道确认结果为准。
 
 此演练由 `scripts/website-checkout-preview.mjs` 的 `startWebsiteCheckoutPreview({db, key, cert, checkoutTLS, billingSimulation})` 启动。演练方须提供单独初始化的合成库（`team_database_metadata` 中 `website-checkout-demo=true`）、团队 API 的演练证书与密钥，以及一条合成年费报价和每席价格。可选的 `checkoutTLS` 提供官网自己的证书与密钥，双人评审启动器默认启用。官网提供固定页面和短时授权支持的下单接口，团队账号、设备和账务管理接口留在团队 API。浏览器下单请求只携带本轮短时授权。配置 v3 通过 `apiBase` 和 `checkoutOrigin` 分别指定两地址，微信扫码配置 v2 沿用原入口。未提供 `checkoutTLS` 时，工厂支持既有单地址演练。
 

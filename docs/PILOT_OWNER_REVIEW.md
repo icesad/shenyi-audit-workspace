@@ -13,7 +13,7 @@
 | 1b. 新团队四职级走查 | [Start-Team-Managed-Pilot-Candidate.cmd](../Start-Team-Managed-Pilot-Candidate.cmd) · [新团队演练](PILOT_MANAGED_FIRST_TASK.md) | 另起一轮批准四席。产品负责人核对邀请、激活及职级调整，双方核对低职级任务隔离、经理预览、合伙人逐项获权和技术管理员的数据范围。 |
 | 2. 底稿迁入与导出 | [合成底稿演练](PILOT_WORKPAPER_REHEARSAL.md) | 核对来源和独立授权，迁入完整包，再检查原件、既有填写、冻结只读及另存保存版本。 |
 | 3. 订阅、席位与退款受理 | [Start-Team-Billing-Candidate.cmd](../Start-Team-Billing-Candidate.cmd) · [M5 账务演练](M5_LOCAL_ACCEPTANCE.md) | 产品负责人确认年续费、增购、恢复兑现和退款受理。用该轮预置订单核对席位、到期日和原收款时间。米老师可核对账务角色取得的权限范围。 |
-| 4. 官网年费与增购下单 | [Start-Team-Website-Checkout-Candidate.cmd](../Start-Team-Website-Checkout-Candidate.cmd) | 产品负责人以启动窗口显示的合成技术管理员登录并绑定本轮电脑，从桌面打开专用官网窗口，分别完成年费和增购待处理模拟订单，再回桌面核对同号。只核对下单体验，不收款、不兑现权益。 |
+| 4. 官网年费与增购下单 | [Start-Team-Website-Checkout-Candidate.cmd](../Start-Team-Website-Checkout-Candidate.cmd) | 产品负责人以启动窗口显示的合成技术管理员登录并绑定本轮电脑，从桌面打开专用官网窗口，分别完成年费和增购待处理模拟订单，再回桌面刷新核对同号。年费订单显示以北京时间表示的付款截止时间，距建单 15 分钟。本轮只用合成数据核对下单体验。 |
 | 5. 官网口径 | [Start-Website-Preview.cmd](../Start-Website-Preview.cmd) · [官网预览说明](../website/README.md) | 两人核对官网是否说清四职级、年费与席位、桌面版本以及当前下载和购买状态。米老师检查关于资料核对和审计职责的表述，产品负责人确认面向用户的说明。 |
 
 同一条采集走查的各角色在同一轮候选中依次登录，共用该轮合成数据。两席与四席路线各开一轮，账务使用独立候选。遇到实习生或助理看到未指派的任务、全项目资料目录或未授权的原件，技术管理员可读项目原件，或合伙人在获得核对权前出现原件核对入口，暂停该项并记录当时的角色、项目和界面。出现报告生成、审批或签发入口，或界面把采集核对表述为审计结论时，先留证交米老师和产品负责人核对授权与业务口径。
