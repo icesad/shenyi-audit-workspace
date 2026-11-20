@@ -50,7 +50,7 @@ Windows 双人评审包完整解压后，双击 [Start-Team-Website-Checkout-Can
 
 已锁定的微信 Native 原单可从受管 HTTPS 付款页查看，点击后生成二维码、验签查单，并在符合条件时核对权益到账。授权由本团队技术管理员通过设备签名申请，最长有效两分钟。当前用合成商户和隔离 SQLite 复验。此前的 Windows 一键官网入口用于合成下单演练。
 
-微信付款页在配置独立商户资料后启用，默认关闭。受管启动配置提供明确的价格目录时，页面可选席位、申请报价和确认锁单；确认后可在同一页面点击生成二维码。没有目录时仍可按原授权查看和支付已锁订单。开发者可在仓库根目录运行 `node --test tests/team-wechat-native-website.test.cjs`。生产价格和客户端入口仍待接入。 [原单付款](../docs/PAYMENT_CHANNEL_PREPARATION.md#授权官网原单付款) · [报价确认和受管目录](../docs/PAYMENT_CHANNEL_PREPARATION.md#官网报价和确认)
+微信付款页在配置独立商户资料后启用，默认关闭。受管启动配置提供明确的价格目录时，页面可选席位、申请报价和确认锁单；确认后可在同一页面点击生成二维码。没有目录时仍可按原授权查看和支付已锁订单。开发者可在仓库根目录运行 `node --test tests/team-wechat-native-website.test.cjs`。已绑定电脑的 Windows 技术管理员可从「订阅与席位」发起或恢复官网购买，也可按订单编号打开原单。正式价格、生产商户实测和 macOS 桌面验收继续待办。 [原单付款](../docs/PAYMENT_CHANNEL_PREPARATION.md#授权官网原单付款) · [报价确认和受管目录](../docs/PAYMENT_CHANNEL_PREPARATION.md#官网报价和确认)
 
 ## 发布前核对
 
