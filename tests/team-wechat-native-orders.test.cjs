@@ -22,6 +22,9 @@ const paidTime = '2026-11-20T15:29:35+08:00';
 const description = '审易团队合成续费';
 const locked = Object.freeze({id: 'a021e743-4e2e-41a9-b606-2a8982505001', appId, merchantId,
   merchantOrderId, amountMinor: 288000, currency: 'CNY', createdAt: now - 1_000, expiresAt: now + 600_000, description});
+const expectedRefund = Object.freeze({merchantRefundId:'refund-|@*_0123', refundId:'5000000101', merchantOrderId,
+  transactionId:'12340001', amountMinor:288000, refundAmountMinor:9999, currency:'CNY', refundCreatedAt:now - 60000});
+const refundPath = '/v3/refund/domestic/refunds/' + encodeURIComponent(expectedRefund.merchantRefundId);
 
 async function client(fetchImpl) {
   const {createWechatNativeOrders} = await moduleReady;
@@ -47,6 +50,16 @@ function settled(changes = {}) {
     payer: {openid: 'synthetic-payer'}, attach: 'synthetic-internal-metadata', ...changes};
 }
 
+function refunded(changes = {}) {
+  return {refund_id:expectedRefund.refundId, out_refund_no:expectedRefund.merchantRefundId,
+    transaction_id:expectedRefund.transactionId, out_trade_no:expectedRefund.merchantOrderId,
+    create_time:new Date(expectedRefund.refundCreatedAt).toISOString(), success_time:paidTime,
+    status:'SUCCESS', channel:'ORIGINAL', user_received_account:'synthetic-received-account',
+    funds_account:'BASIC', amount:{total:expectedRefund.amountMinor, refund:expectedRefund.refundAmountMinor,
+      payer_total:280000, payer_refund:9900, settlement_total:280000, settlement_refund:9920, discount_refund:79,
+      currency:'CNY'}, promotion_detail:[{promotion_id:'synthetic-promotion'}], ...changes};
+}
+
 function assertRequestSignature({method, path, headers, body}) {
   assert.match(headers.authorization, /^WECHATPAY2-SHA256-RSA2048 /);
   assert.equal(headers['wechatpay-serial'], keyId);
@@ -65,14 +78,14 @@ function assertRequestSignature({method, path, headers, body}) {
 
 const rejectsOrder = promise => assert.rejects(promise, error => Number.isInteger(error.status) && error.status >= 400);
 
-test('Native create, query and close sign the actual request bytes over a loopback transport', async t => {
+test('Native create, query, close and refund lookup sign the actual request bytes over a loopback transport', async t => {
   const requests = [];
   const server = http.createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     requests.push({method: request.method, path: request.url, headers: request.headers, body: Buffer.concat(chunks)});
     const packet = request.url.endsWith('/close') ? signedResponse(null, {status: 204}) :
-      signedResponse(request.method === 'POST' ? {code_url: codeUrl} : settled());
+      signedResponse(request.url === refundPath ? refunded() : request.method === 'POST' ? {code_url: codeUrl} : settled());
     response.writeHead(packet.status, Object.fromEntries(packet.headers));
     response.end(Buffer.from(await packet.arrayBuffer()));
   });
@@ -93,9 +106,12 @@ test('Native create, query and close sign the actual request bytes over a loopba
     paidAt: Date.parse(paidTime), state: 'SUCCESS'});
   assert.deepEqual(await checkout.closeOrder({...locked, createdAt: now - 600_000, expiresAt: now}),
     {merchantOrderId, acknowledged: true});
+  assert.deepEqual(await checkout.queryRefund(expectedRefund), {
+    status:'SUCCESS', createdAt:expectedRefund.refundCreatedAt, succeededAt:now, verifiedAt:now,
+  });
 
-  assert.equal(requests.length, 4);
-  const [create, retry, query, close] = requests;
+  assert.equal(requests.length, 5);
+  const [create, retry, query, close, refund] = requests;
   assert.equal(create.method, 'POST');
   assert.equal(create.path, '/v3/pay/transactions/native');
   assert.match(create.headers['content-type'], /^application\/json\b/);
@@ -119,6 +135,77 @@ test('Native create, query and close sign the actual request bytes over a loopba
   assert.match(close.headers.accept, /^application\/json\b/);
   assert.deepEqual(JSON.parse(close.body), {mchid: merchantId});
   assertRequestSignature(close);
+  assert.equal(refund.method, 'GET');
+  assert.equal(refund.path, refundPath);
+  assert.equal(refund.body.length, 0);
+  assert.equal(refund.headers.accept, 'application/json');
+  assertRequestSignature(refund);
+});
+
+test('refund lookup accepts signed provider states and binds the original bill second across timezone formats', async () => {
+  const createTime = '2026-11-20T15:28:35.125+08:00';
+  const createdAt = Date.parse(createTime);
+  for (const status of ['SUCCESS', 'CLOSED', 'PROCESSING', 'ABNORMAL']) {
+    const succeededAt = status === 'SUCCESS' ? now - 1234 : null;
+    const payload = refunded({status, create_time:createTime,
+      success_time:succeededAt === null ? undefined : new Date(succeededAt).toISOString()});
+    const checkout = await client(() => signedResponse(payload));
+    const result = await checkout.queryRefund(expectedRefund);
+    assert.deepEqual(result, {status, createdAt, succeededAt, verifiedAt:now});
+    assert.equal(Object.isFrozen(result), true);
+  }
+});
+
+test('refund lookup refuses invalid local order facts before sending a provider request', async () => {
+  let sends = 0;
+  const checkout = await client(() => { sends++; return signedResponse(refunded()); });
+  const malformed = [
+    {merchantRefundId:'wrong/path'}, {merchantRefundId:'0'}, {merchantRefundId:'a'.repeat(65)},
+    {refundId:'0'}, {refundId:'退款'}, {refundId:'a'.repeat(33)},
+    {merchantOrderId:'wrong/path'}, {transactionId:'0'}, {transactionId:'x'.repeat(33)},
+    {currency:'USD'}, {amountMinor:0}, {amountMinor:2147483648}, {refundAmountMinor:0},
+    {refundAmountMinor:expectedRefund.amountMinor + 1}, {refundAmountMinor:'9999'},
+    {refundCreatedAt:expectedRefund.refundCreatedAt + 1}, {refundCreatedAt:now + 1000},
+  ];
+  for (const change of malformed) {
+    await assert.rejects(checkout.queryRefund({...expectedRefund, ...change}), {
+      status:400, code:'WECHAT_NATIVE_REFUND_LOOKUP_INVALID',
+    });
+  }
+  await assert.rejects(checkout.queryRefund(null), {status:400, code:'WECHAT_NATIVE_REFUND_LOOKUP_INVALID'});
+  assert.equal(sends, 0);
+});
+
+test('refund lookup withholds authenticated responses with discrepant identity, gross amounts or provider times', async () => {
+  const amount = refunded().amount;
+  const changes = [
+    {out_refund_no:'different-refund'}, {refund_id:'5000000102'}, {transaction_id:'12340002'}, {out_trade_no:'different-order'},
+    {amount:{...amount, total:amount.payer_total}}, {amount:{...amount, refund:amount.payer_refund}},
+    {amount:{...amount, currency:'USD'}}, {amount:{...amount, refund:'9999'}}, {amount:null},
+    {status:'UNVERIFIED'}, {create_time:'2026-02-29T12:00:00+08:00'},
+    {create_time:new Date(expectedRefund.refundCreatedAt + 1000).toISOString()},
+    {success_time:undefined}, {success_time:'2026-11-20 15:29:35'},
+    {success_time:new Date(expectedRefund.refundCreatedAt - 1000).toISOString()},
+    {success_time:new Date(now + 301000).toISOString()},
+  ];
+  for (const change of changes) {
+    const checkout = await client(() => signedResponse(refunded(change)));
+    await assert.rejects(checkout.queryRefund(expectedRefund), {status:502, code:'WECHAT_NATIVE_PROVIDER_UNAVAILABLE'});
+  }
+});
+
+test('refund lookup accepts only a fresh signed HTTP 200 as provider evidence', async () => {
+  const payload = refunded();
+  for (const packet of [
+    signedResponse(payload, {status:201}), signedResponse(null, {status:204}),
+    signedResponse({code:'ORDER_NOT_EXIST'}, {status:404}), signedResponse({code:'FREQUENCY_LIMITED'}, {status:429}),
+    signedResponse(payload, {signingKey:merchantKeys.privateKey}), signedResponse(payload, {serial:'PUB_KEY_ID_202'}),
+    signedResponse(payload, {signedAt:now - 301000}), signedResponse(payload, {signedAt:now + 301000}),
+    signedResponse(payload, {edited:true}), new Response(JSON.stringify(payload)),
+  ]) {
+    const checkout = await client(() => packet);
+    await assert.rejects(checkout.queryRefund(expectedRefund), {status:502, code:'WECHAT_NATIVE_PROVIDER_UNAVAILABLE'});
+  }
 });
 
 test('close uses the locked merchant identity and requires its exact expiry to have passed', async () => {

@@ -32,6 +32,8 @@ const messages = {
   MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY: '微信支付官网订单页配置未就绪。',
   WECHAT_NATIVE_BILL_DATE_INVALID: '请选择已经结束的北京时间账单日。',
   WECHAT_NATIVE_TRADE_BILL_INVALID: '无法核实微信交易账单的格式或范围。',
+  WECHAT_NATIVE_REFUND_ID_INVALID: '请核对商户退款单号。',
+  WECHAT_NATIVE_REFUND_NOT_IN_SCOPE: '这笔退款缺少可与微信核对的本地原单或可信交易记录。',
   WECHAT_NATIVE_PROVIDER_UNAVAILABLE: '暂时无法核实微信支付账单或订单状态。',
   WECHAT_NATIVE_REPORT_UNAVAILABLE: '无法在指定的独立目录创建对账报告。',
   MANAGED_SERVICE_LISTEN_FAILED: '团队服务未能监听配置的本机端口。',
@@ -326,7 +328,7 @@ async function publishNativeReport({filename,directory,before}, report) {
   }
 }
 
-export async function reconcileConfiguredWechatNativeBill({filename,billDate,output}, {fetchImpl,now=Date.now} = {}) {
+export async function reconcileConfiguredWechatNativeBill({filename,billDate,output,merchantRefundId}, {fetchImpl,now=Date.now} = {}) {
   const day = matches(/^\d{4}-\d{2}-\d{2}$/,billDate) ? parsePaymentTime(billDate+'T00:00:00+08:00') : null;
   if (day === null || day+86_400_000>now()) fail('WECHAT_NATIVE_BILL_DATE_INVALID');
   const destination = await reportDestination(output);
@@ -336,12 +338,16 @@ export async function reconcileConfiguredWechatNativeBill({filename,billDate,out
   }
   let callback, statement;
   try {
-    const [{createWechatNativeOrders},{parseWechatNativeTradeBill},{reconcileWechatNativeTradeBill},{WECHAT_NATIVE_NOTIFY_PATH}] = await Promise.all([
+    const [{createWechatNativeOrders},{parseWechatNativeTradeBill,MERCHANT_REFUND_ID},
+      {reconcileWechatNativeTradeBill,selectWechatNativeRefundQuery},{WECHAT_NATIVE_NOTIFY_PATH}] = await Promise.all([
       import('../server/team/wechat-native-orders.mjs'),
       import('../server/team/wechat-native-trade-bill-parser.mjs'),
       import('../server/team/wechat-native-reconciliation.mjs'),
       import('../server/team/wechat-native-callback.mjs'),
     ]);
+    if (merchantRefundId!==undefined && (!matches(MERCHANT_REFUND_ID,merchantRefundId) || merchantRefundId==='0')) {
+      fail('WECHAT_NATIVE_REFUND_ID_INVALID');
+    }
     const initial = await checkManagedDatabase(configuration);
     callback = await loadWechatNativeCallback(configuration.wechatNativeCallbackProfile);
     const {certificateSerial,merchantPrivateKey} = await loadWechatNativeWebsite(configuration.wechatNativeWebsiteProfile);
@@ -355,9 +361,29 @@ export async function reconcileConfiguredWechatNativeBill({filename,billDate,out
       report = reconcileWechatNativeTradeBill(db,{billDate,merchantId,appId,sha1:statement.sha1,rows,summary});
     });
     if (!sameFile(initial,consulted)) fail('MANAGED_DATABASE_NOT_READY');
+    const result = {event:'native-bill-reconciled',billDate,counts:report.counts};
+    if (merchantRefundId!==undefined) {
+      const {statementStatus,...query} = selectWechatNativeRefundQuery(report,rows,merchantRefundId);
+      const unverified = {merchantRefundId,outcome:'unverified'};
+      try {
+        const refund = await provider.queryRefund(query);
+        // A completed refund is terminal. Other bill statuses may precede a different current status.
+        report.refundVerification = statementStatus==='SUCCESS' && refund.status!=='SUCCESS'
+          ? {...unverified,reason:'status_conflict'}
+          : {merchantRefundId,outcome:'verified',...refund};
+      } catch (error) {
+        if (error.code!=='WECHAT_NATIVE_PROVIDER_UNAVAILABLE') throw error;
+        report.refundVerification = unverified;
+      }
+      const code = 'MANAGED_DATABASE_NOT_READY';
+      const current = await existingFile(configuration.database,code).catch(()=>fail(code));
+      if (!sameFile(consulted,current)) fail(code);
+      result.refundVerification = report.refundVerification.outcome;
+      if (result.refundVerification==='verified') result.refundStatus = report.refundVerification.status;
+    }
     await publishNativeReport(destination,{...report,createdAt:new Date(now()).toISOString(),serverId:configuration.serverId,operatorAccount:userInfo().username,
       statementSha256:createHash('sha256').update(statement.bytes).digest('hex')});
-    return {event:'native-bill-reconciled',billDate,counts:report.counts};
+    return result;
   } finally {
     callback?.apiV3Key.fill(0);
     statement?.bytes.fill(0);
@@ -402,8 +428,13 @@ export function openConfiguredTeamService(filename) {
 }
 
 async function main(args) {
-  if (args.length === 6 && args[0] === '--reconcile-native-bill' && args[2] === '--config' && args[4] === '--output') {
-    console.log(JSON.stringify(await reconcileConfiguredWechatNativeBill({billDate:args[1],filename:args[3],output:args[5]})));
+  const hasRefund = args.length === 8 && args[6] === '--verify-refund';
+  if ((args.length === 6 || hasRefund) && args[0] === '--reconcile-native-bill' && args[2] === '--config' && args[4] === '--output') {
+    const result = await reconcileConfiguredWechatNativeBill({
+      billDate:args[1],filename:args[3],output:args[5],merchantRefundId:hasRefund?args[7]:undefined,
+    });
+    if (result.refundVerification==='unverified') process.exitCode = 2;
+    console.log(JSON.stringify(result));
     return;
   }
   if (args.length === 3 && args[0] === '--check-database' && args[1] === '--config') {

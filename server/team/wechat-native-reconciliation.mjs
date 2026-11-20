@@ -121,6 +121,31 @@ function reportFromSnapshot(db, {billDate,merchantId,appId,sha1,rows,summary}, {
   return {schemaVersion:1,billDate,merchantId,appId,statementSha1:sha1,counts,orders};
 }
 
+function refundOutsideScope() {
+  throw Object.assign(new Error('这笔退款缺少可与微信核对的本地原单或可信交易记录。'),
+    {code:'WECHAT_NATIVE_REFUND_NOT_IN_SCOPE'});
+}
+
+/** Selects one refund from the verified bill and ties it to the read-only ledger snapshot. */
+export function selectWechatNativeRefundQuery(report, rows, merchantRefundId) {
+  const selected = rows.filter(row => row.status==='REFUND' && row.merchantRefundId===merchantRefundId);
+  if (selected.length!==1) refundOutsideScope();
+  const [row] = selected;
+  if (row.merchantId!==report.merchantId || row.appId!==report.appId || row.tradeType!=='NATIVE') refundOutsideScope();
+
+  const group = report.orders.find(order => order.merchantOrderId===row.merchantOrderId);
+  const local = group?.local;
+  // Statement timestamps have second precision. A refund cannot precede the local verified payment.
+  if (!local || group.findings.includes('ORDER_SCOPE_MISMATCH') || local.transactionId!==row.transactionId ||
+      !Number.isSafeInteger(local.paidAt) || Math.floor(local.paidAt/1000)*1000>row.occurredAt ||
+      group.currency!=='CNY' || row.currency!==group.currency || row.refundAmountMinor>local.amountMinor) refundOutsideScope();
+  return {
+    merchantRefundId, refundId:row.refundId, merchantOrderId:row.merchantOrderId, transactionId:row.transactionId,
+    amountMinor:local.amountMinor, refundAmountMinor:row.refundAmountMinor, currency:row.currency,
+    refundCreatedAt:row.occurredAt,statementStatus:row.refundStatus,
+  };
+}
+
 /** Builds a private operator report against a single SQLite read snapshot. */
 export function reconcileWechatNativeTradeBill(db, input) {
   const {billDate,merchantId,appId,sha1,rows,summary} = input;

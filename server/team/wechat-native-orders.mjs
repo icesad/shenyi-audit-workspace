@@ -1,6 +1,7 @@
 import {constants, createHash, createPrivateKey, randomBytes, sign} from 'node:crypto';
 import {isIP} from 'node:net';
 import {ApiError, ID} from './http-utils.mjs';
+import {MERCHANT_REFUND_ID} from './wechat-native-trade-bill-parser.mjs';
 import {
   APP_ID, MERCHANT_ID, MERCHANT_ORDER_ID, TRANSACTION_ID, MAX_AMOUNT_MINOR, SIGNATURE_TYPE, SIGNATURE_TOLERANCE_MS,
   REQUEST_TIMEOUT_MS, MIN_PAYMENT_WINDOW_MS, MAX_PAYMENT_WINDOW_MS, MAX_PAYMENT_TIME,
@@ -12,8 +13,10 @@ const API_ORIGIN = 'https://api.mch.weixin.qq.com';
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_BILL_BYTES = 32 * 1024 * 1024;
 const NATIVE_STATES = new Set(['NOTPAY', 'CLOSED', 'REFUND', 'SUCCESS']);
+const REFUND_STATES = new Set(['SUCCESS', 'CLOSED', 'PROCESSING', 'ABNORMAL']);
 
 const invalidOrder = () => { throw new ApiError(400, 'WECHAT_NATIVE_LOCK_INVALID', '微信支付订单资料或付款期限无效。'); };
+const invalidRefund = () => { throw new ApiError(400, 'WECHAT_NATIVE_REFUND_LOOKUP_INVALID', '无法核对微信支付退款标识、金额或时间。'); };
 const providerUnavailable = () => { throw new ApiError(502, 'WECHAT_NATIVE_PROVIDER_UNAVAILABLE', '暂时无法核实微信支付订单状态。'); };
 
 export function isWechatNativeNotifyUrl(value) {
@@ -218,6 +221,33 @@ export function createWechatNativeOrders({
           (amount.payer_currency !== undefined && amount.payer_currency !== locked.currency)) providerUnavailable();
       return Object.freeze({channel: 'wechat-pay-native-v3', orderId: locked.id, merchantOrderId,
         transactionId: data.transaction_id, appId, merchantId, amountMinor: locked.amountMinor, currency: locked.currency, paidAt, state});
+    },
+
+    async queryRefund(expected) {
+      const at = now();
+      if (!record(expected) || !boundedInteger(at, 0, MAX_PAYMENT_TIME)) invalidRefund();
+      const {merchantRefundId, refundId, merchantOrderId, transactionId, amountMinor, refundAmountMinor, currency,
+        refundCreatedAt} = expected;
+      if (!matches(MERCHANT_REFUND_ID, merchantRefundId) || merchantRefundId === '0' ||
+          !matches(TRANSACTION_ID, refundId) || refundId === '0' || !matches(MERCHANT_ORDER_ID, merchantOrderId) ||
+          !matches(TRANSACTION_ID, transactionId) || transactionId === '0' ||
+          !boundedInteger(amountMinor, 1, MAX_AMOUNT_MINOR) || !boundedInteger(refundAmountMinor, 1, amountMinor) ||
+          currency !== 'CNY' || !boundedInteger(refundCreatedAt, 0, at) || refundCreatedAt % 1000 !== 0) invalidRefund();
+
+      const path = '/v3/refund/domestic/refunds/' + encodeURIComponent(merchantRefundId);
+      const {data, receivedAt, signedAt} = await request('GET', path, at);
+      const {status, amount} = data;
+      const createdAt = parsePaymentTime(data.create_time);
+      const succeededAt = status === 'SUCCESS' ? parsePaymentTime(data.success_time) : null;
+      const latestProviderTime = Math.min(receivedAt, signedAt) + SIGNATURE_TOLERANCE_MS;
+      if (data.out_refund_no !== merchantRefundId || data.refund_id !== refundId ||
+          data.out_trade_no !== merchantOrderId || data.transaction_id !== transactionId || !REFUND_STATES.has(status) ||
+          !record(amount) || amount.total !== amountMinor || amount.refund !== refundAmountMinor || amount.currency !== currency ||
+          !boundedInteger(receivedAt, 0, MAX_PAYMENT_TIME) || createdAt === null ||
+          Math.floor(createdAt / 1000) * 1000 !== refundCreatedAt || createdAt > latestProviderTime ||
+          (status === 'SUCCESS' && (succeededAt === null || succeededAt < createdAt ||
+            succeededAt > latestProviderTime || succeededAt > MAX_PAYMENT_TIME))) providerUnavailable();
+      return Object.freeze({status, createdAt, succeededAt, verifiedAt: receivedAt});
     },
 
     async downloadTradeBill(billDate) {
