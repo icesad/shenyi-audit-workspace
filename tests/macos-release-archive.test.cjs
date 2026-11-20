@@ -20,6 +20,7 @@ import json, plistlib, stat, struct, sys, zipfile
 
 output, architecture, raw_options = sys.argv[1:]
 options = json.loads(raw_options)
+payload_permissions = options.get('payloadPermissions', 0o644)
 cpu_types = {'arm64': 0x100000c, 'x64': 0x1000007}
 bundle_id = options.get('bundleId', 'cn.example.shenyi')
 app = 'Shenyi.app/Contents/'
@@ -62,16 +63,16 @@ with zipfile.ZipFile(output, 'x', compression=zipfile.ZIP_DEFLATED) as archive:
         put(framework + 'A/Libraries/' + library, mach(architecture, 6), stat.S_IFREG | 0o755)
     put(framework + 'Current', b'A', stat.S_IFLNK | 0o777)
     put(resources + 'package.json', json.dumps({'name': 'shenyi-team-desktop', 'version': version,
-        'private': True, 'main': 'desktop/main.cjs'}))
+        'private': True, 'main': 'desktop/main.cjs'}), stat.S_IFREG | payload_permissions)
     required = ('package-lock.json', 'desktop/main.cjs', 'desktop/preload.cjs',
         'desktop/team-ui/index.html', 'node_modules/jsdom/package.json')
     for name in required:
         if name != options.get('missing'):
             value = options.get('mainContents', '{}').encode('utf-8') if name == 'desktop/main.cjs' else b'{}'
-            mode = 0o755 if name == 'desktop/main.cjs' and options.get('executableMainScript') else 0o644
+            mode = 0o755 if name == 'desktop/main.cjs' and options.get('executableMainScript') else payload_permissions
             put(resources + name, value, stat.S_IFREG | mode)
     if name := options.get('extraPayloadPath'):
-        put(resources + name, b'{}')
+        put(resources + name, b'{}', stat.S_IFREG | payload_permissions)
     if options.get('signatureMetadata'):
         put(app + '_CodeSignature/CodeResources', b'Synthetic signing metadata')
     put(app + 'Resources/LICENSE.Electron.txt', b'Fixture only')
@@ -240,4 +241,78 @@ test('valid same-version archive cannot substitute application content, paths or
       });
     });
   }
+});
+
+test('extracted payload CLI matches the release ZIP digest and rejects on-disk changes', async t => {
+  // Windows preserves a read-only attribute, with all three write bits set on writable files.
+  const fileMode = process.platform === 'win32' ? 0o666 : 0o644;
+  const f = await fixture(t, 'arm64', { payloadPermissions: fileMode, extraPayloadPath: 'desktop/附录.json' });
+  const { appFiles, appPayloadSha256 } = JSON.parse((await invoke(f)).stdout);
+  const root = path.dirname(f.archive);
+  const app = path.join(root, 'Shenyi.app');
+  const payload = path.join(app, 'Contents', 'Resources', 'app');
+  const entry = path.join(payload, 'desktop', 'main.cjs');
+  const extract = String.raw`
+from pathlib import Path
+from shutil import copyfileobj
+from stat import S_IMODE
+from sys import argv
+from zipfile import ZipFile
+with ZipFile(argv[1]) as archive:
+    for item in archive.infolist():
+        if item.filename.startswith('Shenyi.app/Contents/Resources/app/'):
+            target = Path(argv[2]) / item.filename
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(item) as source, target.open('xb') as output:
+                copyfileobj(source, output)
+            target.chmod(S_IMODE(item.external_attr >> 16))
+`;
+  await run(python, ['-I', '-c', extract, f.archive, root], { windowsHide: true });
+  const verify = (directory = app, digest = appPayloadSha256) => run(python,
+    ['-I', cli, '--verify-extracted-payload', directory, '--app-payload-sha256', digest],
+    { windowsHide: true, timeout: 15_000 });
+  const accepted = { format: 'shenyi-macos-extracted-app-payload', appFiles, appPayloadSha256 };
+  assert.deepEqual(JSON.parse((await verify()).stdout), accepted);
+
+  await t.test('same-length content change', async () => {
+    await fs.writeFile(entry, '[]');
+    try { await assert.rejects(verify(), error => refused(error) && /does not match the approved/.test(error.stderr)); }
+    finally { await fs.writeFile(entry, '{}'); }
+  });
+  await t.test('permission change', async () => {
+    await fs.chmod(entry, 0o444);
+    try { await assert.rejects(verify(), error => refused(error) && /does not match the approved/.test(error.stderr)); }
+    finally { await fs.chmod(entry, fileMode); }
+  });
+  await t.test('additional and missing payload files', async () => {
+    const extra = path.join(payload, 'extra.js');
+    const outside = path.join(root, 'temporarily-removed-main.cjs');
+    await fs.writeFile(extra, '{}');
+    try { await assert.rejects(verify(), refused); }
+    finally { await fs.unlink(extra); }
+    await fs.rename(entry, outside);
+    try { await assert.rejects(verify(), refused); }
+    finally { await fs.rename(outside, entry); }
+  });
+  await t.test('links do not stand in for approved content or the app root', async () => {
+    const link = path.join(root, 'hardlink.cjs');
+    await fs.link(entry, link);
+    try { await assert.rejects(verify(), error => refused(error) && /linked file/.test(error.stderr)); }
+    finally { await fs.unlink(link); }
+    const alias = path.join(root, 'alias', 'Shenyi.app');
+    await fs.mkdir(path.dirname(alias));
+    await fs.symlink(app, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    try { await assert.rejects(verify(alias), error => refused(error) && /canonical absolute/.test(error.stderr)); }
+    finally { await fs.unlink(alias); }
+  });
+  await t.test('approved SHA-256 is mandatory and lower case', async () => {
+    await assert.rejects(run(python, ['-I', cli, '--verify-extracted-payload', app], { windowsHide: true }), error => {
+      assert.equal(error.code, 2);
+      assert.equal(error.stdout.trim(), '');
+      assert.match(error.stderr, /--app-payload-sha256/);
+      return true;
+    });
+    await assert.rejects(verify(app, 'A'.repeat(64)), refused);
+  });
+  assert.deepEqual(JSON.parse((await verify()).stdout), accepted);
 });

@@ -46,15 +46,26 @@ async function replaceCopyContents(filename, bytes) {
   await fs.chmod(filename, mode);
 }
 
-function commandBoundary(f, { verify, extract, native } = {}) {
+function commandBoundary(f, { verify, extract, verifyExpanded, native } = {}) {
   const calls = [];
   let privateZip;
   let expectedApp;
+  let scans = 0;
   const receipt = archiveReceipt(f);
   return { calls, options: {
     platform: 'darwin', temporaryRoot: f.temporaryRoot,
     async run(program, args) {
       if (program === f.input.python) {
+        if (args[2] === '--verify-extracted-payload') {
+          const phase = ++scans === 1 ? 'before' : 'after';
+          calls.push(`verify expanded payload ${phase}`);
+          assert.deepEqual(args, ['-I', verifier, '--verify-extracted-payload', expectedApp,
+            '--app-payload-sha256', f.input.appPayloadSha256]);
+          const result = { format: 'shenyi-macos-extracted-app-payload', appFiles: receipt.appFiles,
+            appPayloadSha256: f.input.appPayloadSha256 };
+          const stdout = verifyExpanded ? await verifyExpanded({ phase, receipt: result }) : JSON.stringify(result);
+          return { stdout };
+        }
         calls.push('verify ZIP');
         privateZip = args[3];
         const expectedArgs = ['-I', verifier, '--verify-release', privateZip, f.input.arch, f.input.version,
@@ -113,13 +124,15 @@ test('receipt binds one held archive copy to extraction and native app assessmen
   const f = await fixture(t);
   const model = commandBoundary(f);
   const result = await checkFixture(f, model);
-  assert.deepEqual(model.calls, ['verify ZIP', 'extract approved ZIP', 'assess expanded application']);
+  assert.deepEqual(model.calls, ['verify ZIP', 'extract approved ZIP', 'verify expanded payload before',
+    'assess expanded application', 'verify expanded payload after']);
   assert.equal(result.kind, 'shenyi-macos-native-release-zip-check');
   assert.equal(result.archiveVerified, true);
   assert.equal(result.appLaunched, false);
   assert.equal(result.archiveSha256, f.input.sha256);
   assert.equal(result.archiveBytes, f.bytes.length);
   assert.equal(result.appPayloadSha256, f.input.appPayloadSha256);
+  assert.equal(result.extractedAppPayloadVerified, true);
   assert.equal(result.archiveEntries, 28);
   assert.equal(result.symlinks, 4);
   assert.equal(result.appFiles, 8);
@@ -205,6 +218,25 @@ test('extraction failures and unexpected siblings are refused without app assess
   }
 });
 
+test('expanded payload disagreement blocks the receipt before or after Apple assessment', async t => {
+  const f = await fixture(t);
+  const before = ['verify ZIP', 'extract approved ZIP', 'verify expanded payload before'];
+  const after = [...before, 'assess expanded application', 'verify expanded payload after'];
+  for (const [phase, reported, code] of [
+    ['before', { appPayloadSha256: 'b'.repeat(64) }, 'APP_PAYLOAD_RECEIPT_MISMATCH'],
+    ['before', { appFiles: 9 }, 'APP_PAYLOAD_RECEIPT_MISMATCH'],
+    ['after', null, 'APP_PAYLOAD_INVALID'],
+  ]) {
+    const model = commandBoundary(f, { verifyExpanded: ({ phase: current, receipt }) => {
+      if (current !== phase) return JSON.stringify(receipt);
+      if (!reported) throw new Error('The on-disk payload changed');
+      return JSON.stringify({ ...receipt, ...reported });
+    } });
+    await assert.rejects(checkFixture(f, model), { code });
+    assert.deepEqual(model.calls, phase === 'before' ? before : after);
+  }
+});
+
 test('same-length change to the private copy breaks the receipt before native assessment', async t => {
   const f = await fixture(t);
   const afterVerify = commandBoundary(f, { async verify({ receipt, privateZip }) {
@@ -220,14 +252,14 @@ test('same-length change to the private copy breaks the receipt before native as
 
   const afterNative = commandBoundary(f, { native: (input, receipt, privateZip) => replaceCopyContents(privateZip, f.bytes) });
   await assert.rejects(checkFixture(f, afterNative));
-  assert.deepEqual(afterNative.calls, ['verify ZIP', 'extract approved ZIP', 'assess expanded application']);
+  assert.deepEqual(afterNative.calls, ['verify ZIP', 'extract approved ZIP', 'verify expanded payload before', 'assess expanded application']);
 });
 
 test('refused app signature preserves native error and removes the temporary extraction', async t => {
   const f = await fixture(t);
   const model = commandBoundary(f, { native() { throw nativeCodesignError; } });
   await assert.rejects(checkFixture(f, model), { code: 'CODE_SIGNATURE_INVALID' });
-  assert.deepEqual(model.calls, ['verify ZIP', 'extract approved ZIP', 'assess expanded application']);
+  assert.deepEqual(model.calls, ['verify ZIP', 'extract approved ZIP', 'verify expanded payload before', 'assess expanded application']);
 });
 
 test('native evidence must identify the exact expansion and show that no app was launched', async t => {
@@ -235,7 +267,7 @@ test('native evidence must identify the exact expansion and show that no app was
   for (const change of [{ app: path.join(f.directory, 'another approved app.app') }, { appLaunched: true }]) {
     const model = commandBoundary(f, { native: (input, receipt) => ({ ...receipt, ...change }) });
     await assert.rejects(checkFixture(f, model), { code: 'APP_RECEIPT_MISMATCH' });
-    assert.deepEqual(model.calls, ['verify ZIP', 'extract approved ZIP', 'assess expanded application']);
+    assert.deepEqual(model.calls, ['verify ZIP', 'extract approved ZIP', 'verify expanded payload before', 'assess expanded application']);
   }
 });
 
@@ -251,7 +283,7 @@ test('cleanup refuses a replacement directory and leaves its contents alone', as
     await fs.writeFile(marker, 'retain this unrelated file');
   } });
   await assert.rejects(f.checkMacosReleaseZip(f.input, model.options), { code: 'WORKSPACE_CHANGED' });
-  assert.deepEqual(model.calls, ['verify ZIP', 'extract approved ZIP', 'assess expanded application']);
+  assert.deepEqual(model.calls, ['verify ZIP', 'extract approved ZIP', 'verify expanded payload before', 'assess expanded application']);
   assert.equal(await fs.readFile(marker, 'utf8'), 'retain this unrelated file');
   assert.ok((await fs.stat(original)).isDirectory());
   assert.deepEqual(await fs.readFile(f.input.archive), f.bytes);

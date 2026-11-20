@@ -3,6 +3,7 @@
 
 import argparse
 from collections import deque
+from contextlib import contextmanager
 from copy import copy
 import hashlib
 import json
@@ -226,11 +227,14 @@ def payload_inventory(root):
     if not stat.S_ISDIR(initial.st_mode) or not plain_entry(initial):
         raise ValueError('App payload directory is invalid')
     entries = [(PAYLOAD, root, initial, 'directory')]
+    total = 0
     for folder, directories, files in os.walk(root, onerror=abort_walk):
         directories.sort()
         for name in sorted(directories+files):
             source = Path(folder)/name
             parts = (*PAYLOAD, *checked_parts(source.relative_to(root).as_posix()))
+            if len('/'.join(parts)) > 4096 or len(entries) >= VERIFY_MAX_ENTRIES:
+                raise ValueError('App payload exceeds path or entry limits')
             info = source.lstat()
             if not plain_entry(info):
                 raise ValueError('App payload contains a filesystem link')
@@ -242,6 +246,10 @@ def payload_inventory(root):
                 raise ValueError('App payload contains a non-regular or linked file')
             if (kind == 'directory') != (name in directories):
                 raise ValueError('App payload changed while inspecting')
+            if kind == 'file':
+                total += info.st_size
+                if not 0 <= info.st_size <= VERIFY_MAX_ARCHIVE_BYTES or total > VERIFY_MAX_UNCOMPRESSED_BYTES:
+                    raise ValueError('App payload exceeds file size limits')
             entries.append((parts, source, info, kind))
     if not any(name == (*PAYLOAD, 'package.json') and kind == 'file' for name, _, _, kind in entries):
         raise ValueError('App payload is missing package.json')
@@ -268,6 +276,25 @@ def unchanged(before, after, *, compare_ctime=True):
             (not compare_ctime or before.st_ctime_ns == after.st_ctime_ns))
 
 
+@contextmanager
+def held_payload_file(source, info):
+    fd = os.open(source, os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0) |
+                 getattr(os, 'O_NONBLOCK', 0))
+    with os.fdopen(fd, 'rb') as contents:
+        descriptor = os.fstat(contents.fileno())
+        listed = source.lstat()
+        # On Windows, lstat and fstat can report different ctime values for
+        # Node-copied files. Compare each ctime with its own API's baseline.
+        if (not unchanged(info, descriptor, compare_ctime=os.name != 'nt') or
+                not plain_entry(listed) or not unchanged(info, listed)):
+            raise ValueError('App payload changed before reading')
+        yield contents
+        listed = source.lstat()
+        if (not unchanged(descriptor, os.fstat(contents.fileno())) or
+                not plain_entry(listed) or not unchanged(info, listed)):
+            raise ValueError('App payload changed during reading')
+
+
 def write_payload(output, parts, source, info, kind):
     entry = ZipInfo(archive_name(parts, kind))
     entry.create_system = 3
@@ -278,21 +305,8 @@ def write_payload(output, parts, source, info, kind):
     entry.external_attr = (stat.S_IFREG | 0o644) << 16
     entry.compress_type = ZIP_DEFLATED
     entry.file_size = info.st_size
-    fd = os.open(source, os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0))
-    with os.fdopen(fd, 'rb') as contents:
-        descriptor = os.fstat(contents.fileno())
-        listed = source.lstat()
-        # On Windows, lstat and fstat can report different ctime values for
-        # Node-copied files. Compare each ctime with its own API's baseline.
-        if (not unchanged(info, descriptor, compare_ctime=os.name != 'nt') or
-                not plain_entry(listed) or not unchanged(info, listed)):
-            raise ValueError('App payload changed before packaging')
-        with output.open(entry, 'w') as member:
-            copyfileobj(contents, member, CHUNK)
-        listed = source.lstat()
-        if (not unchanged(descriptor, os.fstat(contents.fileno())) or
-                not plain_entry(listed) or not unchanged(info, listed)):
-            raise ValueError('App payload changed during packaging')
+    with held_payload_file(source, info) as contents, output.open(entry, 'w') as member:
+        copyfileobj(contents, member, CHUNK)
 
 
 def write_archive(filename, archive, vendor, payload, changed):
@@ -507,18 +521,56 @@ def verify_candidate_contents(archive, entries, nodes, arch, version, bundle_id=
             raise ValueError('Invalid branded Mac helper identity')
 
 
-def hash_held_archive(handle, expected_size):
+def hash_held_file(handle, expected_size):
     handle.seek(0)
     digest = hashlib.sha256()
     size = 0
     while data := handle.read(CHUNK):
         size += len(data)
         if size > expected_size:
-            raise ValueError('Mac archive grew during verification')
+            raise ValueError('File grew during Mac verification')
         digest.update(data)
     if size != expected_size:
-        raise ValueError('Mac archive changed size during verification')
+        raise ValueError('File changed size during Mac verification')
     return digest.hexdigest()
+
+
+def app_payload_digest(files):
+    # Exclude the ZIP container and signing data outside the app payload.
+    digest = hashlib.sha256(b'shenyi.macos.app-payload.v1\x00')
+    for member in sorted(files):
+        digest.update(json.dumps(member, separators=(',', ':')).encode('ascii') + b'\n')
+    return digest.hexdigest()
+
+
+def verify_extracted_payload(app, expected_sha256):
+    if not re.fullmatch(r'[0-9a-f]{64}', expected_sha256):
+        raise ValueError('Expected a lower-case approved app payload SHA-256')
+    if not app.is_absolute() or app.name != APP or app.resolve(strict=True) != app:
+        raise ValueError('Expected a canonical absolute Shenyi.app path')
+    contents = app / 'Contents'
+    resources = contents / 'Resources'
+    ancestors = [(path, path.lstat()) for path in (app, contents, resources)]
+    if any(not stat.S_ISDIR(info.st_mode) or not plain_entry(info) for _, info in ancestors):
+        raise ValueError('App payload requires ordinary enclosing directories')
+    entries = payload_inventory(resources / 'app')
+    path_inventory((parts, kind) for parts, _, _, kind in entries)
+    files = []
+    for parts, filename, info, kind in entries:
+        if kind == 'file':
+            with held_payload_file(filename, info) as handle:
+                digest = hash_held_file(handle, info.st_size)
+            files.append(('/'.join(parts[len(PAYLOAD):]), stat.S_IMODE(info.st_mode), info.st_size, digest))
+    for path, info in ancestors + [(path, info) for _, path, info, _ in entries]:
+        current = path.lstat()
+        if not plain_entry(current) or not unchanged(info, current):
+            raise ValueError('Extracted app payload changed during verification')
+    if app.resolve(strict=True) != app:
+        raise ValueError('Extracted app path changed during verification')
+    payload_sha256 = app_payload_digest(files)
+    if payload_sha256 != expected_sha256:
+        raise ValueError('Extracted Mac application payload does not match the approved application payload SHA-256')
+    return {'format': 'shenyi-macos-extracted-app-payload', 'appFiles': len(files), 'appPayloadSha256': payload_sha256}
 
 
 def verify_archive(filename, arch, version, *, bundle_id=BUNDLE_ID, expected_sha256=None,
@@ -546,7 +598,7 @@ def verify_archive(filename, arch, version, *, bundle_id=BUNDLE_ID, expected_sha
         if release:
             if not 22 <= initial.st_size <= VERIFY_MAX_ARCHIVE_BYTES:
                 raise ValueError('Mac desktop archive exceeds the bounded ZIP size')
-            if hash_held_archive(handle, initial.st_size) != expected_sha256:
+            if hash_held_file(handle, initial.st_size) != expected_sha256:
                 raise ValueError('Mac release ZIP does not match the approved SHA-256')
         count = verify_zip_envelope(handle, initial.st_size)
         with ZipFile(handle) as archive:
@@ -571,14 +623,10 @@ def verify_archive(filename, arch, version, *, bundle_id=BUNDLE_ID, expected_sha
                     relative = '/'.join(parts[len(PAYLOAD):])
                     permissions = stat.S_IMODE(info.external_attr >> 16)
                     payload_files.append((relative, permissions, consumed, member_digest.hexdigest()))
-        # Bind app files without binding the ZIP container or signing data outside the app payload.
-        payload_digest = hashlib.sha256(b'shenyi.macos.app-payload.v1\x00')
-        for member in sorted(payload_files):
-            payload_digest.update(json.dumps(member, separators=(',', ':')).encode('ascii') + b'\n')
-        app_payload_sha256 = payload_digest.hexdigest()
+        app_payload_sha256 = app_payload_digest(payload_files)
         if expected_app_payload_sha256 is not None and app_payload_sha256 != expected_app_payload_sha256:
             raise ValueError('Mac release application payload does not match the approved application payload SHA-256')
-        digest = hash_held_archive(handle, initial.st_size)
+        digest = hash_held_file(handle, initial.st_size)
         final = filename.lstat()
         if ((release and digest != expected_sha256) or not unchanged(initial, os.fstat(handle.fileno())) or
                 not plain_entry(final) or not unchanged(listed, final) or filename.resolve(strict=True) != filename):
@@ -594,8 +642,11 @@ def verify_archive(filename, arch, version, *, bundle_id=BUNDLE_ID, expected_sha
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = sys.argv[1] if len(sys.argv) > 1 else None
-    verify_only = mode in {'--verify', '--verify-release'}
-    if mode == '--verify-release':
+    verify_only = mode in {'--verify', '--verify-release', '--verify-extracted-payload'}
+    if mode == '--verify-extracted-payload':
+        parser.add_argument('--verify-extracted-payload', required=True, type=Path)
+        parser.add_argument('--app-payload-sha256', required=True, metavar='HEX')
+    elif mode == '--verify-release':
         parser.add_argument('--verify-release', required=True, type=Path)
         parser.add_argument('--bundle-id', required=True)
         parser.add_argument('--sha256', required=True, metavar='HEX')
@@ -606,11 +657,14 @@ def main():
         parser.add_argument('electron_archive', type=Path)
         parser.add_argument('payload_dir', type=Path)
         parser.add_argument('output_zip', type=Path)
-    parser.add_argument('arch', choices=CPU_TYPES)
-    parser.add_argument('version')
+    if mode != '--verify-extracted-payload':
+        parser.add_argument('arch', choices=CPU_TYPES)
+        parser.add_argument('version')
     args = parser.parse_args()
     try:
-        if mode == '--verify-release':
+        if mode == '--verify-extracted-payload':
+            result = verify_extracted_payload(args.verify_extracted_payload, args.app_payload_sha256)
+        elif mode == '--verify-release':
             result = verify_archive(args.verify_release, args.arch, args.version,
                                     bundle_id=args.bundle_id, expected_sha256=args.sha256,
                                     expected_app_payload_sha256=args.app_payload_sha256)

@@ -112,6 +112,22 @@ async function verifyCopiedArchive(run, copy, byteLength, expected) {
   return { archiveSha256, archiveBytes, archiveEntries, symlinks, appFiles, appPayloadSha256 };
 }
 
+async function verifyExtractedPayload(run, candidate, python, archiveReceipt) {
+  const { appFiles, appPayloadSha256 } = archiveReceipt;
+  let result;
+  try {
+    const { stdout } = await run(python, ['-I', archiveChecker, '--verify-extracted-payload', candidate,
+      '--app-payload-sha256', appPayloadSha256]);
+    result = JSON.parse(stdout);
+  } catch {
+    fail('APP_PAYLOAD_INVALID', '解包后的应用文件与获准应用负载不一致或无法核验。');
+  }
+  if (result?.format !== 'shenyi-macos-extracted-app-payload' || result.appFiles !== appFiles ||
+      result.appPayloadSha256 !== appPayloadSha256) {
+    fail('APP_PAYLOAD_RECEIPT_MISMATCH', '实际应用文件的核验回执与获准归档不一致。');
+  }
+}
+
 async function assertPrivateArchiveUnchanged(copy, sealed, expectedSha256, byteLength) {
   const changed = () => fail('ARCHIVE_CHANGED', '临时归档在接收核验期间发生变化。');
   if (identity(await lstat(copy, { bigint: true })) !== sealed || await realpath(copy) !== copy) changed();
@@ -161,6 +177,7 @@ export async function checkMacosReleaseZip(expected, {
         await realpath(candidate) !== candidate) {
       fail('ARCHIVE_EXTRACTION_INVALID', '解包结果须仅包含实际的 Shenyi.app。');
     }
+    await verifyExtractedPayload(run, candidate, python, receipt);
     const result = await checkApp({ app: candidate, teamId, bundleId, version, arch });
     if (result?.kind !== 'shenyi-macos-native-release-app-check' || result.app !== candidate ||
         result.teamId !== teamId || result.bundleId !== bundleId || result.version !== version ||
@@ -168,8 +185,10 @@ export async function checkMacosReleaseZip(expected, {
       fail('APP_RECEIPT_MISMATCH', 'Apple 签名与公证核验回执和解包结果不一致。');
     }
     await assertPrivateArchiveUnchanged(copy, sealed, sha256, byteLength);
+    await verifyExtractedPayload(run, candidate, python, receipt);
     const { app, ...appReceipt } = result;
-    return { ...appReceipt, ...receipt, kind: 'shenyi-macos-native-release-zip-check', archive, archiveVerified: true };
+    return { ...appReceipt, ...receipt, kind: 'shenyi-macos-native-release-zip-check', archive, archiveVerified: true,
+      extractedAppPayloadVerified: true };
   } finally {
     const current = await lstat(workspace, { bigint: true });
     if (!current.isDirectory() || current.dev !== workspaceOrigin.dev || current.ino !== workspaceOrigin.ino ||
