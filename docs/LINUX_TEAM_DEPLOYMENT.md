@@ -2,6 +2,12 @@
 
 部署目标为经授权的单台国内 Linux 主机。Nginx 在 443 接入桌面请求，向 `127.0.0.1:9443` 发起独立 TLS 连接。Node 以专用系统账号运行，SQLite 和配置放在应用发布目录之外。域名、云资源、证书和生产账号由实际开通流程提供。[国内上线时点](COMMERCIALIZATION_ROADMAP.md#4-国内上线手续与时点)
 
+## 2026-11-21 当前协作提交的 Ubuntu 发布、恢复与回滚
+
+从与 Windows、macOS 候选相同的协作提交 [`704959f`](https://github.com/icesad/shenyi-audit-workspace/commit/704959f6284c961ebda48d386f88c1d6e4883a71) 构建 Linux 服务 TAR。610 个文件与 Git 对象逐字节一致。临时签名复验拒绝错误提交、篡改签名及跨包签名。 TAR SHA-256 为 `e5b4e9cb9e2452b8aacb0919865d1463293884d4cfa2ea9460cda784a37e2b1d`，本机路径与回执见 `D:/codex-temp/shenyi-linux-704959f-20261121/verification.json`。
+
+无网卡 Ubuntu 24.04 离线暂存 37 个生产依赖，实际签名激活 `e28ae2a → 704959f → e28ae2a`。6 次双路 HTTPS 检查各通过 9 项。加密备份还原后，微信账本、合成原件和业务数据一致。在线库及 2 KiB 原件的摘要保持，离线恢复副本以 `MANAGED_DATABASE_NOT_READY` 拒绝在线启动。 后端与 Nginx 两路均以 `401 SIGN_IN_REQUIRED` 拒绝未登录的微信订单历史请求。已签发布树中的账务模块与 Git 源码一致。真实商户联调和启用该功能后的业务验收仍待外部条件。 Ubuntu 操作在独立子盘中完成，13 层父盘摘要保持。国内云、正式证书、生产监控和正式发布仍按部署验收推进。
+
 ## 构件和目录
 
 在私有工作区以已审定的 Git 提交生成服务构件。归档保留 `dist/` 中的原有解析器、受管微信付款页、首位负责人初始化入口、离线备份和上线检查工具。先选定仓库外且仅发布人员可写的 `$release_dir`。交接时提供归档、独立签名和对应的完整提交，通过独立可信渠道提供验签公钥。 [Git 归档说明](https://git-scm.com/docs/git-archive)

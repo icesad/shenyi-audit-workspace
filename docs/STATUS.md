@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-21 当前协作提交的 Ubuntu 发布、恢复与回滚
+
+从与 Windows、macOS 候选相同的协作提交 [`704959f`](https://github.com/icesad/shenyi-audit-workspace/commit/704959f6284c961ebda48d386f88c1d6e4883a71) 构建 Linux 服务 TAR。610 个文件与 Git 对象逐字节一致。临时签名复验拒绝错误提交、篡改签名及跨包签名。 无网卡 Ubuntu 24.04 离线暂存 37 个生产依赖，实际签名激活 `e28ae2a → 704959f → e28ae2a`。6 次双路 HTTPS 检查各通过 9 项。加密备份还原后，微信账本、合成原件和业务数据一致。在线库及 2 KiB 原件的摘要保持，离线恢复副本以 `MANAGED_DATABASE_NOT_READY` 拒绝在线启动。 后端与 Nginx 两路均以 `401 SIGN_IN_REQUIRED` 拒绝未登录的微信订单历史请求。已签发布树中的账务模块与 Git 源码一致。真实商户联调和启用该功能后的业务验收仍待外部条件。 136 项 Node 回归和 27 项 Python 测试通过。 [Linux 构件与验收](LINUX_TEAM_DEPLOYMENT.md#2026-11-21-当前协作提交的-ubuntu-发布恢复与回滚)
+
 ## 2026-11-21 当前协作提交的 macOS 双架构签前交接
 
 从与 Windows 评审相同的协作提交 [`704959f`](https://github.com/icesad/shenyi-audit-workspace/commit/704959f6284c961ebda48d386f88c1d6e4883a71) 构建 Apple 芯片和 Intel 两份 0.61.0 候选。两份归档各核对 1,935 个应用文件和 14 个相对符号链接，应用负载摘要一致。独立接收目录另逐架构核对 84 个 Git 源文件和 6 个随包工具。 独立接收使用随包工具验证两种架构和一次性 Ed25519 交接签名，拒绝错架构、同版、降版和校验失败的签名。Windows 上正式接收命令按预期返回 `MACOS_REQUIRED`。正式接收的最高版本判断通过受控工具边界验证。 199 项相关回归通过。Developer ID、Apple 公证和正式 ZIP 接收，以及 Finder、Keychain、默认浏览器和安装升级仍需 Mac 实机验收。 [macOS 接收和签核](MACOS_DESKTOP_CANDIDATE.md#2026-11-21-当前协作提交的-macos-双架构签前交接)
