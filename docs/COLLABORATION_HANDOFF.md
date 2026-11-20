@@ -6,8 +6,8 @@
 | --- | --- |
 | 仓库 | 私有的 [icesad/shenyi-audit-workspace](https://github.com/icesad/shenyi-audit-workspace) |
 | 本阶段协作基线 | [`codex/team-collaboration-handoff-20261120`](https://github.com/icesad/shenyi-audit-workspace/tree/codex/team-collaboration-handoff-20261120) |
-| 已验收的构件源码 | [`704959f`](https://github.com/icesad/shenyi-audit-workspace/commit/704959f6284c961ebda48d386f88c1d6e4883a71) 对应 Windows 评审包、macOS 双架构签前包和同源 Linux 演练包。新版 Linux 支付探针包对应 [`98a5a38`](https://github.com/icesad/shenyi-audit-workspace/commit/98a5a38037872e219107966ee96860a18f455b5d)。 |
-| 本轮同步内容 | 已验收的源码检查点 `77f2ae8`，包括停用成员后释放席位、微信 Native 双路探针及 Ubuntu/Nginx 验收、四份构件的离线接收校验。各自开任务分支时使用最新远端协作提交，并在 Issue 记下实际起点。 |
+| 本轮同步内容 | 源码和验收记录包含 [`c08d07e`](https://github.com/icesad/shenyi-audit-workspace/commit/c08d07e79a3978d62a80d78bddf13c32db005a6b)。新增首管理员审批应答中断后的核对、员工邀请按原请求编号恢复和防止重复预留席位，以及 Windows 四职级验收。开任务分支时在 Issue 记录实际拉取到的协作提交。 |
+| 已验收的构件源码 | 最新 Windows 双人评审 ZIP 来自 [`6ef38ba`](https://github.com/icesad/shenyi-audit-workspace/commit/6ef38ba9492240dd5eeac1b328ea0124acc2c0d4)。macOS 双架构签前包和同源 Linux 演练包来自 [`704959f`](https://github.com/icesad/shenyi-audit-workspace/commit/704959f6284c961ebda48d386f88c1d6e4883a71)。新版 Linux 支付探针包来自 [`98a5a38`](https://github.com/icesad/shenyi-audit-workspace/commit/98a5a38037872e219107966ee96860a18f455b5d)。 |
 | 当前收款候选 | 官网报价、锁单、扫码付款、查单与超时关单。Windows 客户端可打开或继续官网购买，也可在获准绑定的新电脑上查阅同队微信订单并打开原单。 |
 | 米老师的 GitHub 账号 | `mixue117`，已核对具有本仓库读写权限 |
 | 主干与历史草稿 | GitHub 默认打开 `main`。历史报告分支 `work/report-four-sources@894078b` 的草稿 PR #2 指向 `main`，等待业务验收。 [查看草稿](https://github.com/icesad/shenyi-audit-workspace/pull/2) |
@@ -76,6 +76,14 @@ git switch --no-track -c work/mi-report-issue-123 origin/codex/team-collaboratio
 
 产品方从同一远端分支建任务分支，使用自己的 Issue 编号和任务名称。两人各自在自己的分支完成开发。
 
+## 业务合并时要核对的内容
+
+| 本次改动 | 由谁复核、核对什么 |
+| --- | --- |
+| 原表读取、公式、底稿填写或报告输出 | 米老师用合成样例逐项核对输入、规则和预期输出。若采用 PR #2 中的改动，在新 PR 记下原提交、纳入的文件和仍待确认的规则。 |
+| 共用页面、项目存储或团队接入 | 产品负责人确认原项目能打开和保存，原件与项目 UUID、已有记录和版本关系一致。涉及团队权限时，用有权和无权账号各走一次，并核对撤权后的访问。 |
+| 两人改了同一模块 | 在合并前的同一个候选提交运行相关检查。PR 里记录米老师的业务结果和产品负责人的兼容、权限及入口结果，再合到协作分支。 |
+
 ## 本地运行和复验
 
 需要 Node.js 24.15 或以上的 24.x。本次复验使用 Node.js 24.22.1。首次在仓库根目录安装固定依赖，再运行工作台预览。
@@ -112,6 +120,7 @@ npm run test:tools
 | --- | --- |
 | 项目授权、采集任务、团队底稿 | `node --test tests/team-project-access-core.test.cjs tests/team-task-management-core.test.cjs tests/team-workpaper-http-resume.test.cjs` |
 | 首管理员与受邀员工激活、员工换机 | `node --test tests/team-managed-onboarding-sms.test.cjs tests/team-device-replacement.test.cjs tests/team-device-replacement-proof.test.cjs tests/team-desktop-device-replacement-client.test.cjs` |
+| 首管理员审批和员工邀请断线恢复 | `node --test tests/team-managed-onboarding-sms.test.cjs tests/team-employee-activation.test.cjs tests/team-provisioning-core.test.cjs tests/team-desktop-provisioning-ui.test.cjs tests/team-desktop-invitation-pagination.test.cjs tests/team-desktop-invitation-pagination-ui.test.cjs` |
 | 官网扫码付款、桌面账务、换机找回原单 | `node --test tests/team-wechat-native-website.test.cjs tests/team-desktop-billing-client.test.cjs tests/team-desktop-website-checkout.test.cjs tests/team-desktop-billing-ui.test.cjs tests/team-managed-service-config.test.cjs` |
 | 微信账单和 Linux 监控 | `node --test tests/team-wechat-native-fund-bill-parser.test.cjs tests/team-wechat-native-reconciliation-cli.test.cjs tests/team-service-release-check.test.cjs` |
 | 收到构件前复跑接收校验 | `node --test tests/check-release-handoff.test.cjs tests/team-service-release-check.test.cjs` |
@@ -146,19 +155,21 @@ node --test tests/team-wechat-native-trade-bill-parser.test.cjs tests/team-wecha
 
 | 范围 | 已验证 | 待实际验收 |
 | --- | --- | --- |
-| Windows `704959f` | 一键评审包实测合成订单恢复。独立打包客户端实测新设备首次绑定后找回同队原单、空库四职级采集与撤权，以及新受邀员工由同队管理员审批换机。换机使用同一台 Windows 的三套独立配置。 | 正式签名 MSI 安装、升级和回退，以及两台电脑之间实际换机。 |
+| Windows | `6ef38ba` 评审 ZIP 的包内一键入口已实测启动、负责人登录、初次绑机及正常退出。同一 ZIP 的打包 Electron 已从空库走完四席预留与激活、四职级分工、两份原件采集及撤权，相关回归 296 项通过。`704959f` 的独立打包客户端另有找回同队原单、员工换机和四职级采集实测。 | 正式签名 MSI 安装、升级和回退，以及两台电脑之间实际换机。 |
 | macOS `704959f` | Apple 芯片和 Intel 两份候选均完成离线签前与接收检查。独立接收核对架构、交接签名和版本限制。 | Developer ID 签名、公证、Mac 实机安装、绑定和升级。 |
 | Linux `704959f`、`98a5a38` | Ubuntu 24.04 隔离环境实测签名激活、账本加密恢复和回滚。新版支付探针以真实 Nginx 验证后端与公共入口三种启用状态。 [双路验收](LINUX_TEAM_DEPLOYMENT.md#2026-11-21-隔离-ubuntu-与-nginx-的微信-native-上线验收) | 国内云生产配置、外部告警送达、正式证书、真实商户及回调。 |
 | 首队试点 | 空库实测首管理员开通、首队四席、邀请预留、四职级任务和停用在线员工后重新使用席位。受管短信配置以合成供应商覆盖管理员和员工激活。 [席位复用验收](MEMBER_DEACTIVATION.md#2026-11-21-有效试点停用员工与席位再使用) | 产品负责人批准首家试点并填写到期时间与席位上限，随后验收真实短信送达及获准团队样例。 |
 | 审计业务 | 已有历史报告预演和合成结果可复跑。 | 米老师确认采用的专业规则及合并范围，双方签收。实际共享库升级和获准资料试点单独安排。 |
 
-协作者从 GitHub 拉取源码、文档和合成测试，在各自电脑复跑。安装评审包、受管演练日志和原有预览由原开发机保管。 [Windows 评审包](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-21-当前协作版本的-windows-评审-zip-与独立客户端) · [macOS 接收](MACOS_DESKTOP_CANDIDATE.md#2026-11-21-当前协作提交的-macos-双架构签前交接) · [Ubuntu 发布恢复](LINUX_TEAM_DEPLOYMENT.md#2026-11-21-当前协作提交的-ubuntu-发布恢复与回滚)
+协作者从 GitHub 拉取源码、文档和合成测试，在各自电脑复跑。评审 ZIP、原始日志和演练数据库保存在原开发机。直接从 GitHub 克隆后可按上文运行源码。 [最新 Windows 评审包](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-21-含开通恢复流程的-windows-双人评审包) · [macOS 接收](MACOS_DESKTOP_CANDIDATE.md#2026-11-21-当前协作提交的-macos-双架构签前交接) · [Ubuntu 发布恢复](LINUX_TEAM_DEPLOYMENT.md#2026-11-21-当前协作提交的-ubuntu-发布恢复与回滚)
 
-团队走查已记录四职级的任务和原件范围、审批与激活顺序、停服核对结果，以及短信的复跑命令。 [四职级走查](PILOT_MANAGED_FIRST_TASK.md#2026-11-21-当前协作提交的-windows-空库四职级验收) · [新员工换机验收](DEVICE_REPLACEMENT.md#2026-11-21-当前-windows-候选的新员工换机闭环) · [短信激活联测](MANAGED_TEAM_SERVICE.md#首管理员和员工激活联测)
+团队走查已记录四职级的任务和原件范围、审批与激活顺序、停服核对结果，以及短信的复跑命令。 [四职级走查](PILOT_MANAGED_FIRST_TASK.md#2026-11-21-含开通恢复功能的评审包四职级验收) · [新员工换机验收](DEVICE_REPLACEMENT.md#2026-11-21-当前-windows-候选的新员工换机闭环) · [短信激活联测](MANAGED_TEAM_SERVICE.md#首管理员和员工激活联测)
 
 ## 收到发布构件时
 
-接收方先从产品负责人批准的私有源码提交取用交接清单和校验脚本，并通过获准的交接记录核对预期清单摘要。选定下表对应的编号，再读取收到的原始 ZIP 或 TAR。两份 Linux TAR 的字节长度相同，需按清单编号核对实际摘要。 [当前构件清单](RELEASE_HANDOFF_CATALOG.json)
+收到 `Shenyi-Owner-Review-6ef38ba-Win-x64.zip` 后，先核对 ZIP 的 SHA-256，再完整解压并双击 `Verify-Owner-Review.cmd`。空团队采集使用解压目录内的 `Start-Team-Managed-Pilot-Candidate.cmd`。该包的摘要及验收记录见 Windows 评审说明。 [新版 Windows ZIP 摘要](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-21-含开通恢复流程的-windows-双人评审包) · [随包操作手册](../README-Owner-Review.md)
+
+下方离线清单覆盖先前的四份归档。接收方先从产品负责人批准的私有源码提交取用交接清单和校验脚本，并通过获准的交接记录核对预期清单摘要。选定下表对应的编号，再读取收到的原始 ZIP 或 TAR。两份 Linux TAR 的字节长度相同，需按清单编号核对实际摘要。 [当前构件清单](RELEASE_HANDOFF_CATALOG.json)
 
 | 构件编号 | 用途 |
 | --- | --- |
