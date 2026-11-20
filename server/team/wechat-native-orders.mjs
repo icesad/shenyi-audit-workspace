@@ -1,4 +1,4 @@
-import {constants, createPrivateKey, randomBytes, sign} from 'node:crypto';
+import {constants, createHash, createPrivateKey, randomBytes, sign} from 'node:crypto';
 import {isIP} from 'node:net';
 import {ApiError, ID} from './http-utils.mjs';
 import {
@@ -10,6 +10,7 @@ import {
 
 const API_ORIGIN = 'https://api.mch.weixin.qq.com';
 const MAX_RESPONSE_BYTES = 256 * 1024;
+const MAX_BILL_BYTES = 32 * 1024 * 1024;
 const NATIVE_STATES = new Set(['NOTPAY', 'CLOSED', 'REFUND', 'SUCCESS']);
 
 const invalidOrder = () => { throw new ApiError(400, 'WECHAT_NATIVE_LOCK_INVALID', '微信支付订单资料或付款期限无效。'); };
@@ -34,10 +35,31 @@ function isPaymentCodeUrl(value) {
   return references.length === 1 && references[0].length > 0;
 }
 
-async function readResponseBytes(response, signal) {
+function billDownloadPath(downloadUrl) {
+  if (typeof downloadUrl !== 'string' || downloadUrl.length > 2048 || !downloadUrl.startsWith(API_ORIGIN)) providerUnavailable();
+  const path = downloadUrl.slice(API_ORIGIN.length);
+  const match = /^\/(?:v3\/bill\/downloadurl|v3\/billdownload\/file)\?token=((?:[A-Za-z0-9._~+/=-]|%[0-9A-Fa-f]{2})+)$/.exec(path);
+  if (!match || match[0] !== path) providerUnavailable();
+  try {
+    if (matches(/^[A-Za-z0-9._~+/=-]+$/, decodeURIComponent(match[1]))) return path;
+  } catch {
+    // The opaque token is signed exactly as issued, but must be a single safe query value.
+  }
+  providerUnavailable();
+}
+
+function requireBillDate(billDate) {
+  if (matches(/^\d{4}-\d{2}-\d{2}$/, billDate)) {
+    const date = new Date(`${billDate}T00:00:00Z`);
+    if (Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === billDate) return;
+  }
+  throw new ApiError(400, 'WECHAT_NATIVE_BILL_DATE_INVALID', '请核对微信支付账单日期。');
+}
+
+async function readResponseBytes(response, signal, maximum = MAX_RESPONSE_BYTES) {
   const declaredLength = response.headers.get('Content-Length');
   if (!response.body || (declaredLength !== null &&
-      (!matches(/^\d+$/, declaredLength) || Number(declaredLength) > MAX_RESPONSE_BYTES))) {
+      (!matches(/^\d+$/, declaredLength) || Number(declaredLength) > maximum))) {
     void response.body?.cancel().catch(() => {});
     providerUnavailable();
   }
@@ -52,7 +74,7 @@ async function readResponseBytes(response, signal) {
       if (signal.aborted) providerUnavailable();
       if (done) break;
       length += value.byteLength;
-      if (length > MAX_RESPONSE_BYTES) providerUnavailable();
+      if (length > maximum) providerUnavailable();
       chunks.push(value);
     }
     complete = true;
@@ -85,16 +107,17 @@ export function createWechatNativeOrders({
     return {id, merchantOrderId, amountMinor, currency, createdAt};
   }
 
-  async function request(method, path, at, body, {emptyResponse = false} = {}) {
+  async function request(method, path, at, body, {emptyResponse = false, allowMissingOrder = false, fileSha1} = {}) {
     const timestamp = Math.floor(at / 1000);
     const nonce = randomBytes(16).toString('hex');
     const canonical = Buffer.from(`${method}\n${path}\n${timestamp}\n${nonce}\n${body ?? ''}\n`);
     const signature = sign('sha256', canonical, {key: privateKey, padding: constants.RSA_PKCS1_PADDING}).toString('base64');
     const headers = {
-      Accept: 'application/json',
+      Accept: fileSha1 === undefined ? 'application/json' : '*/*',
       Authorization: `${SIGNATURE_TYPE} mchid="${merchantId}",nonce_str="${nonce}",signature="${signature}",timestamp="${timestamp}",serial_no="${certificateSerial}"`,
       'Wechatpay-Serial': preferredPublicKeyId,
       ...(body !== undefined ? {'Content-Type': 'application/json'} : {}),
+      ...(fileSha1 !== undefined ? {'Accept-Encoding': 'identity'} : {}),
     };
     const url = API_ORIGIN + path;
     const controller = new AbortController();
@@ -109,7 +132,7 @@ export function createWechatNativeOrders({
     const read = async () => {
       const response = await fetchImpl(url, {method, body, headers, signal, redirect: 'error', cache: 'no-store',
         credentials: 'omit', referrerPolicy: 'no-referrer'});
-      const mayBeMissingOrder = method === 'GET' && response.status === 404;
+      const mayBeMissingOrder = allowMissingOrder && response.status === 404;
       const expectedStatus = emptyResponse ? 204 : 200;
       if (signal.aborted || response.redirected || (response.url && response.url !== url) ||
           (response.status !== expectedStatus && !mayBeMissingOrder)) {
@@ -123,7 +146,13 @@ export function createWechatNativeOrders({
           providerUnavailable();
         }
       }
-      const bytes = emptyResponse ? Buffer.alloc(0) : await readResponseBytes(response, signal);
+      const bytes = emptyResponse ? Buffer.alloc(0) :
+        await readResponseBytes(response, signal, fileSha1 === undefined ? MAX_RESPONSE_BYTES : MAX_BILL_BYTES);
+      if (fileSha1 !== undefined) {
+        // WeChat signs the descriptor. The download itself is authenticated by that descriptor's digest.
+        if (!bytes.length || createHash('sha1').update(bytes).digest('hex') !== fileSha1) providerUnavailable();
+        return bytes;
+      }
       const receivedAt = now();
       const signedAt = verifySignature(response.headers, bytes, receivedAt);
       if (signedAt === null) providerUnavailable();
@@ -173,7 +202,7 @@ export function createWechatNativeOrders({
       const locked = readLockedOrder(order, at);
       const {merchantOrderId} = locked;
       const path = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(merchantOrderId)}?mchid=${merchantId}`;
-      const {data, missing, receivedAt, signedAt} = await request('GET', path, at);
+      const {data, missing, receivedAt, signedAt} = await request('GET', path, at, undefined, {allowMissingOrder: true});
       if (missing) return Object.freeze({merchantOrderId, state: 'NOT_FOUND'});
       const state = data.trade_state;
       if (data.appid !== appId || data.mchid !== merchantId || data.out_trade_no !== merchantOrderId ||
@@ -189,6 +218,20 @@ export function createWechatNativeOrders({
           (amount.payer_currency !== undefined && amount.payer_currency !== locked.currency)) providerUnavailable();
       return Object.freeze({channel: 'wechat-pay-native-v3', orderId: locked.id, merchantOrderId,
         transactionId: data.transaction_id, appId, merchantId, amountMinor: locked.amountMinor, currency: locked.currency, paidAt, state});
+    },
+
+    async downloadTradeBill(billDate) {
+      requireBillDate(billDate);
+      const at = now();
+      if (!boundedInteger(at, 0, MAX_PAYMENT_TIME)) providerUnavailable();
+      const {data} = await request('GET', `/v3/bill/tradebill?bill_date=${billDate}&bill_type=ALL`, at);
+      if (data.hash_type !== 'SHA1' || !matches(/^[0-9a-fA-F]{40}$/, data.hash_value)) providerUnavailable();
+      const path = billDownloadPath(data.download_url);
+      const sha1 = data.hash_value.toLowerCase();
+      const downloadAt = now();
+      if (!boundedInteger(downloadAt, at, MAX_PAYMENT_TIME)) providerUnavailable();
+      const bytes = await request('GET', path, downloadAt, undefined, {fileSha1: sha1});
+      return Object.freeze({billDate, bytes, sha1});
     },
   });
 }

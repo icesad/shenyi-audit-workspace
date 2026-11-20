@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const {generateKeyPairSync, sign, verify} = require('node:crypto');
+const {createHash, generateKeyPairSync, sign, verify} = require('node:crypto');
 const {once} = require('node:events');
 const http = require('node:http');
 const test = require('node:test');
@@ -259,6 +259,134 @@ test('only a signed order-not-exist body with HTTP 404 reports an absent WeChat 
     const rejected = await client(() => packet);
     await rejectsOrder(rejected.queryOrder(locked));
   }
+});
+
+const billDate = '2026-11-19';
+const billApplyPath = `/v3/bill/tradebill?bill_date=${billDate}&bill_type=ALL`;
+const billDownloadPaths = ['/v3/bill/downloadurl?token=one%2fexample%2B%3D', '/v3/billdownload/file?token=two-example'];
+const billBytes = Buffer.from('\ufeff合成商户账单,金额\r\n样例,3.50\r\n');
+const billHash = createHash('sha1').update(billBytes).digest('hex');
+const billDescriptor = (downloadPath = billDownloadPaths[0], changes = {}) => ({hash_type: 'SHA1',
+  hash_value: billHash.toUpperCase(), download_url: `https://api.mch.weixin.qq.com${downloadPath}`, ...changes});
+
+test('the signed bill descriptor and either official file path preserve raw request and bill bytes', async t => {
+  const requests = [];
+  let applied = 0;
+  const server = http.createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    requests.push({method: request.method, path: request.url, headers: request.headers, body: Buffer.concat(chunks)});
+    if (request.url === billApplyPath) {
+      const packet = signedResponse(billDescriptor(billDownloadPaths[applied++]));
+      response.writeHead(packet.status, Object.fromEntries(packet.headers));
+      response.end(Buffer.from(await packet.arrayBuffer()));
+    } else {
+      response.writeHead(200, {'Content-Type': 'application/octet-stream'});
+      response.end(billBytes);
+    }
+  });
+  server.listen(0, '127.0.0.1');
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  await once(server, 'listening');
+  const checkout = await client(async (input, init) => {
+    const url = new URL(input);
+    assert.equal(url.origin, 'https://api.mch.weixin.qq.com');
+    const response = await fetch(`http://127.0.0.1:${server.address().port}${url.pathname}${url.search}`, init);
+    return new Response(response.body, {status: response.status, headers: response.headers});
+  });
+  for (const path of billDownloadPaths) {
+    const bill = await checkout.downloadTradeBill(billDate);
+    assert.deepEqual(bill, {billDate, bytes: billBytes, sha1: billHash});
+    const [application, download] = requests.splice(0);
+    assert.equal(application.path, billApplyPath);
+    assert.equal(download.path, path);
+    assert.equal(application.headers.accept, 'application/json');
+    assert.equal(download.headers.accept, '*/*');
+    assert.equal(download.headers['accept-encoding'], 'identity');
+    for (const request of [application, download]) {
+      assert.equal(request.method, 'GET');
+      assert.equal(request.body.length, 0);
+      assertRequestSignature(request);
+    }
+  }
+});
+
+test('bill dates and signed descriptor scope are checked before any file download', async () => {
+  let calls = 0;
+  const unused = await client(() => { calls++; throw new Error('Unexpected request'); });
+  for (const value of [undefined, '2026-11-31', '2026-02-29', '2026-11-19\n', '2026-11-19&bill_type=REFUND']) {
+    await assert.rejects(unused.downloadTradeBill(value), {code: 'WECHAT_NATIVE_BILL_DATE_INVALID'});
+  }
+  assert.equal(calls, 0);
+  const invalidUrls = ['http://api.mch.weixin.qq.com/v3/billdownload/file?token=x',
+    'https://api.mch.weixin.qq.com.example.invalid/v3/billdownload/file?token=x',
+    'https://api.mch.weixin.qq.com:443/v3/billdownload/file?token=x',
+    'https://api.mch.weixin.qq.com@other.invalid/v3/billdownload/file?token=x',
+    'https://api.mch.weixin.qq.com/v3/billdownload/../bill/downloadurl?token=x',
+    'https://api.mch.weixin.qq.com/v3/billdownload/file?token=',
+    'https://api.mch.weixin.qq.com/v3/billdownload/file?token=x&token=y',
+    'https://api.mch.weixin.qq.com/v3/billdownload/file?token=x&tar_type=GZIP',
+    'https://api.mch.weixin.qq.com/v3/billdownload/file?token=x%26token%3Dy',
+    'https://api.mch.weixin.qq.com/v3/billdownload/file?token=x#y'];
+  for (const packet of [signedResponse(billDescriptor(), {edited: true}),
+    signedResponse(billDescriptor(), {signingKey: merchantKeys.privateKey}),
+    signedResponse(billDescriptor(undefined, {hash_type:'SHA256'})),
+    signedResponse(billDescriptor(undefined, {hash_value:'0'.repeat(39)})),
+    ...invalidUrls.map(download_url => signedResponse(billDescriptor(undefined, {download_url})))]) {
+    let sends = 0;
+    const checkout = await client(() => { sends++; return packet; });
+    await assert.rejects(checkout.downloadTradeBill(billDate), {code: 'WECHAT_NATIVE_PROVIDER_UNAVAILABLE'});
+    assert.equal(sends, 1);
+  }
+});
+
+test('bill downloads reject wrong digest, unexpected status, redirection and files over 32 MiB', async () => {
+  const largest = Buffer.alloc(32 * 1024 * 1024, 97);
+  const fullHash = createHash('sha1').update(largest).digest('hex');
+  const maxFile = await client(input => input.endsWith(billApplyPath)
+    ? signedResponse(billDescriptor(undefined, {hash_value: fullHash})) : new Response(largest));
+  assert.deepEqual(await maxFile.downloadTradeBill(billDate), {billDate, bytes: largest, sha1: fullHash});
+
+  let cancelled = false;
+  const largeStream = new ReadableStream({
+    start(controller) { controller.enqueue(largest); controller.enqueue(new Uint8Array(1)); },
+    cancel() { cancelled = true; },
+  });
+  for (const response of [new Response('changed bytes'), new Response(null), new Response(null, {status: 404}),
+    new Response(null, {status: 302, headers:{Location:'https://other.example.invalid/bill'}}),
+    new Response(billBytes, {headers:{'Content-Length':String(largest.length + 1)}}), new Response(largeStream)]) {
+    const checkout = await client((input, init) => {
+      assert.equal(init.redirect, 'error');
+      return input.endsWith(billApplyPath) ? signedResponse(billDescriptor()) : response;
+    });
+    await assert.rejects(checkout.downloadTradeBill(billDate), {code: 'WECHAT_NATIVE_PROVIDER_UNAVAILABLE'});
+  }
+  assert.equal(cancelled, true);
+  assert.equal(largeStream.locked, false);
+});
+
+test('a stalled bill download uses the same deadline and releases its response stream', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const {promise: started, resolve: markStarted} = Promise.withResolvers();
+  let signal, cancelled = false;
+  const body = new ReadableStream({
+    pull() { markStarted(); return new Promise(() => {}); },
+    cancel() { cancelled = true; },
+  }, {highWaterMark: 0});
+  const checkout = await client((input, init) => {
+    if (input.endsWith(billApplyPath)) return signedResponse(billDescriptor());
+    signal = init.signal;
+    return new Response(body);
+  });
+  const failure = assert.rejects(checkout.downloadTradeBill(billDate), {code: 'WECHAT_NATIVE_PROVIDER_UNAVAILABLE'});
+  await started;
+  t.mock.timers.tick(4_999);
+  assert.equal(signal.aborted, false);
+  t.mock.timers.tick(1);
+  await failure;
+  assert.equal(signal.aborted, true);
+  assert.equal(cancelled, true);
+  assert.equal(body.locked, false);
 });
 
 test('an oversized response stream is cancelled without accepting its body', async () => {

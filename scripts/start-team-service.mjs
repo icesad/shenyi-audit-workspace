@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { createPrivateKey } from 'node:crypto';
+import { createHash, createPrivateKey, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import * as fs from 'node:fs/promises';
+import { userInfo } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +11,7 @@ import { createAliyunSms } from '../server/team/aliyun-sms.mjs';
 import { createWechatOpenPlatform } from '../server/team/wechat-open-platform.mjs';
 import { assertWechatNativeBillingReady } from '../server/team/wechat-native-billing.mjs';
 import { validateWechatNativeCatalog } from '../server/team/wechat-native-checkout-pricing.mjs';
-import { APP_ID, MERCHANT_ID, createWechatSignatureVerifier, isRsa2048Key, matches } from '../server/team/wechat-native-protocol.mjs';
+import { APP_ID, MERCHANT_ID, createWechatSignatureVerifier, isRsa2048Key, matches, parsePaymentTime } from '../server/team/wechat-native-protocol.mjs';
 import { sqliteExistingFileUri } from '../server/team/sqlite-existing-file.mjs';
 
 const checkout = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -29,6 +30,10 @@ const messages = {
   MANAGED_WECHAT_INVALID: '微信扫码服务配置无效。请检查独立配置文件、应用和回调域名。',
   MANAGED_WECHAT_NATIVE_CALLBACK_NOT_READY: '微信支付通知配置或账本未就绪。',
   MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY: '微信支付官网订单页配置未就绪。',
+  WECHAT_NATIVE_BILL_DATE_INVALID: '请选择已经结束的北京时间账单日。',
+  WECHAT_NATIVE_TRADE_BILL_INVALID: '无法核实微信交易账单的格式或范围。',
+  WECHAT_NATIVE_PROVIDER_UNAVAILABLE: '暂时无法核实微信支付账单或订单状态。',
+  WECHAT_NATIVE_REPORT_UNAVAILABLE: '无法在指定的独立目录创建对账报告。',
   MANAGED_SERVICE_LISTEN_FAILED: '团队服务未能监听配置的本机端口。',
   MANAGED_SERVICE_STOP_FAILED: '团队服务关闭未完成。',
 };
@@ -278,6 +283,87 @@ async function openManagedDatabase(configuration) {
   }
 }
 
+async function reportDestination(output) {
+  const code = 'WECHAT_NATIVE_REPORT_UNAVAILABLE';
+  try {
+    const filename = localPath(output), directory = path.dirname(filename);
+    const before = await fs.lstat(directory, {bigint:true});
+    if (inside(checkout, filename) || path.extname(filename)!=='.json' || !before.isDirectory() ||
+        path.relative(directory, await fs.realpath(directory))) fail(code);
+    try {
+      await fs.lstat(filename);
+      fail(code);
+    } catch (error) {
+      if (error.code!=='ENOENT') throw error;
+    }
+    return {filename,directory,before};
+  } catch {
+    fail(code);
+  }
+}
+
+async function publishNativeReport({filename,directory,before}, report) {
+  const code = 'WECHAT_NATIVE_REPORT_UNAVAILABLE';
+  const temp = path.join(directory,'.shenyi-native-'+randomUUID()+'.tmp');
+  let created = false;
+  try {
+    if (!sameFile(before,await fs.lstat(directory,{bigint:true}))) fail(code);
+    const handle = await fs.open(temp,'wx',0o600);
+    created = true;
+    try {
+      await handle.writeFile(JSON.stringify(report,null,2)+'\n','utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    if (!sameFile(before,await fs.lstat(directory,{bigint:true}))) fail(code);
+    // Publishing a hard link makes the complete report visible atomically without overwriting an existing report.
+    await fs.link(temp,filename);
+  } catch {
+    fail(code);
+  } finally {
+    if (created) await fs.unlink(temp).catch(()=>{});
+  }
+}
+
+export async function reconcileConfiguredWechatNativeBill({filename,billDate,output}, {fetchImpl,now=Date.now} = {}) {
+  const day = matches(/^\d{4}-\d{2}-\d{2}$/,billDate) ? parsePaymentTime(billDate+'T00:00:00+08:00') : null;
+  if (day === null || day+86_400_000>now()) fail('WECHAT_NATIVE_BILL_DATE_INVALID');
+  const destination = await reportDestination(output);
+  const configuration = await loadManagedServiceConfiguration(filename);
+  if (!configuration.wechatNativeCallbackProfile || !configuration.wechatNativeWebsiteProfile) {
+    fail('MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY');
+  }
+  let callback, statement;
+  try {
+    const [{createWechatNativeOrders},{parseWechatNativeTradeBill},{reconcileWechatNativeTradeBill},{WECHAT_NATIVE_NOTIFY_PATH}] = await Promise.all([
+      import('../server/team/wechat-native-orders.mjs'),
+      import('../server/team/wechat-native-trade-bill-parser.mjs'),
+      import('../server/team/wechat-native-reconciliation.mjs'),
+      import('../server/team/wechat-native-callback.mjs'),
+    ]);
+    const initial = await checkManagedDatabase(configuration);
+    callback = await loadWechatNativeCallback(configuration.wechatNativeCallbackProfile);
+    const {certificateSerial,merchantPrivateKey} = await loadWechatNativeWebsite(configuration.wechatNativeWebsiteProfile);
+    const {merchantId,appId,keys} = callback;
+    const provider = createWechatNativeOrders({merchantId,appId,keys,certificateSerial,merchantPrivateKey,fetchImpl,now,
+      notifyUrl:configuration.apiBase+WECHAT_NATIVE_NOTIFY_PATH});
+    statement = await provider.downloadTradeBill(billDate);
+    const {rows,summary} = parseWechatNativeTradeBill(statement.bytes,{billDate,merchantId});
+    let report;
+    const consulted = await checkManagedDatabase(configuration, db => {
+      report = reconcileWechatNativeTradeBill(db,{billDate,merchantId,appId,sha1:statement.sha1,rows,summary});
+    });
+    if (!sameFile(initial,consulted)) fail('MANAGED_DATABASE_NOT_READY');
+    await publishNativeReport(destination,{...report,createdAt:new Date(now()).toISOString(),serverId:configuration.serverId,operatorAccount:userInfo().username,
+      statementSha256:createHash('sha256').update(statement.bytes).digest('hex')});
+    return {event:'native-bill-reconciled',billDate,counts:report.counts};
+  } finally {
+    callback?.apiV3Key.fill(0);
+    statement?.bytes.fill(0);
+  }
+}
+
 async function withManagedServiceInputs(filename, use) {
   const configuration = await loadManagedServiceConfiguration(filename);
   const { serverId, apiBase, listenPort: port, tlsCertificate, tlsKey, smsProfile, reviewedRecovery = false,
@@ -316,6 +402,10 @@ export function openConfiguredTeamService(filename) {
 }
 
 async function main(args) {
+  if (args.length === 6 && args[0] === '--reconcile-native-bill' && args[2] === '--config' && args[4] === '--output') {
+    console.log(JSON.stringify(await reconcileConfiguredWechatNativeBill({billDate:args[1],filename:args[3],output:args[5]})));
+    return;
+  }
   if (args.length === 3 && args[0] === '--check-database' && args[1] === '--config') {
     await checkManagedDatabase(await loadManagedServiceConfiguration(args[2]));
     console.log(JSON.stringify({ event: 'database-ready' }));
