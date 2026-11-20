@@ -2,6 +2,14 @@
 
 此目录包用于本地发行验证。它包含 `Shenyi.exe`、同目录的 Electron 运行文件和桌面客户端。包内没有安装程序、服务端或连接配置。运行时请保留完整目录。
 
+## 2026-11-21 含开通恢复流程的 Windows 双人评审包
+
+从本地候选 `6ef38ba9492240dd5eeac1b328ea0124acc2c0d4` 的干净 Git 归档离线构建，包含首管理员审批和员工邀请回执的恢复功能，以及随包的断线核对步骤。ZIP 共 203,845,075 字节，SHA-256 为 `9125ae3fe4049007bec1eb1b246c5534c6b7e447d58fe03a4f33d635e42981b1`。全新解包并用内置校验读取 2,501 个载荷文件，其中 566 个与本提交的 Git 对象逐字节一致。内清单 SHA-256 为 `2267c4482b671587559e67e3b4f463835228cf8443458ee2ca91327c6b4514ce`。
+
+在全新 Windows 合成配置从解包目录运行 `Start-Team-Managed-Pilot-Candidate.cmd`，使用真实桌面完成产品负责人登录、首次绑机、打开团队开通审核、退出和关窗。启动器返回 0，本轮专用 HTTPS 监听关闭。停服后 SQLite 可只读核对，只有一个合成账号和一条设备绑定，团队、活动会话和活动租约均为零。运行前后载荷清单一致。 [随包试点走查](PILOT_MANAGED_FIRST_TASK.md#断线后继续开通)
+
+评审 ZIP 暂存于 `C:/Users/icesa/AppData/Local/Temp/shenyi-win-onboarding-6ef38ba/Shenyi-Owner-Review-6ef38ba-Win-x64.zip`，回执见 `D:/codex-temp/shenyi-windows-onboarding-review-20261121/verification.json`。打包及开通回归 118 项通过，独立复核核对了邀请恢复的运行文件和离线文档链接。邀请应答中断恢复已有源码客户端和隔离受管 HTTPS 实测。正式 MSI 签名安装、Mac 真机和真实试点另行验收。
+
 ## 2026-11-21 当前协作版本的 Windows 评审 ZIP 与独立客户端
 
 从私有协作提交 [`704959f`](https://github.com/icesad/shenyi-audit-workspace/commit/704959f6284c961ebda48d386f88c1d6e4883a71) 的干净 Git 归档构建。Windows 评审 ZIP 全新解包核对 2,501 个载荷文件，566 个源码、资源和文档文件与 Git 对象逐字节一致。独立候选核对 2,007 个载荷文件，其中 84 个受版本管理的应用文件与该提交一致。构建、ZIP 和解包暂存均在 C 盘，D 盘保留回执。
