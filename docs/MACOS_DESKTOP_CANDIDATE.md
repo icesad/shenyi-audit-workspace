@@ -2,7 +2,13 @@
 
 候选归档分别面向 Apple 芯片 `arm64` 和 Intel `x64`，当前锁定的 Electron 需要 macOS 13 或更新版本。两份构件使用同一份审易客户端源码与生产依赖清单。产物用于后续在 Mac 上签名并验收。 [Electron macOS 支持范围](https://www.electronjs.org/docs/latest/breaking-changes#removed-macos-12-support)
 
-## 2026-11-20 当前签前候选交接
+## 2026-11-20 协作版本签前交接
+
+Apple 芯片与 Intel 两份 0.61.0 签前候选及接收工具均来自 GitHub 协作提交 `e28ae2a569cce503ad2edc82580b484b318830f0`。交接 ZIP 位于 `D:/codex-temp/shenyi-macos-collaboration-20261120/delivery/Shenyi-macOS-Signing-Handoff-0.61.0-e28ae2a.zip`，SHA-256 为 `1d8e25e681832caa0a298e8f74aa4646688fd862893574d3633ffa3f6cc41b72`。包内 README 给出接收命令，`MAC-ACCEPTANCE.md` 给出管理员配置和双架构实机签收步骤。
+
+两架构各有 1,935 个应用文件。84 个应用源文件逐一核对 Git 对象，包括桌面从设备绑定后的会话打开或恢复微信 Native 官网订单所需的源码。Windows 主机上从空目录复验两份原 ZIP，临时 Ed25519 交接验签通过，错架构和同版本更新被拒绝。Apple Developer ID、公证、Finder 启动、Keychain、默认浏览器交接和安装升级待 Mac 验收。已接受 0.61.0 的环境需要更高的获准版本完成更新验收。
+
+## 2026-11-20 上一份签前候选交接
 
 Apple 芯片和 Intel 的 0.61.0 签前候选来自提交 `e90c663`，包含批量对账中断续接的客户端改动。交接 ZIP 位于 `D:/codex-temp/shenyi-macos-native-payload-20261120/handoff/delivery/Shenyi-macOS-Signing-Handoff-0.61.0-e90c663-tools-f231992.zip`，SHA-256 为 `f7cea5c3f22183fea881aa3aca9011ab1b028839b6a3a5741473111b153ea71a`。外层包含两架构原 ZIP、清单、校验工具和实机签收表。 两份候选原 ZIP 与旧交接字节一致。当前接收工具对应提交 `f231992`，正式 ZIP 接收回执要求实际解包负载通过核验。通过可信渠道独立获取预期 SHA-256 后核对归档，然后依包内 README 验证各架构。
 
@@ -67,7 +73,7 @@ foreach ($arch in 'arm64', 'x64') {
 
 ## 从 Finder 启动已配置客户端
 
-已打包的 macOS 客户端从 `/Library/Application Support/ShenyiTeamDesktop/team-service.json` 读取由管理员部署的团队服务配置。基础配置包含配置版本、HTTPS 源地址和实例 UUID。启用受管微信时，使用版本 2 写入已批准的公开 AppID。若同时启用官网订单，使用[版本 4 受信配置](TRUSTED_TEAM_HTTPS_CONTRACT.md#同时启用微信与官网订单的版本-4-配置)，并填写独立的官网 origin。部署人员先核对源地址和实例，使用受控且无凭据的 JSON 文件。系统配置目录由 `root:wheel` 持有，权限为 `0755`，配置文件同属 `root:wheel`，权限为 `0644`。 [Apple 应用支持文件位置说明](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPFileSystem/Articles/WhereToPutFiles.html)
+已打包的 macOS 客户端从 `/Library/Application Support/ShenyiTeamDesktop/team-service.json` 读取由管理员部署的团队服务配置。基础配置包含配置版本、HTTPS 源地址和实例 UUID。启用受管微信时，使用版本 2 写入已批准的公开 AppID。微信 Native 官网付款使用受管 `apiBase` 的同源页面，基础版本 1 配置即可打开，付款能力由服务端配置提供。原先使用独立官网地址的结算流程，在同时启用微信登录时沿用[版本 4 受信配置](TRUSTED_TEAM_HTTPS_CONTRACT.md#同时启用微信与官网订单的版本-4-配置)。部署人员先核对源地址和实例，使用受控且无凭据的 JSON 文件。系统配置目录由 `root:wheel` 持有，权限为 `0755`，配置文件同属 `root:wheel`，权限为 `0644`。 [Apple 应用支持文件位置说明](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPFileSystem/Articles/WhereToPutFiles.html)
 
 首次部署时，由管理员替换示例中的源路径后运行。示例只创建审易专用目录及其配置文件。Apple 系统父目录沿用机器原有权限。普通运行账号对系统父目录、审易专用目录和配置文件均须无实际写权限，包括通过 ACL 获得的权限。
 
