@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-21 当前协作版本的 Windows 评审 ZIP 与独立客户端
+
+从私有协作提交 [`704959f`](https://github.com/icesad/shenyi-audit-workspace/commit/704959f6284c961ebda48d386f88c1d6e4883a71) 的干净 Git 归档构建。Windows 评审 ZIP 全新解包核对 2,501 个载荷文件，566 个源码、资源和文档文件与 Git 对象逐字节一致。独立候选核对 2,007 个载荷文件，其中 84 个受版本管理的应用文件与该提交一致。构建、ZIP 和解包暂存均在 C 盘，D 盘保留回执。 一键启动实际评审 ZIP 的合成官网交易。两笔订单的查看授权自然到期后，从桌面查回同一笔年费单和同一笔增购单，12 张账务表保持一致。正常退出码为 0，各自的回环 HTTPS 监听关闭，会话和租约均为零。ZIP 摘要及解包载荷复验通过。 独立 Windows 打包客户端也已实测新配置绑定并找回同队前任原单。206 项打包与账务回归全部通过。当前包为本地签前候选。正式 Windows MSI 签名安装和升级、Mac 真机、真实商户及生产发布仍待验收。 [构建及验收](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-21-当前协作版本的-windows-评审-zip-与独立客户端)
+
 ## 2026-11-21 GitHub 双人协作交接
 
 同一私有分支 `codex/team-collaboration-handoff-20261120` 汇合 [`456d8d9`](https://github.com/icesad/shenyi-audit-workspace/commit/456d8d97c89992f2c1362bea30811956b60b9f79) 和本轮交接文档。GitHub 权限核对确认 `mixue117` 可读写。双方从这一分支各开任务分支，以该分支为 PR 目标。四来源报告草稿继续由米老师验收，业务合并需要原版本、采用的专业规则和同一份合成样例。 [双人开发交接](COLLABORATION_HANDOFF.md) · [米老师操作步骤](GITHUB_BEGINNER_MI.md)
