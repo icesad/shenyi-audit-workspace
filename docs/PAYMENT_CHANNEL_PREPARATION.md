@@ -88,7 +88,31 @@
 
 若查到付款，系统保留实收证据。到期或关单后才出现的付款，以及退款异常，继续按既有规则留待复核。关单应答缺失、复查失败或历史订单仅查到不存在时，继续核对同一笔，下一笔仍待确认。官网显示待核实状态并保留原订单号。
 
-既有受管服务升级时先停止并排空旧版本的结算、出码和回调进程，再在获准副本上备份和显式升级微信账本。迁移保留原单和收款事实，无从核实历史出码情况的订单继续验签查单。核对新账本结构后，仅启动新版受管服务写入。当前验收在隔离本机数据库完成。
+既有受管服务升级时先停止并排空旧版本的结算、出码和回调进程，并完成离线备份。在已验签且解包的候选根目录，用受管服务账号对获准的独立数据库执行账本升级。`db_file` 和 `server_id` 分别取已核对的绝对库路径和服务 UUID。 [离线备份](TEAM_OFFLINE_BACKUP.md#受管库加密备份)
+
+```sh
+node --input-type=module - "$db_file" "$server_id" <<'JS'
+import { realpathSync } from 'node:fs'
+import { DatabaseSync } from 'node:sqlite'
+import { assertManagedDatabaseReady } from './server/team/managed-database-readiness.mjs'
+import { sqliteExistingFileUri } from './server/team/sqlite-existing-file.mjs'
+import { assertWechatNativeBillingReady, installWechatNativeBillingSchema } from './server/team/wechat-native-billing.mjs'
+
+const [file, serverId] = process.argv.slice(2)
+if (!file || realpathSync(file) !== file) throw new Error('Use the verified absolute database path')
+const db = new DatabaseSync(sqliteExistingFileUri(file, 'rw'))
+try {
+  assertManagedDatabaseReady(db, serverId)
+  installWechatNativeBillingSchema(db)
+  assertWechatNativeBillingReady(db)
+  console.log('Native billing ledger ready')
+} finally {
+  db.close()
+}
+JS
+```
+
+迁移保留原单和收款事实，无从核实历史出码情况的订单继续验签查单。再用 `--check-startup --config` 核对完整受管配置。生产切换获准后仅启动新版写入进程。当前验收在隔离本机数据库完成。
 
 ## 接入时从现有产品继承的规则
 

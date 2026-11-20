@@ -13,7 +13,7 @@ git archive --format=tar --output="$release_dir/shenyi-team-${release}.tar" "$re
   website/native-payment.html website/native-payment.css website/native-payment.js website/styles.css \
   scripts/start-team-service.mjs scripts/bootstrap-managed-team.mjs scripts/team-database-backup.mjs \
   scripts/check-team-service.mjs scripts/check-linux-team-file-permissions.py \
-  docs/LINUX_TEAM_DEPLOYMENT.md docs/MANAGED_TEAM_SERVICE.md docs/TEAM_OFFLINE_BACKUP.md
+  docs/LINUX_TEAM_DEPLOYMENT.md docs/MANAGED_TEAM_SERVICE.md docs/TEAM_OFFLINE_BACKUP.md docs/PAYMENT_CHANNEL_PREPARATION.md
 sha256sum "$release_dir/shenyi-team-${release}.tar"
 ```
 
