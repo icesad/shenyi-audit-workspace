@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 macOS 签前交接包
+
+Apple 芯片与 Intel 的现行签前原 ZIP、清单、接收工具和实机验收表已合为一份可独立移交的归档。两架构原件、应用负载摘要和离线签验均在干净接收目录复验，84 项相关回归通过。正式签名、公证和实机待验。证据见 `D:/codex-temp/shenyi-macos-signing-handoff-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-macos-签前交接包)
+
 ## 2026-11-20 Windows 评审包运行目录隔离
 
 Windows 评审包已把 Electron 工作副本及原生选档日志限在本轮目录。新版一键登录和四职级原生选档后，同一解压目录原样通过严格复验。141 项相关测试通过。证据见 `D:/codex-temp/shenyi-owner-review-runtime-log-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-评审包运行目录隔离)

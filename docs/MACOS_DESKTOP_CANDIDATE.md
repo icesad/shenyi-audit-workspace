@@ -2,7 +2,13 @@
 
 候选归档分别面向 Apple 芯片 `arm64` 和 Intel `x64`，当前锁定的 Electron 需要 macOS 13 或更新版本。两份构件使用同一份审易客户端源码与生产依赖清单。产物用于后续在 Mac 上签名并验收。 [Electron macOS 支持范围](https://www.electronjs.org/docs/latest/breaking-changes#removed-macos-12-support)
 
-## 2026-11-19 当前候选交接
+## 2026-11-20 当前签前候选交接
+
+两架构现行 0.61.0 签前原 ZIP 来自提交 `114fa78`。同一外层交接包内有配套清单、候选签验和正式接收工具，以及 Mac 实机签收表，可在没有源码仓库的接收目录使用。归档位于 `D:/codex-temp/shenyi-macos-signing-handoff-20261120/delivery/Shenyi-macOS-Signing-Handoff-0.61.0-114fa78.zip`。
+
+通过可信渠道独立获取归档 SHA-256，当前本地记录为 `019353e15d86c9babe35fd97d70a46cbeaf2142aef112bac977c8af9fed9f1d7`。核对外层归档后阅读包内 README，按对应架构验证原 ZIP、清单和应用负载。本轮空目录复验了两份候选的字节、架构、一次性 Ed25519 签验和同版本拒绝。验收证据见 `D:/codex-temp/shenyi-macos-signing-handoff-20261120/verification.json`。Apple 正式签名、公证和实机待验。
+
+## 2026-11-19 历史候选交接
 
 Apple 芯片与 Intel 的 0.61.0 原 ZIP 与 Windows 评审客户端均基于 `418250f`。本轮 Mac 签前交接包位于 `D:/codex-temp/shenyi-m7-macos-parity-20261119/handoff/Shenyi-macOS-Candidate-Handoff-0.61.0.zip`。选择对应架构目录的原 ZIP 与清单，交接包内的 README 和 SHA256SUMS.txt 可独立使用。证据见 `D:/codex-temp/shenyi-m7-macos-parity-20261119/verification.json`。
 
