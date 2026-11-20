@@ -1,5 +1,11 @@
 # 审易团队服务 Linux 单机部署候选
 
+## 2026-11-21 微信 Native 双路上线检查
+
+一次性上线检查和定时探针都能核对微信 Native 付款页、静态资源、动作接口与商户回调。在实际受管服务和本机 HTTPS 转发上，全部关闭、仅回调、付款页和回调同时启用三种配置均通过。模拟公共入口漏转关单路径或丢失禁止索引响应头时，仅公共入口检查失败，并报告具体路径与诊断码。
+
+探针只发匿名 `GET` 和 `HEAD`。三份合成库各 105 张表及文件字节不变，供应商调用为零。两种故障报告写入监控转换记录后，上一版监控均成功读取并记录恢复。相关 Node.js 检查 134 项通过，Python 发布与回滚检查 27 项通过。此次边缘转发用本机 Node HTTPS 代理，Nginx 部署和真实商户实测待验。 [检查命令与预期结果](#一次性上线检查)
+
 部署目标为经授权的单台国内 Linux 主机。Nginx 在 443 接入桌面请求，向 `127.0.0.1:9443` 发起独立 TLS 连接。Node 以专用系统账号运行，SQLite 和配置放在应用发布目录之外。域名、云资源、证书和生产账号由实际开通流程提供。[国内上线时点](COMMERCIALIZATION_ROADMAP.md#4-国内上线手续与时点)
 
 ## 2026-11-21 当前协作提交的 Ubuntu 发布、恢复与回滚
@@ -174,6 +180,15 @@ curl --fail-with-body --silent --show-error --include "https://${api_host}/api/a
 
 后端与公共团队 API 各使用匿名 GET 确认八个支付演练接口返回 404。路径包括 `/api/billing/simulation/` 下的 `notifications`、`payment-exceptions`、`order-closures`，以及 `/api/website-checkout/` 下的 `context`、`orders`、`seat-context`、`seat-quote`、`seat-orders`。这些地址只供本机合成演练。受管服务在分派请求方法和读取正文之前拒绝访问，保留已授权团队的订阅与席位查询。首次从旧版本切换时，激活流程使用上版受信探针。切换后再运行本节命令，确认 `backendIdentity` 与 `publicIdentity` 均报告 `rehearsalRoutesHidden: 8` 后完成上线验收。
 
+两路身份与演练接口通过后，分别核对微信 Native 支付。探针按主配置里的商户回调和官网付款配置路径确定预期状态，并在 `backendIdentity` 和 `publicIdentity` 报告 `nativeWebsiteMode` 与 `nativeCallbackMode`。
+
+| 配置路径 | 未配置时 | 已配置时 |
+| --- | --- | --- |
+| `wechatNativeWebsiteProfile` | 付款页、资源和动作接口均返回 `404`。 | 对 `/api/website-pay/` 及四个静态资源发 `HEAD`，预期 `200`、正确的内容类型、`no-store` 和 `noindex, nofollow`。对报价、确认、原单、出码、查单和关单接口发 `GET`，预期 `405` 和 `Allow: POST`。 |
+| `wechatNativeCallbackProfile` | 对 `/api/billing/wechat-native/notify` 发 `GET`，预期 `404`。 | 同一路径预期 `405` 和 `Allow: POST`。允许先只配置回调。 |
+
+返回 `NATIVE_PAYMENT_ROUTE_STATUS_MISMATCH` 或 `NATIVE_PAYMENT_ROUTE_HEADERS_MISMATCH` 时，按失败的后端或公共入口及回执中的路径核对部署。后端通过、公共入口失败时，先核对边缘转发、响应头及实际接入的版本。部署前后复验记录两路的实际状态。探针检查付款页可达及接口方法约束。真实商户配置、报价、签名通知、付款与到账仍需单独验收。 [商户验收](PAYMENT_CHANNEL_PREPARATION.md#负责人确认及验收证据)
+
 | JSON `status` | 退出码 | 含义 |
 | --- | --- | --- |
 | `healthy` | `0` | 必需检查通过，剩余磁盘和证书有效期均未触发告警。 |
@@ -182,7 +197,7 @@ curl --fail-with-body --silent --show-error --include "https://${api_host}/api/a
 
 输出的 `checks` 可定位具体检查和度量。参数、配置或后端 CA 在检查开始前被拒绝时，输出顶层 `code`。
 
-该命令只对固定路径发出无凭据的只读 GET，读取配置、后端 CA 和文件系统元数据。SQLite 内容和 TLS 私钥字节不在读取范围内，命令不写入文件。该探针可在上线、变更或回滚后手动运行。
+该命令只向固定路径发出无凭据、无请求正文的 `GET` 和 `HEAD`。它读取主配置、后端 CA 和文件系统元数据，商户配置文件、SQLite 内容和 TLS 私钥留在服务进程。这些请求无需访问支付供应商。该探针可在上线、变更或回滚后手动运行。定时检查的单次结果包含 Native 路由诊断，持久化转换仅记录对应身份检查项和失败状态，供回退后的旧版监控读取。
 
 ## 定时健康检查
 
@@ -288,7 +303,7 @@ journalctl -u shenyi-team-monitor.service -n 30 --no-pager
 
 新版工具在隔离 Ubuntu 实际验签并离线暂存 36 个生产依赖包。服务代码和依赖的同长度改动、增加文件、缺少文件均在运行候选和停服前被拒绝。恢复原样后，候选通过实际服务切换及双路 HTTPS，停服复核的数据库与合成原件保持。 [演练记录](STATUS.md#2026-11-20-m7bg-linux-发布目录完整性复核)
 
-启动候选后，使用上一版的探针检查两路 HTTPS、实例和进程。原有磁盘和证书临近阈值的提示可保留，新增提示或必要检查失败会停止变更。隔离环境可显式提供 `--edge-ca` 读取受信的边缘 CA，生产公有证书通常使用系统信任。 [systemd 服务状态与重启计数](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html)
+切换前用运行版本的探针建立基线。启动候选后，由已验签的候选探针检查两路 HTTPS、实例和进程。原有磁盘和证书临近阈值的提示可保留，新增提示或必要检查失败会停止变更。隔离环境可显式提供 `--edge-ca` 读取受信的边缘 CA，生产公有证书通常使用系统信任。 [systemd 服务状态与重启计数](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html)
 
 激活返回 `0` 时，旧版保存在 `previous-$release`。候选启动或探针失败且旧版已恢复时返回 `2`，候选保留在 `failed-$release`。两种结果均写入 `activation-$release.json`。返回 `1` 或进程意外退出时，先核对结案回执及 `/opt/shenyi-team/.shenyi-activation.json`。日志仍在且结案回执尚未生成时，使用原批准版本、归档 SHA-256 和原信任设置执行恢复。
 

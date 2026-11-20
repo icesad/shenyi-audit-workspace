@@ -22,6 +22,35 @@ const rehearsalRoutes = [
   '/api/website-checkout/seat-quote',
   '/api/website-checkout/seat-orders',
 ];
+const nativeAssets = new Map([
+  ['/api/website-pay/', 'text/html; charset=utf-8'],
+  ['/api/website-pay/payment.js', 'text/javascript; charset=utf-8'],
+  ['/api/website-pay/payment.css', 'text/css; charset=utf-8'],
+  ['/api/website-pay/base.css', 'text/css; charset=utf-8'],
+  ['/api/website-pay/brand.png', 'image/png'],
+]);
+const nativeActions = ['order', 'code', 'check', 'close', 'quote', 'confirm'].map(action => '/api/website-pay/' + action);
+const nativeNotify = '/api/billing/wechat-native/notify';
+const nativeProbeMethods = new Map([
+  ...[...nativeAssets.keys()].map(route => [route, 'HEAD']),
+  ...[...nativeActions, nativeNotify].map(route => [route, 'GET']),
+]);
+const opaqueNativeResponse = 'Owned payment route response must never be printed';
+const identityPass = (website = false, callback = false) => ({
+  status: 'pass', rehearsalRoutesHidden: 8, nativeWebsiteMode: website ? 'enabled' : 'disabled',
+  nativeCallbackMode: callback ? 'enabled' : 'disabled',
+});
+
+function nativeReply(route, fallback, website, callback) {
+  if (website && nativeAssets.has(route)) {
+    return { status: 200, type: nativeAssets.get(route), body: opaqueNativeResponse,
+      headers: { 'cache-control': 'private, no-store, max-age=0', 'x-robots-tag': 'noindex, nofollow' } };
+  }
+  if ((website && nativeActions.includes(route)) || (callback && route === nativeNotify)) {
+    return { status: 405, headers: { allow: 'POST' }, body: opaqueNativeResponse };
+  }
+  return fallback;
+}
 
 async function run(args, ca, monitorEnvironment = {}) {
   const env = childEnvironment({ NODE_EXTRA_CA_CERTS: ca });
@@ -76,7 +105,8 @@ async function fixture(t) {
     return (req, res) => {
       const event = { side, route: req.url, method: req.method, host: req.headers.host, servername: req.socket.servername,
         authorization: req.headers.authorization, cookie: req.headers.cookie, contentLength: req.headers['content-length'],
-        transferEncoding: req.headers['transfer-encoding'], bodyBytes: 0 };
+        transferEncoding: req.headers['transfer-encoding'],
+        deviceHeaders: Object.keys(req.headers).filter(name => name.startsWith('x-shenyi-device-')), bodyBytes: 0 };
       events.push(event);
       req.on('data', chunk => { event.bodyBytes += chunk.length; });
       let answer = side === 'backend' && req.url === '/ready'
@@ -85,6 +115,7 @@ async function fixture(t) {
           ? { status: 200, headers: { 'x-shenyi-server-id': serverId }, body: methods() }
           : { status: 404, body: '<html>Owned synthetic edge 404</html>', type: 'text/html' };
       answer = state[side]?.(req, answer) ?? answer;
+      if (answer.disconnect) { req.socket.destroy(); return; }
       res.writeHead(answer.status, { 'content-type': answer.type ?? 'application/json; charset=utf-8', ...answer.headers });
       const body = typeof answer.body === 'string' || Buffer.isBuffer(answer.body) ? answer.body : JSON.stringify(answer.body);
       if (answer.hang) res.write(body);
@@ -97,6 +128,8 @@ async function fixture(t) {
   const backendPort = await listen(backend), edgePort = await listen(edge);
   const configuration = { schemaVersion: 1, database: path.join(directory, 'metadata-only.sqlite'), apiBase: `https://localhost:${edgePort}`,
     serverId, listenPort: backendPort, tlsCertificate: path.join(directory, 'must-not-open-server-cert.pem'), tlsKey: path.join(directory, 'must-not-open-server-key.pem') };
+  const callbackProfile = path.join(directory, 'must-not-open-native-callback-profile.json');
+  const websiteProfile = path.join(directory, 'must-not-open-native-website-profile.json');
   const databaseBytes = Buffer.from('Opaque synthetic metadata target; deliberately not a SQLite database.');
   await fs.writeFile(configuration.database, databaseBytes, { flag: 'wx' });
   const reset = async () => {
@@ -106,8 +139,16 @@ async function fixture(t) {
   };
   await reset();
   const args = ['--config', filename, '--backend-ca', ca, '--disk-warning-bytes', '1', '--certificate-warning-days', '1'];
+  async function configureNative({ website = false, callback = false } = {}) {
+    await fs.writeFile(filename, JSON.stringify({ ...configuration,
+      ...(website ? { wechatNativeWebsiteProfile: websiteProfile } : {}),
+      ...(callback ? { wechatNativeCallbackProfile: callbackProfile } : {}) }));
+    for (const side of ['backend', 'edge']) {
+      state[side] = (req, answer) => nativeReply(req.url, answer, website, callback);
+    }
+  }
   return { directory, filename, configuration, ca, publicCa, tls, backend, edge, state, events, reset, args,
-    run: () => run(args, publicCa), databaseBytes };
+    configureNative, callbackProfile, websiteProfile, run: () => run(args, publicCa), databaseBytes };
 }
 
 function failedCheck(result, name, code) {
@@ -115,6 +156,27 @@ function failedCheck(result, name, code) {
   assert.equal(result.result.status, 'failed');
   assert.equal(result.result.checks[name].status, 'fail');
   assert.equal(result.result.checks[name].code, code);
+}
+
+function assertReadOnlyRequests(f) {
+  for (const event of f.events) {
+    assert.equal(event.method, nativeProbeMethods.get(event.route) ?? 'GET');
+    assert.equal(event.host, new URL(f.configuration.apiBase).host);
+    assert.equal(event.servername, 'localhost');
+    assert.equal(event.authorization, undefined);
+    assert.equal(event.cookie, undefined);
+    assert.equal(event.contentLength, undefined);
+    assert.equal(event.transferEncoding, undefined);
+    assert.deepEqual(event.deviceHeaders, []);
+    assert.equal(event.bodyBytes, 0);
+  }
+}
+
+function assertNativeRequests(f) {
+  const relevant = f.events.filter(event => nativeProbeMethods.has(event.route));
+  assert.deepEqual(relevant.map(({ side, method, route }) => `${side} ${method} ${route}`).sort(),
+    ['backend', 'edge'].flatMap(side => [...nativeProbeMethods].map(([route, method]) => `${side} ${method} ${route}`)).sort());
+  assertReadOnlyRequests(f);
 }
 
 async function monitorDirectory(under) {
@@ -151,26 +213,99 @@ test('release lifecycle CLI verifies owned TLS endpoints, boundaries, and diagno
     assert.equal(Object.keys(result.result.checks).length, 9);
     assert.ok(Object.values(result.result.checks).every(value => value.status === 'pass'));
     for (const name of ['backendIdentity', 'publicIdentity']) {
-      assert.deepEqual(result.result.checks[name], { status: 'pass', rehearsalRoutesHidden: 8 });
+      assert.deepEqual(result.result.checks[name], identityPass());
     }
     assert.deepEqual(f.events.map(e => `${e.side} ${e.route}`).sort(), [
       'backend /api/auth/methods', 'backend /ready', 'edge /api/auth/methods', 'edge /health', 'edge /ready',
-      ...['backend', 'edge'].flatMap(side => rehearsalRoutes.map(route => `${side} ${route}`)),
+      ...['backend', 'edge'].flatMap(side => [...rehearsalRoutes, ...nativeProbeMethods.keys()].map(route => `${side} ${route}`)),
     ].sort());
-    for (const event of f.events) {
-      assert.equal(event.method, 'GET');
-      assert.equal(event.host, new URL(f.configuration.apiBase).host);
-      assert.equal(event.servername, 'localhost');
-      assert.equal(event.authorization, undefined);
-      assert.equal(event.cookie, undefined);
-      assert.equal(event.contentLength, undefined);
-      assert.equal(event.transferEncoding, undefined);
-      assert.equal(event.bodyBytes, 0);
-    }
+    assertNativeRequests(f);
     assert.deepEqual(await fs.readFile(f.configuration.database), f.databaseBytes);
     await assert.rejects(fs.stat(f.configuration.tlsKey), { code: 'ENOENT' });
     await assert.rejects(fs.stat(f.configuration.tlsCertificate), { code: 'ENOENT' });
     for (const secret of [f.directory, f.configuration.serverId, 'fingerprint']) assert.equal(result.stdout.includes(secret), false);
+  });
+
+  for (const website of [false, true]) {
+    await scenario(website ? 'Native website and callback are enabled on both TLS sides' : 'Native callback can be enabled while the website stays disabled', async () => {
+      await f.configureNative({ website, callback: true });
+      const result = await f.run();
+      assert.equal(result.code, 0, result.stdout + result.stderr);
+      assert.equal(result.result.status, 'healthy');
+      assert.equal(Object.keys(result.result.checks).length, 9);
+      for (const name of ['backendIdentity', 'publicIdentity']) assert.deepEqual(result.result.checks[name], identityPass(website, true));
+      assertNativeRequests(f);
+      for (const file of [f.callbackProfile, f.websiteProfile]) await assert.rejects(fs.lstat(file), { code: 'ENOENT' });
+      for (const detail of [opaqueNativeResponse, f.callbackProfile, f.websiteProfile]) assert.ok(!result.stdout.includes(detail));
+      assert.deepEqual(await fs.readFile(f.configuration.database), f.databaseBytes);
+    });
+  }
+
+  for (const { side, website, callback, route, status, label } of [
+    { side: 'edge', website: false, callback: false, route: '/api/website-pay/', status: 200, label: 'unexpected public checkout' },
+    { side: 'edge', website: false, callback: true, route: '/api/website-pay/order', status: 405, label: 'public checkout leaks under callback-only configuration' },
+    { side: 'edge', website: false, callback: true, route: nativeNotify, status: 404, label: 'configured public callback is hidden' },
+    { side: 'edge', website: true, callback: true, route: '/api/website-pay/payment.js', status: 404, label: 'configured checkout asset is hidden at the edge' },
+    { side: 'backend', website: true, callback: true, route: '/api/website-pay/confirm', status: 200, label: 'configured backend checkout action accepts GET' },
+  ]) await scenario(label, async () => {
+    await f.configureNative({ website, callback });
+    const normal = f.state[side];
+    f.state[side] = (req, answer) => req.url === route ? { status, body: opaqueNativeResponse } : normal(req, answer);
+    const result = await f.run();
+    const [failed, healthy] = side === 'edge' ? ['publicIdentity', 'backendIdentity'] : ['backendIdentity', 'publicIdentity'];
+    failedCheck(result, failed, 'NATIVE_PAYMENT_ROUTE_STATUS_MISMATCH');
+    assert.deepEqual(result.result.checks[failed], { status: 'fail', code: 'NATIVE_PAYMENT_ROUTE_STATUS_MISMATCH', route, httpStatus: status });
+    assert.deepEqual(result.result.checks[healthy], identityPass(website, callback));
+    assertNativeRequests(f);
+    assert.ok(!result.stdout.includes(opaqueNativeResponse));
+  });
+
+  for (const { route, label, override } of [
+    { route: '/api/website-pay/payment.js', label: 'JavaScript MIME', override: expected => ({ ...expected, type: 'text/plain; charset=utf-8' }) },
+    { route: '/api/website-pay/base.css', label: 'cacheability', override: expected => ({ ...expected, headers: { ...expected.headers, 'cache-control': 'private, max-age=0' } }) },
+    { route: '/api/website-pay/payment.css', label: 'duplicate no-store', override: expected => ({ ...expected, headers: { ...expected.headers, 'cache-control': ['no-store', 'no-store'] } }) },
+    { route: '/api/website-pay/brand.png', label: 'missing robots exclusion', override: expected => ({ ...expected, headers: { 'cache-control': expected.headers['cache-control'] } }) },
+    { route: '/api/website-pay/quote', label: 'wrong action Allow', override: expected => ({ ...expected, headers: { allow: 'GET, POST' } }) },
+    { route: nativeNotify, label: 'duplicate callback Allow', override: expected => ({ ...expected, headers: { allow: ['POST', 'POST'] } }) },
+  ]) await scenario(`public Native capability rejects ${label}`, async () => {
+    await f.configureNative({ website: true, callback: true });
+    const normal = f.state.edge;
+    f.state.edge = (req, answer) => {
+      const current = normal(req, answer);
+      return req.url === route ? override(current) : current;
+    };
+    const result = await f.run();
+    failedCheck(result, 'publicIdentity', 'NATIVE_PAYMENT_ROUTE_HEADERS_MISMATCH');
+    assert.deepEqual(result.result.checks.publicIdentity,
+      { status: 'fail', code: 'NATIVE_PAYMENT_ROUTE_HEADERS_MISMATCH', route, httpStatus: nativeAssets.has(route) ? 200 : 405 });
+    assert.deepEqual(result.result.checks.backendIdentity, identityPass(true, true));
+    assertNativeRequests(f);
+    assert.ok(!result.stdout.includes(opaqueNativeResponse));
+  });
+
+  await scenario('a Native capability redirect is rejected and never followed', async () => {
+    await f.configureNative({ website: true, callback: true });
+    const normal = f.state.edge;
+    f.state.edge = (req, answer) => req.url === nativeNotify
+      ? { status: 302, headers: { location: f.configuration.apiBase + '/must-not-follow' }, body: opaqueNativeResponse }
+      : normal(req, answer);
+    const result = await f.run();
+    failedCheck(result, 'publicIdentity', 'NATIVE_PAYMENT_ROUTE_STATUS_MISMATCH');
+    assert.equal(result.result.checks.publicIdentity.route, nativeNotify);
+    assert.equal(result.result.checks.publicIdentity.httpStatus, 302);
+    assert.ok(!f.events.some(event => event.route === '/must-not-follow'));
+    assertNativeRequests(f);
+  });
+
+  await scenario('a closed Native HTTP connection keeps the network failure diagnostic', async () => {
+    await f.configureNative({ website: false, callback: true });
+    const normal = f.state.backend;
+    f.state.backend = (req, answer) => req.url === nativeNotify ? { disconnect: true } : normal(req, answer);
+    const result = await f.run();
+    failedCheck(result, 'backendIdentity', 'REQUEST_FAILED');
+    assert.deepEqual(result.result.checks.backendIdentity, { status: 'fail', code: 'REQUEST_FAILED', route: nativeNotify });
+    assert.deepEqual(result.result.checks.publicIdentity, identityPass(false, true));
+    assertNativeRequests(f);
   });
 
   await scenario('warning exit 2 identifies certificate thresholds without failed checks', async () => {
@@ -239,7 +374,7 @@ test('release lifecycle CLI verifies owned TLS endpoints, boundaries, and diagno
         const result = await f.run();
         failedCheck(result, name, 'REHEARSAL_ROUTE_VISIBLE');
         assert.deepEqual(result.result.checks[name], { status: 'fail', code: 'REHEARSAL_ROUTE_VISIBLE', route, httpStatus: status });
-        assert.deepEqual(result.result.checks[other], { status: 'pass', rehearsalRoutesHidden: 8 });
+        assert.deepEqual(result.result.checks[other], identityPass());
         assert.ok(!result.stdout.includes(privateResponse));
       });
     }
@@ -363,6 +498,42 @@ test('release lifecycle CLI verifies owned TLS endpoints, boundaries, and diagno
     assert.deepEqual(byFlag.result.monitor, { ...initialized, changed: false });
   });
 
+  await scenario('Native capability failures retain CLI diagnoses and the existing monitor state format', async () => {
+    await f.configureNative({ website: true, callback: true });
+    const { directory, filename } = await monitorDirectory(f.directory);
+    const args = [...f.args, '--monitor-state-directory', directory];
+    const normal = f.state.edge;
+    monitorTransition(await run(args, f.publicCa),
+      { code: 0, status: 'healthy', previousStatus: null, event: 'initialized', issues: [] });
+    let opened;
+    let failureBytes;
+    for (const [newAnswer, code] of [
+      [{ status: 405, headers: { allow: 'GET' }, body: opaqueNativeResponse }, 'NATIVE_PAYMENT_ROUTE_HEADERS_MISMATCH'],
+      [{ status: 404, body: opaqueNativeResponse }, 'NATIVE_PAYMENT_ROUTE_STATUS_MISMATCH'],
+    ]) {
+      f.state.edge = (req, answer) => req.url === nativeNotify ? newAnswer : normal(req, answer);
+      const failure = await run(args, f.publicCa);
+      failedCheck(failure, 'publicIdentity', code);
+      assert.equal(failure.result.checks.publicIdentity.route, nativeNotify);
+      const persisted = await fs.readFile(filename);
+      if (opened) {
+        assert.deepEqual(failure.result.monitor, { ...opened, changed: false });
+        assert.deepEqual(persisted, failureBytes);
+      } else {
+        opened = monitorTransition(failure, { code: 1, status: 'failed', previousStatus: 'healthy',
+          event: 'opened', issues: [{ facet: 'publicIdentity', status: 'fail' }] });
+        failureBytes = persisted;
+      }
+      for (const detail of [nativeNotify, 'httpStatus', 'NATIVE_PAYMENT_ROUTE_', opaqueNativeResponse, f.callbackProfile, f.websiteProfile]) {
+        assert.equal(persisted.toString('utf8').includes(detail), false);
+        assert.equal(JSON.stringify(failure.result.monitor).includes(detail), false);
+      }
+    }
+    f.state.edge = normal;
+    monitorTransition(await run(args, f.publicCa),
+      { code: 0, status: 'healthy', previousStatus: 'failed', event: 'recovered', issues: [] });
+  });
+
   await scenario('corrupt and hard-linked monitor state are preserved, with the probe result available', async () => {
     const poison = Buffer.from('{ "synthetic-sensitive-state": "must never appear in output"');
     for (const hardLinked of [false, true]) {
@@ -428,6 +599,8 @@ test('release lifecycle CLI verifies owned TLS endpoints, boundaries, and diagno
     try { await invalid(f.args, 'INVALID_BACKEND_CA'); }
     finally { await fs.unlink(linkedCa); }
     await fs.writeFile(f.filename, JSON.stringify({ ...f.configuration, listenPort: 0 }));
+    await invalid(f.args, 'INVALID_CONFIGURATION');
+    await f.configureNative({ website: true, callback: false });
     await invalid(f.args, 'INVALID_CONFIGURATION');
   });
 });

@@ -25,6 +25,17 @@ const rehearsalRoutes = [
   '/api/website-checkout/seat-quote',
   '/api/website-checkout/seat-orders',
 ];
+const nativeWebsiteRoot = '/api/website-pay/';
+const nativeCallbackRoute = '/api/billing/wechat-native/notify';
+const nativeWebsiteAssets = new Map([
+  [nativeWebsiteRoot, 'text/html; charset=utf-8'],
+  [nativeWebsiteRoot + 'payment.js', 'text/javascript; charset=utf-8'],
+  [nativeWebsiteRoot + 'payment.css', 'text/css; charset=utf-8'],
+  [nativeWebsiteRoot + 'base.css', 'text/css; charset=utf-8'],
+  [nativeWebsiteRoot + 'brand.png', 'image/png'],
+]);
+const nativeWebsiteActions = ['order', 'code', 'check', 'close', 'quote', 'confirm']
+  .map(action => nativeWebsiteRoot + action);
 const defaults = { '--disk-warning-bytes': '10737418240', '--certificate-warning-days': '30' };
 const pass = (measurements = {}) => ({ status: 'pass', ...measurements });
 const warn = (code, measurements) => ({ status: 'warning', code, ...measurements });
@@ -97,10 +108,10 @@ function requestFault(error) {
   return 'REQUEST_FAILED';
 }
 
-async function probe(options, endpoint) {
+async function probe(options, endpoint, method = 'GET') {
   try {
     return await new Promise((resolve, reject) => {
-      const outgoing = request({ ...options, path: endpoint, method: 'GET', signal: AbortSignal.timeout(deadlineMs) }, response => {
+      const outgoing = request({ ...options, path: endpoint, method, signal: AbortSignal.timeout(deadlineMs) }, response => {
         boundedResponse(response).then(resolve, reject).finally(() => response.destroy());
       });
       outgoing.once('error', reject);
@@ -136,6 +147,43 @@ function identity(response, serverId, rehearsals) {
     if (rehearsal.code !== 404) return fail('REHEARSAL_ROUTE_VISIBLE', { route, httpStatus: rehearsal.code });
   }
   return pass({ rehearsalRoutesHidden: rehearsals.length });
+}
+
+function header(response, name) {
+  const values = response.headers[name];
+  return values?.length === 1 ? values[0] : null;
+}
+
+async function checkNativePayment(options, identityResult, { website, callback }) {
+  if (identityResult.status !== 'pass') return identityResult;
+
+  const routes = [
+    ...[...nativeWebsiteAssets].map(([route, type]) => ({
+      route, method: 'HEAD', expectedStatus: website ? 200 : 404, type,
+    })),
+    ...nativeWebsiteActions.map(route => ({ route, expectedStatus: website ? 405 : 404 })),
+    { route: nativeCallbackRoute, expectedStatus: callback ? 405 : 404 },
+  ];
+  const responses = await Promise.all(routes.map(({ route, method }) => probe(options, route, method)));
+  for (const [index, response] of responses.entries()) {
+    const { route, expectedStatus, type } = routes[index];
+    if (response.fault) return fail(response.fault, { route });
+    const details = { route, httpStatus: response.code };
+    if (response.code !== expectedStatus) return fail('NATIVE_PAYMENT_ROUTE_STATUS_MISMATCH', details);
+    if (expectedStatus === 200) {
+      const cacheControl = header(response, 'cache-control');
+      const cacheDirectives = cacheControl?.split(',').map(value => value.trim().toLowerCase());
+      if (header(response, 'content-type') !== type || !cacheDirectives?.includes('no-store') ||
+          header(response, 'x-robots-tag') !== 'noindex, nofollow') {
+        return fail('NATIVE_PAYMENT_ROUTE_HEADERS_MISMATCH', details);
+      }
+    }
+    if (expectedStatus === 405 && header(response, 'allow') !== 'POST') {
+      return fail('NATIVE_PAYMENT_ROUTE_HEADERS_MISMATCH', details);
+    }
+  }
+  return { ...identityResult, nativeWebsiteMode: website ? 'enabled' : 'disabled',
+    nativeCallbackMode: callback ? 'enabled' : 'disabled' };
 }
 
 function hidden(response) {
@@ -183,9 +231,15 @@ async function checkService(profile, ca, diskWarningBytes, certificateWarningDay
       Promise.all(rehearsalRoutes.map(route => probe(backend, route))),
       Promise.all(rehearsalRoutes.map(route => probe(edge, route))),
     ]);
+    const nativePayment = { website: profile.wechatNativeWebsiteProfile !== undefined,
+      callback: profile.wechatNativeCallbackProfile !== undefined };
+    const [backendIdentity, publicIdentity] = await Promise.all([
+      checkNativePayment(backend, identity(local, profile.serverId, backendRehearsals), nativePayment),
+      checkNativePayment(edge, identity(publicMethods, profile.serverId, publicRehearsals), nativePayment),
+    ]);
     const now = Date.now();
-    return { backendReadiness: readiness(ready), backendIdentity: identity(local, profile.serverId, backendRehearsals),
-      publicIdentity: identity(publicMethods, profile.serverId, publicRehearsals), publicReadinessHidden: hidden(publicReady), publicHealthHidden: hidden(publicHealth),
+    return { backendReadiness: readiness(ready), backendIdentity, publicIdentity,
+      publicReadinessHidden: hidden(publicReady), publicHealthHidden: hidden(publicHealth),
       backendCertificate: expiration(ready, now, certificateWarningDays), publicCertificate: expiration(publicMethods, now, certificateWarningDays),
       tlsKeySeparation: separatedKeys(ready, publicMethods), databaseVolume: volume };
   } finally { agent.destroy(); }
