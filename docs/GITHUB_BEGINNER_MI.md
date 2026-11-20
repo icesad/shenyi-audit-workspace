@@ -2,7 +2,7 @@
 
 适用审易协作开发，苹果电脑优先，Windows 同样可用。更新于 2026-11-20。
 
-米老师的 `mixue117` 已有私有仓库的读取和写入权限。使用自己的账号登录后，可以直接看文档、克隆仓库和上传自己的任务分支。下文注册和邀请步骤供以后新同事参考。 [当前双人开发交接](COLLABORATION_HANDOFF.md)
+米老师的 `mixue117` 已有私有仓库的读取和写入权限。用这个账号登录后就能看文档、下载代码或上传自己的业务分支，可以跳过下文的注册和邀请步骤。第一次同步时，用 GitHub Desktop 选 `codex/team-collaboration-handoff-20261120`。已有业务代码时，先按交接文档登记原版本和涉及文件，再确定导入方式。 [打开当前协作分支](https://github.com/icesad/shenyi-audit-workspace/tree/codex/team-collaboration-handoff-20261120) · [当前双人开发交接](COLLABORATION_HANDOFF.md)
 
 **先读这句话：不会写代码，也可以参与。米老师先做「提需求、反馈问题、验收」即可，不需要先学终端命令。**
 

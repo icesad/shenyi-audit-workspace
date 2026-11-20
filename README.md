@@ -2,7 +2,7 @@
 
 私有协作开发仓库：<https://github.com/icesad/shenyi-audit-workspace>。
 
-**你和米老师先看 [当前双人开发交接](docs/COLLABORATION_HANDOFF.md)**。里面有最新协作分支、分工、运行和提交步骤。只看文档或反馈问题时可用 [GitHub 零基础教程](docs/GITHUB_BEGINNER_MI.md)。
+**两位开发者从私有协作分支开始。** 交接文档汇总当前源码、分工、运行和 PR 步骤。米老师可以用 `mixue117` 查看说明或提交自己的业务分支。 [双人开发交接](docs/COLLABORATION_HANDOFF.md) · [GitHub 零基础教程](docs/GITHUB_BEGINNER_MI.md)
 
 ## 这里放什么
 

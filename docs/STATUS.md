@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 双人开发 GitHub 交接更新
+
+私有协作分支 `codex/team-collaboration-handoff-20261120` 汇集截至 `2b4b825` 的候选源码、验证记录和双人接手说明。GitHub 权限核对为 `mixue117` 有写权限。双方各开任务分支，PR 先面向协作分支。历史四来源报告 PR #2 继续等待米老师验收，当前候选待合入 `main` 和发布。 [双人开发交接](COLLABORATION_HANDOFF.md) · [米老师操作步骤](GITHUB_BEGINNER_MI.md)
+
 ## 2026-11-20 Ubuntu 微信账本发布与回退
 
 隔离 Ubuntu 从签名归档离线暂存 37 个生产依赖，实际用 systemd 启用 `e28ae2a`、`b53f334`，再回退至 `e28ae2a`。5 次内外两路 HTTPS 通过。Native 账本的七张表、权威 SQLite 的文件身份和字节、2 KiB 合成原件一致。加密备份恢复核对通过，隔离恢复库启动被拒绝。130 项相关测试通过。正式商户和国内云环境待验。 [Linux 变更与回退](LINUX_TEAM_DEPLOYMENT.md#重新启用已签版本)
@@ -198,7 +202,7 @@ macOS ZIP 与 Windows MSI 正式接收必须同时提供发行文件 SHA-256 和
 
 将 Windows x64、macOS Apple 芯片与 Intel 三份 0.61.0 签前候选统一刷新至 `e90c663`，包含批量对账续接相关的四个客户端文件。三平台共 1,934 个应用文件逐项一致，83 个应用源码文件匹配同一提交和已原生跑通的 Windows 账务一键评审包。Windows 归档和 macOS 双架构交接包均通过独立复验，144 项相关回归全部通过。两处原预览保持。
 
-交接说明位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/delivery/签名前交接-e90c663.md`，证据位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/verification.json`。正式签名、Mac 公证、实际安装及升级、生产发布和双方签收待验。 [Windows 候选](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-当前-windows-x64-签前候选) · [macOS 候选](MACOS_DESKTOP_CANDIDATE.md#2026-11-20-当前签前候选交接)
+交接说明位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/delivery/签名前交接-e90c663.md`，证据位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/verification.json`。正式签名、Mac 公证、实际安装及升级、生产发布和双方签收待验。 [Windows 候选](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-当前-windows-x64-签前候选) · [macOS 候选](MACOS_DESKTOP_CANDIDATE.md#2026-11-20-上一份签前候选交接)
 
 ## 2026-11-20 批量对账中断后续接
 
@@ -370,7 +374,7 @@ Windows 评审包一键启动独立的官网和团队 API 两个 HTTPS 地址，
 
 ## 2026-11-19 M7BC macOS 双架构当前评审候选
 
-按 418250f 重建 macOS arm64 与 x64，包含本轮 Windows 评审使用的到期指引和试点审批焦点修复。83 个客户端源码与 Windows 评审包和仓库匹配，三份构件共有的 1,934 个应用文件逐字节一致。两包各核对 2,762 个归档成员和 14 个符号链接。交接 ZIP 含两份原候选、校验清单及五个核验工具。在脱离仓库的接收目录，用一次性 Ed25519 密钥实测两次签署与验签，错架构、错公钥、签名混用、同版本、降版及签名变更六项均拒绝。测试私钥已清除。92 项相关测试和独立审查通过。两处旧预览观察一致。本轮未复验 Windows 一键。Apple 签名、公证、Gatekeeper、Finder、Keychain 和升级仍待实机。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-macos-parity-20261119/verification.json`。 [候选交接说明](MACOS_DESKTOP_CANDIDATE.md#2026-11-19-当前候选交接)
+按 418250f 重建 macOS arm64 与 x64，包含本轮 Windows 评审使用的到期指引和试点审批焦点修复。83 个客户端源码与 Windows 评审包和仓库匹配，三份构件共有的 1,934 个应用文件逐字节一致。两包各核对 2,762 个归档成员和 14 个符号链接。交接 ZIP 含两份原候选、校验清单及五个核验工具。在脱离仓库的接收目录，用一次性 Ed25519 密钥实测两次签署与验签，错架构、错公钥、签名混用、同版本、降版及签名变更六项均拒绝。测试私钥已清除。92 项相关测试和独立审查通过。两处旧预览观察一致。本轮未复验 Windows 一键。Apple 签名、公证、Gatekeeper、Finder、Keychain 和升级仍待实机。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-macos-parity-20261119/verification.json`。 [候选交接说明](MACOS_DESKTOP_CANDIDATE.md#2026-11-19-历史候选交接)
 
 ## 2026-11-19 M8Q Windows 试点审批键盘与缩放
 
