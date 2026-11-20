@@ -110,7 +110,7 @@ check_status=0
 printf "Exit status %s\n" "$check_status"
 ```
 
-退出码为 0 且 JSON 的 `status` 为 `verified` 表示三个静态文件通过内容与响应校验，11 个匿名 GET 检查均返回 404。检查包括三个合成下单页面路径、`/api/auth/methods`、两个合成订单上下文路径、`/ready`、`/health`、`/index.html`、`/download` 和 `/download/Shenyi.exe`。拒绝路径的回执只记录状态及 TLS 证书指纹等元数据。`CHECKOUT_STATUS_MISMATCH` 表示下单页面响应异常，`EXCLUDED_ROUTE_STATUS_MISMATCH` 表示其他受限路径的响应异常。
+退出码为 0 且 JSON 的 `status` 为 `verified` 表示三个静态文件通过内容与响应校验，11 个匿名 GET 检查均返回 404。检查包括三个合成下单页面路径、`/api/auth/methods`、两个合成订单上下文路径、`/ready`、`/health`、`/index.html`、`/download` 和 `/download/Shenyi.exe`。拒绝路径的回执只记录状态及 TLS 证书指纹等元数据。`CHECKOUT_STATUS_MISMATCH` 表示下单页面响应异常，`EXCLUDED_ROUTE_STATUS_MISMATCH` 表示其他受限路径的响应异常。14 项检查分三批，每批最多并行六次请求，每次请求最长等待五秒。
 
 在实际环境按[一次性上线检查](#一次性上线检查)核对团队 API 的边缘和后端 HTTPS 及实例标识，并记录工作站的页面资源加载结果。官网不缓存当前文件，访问日志只含时间、请求编号、方法、状态、响应字节数和耗时。错误日志按团队部署的读取权限和保留规则管理。静态模板上线的许可与商户、登录和下载入口另行验收。
 

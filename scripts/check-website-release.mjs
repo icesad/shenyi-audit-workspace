@@ -18,6 +18,7 @@ const digestPattern = /^[0-9a-f]{64}$/;
 const commitPattern = /^[0-9a-f]{40}$/;
 const maxBaselineBytes = 64 * 1024;
 const maxAssetBytes = 32 * 1024 * 1024;
+const maxParallelProbes = 6;
 
 function fail(code) {
   throw Object.assign(new Error(code), { code });
@@ -241,7 +242,12 @@ async function main() {
     ...checkoutRoutes.map(route => ({ route, denialCode: 'CHECKOUT_STATUS_MISMATCH' })),
     ...excludedRoutes.map(route => ({ route, denialCode: 'EXCLUDED_ROUTE_STATUS_MISMATCH' })),
   ];
-  const checks = await Promise.all(specs.map(spec => probe(origin, spec)));
+  const checks = [];
+  for (let start = 0; start < specs.length; start += maxParallelProbes) {
+    const batch = specs.slice(start, start + maxParallelProbes);
+    const results = await Promise.all(batch.map(spec => probe(origin, spec)));
+    checks.push(...results);
+  }
   const verified = checks.every(check => check.status === 'verified');
   process.exitCode = verified ? 0 : 1;
   console.log(JSON.stringify({
