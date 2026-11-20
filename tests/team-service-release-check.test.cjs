@@ -12,6 +12,16 @@ const { generateCertificates, command, childEnvironment } = require('./helpers/t
 
 const root = path.resolve(__dirname, '..');
 const checker = path.join(root, 'scripts/check-team-service.mjs');
+const rehearsalRoutes = [
+  '/api/billing/simulation/notifications',
+  '/api/billing/simulation/payment-exceptions',
+  '/api/billing/simulation/order-closures',
+  '/api/website-checkout/context',
+  '/api/website-checkout/orders',
+  '/api/website-checkout/seat-context',
+  '/api/website-checkout/seat-quote',
+  '/api/website-checkout/seat-orders',
+];
 
 async function run(args, ca) {
   const result = await command(process.execPath, ['--dns-result-order=ipv4first', checker, ...args], {
@@ -60,8 +70,11 @@ async function fixture(t) {
     deviceBinding: { required: true, protocolVersion: 1, serverId } });
   function handler(side) {
     return (req, res) => {
-      events.push({ side, route: req.url, method: req.method, host: req.headers.host, servername: req.socket.servername,
-        authorization: req.headers.authorization, cookie: req.headers.cookie });
+      const event = { side, route: req.url, method: req.method, host: req.headers.host, servername: req.socket.servername,
+        authorization: req.headers.authorization, cookie: req.headers.cookie, contentLength: req.headers['content-length'],
+        transferEncoding: req.headers['transfer-encoding'], bodyBytes: 0 };
+      events.push(event);
+      req.on('data', chunk => { event.bodyBytes += chunk.length; });
       let answer = side === 'backend' && req.url === '/ready'
         ? { status: 200, body: { status: 'ready' } }
         : req.url === '/api/auth/methods'
@@ -110,15 +123,22 @@ test('release lifecycle CLI verifies owned TLS endpoints, boundaries, and diagno
     assert.equal(result.result.status, 'healthy');
     assert.equal(Object.keys(result.result.checks).length, 9);
     assert.ok(Object.values(result.result.checks).every(value => value.status === 'pass'));
+    for (const name of ['backendIdentity', 'publicIdentity']) {
+      assert.deepEqual(result.result.checks[name], { status: 'pass', rehearsalRoutesHidden: 8 });
+    }
     assert.deepEqual(f.events.map(e => `${e.side} ${e.route}`).sort(), [
       'backend /api/auth/methods', 'backend /ready', 'edge /api/auth/methods', 'edge /health', 'edge /ready',
-    ]);
+      ...['backend', 'edge'].flatMap(side => rehearsalRoutes.map(route => `${side} ${route}`)),
+    ].sort());
     for (const event of f.events) {
       assert.equal(event.method, 'GET');
       assert.equal(event.host, new URL(f.configuration.apiBase).host);
       assert.equal(event.servername, 'localhost');
       assert.equal(event.authorization, undefined);
       assert.equal(event.cookie, undefined);
+      assert.equal(event.contentLength, undefined);
+      assert.equal(event.transferEncoding, undefined);
+      assert.equal(event.bodyBytes, 0);
     }
     assert.deepEqual(await fs.readFile(f.configuration.database), f.databaseBytes);
     await assert.rejects(fs.stat(f.configuration.tlsKey), { code: 'ENOENT' });
@@ -183,6 +203,20 @@ test('release lifecycle CLI verifies owned TLS endpoints, boundaries, and diagno
     f.state.edge = (req, answer) => req.url === route ? { status: 200, body: { status: 'ready' } } : answer;
     failedCheck(await f.run(), route === '/ready' ? 'publicReadinessHidden' : 'publicHealthHidden', 'PRIVATE_ROUTE_VISIBLE');
   });
+
+  for (const [side, name, other] of [['backend', 'backendIdentity', 'publicIdentity'], ['edge', 'publicIdentity', 'backendIdentity']]) {
+    for (const [route, status] of [[rehearsalRoutes[0], 405], [rehearsalRoutes.at(-1), 503]]) {
+      await scenario(`${side} rehearsal endpoint ${route} responding ${status} fails deployment`, async () => {
+        const privateResponse = 'Synthetic rehearsal response must not appear in the report';
+        f.state[side] = (req, answer) => req.url === route ? { status, body: privateResponse } : answer;
+        const result = await f.run();
+        failedCheck(result, name, 'REHEARSAL_ROUTE_VISIBLE');
+        assert.deepEqual(result.result.checks[name], { status: 'fail', code: 'REHEARSAL_ROUTE_VISIBLE', route, httpStatus: status });
+        assert.deepEqual(result.result.checks[other], { status: 'pass', rehearsalRoutesHidden: 8 });
+        assert.ok(!result.stdout.includes(privateResponse));
+      });
+    }
+  }
 
   await scenario('same native TLS public key on backend and edge fails separation', async () => {
     f.edge.setSecureContext(f.tls.backend);

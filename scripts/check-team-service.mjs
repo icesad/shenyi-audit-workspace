@@ -14,6 +14,16 @@ const maxBodyBytes = 16 * 1024;
 const maxCaBytes = 1024 * 1024;
 const oneDay = 86_400_000;
 const methodsRoute = '/api/auth/methods';
+const rehearsalRoutes = [
+  '/api/billing/simulation/notifications',
+  '/api/billing/simulation/payment-exceptions',
+  '/api/billing/simulation/order-closures',
+  '/api/website-checkout/context',
+  '/api/website-checkout/orders',
+  '/api/website-checkout/seat-context',
+  '/api/website-checkout/seat-quote',
+  '/api/website-checkout/seat-orders',
+];
 const defaults = { '--disk-warning-bytes': '10737418240', '--certificate-warning-days': '30' };
 const pass = (measurements = {}) => ({ status: 'pass', ...measurements });
 const warn = (code, measurements) => ({ status: 'warning', code, ...measurements });
@@ -111,7 +121,7 @@ function readiness(response) {
   return pass();
 }
 
-function identity(response, serverId) {
+function identity(response, serverId, rehearsals) {
   if (response.fault) return fail(response.fault);
   if (response.code !== 200) return fail('AUTH_METHODS_UNAVAILABLE', { httpStatus: response.code });
   const ids = response.headers['x-shenyi-server-id'];
@@ -119,7 +129,12 @@ function identity(response, serverId) {
   if (ids?.length !== 1 || ids[0] !== serverId || body?.deviceBinding?.serverId !== serverId) return fail('INSTANCE_MISMATCH');
   if (body.mode !== 'managed-service' || body.methods?.demoUsername !== false || body.methods?.phonePassword !== true ||
       body.deviceBinding?.required !== true || body.deviceBinding.protocolVersion !== 1) return fail('MANAGED_DEVICE_POLICY_MISMATCH');
-  return pass();
+  for (const [index, rehearsal] of rehearsals.entries()) {
+    const route = rehearsalRoutes[index];
+    if (rehearsal.fault) return fail(rehearsal.fault, { route });
+    if (rehearsal.code !== 404) return fail('REHEARSAL_ROUTE_VISIBLE', { route, httpStatus: rehearsal.code });
+  }
+  return pass({ rehearsalRoutesHidden: rehearsals.length });
 }
 
 function hidden(response) {
@@ -161,13 +176,15 @@ async function checkService(profile, ca, diskWarningBytes, certificateWarningDay
   const backend = { ...options, hostname: '127.0.0.1', port: profile.listenPort, ca };
   const edge = { ...options, port: origin.port || 443 };
   try {
-    const [ready, local, publicMethods, publicReady, publicHealth, volume] = await Promise.all([
+    const [ready, local, publicMethods, publicReady, publicHealth, volume, backendRehearsals, publicRehearsals] = await Promise.all([
       probe(backend, '/ready'), probe(backend, methodsRoute), probe(edge, methodsRoute),
       probe(edge, '/ready'), probe(edge, '/health'), databaseVolume(profile.database, diskWarningBytes),
+      Promise.all(rehearsalRoutes.map(route => probe(backend, route))),
+      Promise.all(rehearsalRoutes.map(route => probe(edge, route))),
     ]);
     const now = Date.now();
-    return { backendReadiness: readiness(ready), backendIdentity: identity(local, profile.serverId),
-      publicIdentity: identity(publicMethods, profile.serverId), publicReadinessHidden: hidden(publicReady), publicHealthHidden: hidden(publicHealth),
+    return { backendReadiness: readiness(ready), backendIdentity: identity(local, profile.serverId, backendRehearsals),
+      publicIdentity: identity(publicMethods, profile.serverId, publicRehearsals), publicReadinessHidden: hidden(publicReady), publicHealthHidden: hidden(publicHealth),
       backendCertificate: expiration(ready, now, certificateWarningDays), publicCertificate: expiration(publicMethods, now, certificateWarningDays),
       tlsKeySeparation: separatedKeys(ready, publicMethods), databaseVolume: volume };
   } finally { agent.destroy(); }

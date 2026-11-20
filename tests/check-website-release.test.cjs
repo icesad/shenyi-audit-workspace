@@ -15,7 +15,10 @@ const repository = path.join(__dirname, '..');
 const cli = path.join(repository, 'scripts/check-website-release.mjs');
 const sourceCommit = '9c31347d80a9b1918f549567cd58aef21b9ef89b';
 const paymentRoutes = ['/checkout', '/checkout/', '/checkout/seats/'];
-const excludedRoutes = ['/api/auth/methods', '/api/website-checkout/context', '/api/website-checkout/seat-context',
+const excludedRoutes = ['/api/auth/methods',
+  '/api/billing/simulation/notifications', '/api/billing/simulation/payment-exceptions', '/api/billing/simulation/order-closures',
+  '/api/website-checkout/context', '/api/website-checkout/orders', '/api/website-checkout/seat-context',
+  '/api/website-checkout/seat-quote', '/api/website-checkout/seat-orders',
   '/ready', '/health', '/index.html', '/download', '/download/Shenyi.exe'];
 const assets = [
   {route:'/', file:'index.html', contentType:'text/html; charset=utf-8', source:'website/index.html'},
@@ -174,6 +177,7 @@ test('valid baseline verifies the three static GETs and fixed excluded routes', 
     assert.equal(request.headers.host, `127.0.0.1:${f.port}`);
     assert.equal(request.headers.authorization, undefined);
     assert.equal(request.headers.cookie, undefined);
+    assert.equal(request.headers['content-length'], undefined);
   }
 });
 
@@ -272,10 +276,15 @@ test('static publication refuses a cohosted API, health, direct index or downloa
   const redirected = '/download';
   const target = '/unexpected-download-target';
   const bytes = Buffer.from('private fixture must not appear in the report');
+  const statuses = new Map([
+    ['/api/billing/simulation/notifications', 405],
+    ['/api/website-checkout/orders', 503],
+    [redirected, 302],
+  ]);
   for (const route of excludedRoutes) {
-    f.changes.set(route, {status:200, contentType:'text/plain', bytes});
+    f.changes.set(route, {status:statuses.get(route) ?? 200, contentType:'text/plain', bytes,
+      location:route === redirected ? target : undefined});
   }
-  f.changes.set(redirected, {status:302, contentType:'text/plain', bytes, location:target});
   const result = await run(f);
   checkFailure(result);
   assert.deepEqual(f.requests.map(request => request.route).sort(), routes);
@@ -288,7 +297,7 @@ test('static publication refuses a cohosted API, health, direct index or downloa
     }
     assert.equal(check.status, 'failed');
     assert.equal(check.code, 'EXCLUDED_ROUTE_STATUS_MISMATCH');
-    assert.equal(check.httpStatus, check.path === redirected ? 302 : 200);
+    assert.equal(check.httpStatus, statuses.get(check.path) ?? 200);
     assert.equal(check.bytes, undefined);
     assert.equal(check.sha256, undefined);
   }

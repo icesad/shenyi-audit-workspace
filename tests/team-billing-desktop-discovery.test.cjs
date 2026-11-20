@@ -158,10 +158,24 @@ test('managed read-only billing never enables simulation payment, order, reconci
     const result=await request(billing+'/'+route,'POST',{});
     assert.equal(result.status,503,route+': '+JSON.stringify(result));
   }
-  for(const suffix of ['notifications','payment-exceptions','order-closures']){
-    const result=await request('/api/billing/simulation/'+suffix,'POST',{});
-    assert.equal(result.status,503,suffix+': '+JSON.stringify(result));
+  const rehearsalRoutes=[
+    ...['notifications','payment-exceptions','order-closures'].map(name=>'/api/billing/simulation/'+name),
+    ...['context','orders','seat-context','seat-quote','seat-orders'].map(name=>'/api/website-checkout/'+name),
+  ];
+  for(const route of rehearsalRoutes){
+    for(const method of ['GET','HEAD','POST']){
+      const incoming=f.makeRequest(route,{method,body:method==='POST'?{}:undefined});
+      const response=await handleTeamApplicationRequest(incoming,options);
+      const label=method+' '+route;
+      assert.equal(response.status,404,label);
+      assert.equal(response.headers.get('allow'),null,label);
+      if(method==='HEAD')assert.equal(await response.text(),'',label);
+      else assert.equal((await response.json()).error.code,'NOT_FOUND',label);
+    }
   }
+  const mixedConfiguration=await handleTeamApplicationRequest(f.makeRequest(overview,{session:f.admin}),
+    {...options,billingSimulation:f.billingSimulation});
+  assert.equal(mixedConfiguration.status,503,'managed mode rejects an injected simulation configuration');
   assert.deepEqual(await request('/api/auth/refund-intake/access'),{status:200,body:{canReview:false}});
   for(const method of ['GET','POST']){
     assert.equal((await request('/api/platform/billing/refund-intakes/annual/'+orderId,method,method==='POST'?{}:undefined)).status,404);

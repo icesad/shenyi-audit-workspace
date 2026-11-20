@@ -11,7 +11,10 @@ const assets = [
 ];
 const checkoutRoutes = ['/checkout', '/checkout/', '/checkout/seats/'];
 const excludedRoutes = [
-  '/api/auth/methods', '/api/website-checkout/context', '/api/website-checkout/seat-context',
+  '/api/auth/methods',
+  '/api/billing/simulation/notifications', '/api/billing/simulation/payment-exceptions', '/api/billing/simulation/order-closures',
+  '/api/website-checkout/context', '/api/website-checkout/orders', '/api/website-checkout/seat-context',
+  '/api/website-checkout/seat-quote', '/api/website-checkout/seat-orders',
   '/ready', '/health', '/index.html', '/download', '/download/Shenyi.exe',
 ];
 const digestPattern = /^[0-9a-f]{64}$/;

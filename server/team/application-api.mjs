@@ -65,11 +65,15 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
     }
     const at = now();
     if (!Number.isSafeInteger(at) || at < 0) throw new Error('Invalid clock');
-    const url=new URL(request.url),options={db,now,identityProviders,serviceMode,websiteCheckout,subscriptionEnforcement:subscriptionEnforcementMode(subscriptionEnforcement,identityProviders)};
+    const url=new URL(request.url);
+    const websiteCheckoutPath=isWebsiteCheckoutBrowserPath(url.pathname);
+    const simulationPath=[SIMULATION_NOTIFICATION_PATH,SIMULATION_PAYMENT_EXCEPTION_PATH,SIMULATION_ORDER_CLOSURE_PATH].includes(url.pathname);
+    if(managedService&&(websiteCheckoutPath||simulationPath))return json({error:{code:'NOT_FOUND',message:'无法访问此资源。'}},404);
+    const options={db,now,identityProviders,serviceMode,websiteCheckout,subscriptionEnforcement:subscriptionEnforcementMode(subscriptionEnforcement,identityProviders)};
     options.seatCapacityEnforcement=seatCapacityMode(seatCapacityEnforcement,options);
     options.billingSimulation=billingSimulationConfiguration(billingSimulation,options);
     options.websiteCheckoutActive=websiteCheckoutAvailable(db,options);
-    if(isWebsiteCheckoutBrowserPath(url.pathname))return await handleWebsiteCheckoutBrowser(request,options);
+    if(websiteCheckoutPath)return await handleWebsiteCheckoutBrowser(request,options);
     // A provider's top-level browser callback is cross-site by design. Only this
     // exact GET endpoint uses state/code checks instead of the data API origin gate.
     if(url.pathname==='/api/auth/wechat/callback'&&request.method==='GET')return await handleWechatRequest(request,options);
@@ -87,7 +91,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
     if(managedService&&url.pathname==='/api/auth/login'){
       return json({error:{code:'DEMO_LOGIN_DISABLED',message:'演示登录在受管团队服务中已关闭。'}},403);
     }
-    if([SIMULATION_NOTIFICATION_PATH,SIMULATION_PAYMENT_EXCEPTION_PATH,SIMULATION_ORDER_CLOSURE_PATH].includes(url.pathname)) {
+    if(simulationPath) {
       if(options.websiteCheckoutActive)return json({error:{code:'NOT_FOUND',message:'无法访问此资源。'}},404);
       return await handleBillingSimulationNotification(request,options);
     }

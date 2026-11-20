@@ -110,7 +110,7 @@ check_status=0
 printf "Exit status %s\n" "$check_status"
 ```
 
-退出码为 0 且 JSON 的 `status` 为 `verified` 表示三个静态文件通过内容与响应校验，11 个匿名 GET 检查均返回 404。检查包括三个合成下单页面路径、`/api/auth/methods`、两个合成订单上下文路径、`/ready`、`/health`、`/index.html`、`/download` 和 `/download/Shenyi.exe`。拒绝路径的回执只记录状态及 TLS 证书指纹等元数据。`CHECKOUT_STATUS_MISMATCH` 表示下单页面响应异常，`EXCLUDED_ROUTE_STATUS_MISMATCH` 表示其他受限路径的响应异常。14 项检查分三批，每批最多并行六次请求，每次请求最长等待五秒。
+退出码为 0 且 JSON 的 `status` 为 `verified` 表示三个静态文件通过内容与响应校验，17 个匿名 GET 检查均返回 404。检查包括三个合成下单页面路径、下文的八个支付演练 API、`/api/auth/methods`、`/ready`、`/health`、`/index.html`、`/download` 和 `/download/Shenyi.exe`。拒绝路径的回执只记录状态及 TLS 证书指纹等元数据。`CHECKOUT_STATUS_MISMATCH` 表示下单页面响应异常，`EXCLUDED_ROUTE_STATUS_MISMATCH` 表示其他受限路径的响应异常。20 项检查分四批，每批最多并行六次请求，每次请求最长等待五秒。
 
 在实际环境按[一次性上线检查](#一次性上线检查)核对团队 API 的边缘和后端 HTTPS 及实例标识，并记录工作站的页面资源加载结果。官网不缓存当前文件，访问日志只含时间、请求编号、方法、状态、响应字节数和耗时。错误日志按团队部署的读取权限和保留规则管理。静态模板上线的许可与商户、登录和下载入口另行验收。
 
@@ -162,6 +162,8 @@ curl --fail-with-body --silent --show-error --include "https://${api_host}/api/a
 ```
 
 探针直连后端回环地址，以配置中的公共主机名和指定后端 CA 校验 TLS，再读取 `/ready` 及 `/api/auth/methods`。它通过运行主机的名称解析和 Node 默认 TLS 信任连接配置中的边缘入口。两侧的 `/api/auth/methods` 均须返回配置的实例 ID 和受管设备登录声明。公共 `/ready` 和 `/health` 均须返回 404。探针分别检查两侧在线叶证书的有效期，确认两侧使用不同的公钥，并从文件系统元数据取得数据库所在卷的可用字节数。每个网络检查最长等待 5 秒。另从实际办公网络验收客户端访问。
+
+后端与公共团队 API 各使用匿名 GET 确认八个支付演练接口返回 404。路径包括 `/api/billing/simulation/` 下的 `notifications`、`payment-exceptions`、`order-closures`，以及 `/api/website-checkout/` 下的 `context`、`orders`、`seat-context`、`seat-quote`、`seat-orders`。这些地址只供本机合成演练。受管服务在分派请求方法和读取正文之前拒绝访问，保留已授权团队的订阅与席位查询。首次从旧版本切换时，激活流程使用上版受信探针。切换后再运行本节命令，确认 `backendIdentity` 与 `publicIdentity` 均报告 `rehearsalRoutesHidden: 8` 后完成上线验收。
 
 | JSON `status` | 退出码 | 含义 |
 | --- | --- | --- |
