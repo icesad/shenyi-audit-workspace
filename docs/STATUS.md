@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 GitHub 严格单元验证分流
+
+`a1757b8` 将 GitHub `unit` 放在 Windows x64 执行，Ubuntu 执行仓库与工具检查。Windows runner 改用相对文件路径，并将 29 个合成测试的夹具放在系统临时目录。真实 Windows 长命令回归中旧方式报 `ENAMETOOLONG`，新方式 226 项通过。35 个相关文件共 476 项通过。未推送，托管任务待实跑。证据见 `D:/codex-temp/shenyi-ci-portability-20261120/verification.json`。
+
 ## 2026-11-20 严格回归定位并修复 Windows 预览端口
 
 仓库严格诊断跑完 417 个文件（6406 项，6404 通过、1 失败、1 跳过）。实际 Windows 试点曾绑定 `1719`，Fetch 在请求发出前拒绝，现已在共享回环端口分配中避开。修复提交 `784768f` 的 42 项关联测试、Windows 普通和受管一键，以及包内官网浏览器验收均通过。本轮缺原结论底稿 ZIP，固定源码的全量严格门待验。证据见 `D:/codex-temp/shenyi-strict-integration-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-严格回归定位并修复-windows-预览端口)
