@@ -265,7 +265,8 @@ export async function handleWebsiteCheckoutBrowser(request, options) {
     if (body.offerId !== offer.id || body.offerRevision !== offer.revision) conflict();
     const order = createAnnualOrderWithinTransaction(db,{teamId:ticket.teamId,actorId:ticket.userId,
       requestId:ticket.requestId,merchantId:billingSimulation.merchantId,offer},{now:()=>at,
-      renewalSeats:{unitAmountMinor,selectedSeats:body.selectedSeats}});
+      renewalSeats:{unitAmountMinor,selectedSeats:body.selectedSeats},
+      closeAfterMs:billingSimulation.timeoutClosure?.annualTimeoutMs});
     if (order.offer.amountMinor !== body.expectedAmountMinor) conflict();
     assertCurrent(db,ticket,body.handoff,serverTime(options));
     return json({simulation:true,order:projectedOrder(order)},201);

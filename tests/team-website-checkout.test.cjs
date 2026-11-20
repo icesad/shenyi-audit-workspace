@@ -389,6 +389,46 @@ test('website orders can be reconciled by their device-verified team administrat
  assert.deepEqual(original.data.order,{...order,status:'paid'});
 });
 
+test('website renewal pins its timeout and shows the same order after trusted closure',async t=>{
+ const f=await fixture(t),ticket=await f.ticket(),before=f.facts();
+ const simulation={...f.billingSimulation,timeoutClosure:{annualTimeoutMs:1000}};
+ const settings={options:{billingSimulation:simulation}};
+ const created=await f.order(ticket,{},settings);
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const order=created.data.order,deadline=order.createdAt+1000;
+ const route=ROOT+'/orders/'+order.id;
+ const read=()=>f.desktop(route,{},{...settings,method:'GET'});
+ const stored=await read();
+ assert.equal(stored.status,200,JSON.stringify(stored.data));
+ assert.equal(stored.data.order.paymentDeadlineAt,deadline);
+
+ const changed={...simulation,timeoutClosure:{annualTimeoutMs:30000}};
+ const retried=await f.order(ticket,{},{options:{billingSimulation:changed}});
+ assert.equal(retried.status,201,JSON.stringify(retried.data));
+ assert.deepEqual(retried.data.order,order);
+ assert.equal((await read()).data.order.paymentDeadlineAt,deadline);
+ const savedRows=f.orderRows();
+ assert.equal(savedRows[0].rows.length,1);
+
+ f.clock.value=deadline;
+ assert.equal((await f.context(ticket,settings)).data.order.status,'pending');
+ const {signSimulationOrderClosure}=await source('billing-order-closure.mjs');
+ const closure=signSimulationOrderClosure({protocol:'shenyi-simulation-order-closure-v1',
+  merchantId:simulation.merchantId,eventId:randomUUID(),orderId:order.id,product:OFFER.product,
+  amountMinor:order.amountMinor,currency:order.currency,status:'closed',closedAt:deadline},simulation);
+ const reconciliation=await f.desktop(route+'/reconcile',{}, {options:{billingSimulation:{...simulation,
+  lookupPayment:()=>({kind:'order-closure',...closure})}}});
+ assert.equal(reconciliation.status,200,JSON.stringify(reconciliation.data));
+ assert.deepEqual(reconciliation.data.order.closure,{closedAt:deadline,deadlineAt:deadline});
+ const receipt=await f.context(ticket,settings);
+ assert.equal(receipt.status,200,JSON.stringify(receipt.data));
+ assert.deepEqual(receipt.data.order,{...order,status:'closed'});
+ assert.deepEqual(f.orderRows(),savedRows);
+ const closureTable='team_billing_order_closures',after=f.facts();
+ assert.equal(after.find(row=>row.name===closureTable).count,1);
+ assert.deepEqual(after.filter(row=>row.name!==closureTable),before.filter(row=>row.name!==closureTable));
+});
+
 test('website order recovery uses the stored verification without an available lookup adapter',async t=>{
  const f=await fixture(t),ticket=await f.ticket(),created=await f.order(ticket);
  assert.equal(created.status,201);
