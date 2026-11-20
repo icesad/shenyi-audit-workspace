@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 Windows 签前候选的 MSI 载荷核验
+
+当前 Windows 签前 ZIP 可装配为测试 MSI。2,007 个候选文件已从内嵌 CAB 逐项读回核对。系统盘空间不足使 Windows Installer 管理提取停在 1603，正式签名和安装升级待验。证据见 `D:/codex-temp/shenyi-exact-msi-admin-image-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-签前候选的-msi-载荷核验)
+
 ## 2026-11-20 新版 Windows 底稿迁入和历史版本导出
 
 当前 Windows 评审包原生底稿走查完成。合成完整包迁入为版本 1，填写保存为版本 2，再原生另存版本 1。历史填写、原件、公式和冻结已回读核对，当前版本仍为 2。证据见 `D:/codex-temp/shenyi-current-workpaper-native-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-新版-windows-底稿迁入和历史版本导出)
