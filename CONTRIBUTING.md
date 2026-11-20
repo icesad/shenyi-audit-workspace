@@ -6,7 +6,7 @@
 
 ## 提交步骤
 
-1. 开工前先检查 `git status --short --branch`。已有修改留在原工作分支。运行 `git fetch origin`，从 `origin/codex/team-collaboration-handoff-20261120` 为本次任务开分支。已有本地协作分支时，用 `git pull --ff-only` 更新。 [具体命令](docs/COLLABORATION_HANDOFF.md#把代码取到自己的电脑)
+1. 开工前先检查 `git status --short --branch`。已有修改留在原工作分支。运行 `git fetch origin`，从 `origin/codex/team-collaboration-handoff-20261120` 为本次任务开分支。已有本地协作分支时，切到该分支后用 `git pull --ff-only` 更新。 [具体命令](docs/COLLABORATION_HANDOFF.md#把代码取到自己的电脑)
 2. 一件事一个分支，例如 `fix/123-contract-download`、`docs/mi-onboarding`。
 3. 只用合成或获准脱敏资料测试，核对实际改动文件。
 4. 本机运行检查与相关回归；涉及原件的验收单独记录，缺原件不能写通过。
