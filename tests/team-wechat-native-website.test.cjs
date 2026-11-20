@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const {createHash, generateKeyPairSync, randomBytes, randomUUID, sign} = require('node:crypto');
+const {createCipheriv, createHash, generateKeyPairSync, randomBytes, randomUUID, sign} = require('node:crypto');
 const {mkdir, mkdtemp, readFile, rm, writeFile} = require('node:fs/promises');
 const https = require('node:https');
 const {tmpdir} = require('node:os');
@@ -33,6 +33,7 @@ const credentials = {phone:'+8613800000001', password:'SyntheticWebsiteOnly!2026
 const digest = text => createHash('sha256').update(text).digest('hex');
 const teamId = 'team-a';
 const actorId = 'admin-a';
+const callbackPath = '/api/billing/wechat-native/notify';
 const annual = 'team-annual-renewal';
 const seat = 'team-seat-addition';
 const quote = {teamId, actorId, product:annual, offerId:'synthetic-annual',
@@ -44,6 +45,7 @@ const priceCatalog = Object.freeze({
   quoteDurationMs:60000,
   paymentDurationMs:900000,
 });
+const expiryCatalog = Object.freeze({...priceCatalog, paymentDurationMs:240000});
 const pageOrderKeys = ['amountMinor', 'currency', 'expiresAt', 'id', 'product', 'seats', 'status', 'teamName'];
 let directory, tls, encodedPassword;
 
@@ -89,20 +91,40 @@ function request(port, route, {method = 'POST', headers = {}, body} = {}) {
   });
 }
 
-function signedProviderResponse(data) {
+function providerSignatureHeaders(raw) {
   const timestamp = String(Math.floor(Date.now() / 1000));
   const nonce = randomBytes(16).toString('hex');
-  const raw = Buffer.from(' ' + JSON.stringify(data, null, 2) + '\n');
   const signed = Buffer.concat([Buffer.from(timestamp + '\n' + nonce + '\n'), raw, Buffer.from('\n')]);
-  return new Response(raw, {headers:{'content-type':'application/json', 'wechatpay-serial':keyId,
+  return {'wechatpay-serial':keyId,
     'wechatpay-timestamp':timestamp, 'wechatpay-nonce':nonce,
-    'wechatpay-signature':sign('RSA-SHA256', signed, paymentKeys.privateKey).toString('base64')}});
+    'wechatpay-signature':sign('RSA-SHA256', signed, paymentKeys.privateKey).toString('base64')};
 }
 
-function verifiedTrade(order, state = 'SUCCESS') {
+function signedProviderResponse(data, {status = 200} = {}) {
+  const raw = status === 204 ? Buffer.alloc(0) : Buffer.from(' ' + JSON.stringify(data, null, 2) + '\n');
+  return new Response(status === 204 ? null : raw, {status, headers:{'content-type':'application/json', ...providerSignatureHeaders(raw)}});
+}
+
+function verifiedTrade(order, state = 'SUCCESS', paidAt = Date.now()) {
   return {appid:appId, mchid:merchantId, out_trade_no:order.merchantOrderId, transaction_id:'401000000001',
-    trade_type:'NATIVE', trade_state:state, success_time:new Date().toISOString(),
+    trade_type:'NATIVE', trade_state:state, success_time:new Date(paidAt).toISOString(),
     amount:{total:order.amountMinor, payer_total:order.amountMinor, currency:'CNY', payer_currency:'CNY'}};
+}
+
+function signedPaymentNotice(order, paidAt) {
+  const nonce = randomBytes(6).toString('hex');
+  const associatedData = 'transaction';
+  const cipher = createCipheriv('aes-256-gcm', wechatNativeCallback.apiV3Key, Buffer.from(nonce));
+  cipher.setAAD(Buffer.from(associatedData));
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(verifiedTrade(order, 'SUCCESS', paidAt))),
+    cipher.final(), cipher.getAuthTag()]);
+  const body = Buffer.from(JSON.stringify({
+    id:randomUUID(), event_type:'TRANSACTION.SUCCESS', resource_type:'encrypt-resource',
+    create_time:new Date().toISOString(), summary:'合成支付通知',
+    resource:{algorithm:'AEAD_AES_256_GCM', original_type:'transaction', nonce,
+      associated_data:associatedData, ciphertext:ciphertext.toString('base64')},
+  }));
+  return {body, headers:{'content-type':'application/json', 'content-length':body.length, ...providerSignatureHeaders(body)}};
 }
 
 async function fixture(t, {enabled = true, provider, catalog} = {}) {
@@ -140,7 +162,8 @@ async function fixture(t, {enabled = true, provider, catalog} = {}) {
     const target = new URL(url);
     assert.equal(target.origin, 'https://api.mch.weixin.qq.com');
     assert.match(init.headers.Authorization, /^WECHATPAY2-SHA256-RSA2048 /);
-    calls.push({method:init.method, path:target.pathname, body:init.body === undefined ? undefined : JSON.parse(init.body)});
+    calls.push({method:init.method, path:target.pathname, query:target.search,
+      body:init.body === undefined ? undefined : JSON.parse(init.body)});
     if (provider) return provider(target, init);
     assert.equal(init.method, 'POST', 'The test must explicitly stub a query');
     return signedProviderResponse({code_url:'weixin://wxpay/bizpayurl?pr=SyntheticPayload123'});
@@ -949,4 +972,254 @@ test('a verified refund blocks a new purchase while preserving the already locke
   assert.equal(count(f.db, 'team_billing_wechat_native_payments'), 0);
   assert.equal(count(f.db, 'team_billing_wechat_native_fulfilments'), 0);
   assert.equal(f.calls.length, 3);
+});
+
+async function lockAnnualCheckout(f, session) {
+  const requestId = randomUUID();
+  const handoff = await f.purchase(session, annual, requestId);
+  const quote = await getQuote(f, handoff, annual, 3);
+  const locked = await f.browser('confirm', handoff, {body:{quoteId:quote.id}});
+  const order = locked.data?.order;
+  assert.ok(order, locked.text);
+  expectOrder(locked, {...order, amountMinor:quote.amountMinor}, 'pending');
+  const row = f.db.prepare('SELECT merchant_order_id FROM main.team_billing_wechat_native_orders WHERE order_id=?').get(order.id);
+  return {handoff, requestId, order:{...order, merchantOrderId:row.merchant_order_id}};
+}
+
+function closeTransport(query, close = () => signedProviderResponse(null, {status:204})) {
+  return (target, init) => {
+    if (init.method === 'GET') return query();
+    assert.equal(init.method, 'POST');
+    if (target.pathname.endsWith('/close')) return close();
+    assert.equal(target.pathname, '/v3/pay/transactions/native');
+    return signedProviderResponse({code_url:'weixin://wxpay/bizpayurl?pr=SyntheticPayload123'});
+  };
+}
+
+function expectCloseError(reply, code) {
+  assert.equal(reply.status, 409, reply.text);
+  assert.equal(reply.data.error.code, code);
+  assert.deepEqual(Object.keys(reply.data), ['error']);
+}
+
+function lifecycleEvents(db, orderId) {
+  return db.prepare('SELECT event FROM main.team_billing_wechat_native_lifecycle WHERE order_id=? ORDER BY event')
+    .all(orderId).map(row => row.event);
+}
+
+test('a tracked order that never requested a QR closes at expiry locally after restart', async t => {
+  t.mock.timers.enable({apis:['Date'], now:Date.now()});
+  const f = await fixture(t, {catalog:expiryCatalog});
+  const session = await f.device();
+  const {handoff, requestId, order} = await lockAnnualCheckout(f, session);
+  expectOrder(await f.browser('order', handoff), order, 'pending');
+  expectCloseError(await f.browser('close', handoff), 'WECHAT_NATIVE_NOT_EXPIRED');
+  assert.equal((await f.browser('close', handoff, {body:{expiresAt:0}})).status, 400);
+  assert.deepEqual(lifecycleEvents(f.db, order.id), ['TRACKED']);
+  assertNoNativePayment(f);
+
+  t.mock.timers.setTime(order.expiresAt);
+  await f.restart(expiryCatalog);
+  const reopened = await f.issue(session, order.id);
+  expectOrder(await f.browser('order', reopened), order, 'expired');
+  expectUnresolved(await session.heldPost(purchaseIssuer(teamId),
+    {product:annual, requestId:randomUUID(), previousRequestId:requestId}));
+  expectOrder(await f.browser('close', reopened), order, 'closed');
+  assert.deepEqual(lifecycleEvents(f.db, order.id), ['EXPIRED_UNSENT', 'TRACKED']);
+  t.mock.timers.tick(2000);
+  expectOrder(await f.browser('close', reopened), order, 'closed');
+  const replacement = await f.purchase(session, annual, randomUUID(), requestId);
+  expectLease(await f.browser('order', replacement), ['checkout']);
+  assert.equal(count(f.db, 'team_billing_wechat_native_orders'), 1);
+  assertNoNativePayment(f);
+});
+
+test('a dispatched order closes only after signed NOTPAY, a close request, and a signed CLOSED requery', async t => {
+  t.mock.timers.enable({apis:['Date'], now:Date.now()});
+  let order;
+  const states = ['NOTPAY', 'CLOSED'];
+  const f = await fixture(t, {catalog:expiryCatalog,
+    provider:closeTransport(() => signedProviderResponse(verifiedTrade(order, states.shift())))});
+  const session = await f.device();
+  const checkoutOrder = await lockAnnualCheckout(f, session);
+  order = checkoutOrder.order;
+  expectOrder(await f.browser('code', checkoutOrder.handoff), order, 'pending', true);
+  assert.deepEqual(lifecycleEvents(f.db, order.id), ['PREPAY_STARTED', 'TRACKED']);
+  assert.equal(f.calls.length, 1);
+  t.mock.timers.setTime(order.expiresAt);
+  await f.restart(expiryCatalog);
+  const reopened = await f.issue(session, order.id);
+  expectOrder(await f.browser('order', reopened), order, 'expired');
+  assert.equal(f.calls.length, 1, 'The expired order view is read-only');
+  expectOrder(await f.browser('close', reopened), order, 'closed');
+  assert.equal(states.length, 0);
+  const path = '/v3/pay/transactions/out-trade-no/' + order.merchantOrderId;
+  const query = '?mchid=' + merchantId;
+  assert.deepEqual(f.calls.slice(1), [
+    {method:'GET', path, query, body:undefined},
+    {method:'POST', path:path + '/close', query:'', body:{mchid:merchantId}},
+    {method:'GET', path, query, body:undefined},
+  ]);
+  t.mock.timers.tick(2000);
+  expectOrder(await f.browser('close', reopened), order, 'closed');
+  assert.equal(f.calls.length, 4);
+  const replacement = await f.purchase(session, annual, randomUUID(), checkoutOrder.requestId);
+  expectLease(await f.browser('order', replacement), ['checkout']);
+  assert.equal(count(f.db, 'team_billing_wechat_native_payments'), 0);
+  assert.equal(count(f.db, 'team_billing_wechat_native_fulfilments'), 0);
+});
+
+test('a signed close acknowledgement alone never permits a new purchase', async t => {
+  t.mock.timers.enable({apis:['Date'], now:Date.now()});
+  let order;
+  const f = await fixture(t, {catalog:expiryCatalog,
+    provider:closeTransport(() => signedProviderResponse(verifiedTrade(order, 'NOTPAY')))});
+  const session = await f.device();
+  const checkoutOrder = await lockAnnualCheckout(f, session);
+  order = checkoutOrder.order;
+  expectOrder(await f.browser('code', checkoutOrder.handoff), order, 'pending', true);
+  t.mock.timers.setTime(order.expiresAt);
+  const reopened = await f.issue(session, order.id);
+  expectCloseError(await f.browser('close', reopened), 'WECHAT_NATIVE_CLOSE_UNCONFIRMED');
+  expectOrder(await f.browser('order', reopened), order, 'expired');
+  expectUnresolved(await session.heldPost(purchaseIssuer(teamId),
+    {product:annual, requestId:randomUUID(), previousRequestId:checkoutOrder.requestId}));
+  assert.deepEqual(f.calls.map(call => call.method), ['POST', 'GET', 'POST', 'GET']);
+  assert.equal(count(f.db, 'team_billing_wechat_native_payments'), 0);
+});
+
+test('a failed provider close still rechecks and retains signed payment instead of marking closure', async t => {
+  t.mock.timers.enable({apis:['Date'], now:Date.now()});
+  let order, queries = 0;
+  const f = await fixture(t, {catalog:expiryCatalog, provider:closeTransport(
+    () => signedProviderResponse(verifiedTrade(order, ++queries === 1 ? 'NOTPAY' : 'SUCCESS', order.expiresAt - 1000)),
+    () => { throw new Error('Synthetic close transport was interrupted'); },
+  )});
+  const session = await f.device();
+  const checkoutOrder = await lockAnnualCheckout(f, session);
+  order = checkoutOrder.order;
+  expectOrder(await f.browser('code', checkoutOrder.handoff), order, 'pending', true);
+  t.mock.timers.setTime(order.expiresAt);
+  const reopened = await f.issue(session, order.id);
+  expectOrder(await f.browser('close', reopened), order, 'pending_fulfilment');
+  expectUnresolved(await session.heldPost(purchaseIssuer(teamId),
+    {product:annual, requestId:randomUUID(), previousRequestId:checkoutOrder.requestId}));
+  assert.deepEqual(f.calls.map(call => call.method), ['POST', 'GET', 'POST', 'GET']);
+  assert.equal(count(f.db, 'team_billing_wechat_native_payments'), 1);
+  assert.equal(count(f.db, 'team_billing_wechat_native_fulfilments'), 0);
+});
+
+test('a signed not-found result does not prove an untracked historical order closed', async t => {
+  t.mock.timers.enable({apis:['Date'], now:Date.now()});
+  const f = await fixture(t, {catalog:expiryCatalog, provider:closeTransport(
+    () => signedProviderResponse({code:'ORDER_NOT_EXIST', message:'合成未找到'}, {status:404}),
+  )});
+  const id = randomUUID(), requestId = randomUUID();
+  const expiresAt = Math.floor(Date.now() / 1000) * 1000;
+  f.db.prepare(`INSERT INTO main.team_billing_wechat_native_orders
+    (order_id,team_id,actor_id,request_id,app_id,merchant_id,product,description,offer_id,offer_revision,seats,
+      term_revision,amount_minor,currency,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'CNY',?,?)`)
+    .run(id, teamId, actorId, requestId, appId, merchantId, annual, '合成历史订单', quote.offerId, quote.offerRevision,
+      quote.seats, null, quote.amountMinor, expiresAt - 120000, expiresAt);
+  const order = {...quote, id, expiresAt};
+  const session = await f.device();
+  const handoff = await f.issue(session, id);
+  expectCloseError(await f.browser('close', handoff), 'WECHAT_NATIVE_CLOSE_UNCONFIRMED');
+  expectOrder(await f.browser('order', handoff), order, 'expired');
+  expectUnresolved(await session.heldPost(purchaseIssuer(teamId), {product:annual, requestId:randomUUID(), previousRequestId:requestId}));
+  assert.deepEqual(f.calls.map(call => call.method), ['GET']);
+  assert.equal(count(f.db, 'team_billing_wechat_native_payments'), 0);
+});
+
+test('a lost prepay response leaves a durable attempt and a later signed 404 cannot close it locally', async t => {
+  t.mock.timers.enable({apis:['Date'], now:Date.now()});
+  let order, beforeDispatch;
+  const f = await fixture(t, {catalog:expiryCatalog, provider:(target, init) => {
+    if (init.method === 'POST' && target.pathname === '/v3/pay/transactions/native') {
+      beforeDispatch = lifecycleEvents(f.db, order.id);
+      throw new Error('Synthetic prepay response was lost');
+    }
+    assert.equal(init.method, 'GET');
+    return signedProviderResponse({code:'ORDER_NOT_EXIST', message:'合成未找到'}, {status:404});
+  }});
+  const session = await f.device();
+  const checkoutOrder = await lockAnnualCheckout(f, session);
+  order = checkoutOrder.order;
+  const ambiguous = await f.browser('code', checkoutOrder.handoff);
+  assert.equal(ambiguous.status, 502, ambiguous.text);
+  assert.deepEqual(beforeDispatch, ['PREPAY_STARTED', 'TRACKED']);
+  t.mock.timers.setTime(order.expiresAt);
+  await f.restart(expiryCatalog);
+  const handoff = await f.issue(session, order.id);
+  expectCloseError(await f.browser('close', handoff), 'WECHAT_NATIVE_CLOSE_UNCONFIRMED');
+  expectOrder(await f.browser('order', handoff), order, 'expired');
+  expectUnresolved(await session.heldPost(purchaseIssuer(teamId),
+    {product:annual, requestId:randomUUID(), previousRequestId:checkoutOrder.requestId}));
+  assert.deepEqual(lifecycleEvents(f.db, order.id), ['PREPAY_STARTED', 'TRACKED']);
+  assert.deepEqual(f.calls.map(call => call.method), ['POST', 'GET']);
+  assert.equal(count(f.db, 'team_billing_wechat_native_payments'), 0);
+});
+
+test('revocation during the close preread prevents provider closure and disclosure', async t => {
+  for (const state of ['NOTPAY', 'SUCCESS']) {
+    await t.test('signed ' + state, async sample => {
+      sample.mock.timers.enable({apis:['Date'], now:Date.now()});
+      let order;
+      const entered = Promise.withResolvers();
+      const release = Promise.withResolvers();
+      const f = await fixture(sample, {catalog:expiryCatalog, provider:closeTransport(async () => {
+        entered.resolve();
+        await release.promise;
+        return signedProviderResponse(verifiedTrade(order, state, order.expiresAt - 1000));
+      })});
+      const session = await f.device();
+      const checkoutOrder = await lockAnnualCheckout(f, session);
+      order = checkoutOrder.order;
+      expectOrder(await f.browser('code', checkoutOrder.handoff), order, 'pending', true);
+      sample.mock.timers.setTime(order.expiresAt);
+      const reopened = await f.issue(session, order.id);
+      const close = f.browser('close', reopened);
+      try {
+        await Promise.race([entered.promise, close.then(reply => assert.fail(reply.text))]);
+        session.revoke();
+      } finally { release.resolve(); }
+      const denied = await close;
+      assert.equal(denied.status, 403, denied.text);
+      assert.doesNotMatch(denied.text, new RegExp(order.id));
+      assert.deepEqual(f.calls.map(call => call.method), ['POST', 'GET']);
+      assert.equal(count(f.db, 'team_billing_wechat_native_payments'), state === 'SUCCESS' ? 1 : 0);
+      assert.equal(count(f.db, 'team_billing_wechat_native_fulfilments'), 0);
+    });
+  }
+});
+
+test('a verified callback during the close preread takes precedence over the signed unpaid snapshot', async t => {
+  t.mock.timers.enable({apis:['Date'], now:Date.now()});
+  let order;
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const f = await fixture(t, {catalog:expiryCatalog, provider:closeTransport(async () => {
+    entered.resolve();
+    await release.promise;
+    return signedProviderResponse(verifiedTrade(order, 'NOTPAY'));
+  })});
+  const session = await f.device();
+  const checkoutOrder = await lockAnnualCheckout(f, session);
+  order = checkoutOrder.order;
+  expectOrder(await f.browser('code', checkoutOrder.handoff), order, 'pending', true);
+  t.mock.timers.setTime(order.expiresAt);
+  const reopened = await f.issue(session, order.id);
+  const close = f.browser('close', reopened);
+  try {
+    await Promise.race([entered.promise, close.then(reply => assert.fail(reply.text))]);
+    const callback = await f.send(callbackPath, signedPaymentNotice(order, order.expiresAt - 1000));
+    assert.equal(callback.status, 204, callback.text);
+    assert.equal(count(f.db, 'team_billing_wechat_native_events'), 1);
+  } finally { release.resolve(); }
+  expectOrder(await close, order, 'pending_fulfilment');
+  assert.deepEqual(f.calls.map(call => call.method), ['POST', 'GET']);
+  assert.equal(count(f.db, 'team_billing_wechat_native_payments'), 1);
+  assert.equal(count(f.db, 'team_billing_wechat_native_fulfilments'), 0);
+  expectUnresolved(await session.heldPost(purchaseIssuer(teamId),
+    {product:annual, requestId:randomUUID(), previousRequestId:checkoutOrder.requestId}));
 });

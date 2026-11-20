@@ -22,18 +22,22 @@ const EVENT = 'main.team_billing_wechat_native_events';
 const QUERY = 'main.team_billing_wechat_native_query_confirmations';
 const FULFILMENT = 'main.team_billing_wechat_native_fulfilments';
 const REVIEW = 'main.team_billing_wechat_native_review_states';
+const LIFECYCLE = 'main.team_billing_wechat_native_lifecycle';
 const RECEIPT_FIELDS = `p.transaction_id, p.paid_at, p.first_verified_at,
   EXISTS(SELECT 1 FROM ${EVENT} e WHERE e.order_id = o.order_id) AS from_notification,
   EXISTS(SELECT 1 FROM ${QUERY} q WHERE q.order_id = o.order_id) AS from_query,
   f.subscription_revision AS granted_revision, f.seats AS granted_seats, f.starts_at AS granted_start,
   f.ends_at AS granted_end, f.fulfilled_at,
   EXISTS(SELECT 1 FROM ${REVIEW} r WHERE r.order_id = o.order_id AND r.state = 'REFUND') AS observed_refund,
-  EXISTS(SELECT 1 FROM ${REVIEW} r WHERE r.order_id = o.order_id AND r.state = 'CLOSED') AS observed_closed`;
+  EXISTS(SELECT 1 FROM ${REVIEW} r WHERE r.order_id = o.order_id AND r.state = 'CLOSED') AS observed_closed,
+  EXISTS(SELECT 1 FROM ${LIFECYCLE} l WHERE l.order_id = o.order_id AND l.event = 'EXPIRED_UNSENT') AS expired_unsent`;
 const RECEIPT_JOINS = `LEFT JOIN ${PAYMENT} p ON p.order_id = o.order_id
   LEFT JOIN ${FULFILMENT} f ON f.order_id = o.order_id AND f.team_id = o.team_id`;
 const conflict = () => { throw new ApiError(409, 'WECHAT_NATIVE_BILLING_CONFLICT', '微信支付订单或收款记录无法核实，请核对原订单。'); };
 const needsReview = () => { throw new ApiError(409, 'WECHAT_NATIVE_FULFILMENT_REVIEW', '收款已保存，当前条件未能兑现权益。'); };
 const insufficientSeats = () => { throw new ApiError(409, 'WECHAT_NATIVE_INSUFFICIENT_SEATS', '购买的席位不足以覆盖已启用成员和邀请预留。'); };
+const notExpired = () => { throw new ApiError(409, 'WECHAT_NATIVE_NOT_EXPIRED', '付款截止后才能关闭未支付的订单。'); };
+const closeUnconfirmed = () => { throw new ApiError(409, 'WECHAT_NATIVE_CLOSE_UNCONFIRMED', '关单尚未核实，请继续查询同一笔原订单。'); };
 const CALLBACK_LOCK_TIMEOUT_MS = 500;
 let schemaDefinition;
 
@@ -60,17 +64,20 @@ function billingSchemaDefinition() {
   if (schemaDefinition) return schemaDefinition;
   const schema = readFileSync(new URL('./wechat-native-billing-schema.sql', import.meta.url), 'utf8');
   const fulfilmentSchema = readFileSync(new URL('./wechat-native-fulfilment-schema.sql', import.meta.url), 'utf8');
+  const expirySchema = readFileSync(new URL('./wechat-native-expiry-schema.sql', import.meta.url), 'utf8');
   const expected = new DatabaseSync(':memory:');
-  let baseManifest, manifest;
+  let baseManifest, fulfilmentManifest, manifest;
   try {
     expected.exec(schema);
     baseManifest = JSON.stringify(schemaEntries(expected));
     expected.exec(fulfilmentSchema);
+    fulfilmentManifest = JSON.stringify(schemaEntries(expected));
+    expected.exec(expirySchema);
     manifest = JSON.stringify(schemaEntries(expected));
   } finally {
     expected.close();
   }
-  schemaDefinition = {schema, fulfilmentSchema, baseManifest, manifest};
+  schemaDefinition = {schema, fulfilmentSchema, expirySchema, baseManifest, fulfilmentManifest, manifest};
   return schemaDefinition;
 }
 
@@ -81,11 +88,13 @@ export function assertWechatNativeBillingReady(db) {
 
 export function installWechatNativeBillingSchema(db) {
   assertTeamSchema(db);
-  const {schema, fulfilmentSchema, baseManifest, manifest} = billingSchemaDefinition();
+  const {schema, fulfilmentSchema, expirySchema, baseManifest, fulfilmentManifest, manifest} = billingSchemaDefinition();
   transaction(db, () => {
     const entries = schemaEntries(db);
     if (entries.length === 0) db.exec(schema);
-    if (entries.length === 0 || JSON.stringify(entries) === baseManifest) db.exec(fulfilmentSchema);
+    const prior = JSON.stringify(entries);
+    if (entries.length === 0 || prior === baseManifest) db.exec(fulfilmentSchema);
+    if (entries.length === 0 || prior === baseManifest || prior === fulfilmentManifest) db.exec(expirySchema);
     if (JSON.stringify(schemaEntries(db)) !== manifest) throw new Error('Incompatible WeChat billing schema');
   });
 }
@@ -136,7 +145,7 @@ function paymentValue(row) {
     seats: row.granted_seats, startsAt: row.granted_start, endsAt: row.granted_end, fulfilledAt: row.fulfilled_at});
   return Object.freeze({channel: 'wechat-pay-native-v3', orderId: row.order_id, transactionId: row.transaction_id,
     amountMinor: row.amount_minor, currency: row.currency, paidAt: row.paid_at, firstVerifiedAt: row.first_verified_at,
-    status: fulfilment ? 'fulfilled' : row.paid_at >= row.expires_at || row.observed_refund || row.observed_closed
+    status: fulfilment ? 'fulfilled' : row.paid_at >= row.expires_at || row.observed_refund || row.observed_closed || row.expired_unsent
       ? 'needs_review' : 'pending_fulfilment',
     sources: Object.freeze(sources), ...(fulfilment ? {fulfilment} : {}), ...providerReviewStates(row)});
 }
@@ -176,7 +185,8 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
     const row = readByAdministrator.get(actorId, teamId, orderId, merchantId, appId);
     if (!row) deny();
     const payment = paymentValue(row);
-    return {order: orderValue(row), payment, ...(payment ? {} : providerReviewStates(row))};
+    return {order: orderValue(row), payment, ...(payment ? {} : providerReviewStates(row)),
+      ...(row.expired_unsent ? {expiredUnsent: true} : {})};
   }
 
   function assertActiveSeatTerm(order, at) {
@@ -185,8 +195,8 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
     if (term.state !== 'active' || term.revision !== order.termRevision || order.expiresAt > term.endsAt) conflict();
   }
 
-  function assertOrderCanBePaid({order, payment, providerReviewStates: reviewStates}, at) {
-    if (payment || reviewStates || at >= order.expiresAt) conflict();
+  function assertOrderCanBePaid({order, payment, providerReviewStates: reviewStates, expiredUnsent}, at) {
+    if (payment || reviewStates || expiredUnsent || at >= order.expiresAt) conflict();
     if (order.product === ANNUAL_PRODUCT && readSeatCapacity(db, order.teamId, at).usedSeats > order.seats) insufficientSeats();
     assertActiveSeatTerm(order, at);
   }
@@ -200,7 +210,8 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
       LEFT JOIN ${FULFILMENT} f ON f.order_id = o.order_id
       WHERE o.team_id = ? AND o.product = ? AND p.paid_at < o.expires_at
       AND ((f.order_id IS NULL AND (p.first_verified_at, o.order_id) < (?, ?)
-          AND NOT EXISTS (SELECT 1 FROM ${REVIEW} r WHERE r.order_id = o.order_id))
+          AND NOT EXISTS (SELECT 1 FROM ${REVIEW} r WHERE r.order_id = o.order_id)
+          AND NOT EXISTS (SELECT 1 FROM ${LIFECYCLE} l WHERE l.order_id = o.order_id AND l.event = 'EXPIRED_UNSENT'))
         OR (f.order_id IS NOT NULL AND p.first_verified_at > ?)) LIMIT 1`);
     if (queue.get(order.teamId, ANNUAL_PRODUCT, payment.firstVerifiedAt, order.id, payment.firstVerifiedAt)) needsReview();
     const term = current.revision ? {startsAt: current.startsAt, endsAt: current.endsAt} : null;
@@ -276,6 +287,8 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
     WHERE o.team_id = ? AND o.order_id = ? AND o.merchant_id = ? AND o.app_id = ?
       AND ${administratorTechnicalEligibilitySql()}`);
   const readRequestOrder = db.prepare(`SELECT * FROM ${ORDER} WHERE team_id = ? AND request_id = ?`);
+  const readLifecycle = db.prepare(`SELECT event FROM ${LIFECYCLE} WHERE order_id = ?`);
+  const appendLifecycle = db.prepare(`INSERT INTO ${LIFECYCLE} (order_id,event,recorded_at) VALUES (?,?,?)`);
 
   function lockOrderWithinTransaction(input, at = readCurrentTime()) {
     if (!db.isTransaction) conflict();
@@ -301,12 +314,14 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
     if (product === ANNUAL_PRODUCT && readSeatCapacity(db, teamId, at).usedSeats > seats) insufficientSeats();
     const id = randomUUID();
     const description = product === ANNUAL_PRODUCT ? '审易团队年订阅' : '审易团队席位增购';
-    return orderValue(db.prepare(`INSERT INTO ${ORDER}
+    const order = orderValue(db.prepare(`INSERT INTO ${ORDER}
       (order_id, team_id, actor_id, request_id, app_id, merchant_id, product, description, offer_id, offer_revision,
         seats, term_revision, amount_minor, currency, created_at, expires_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CNY', ?, ?) RETURNING *`)
       .get(id, teamId, actorId, requestId, appId, merchantId, product, description, offerId, offerRevision,
         seats, termRevision, amountMinor, at, expiresAt));
+    appendLifecycle.run(order.id,'TRACKED',at);
+    return order;
   }
 
   function readOrderForRequest({teamId, actorId, requestId, product}) {
@@ -319,6 +334,23 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
     return readOrder({teamId, actorId, orderId:prior.order_id});
   }
 
+  async function observeQuery(order) {
+    const result = await provider.queryOrder(order);
+    if (result.state === 'SUCCESS') capture(result, 'query');
+    if (result.state === 'REFUND' || result.state === 'CLOSED') recordProviderReview(order.id, result.state);
+    return result.state;
+  }
+
+  function expiredOrder(scope) {
+    const locked = readOrder(scope);
+    if (readCurrentTime() < locked.order.expiresAt) notExpired();
+    return locked;
+  }
+
+  function resolutionKnown({payment,providerReviewStates,expiredUnsent}) {
+    return Boolean(payment || providerReviewStates?.length || expiredUnsent);
+  }
+
   return Object.freeze({
     lockOrder(input) {
       return write(db, () => lockOrderWithinTransaction(input));
@@ -326,10 +358,19 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
     lockOrderWithinTransaction,
     readOrderForRequest,
     readOrder,
-    async createPaymentCode(access) {
+    async createPaymentCode(access, {authorize = () => {}} = {}) {
       const scope = {...access};
-      const locked = readOrder(scope);
-      assertOrderCanBePaid(locked, readCurrentTime());
+      const locked = write(db, () => {
+        authorize();
+        const locked = readOrder(scope), at = readCurrentTime();
+        assertOrderCanBePaid(locked, at);
+        if (locked.order.expiresAt < at + MIN_PAYMENT_WINDOW_MS) conflict();
+        if (!readLifecycle.all(locked.order.id).some(({event}) => event === 'PREPAY_STARTED')) {
+          appendLifecycle.run(locked.order.id,'PREPAY_STARTED',at);
+        }
+        authorize();
+        return locked;
+      });
       const code = await provider.createOrder(locked.order);
       assertOrderCanBePaid(readOrder(scope), readCurrentTime());
       return code;
@@ -337,11 +378,42 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
     async queryPayment(access) {
       const scope = {...access};
       const {order} = readOrder(scope);
-      const result = await provider.queryOrder(order);
-      if (result.state === 'SUCCESS') capture(result, 'query');
-      if (result.state === 'REFUND' || result.state === 'CLOSED') recordProviderReview(order.id, result.state);
+      const state = await observeQuery(order);
       const current = readOrder(scope);
-      return current.payment ? current : {...current, state: result.state};
+      return current.payment ? current : {...current, state};
+    },
+    async closeExpiredOrder(access, {authorize = () => {}} = {}) {
+      const scope = {...access};
+      const locked = write(db, () => {
+        authorize();
+        const current = expiredOrder(scope);
+        if (resolutionKnown(current)) return current;
+        const lifecycle = readLifecycle.all(current.order.id);
+        if (lifecycle.length === 1 && lifecycle[0].event === 'TRACKED') {
+          appendLifecycle.run(current.order.id,'EXPIRED_UNSENT',readCurrentTime());
+          authorize();
+          return readOrder(scope);
+        }
+        return current;
+      });
+      if (resolutionKnown(locked)) return locked;
+
+      const state = await observeQuery(locked.order);
+      authorize();
+      const current = expiredOrder(scope);
+      if (resolutionKnown(current)) return current;
+      if (state !== 'NOTPAY') closeUnconfirmed();
+
+      try { await provider.closeOrder(locked.order); }
+      catch (error) {
+        if (!(error instanceof ApiError) || error.code !== 'WECHAT_NATIVE_PROVIDER_UNAVAILABLE') throw error;
+        // Even a failed response can follow a committed provider close. Only the next signed query settles it.
+      }
+      await observeQuery(locked.order);
+      authorize();
+      const checked = readOrder(scope);
+      if (!resolutionKnown(checked)) closeUnconfirmed();
+      return checked;
     },
     receiveNotification,
     fulfilPayment(access, {authorize} = {}) {

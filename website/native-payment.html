@@ -25,7 +25,7 @@
 
     <section id="payment-status" class="payment-status" aria-labelledby="status-title" aria-busy="true">
       <div role="status" aria-live="polite" aria-atomic="true">
-        <h2 id="status-title">正在核对订单页授权</h2>
+        <h2 id="status-title" tabindex="-1">正在核对订单页授权</h2>
         <p id="status-detail">请稍候。</p>
       </div>
       <button type="button" class="button secondary" id="retry-order" hidden>重新核对订单</button>
@@ -91,6 +91,7 @@
         <div class="payment-actions">
           <button type="button" class="button primary" id="show-qr">获取付款二维码</button>
           <button type="button" class="button secondary" id="check-payment">查询付款结果</button>
+          <button type="button" class="button secondary" id="close-order" aria-describedby="scan-instructions" hidden>关闭未付款订单</button>
         </div>
       </section>
     </div>

@@ -33,11 +33,11 @@ function signedResponse(payload, {signingKey = providerKeys.privateKey, serial =
   edited = false, status = 200} = {}) {
   const timestamp = String(signedAt / 1000);
   const nonce = 'synthetic-provider-nonce';
-  const serialized = JSON.stringify(payload, null, 2);
+  const serialized = status === 204 ? '' : JSON.stringify(payload, null, 2);
   const signature = sign('RSA-SHA256', Buffer.from(`${timestamp}\n${nonce}\n${serialized}\n`), signingKey).toString('base64');
   const headers = {'Content-Type': 'application/json', 'Wechatpay-Nonce': nonce, 'Wechatpay-Timestamp': timestamp,
     'Wechatpay-Serial': serial, 'Wechatpay-Signature': signature};
-  return new Response(edited ? `${serialized}\n` : serialized, {status, headers});
+  return new Response(status === 204 ? null : edited ? `${serialized}\n` : serialized, {status, headers});
 }
 
 function settled(changes = {}) {
@@ -65,13 +65,14 @@ function assertRequestSignature({method, path, headers, body}) {
 
 const rejectsOrder = promise => assert.rejects(promise, error => Number.isInteger(error.status) && error.status >= 400);
 
-test('Native create and query sign the actual request bytes over a loopback transport', async t => {
+test('Native create, query and close sign the actual request bytes over a loopback transport', async t => {
   const requests = [];
   const server = http.createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     requests.push({method: request.method, path: request.url, headers: request.headers, body: Buffer.concat(chunks)});
-    const packet = signedResponse(request.method === 'POST' ? {code_url: codeUrl} : settled());
+    const packet = request.url.endsWith('/close') ? signedResponse(null, {status: 204}) :
+      signedResponse(request.method === 'POST' ? {code_url: codeUrl} : settled());
     response.writeHead(packet.status, Object.fromEntries(packet.headers));
     response.end(Buffer.from(await packet.arrayBuffer()));
   });
@@ -90,9 +91,11 @@ test('Native create and query sign the actual request bytes over a loopback tran
   assert.deepEqual(await checkout.queryOrder(locked), {channel: 'wechat-pay-native-v3', orderId: locked.id,
     merchantOrderId, transactionId: '12340001', appId, merchantId, amountMinor: 288000, currency: 'CNY',
     paidAt: Date.parse(paidTime), state: 'SUCCESS'});
+  assert.deepEqual(await checkout.closeOrder({...locked, createdAt: now - 600_000, expiresAt: now}),
+    {merchantOrderId, acknowledged: true});
 
-  assert.equal(requests.length, 3);
-  const [create, retry, query] = requests;
+  assert.equal(requests.length, 4);
+  const [create, retry, query, close] = requests;
   assert.equal(create.method, 'POST');
   assert.equal(create.path, '/v3/pay/transactions/native');
   assert.match(create.headers['content-type'], /^application\/json\b/);
@@ -110,6 +113,46 @@ test('Native create and query sign the actual request bytes over a loopback tran
   assert.equal(query.path, `/v3/pay/transactions/out-trade-no/${encodeURIComponent(merchantOrderId)}?mchid=${merchantId}`);
   assert.equal(query.body.length, 0);
   assertRequestSignature(query);
+  assert.equal(close.method, 'POST');
+  assert.equal(close.path, `/v3/pay/transactions/out-trade-no/${encodeURIComponent(merchantOrderId)}/close`);
+  assert.match(close.headers['content-type'], /^application\/json\b/);
+  assert.match(close.headers.accept, /^application\/json\b/);
+  assert.deepEqual(JSON.parse(close.body), {mchid: merchantId});
+  assertRequestSignature(close);
+});
+
+test('close uses the locked merchant identity and requires its exact expiry to have passed', async () => {
+  let sends = 0;
+  const checkout = await client(() => { sends++; return signedResponse(null, {status: 204}); });
+  const expired = {...locked, createdAt: now - 600_000, expiresAt: now};
+  for (const order of [locked, {...expired, expiresAt: now - 1}, {...expired, expiresAt: expired.createdAt},
+    {...expired, expiresAt: undefined}, {...expired, appId: 'other-app'}, {...expired, merchantId: '2000000000'},
+    {...expired, merchantOrderId: 'other/path'}, {...expired, currency: 'USD'}]) {
+    await assert.rejects(checkout.closeOrder(order), {code:'WECHAT_NATIVE_LOCK_INVALID'});
+  }
+  assert.equal(sends, 0);
+  assert.deepEqual(await checkout.closeOrder(expired), {merchantOrderId, acknowledged:true});
+  assert.equal(sends, 1);
+});
+
+test('close accepts only a signed empty 204 without treating other replies as evidence', async () => {
+  const expired = {...locked, createdAt: now - 600_000, expiresAt: now};
+  const contradictoryLength = signedResponse(null, {status: 204});
+  contradictoryLength.headers.set('Content-Length', '1');
+  const signatureOfNonemptyBody = signedResponse({state:'CLOSED'}).headers;
+  for (const packet of [new Response(null, {status: 204}), contradictoryLength,
+    new Response(null, {status: 204, headers: signatureOfNonemptyBody}),
+    signedResponse(null, {status: 204, signingKey: merchantKeys.privateKey}),
+    signedResponse(null, {status: 204, serial: 'PUB_KEY_ID_202'}),
+    signedResponse(null, {status: 204, signedAt: now - 301_000}),
+    signedResponse({trade_state:'CLOSED'}), signedResponse({code:'ORDER_NOT_EXIST'}, {status: 404}),
+    new Response(null, {status: 302, headers: {Location: 'https://other.example.invalid/next'}})]) {
+    const checkout = await client(() => packet);
+    await assert.rejects(checkout.closeOrder(expired), {code:'WECHAT_NATIVE_PROVIDER_UNAVAILABLE'});
+  }
+  const wrongEndpointStatus = await client(() => signedResponse(null, {status: 204}));
+  await rejectsOrder(wrongEndpointStatus.createOrder(locked));
+  await rejectsOrder(wrongEndpointStatus.queryOrder(locked));
 });
 
 test('prepay rejects invalid lock terms locally and preserves supported exact deadlines', async () => {

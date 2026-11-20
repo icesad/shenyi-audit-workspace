@@ -85,7 +85,7 @@ export function createWechatNativeOrders({
     return {id, merchantOrderId, amountMinor, currency, createdAt};
   }
 
-  async function request(method, path, at, body) {
+  async function request(method, path, at, body, {emptyResponse = false} = {}) {
     const timestamp = Math.floor(at / 1000);
     const nonce = randomBytes(16).toString('hex');
     const canonical = Buffer.from(`${method}\n${path}\n${timestamp}\n${nonce}\n${body ?? ''}\n`);
@@ -110,15 +110,24 @@ export function createWechatNativeOrders({
       const response = await fetchImpl(url, {method, body, headers, signal, redirect: 'error', cache: 'no-store',
         credentials: 'omit', referrerPolicy: 'no-referrer'});
       const mayBeMissingOrder = method === 'GET' && response.status === 404;
+      const expectedStatus = emptyResponse ? 204 : 200;
       if (signal.aborted || response.redirected || (response.url && response.url !== url) ||
-          (response.status !== 200 && !mayBeMissingOrder)) {
+          (response.status !== expectedStatus && !mayBeMissingOrder)) {
         void response.body?.cancel().catch(() => {});
         providerUnavailable();
       }
-      const bytes = await readResponseBytes(response, signal);
+      if (emptyResponse) {
+        const length = response.headers.get('Content-Length');
+        if (response.body || (length !== null && length !== '0')) {
+          void response.body?.cancel().catch(() => {});
+          providerUnavailable();
+        }
+      }
+      const bytes = emptyResponse ? Buffer.alloc(0) : await readResponseBytes(response, signal);
       const receivedAt = now();
       const signedAt = verifySignature(response.headers, bytes, receivedAt);
       if (signedAt === null) providerUnavailable();
+      if (emptyResponse) return;
       const data = parseWechatRecord(bytes);
       if (!data || (mayBeMissingOrder && data.code !== 'ORDER_NOT_EXIST')) providerUnavailable();
       return {data, missing: mayBeMissingOrder, receivedAt, signedAt};
@@ -147,6 +156,16 @@ export function createWechatNativeOrders({
       const {data} = await request('POST', '/v3/pay/transactions/native', at, body);
       if (!isPaymentCodeUrl(data.code_url)) providerUnavailable();
       return Object.freeze({merchantOrderId, codeUrl: data.code_url});
+    },
+
+    async closeOrder(order) {
+      const at = now();
+      const {merchantOrderId, createdAt} = readLockedOrder(order, at);
+      const {expiresAt} = order;
+      if (!boundedInteger(expiresAt, createdAt + 1, at) || expiresAt % 1000 !== 0) invalidOrder();
+      const path = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(merchantOrderId)}/close`;
+      await request('POST', path, at, JSON.stringify({mchid: merchantId}), {emptyResponse: true});
+      return Object.freeze({merchantOrderId, acknowledged: true});
     },
 
     async queryOrder(order) {

@@ -23,7 +23,7 @@ const paths = new Map([
   [ROOT+'brand.png', ['dist/brand-shenyi.png', 'image/png']],
 ]);
 const actions = new Map([
-  [ROOT+'order',['handoff']], [ROOT+'code',['handoff']], [ROOT+'check',['handoff']],
+  [ROOT+'order',['handoff']], [ROOT+'code',['handoff']], [ROOT+'check',['handoff']], [ROOT+'close',['handoff']],
   [ROOT+'quote',['handoff','seats']], [ROOT+'confirm',['handoff','quoteId']],
 ]);
 const staticHeaders = {
@@ -82,12 +82,12 @@ export async function createWechatNativeWebsite({db, origin, billing, catalog:ca
     return safeMemberText(teamName.get(teamId)?.name,teamId);
   }
 
-  function projection({order,payment,providerReviewStates}, at) {
+  function projection({order,payment,providerReviewStates,expiredUnsent}, at) {
     let status;
     if (payment?.status === 'needs_review' || payment?.providerReviewStates?.length) status = 'needs_review';
     else if (payment) status = payment.status;
     else if (providerReviewStates?.includes('REFUND')) status = 'needs_review';
-    else if (providerReviewStates?.includes('CLOSED')) status = 'closed';
+    else if (providerReviewStates?.includes('CLOSED') || expiredUnsent) status = 'closed';
     else status = at >= order.expiresAt ? 'expired' : 'pending';
     return {id:order.id,product:order.product,teamName:nameOf(order.teamId),
       amountMinor:order.amountMinor,seats:order.seats,currency:order.currency,expiresAt:order.expiresAt,status};
@@ -115,9 +115,10 @@ export async function createWechatNativeWebsite({db, origin, billing, catalog:ca
       previousOrderUnresolved();
     }
     if (!prior) previousOrderUnresolved();
-    const {payment,providerReviewStates} = prior;
+    const {payment,providerReviewStates,expiredUnsent} = prior;
     const fulfilled = payment?.status === 'fulfilled' && payment.fulfilment && !payment.providerReviewStates?.length;
-    const closedUnpaid = !payment && providerReviewStates?.includes('CLOSED') && !providerReviewStates.includes('REFUND');
+    const closedUnpaid = !payment && (expiredUnsent || providerReviewStates?.includes('CLOSED')) &&
+      !providerReviewStates?.includes('REFUND');
     if (!fulfilled && !closedUnpaid) previousOrderUnresolved();
   }
 
@@ -246,13 +247,17 @@ export async function createWechatNativeWebsite({db, origin, billing, catalog:ca
         if (url.pathname === ROOT+'code') {
           if (projection(state.result,state.at).status === 'pending' &&
               state.result.order.expiresAt < state.at + MIN_PAYMENT_WINDOW_MS) paymentWindowUnavailable();
-          const {codeUrl} = await fromProvider(access.orderId,'code',state.at,() => billing.createPaymentCode(access));
+          const {codeUrl} = await fromProvider(access.orderId,'code',state.at,() => billing.createPaymentCode(access,{authorize}));
           state = authorize();
           if (projection(state.result,state.at).status !== 'pending') return response(state);
           const qr = qrcode(0,'M');
           qr.addData(codeUrl,'Byte');
           qr.make();
           return response(state,qr.createDataURL(6));
+        }
+        if (url.pathname === ROOT+'close') {
+          await fromProvider(access.orderId,'close',state.at,() => billing.closeExpiredOrder(access,{authorize}));
+          return response(authorize());
         }
         if (url.pathname === ROOT+'check' && projection(state.result,state.at).status !== 'needs_review') {
           await fromProvider(access.orderId,'check',state.at,() => billing.queryPayment(access));

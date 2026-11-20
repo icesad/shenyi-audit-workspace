@@ -4,17 +4,20 @@
 
 ## 构件和目录
 
-在私有工作区以已审定的 Git 提交生成服务构件。保留 `dist/` 中的原有解析器、首位负责人初始化入口、离线备份演练工具和上线检查工具。先选定仓库外且仅发布人员可写的 `$release_dir`。交接时提供归档、独立签名和对应的完整提交，通过独立可信渠道提供验签公钥。 [Git 归档说明](https://git-scm.com/docs/git-archive)
+在私有工作区以已审定的 Git 提交生成服务构件。归档保留 `dist/` 中的原有解析器、受管微信付款页、首位负责人初始化入口、离线备份和上线检查工具。先选定仓库外且仅发布人员可写的 `$release_dir`。交接时提供归档、独立签名和对应的完整提交，通过独立可信渠道提供验签公钥。 [Git 归档说明](https://git-scm.com/docs/git-archive)
 
 ```sh
 release=$(git rev-parse --verify HEAD)
 git archive --format=tar --output="$release_dir/shenyi-team-${release}.tar" "$release" -- \
   package.json package-lock.json dist shared server/team deploy/linux \
+  website/native-payment.html website/native-payment.css website/native-payment.js website/styles.css \
   scripts/start-team-service.mjs scripts/bootstrap-managed-team.mjs scripts/team-database-backup.mjs \
   scripts/check-team-service.mjs scripts/check-linux-team-file-permissions.py \
   docs/LINUX_TEAM_DEPLOYMENT.md docs/MANAGED_TEAM_SERVICE.md docs/TEAM_OFFLINE_BACKUP.md
 sha256sum "$release_dir/shenyi-team-${release}.tar"
 ```
+
+微信 Native 启用预检依赖归档中的受管付款页和根锁文件中的二维码库。按本次锁文件准备离线 npm 缓存。启用超时关单前按微信账本迁移步骤停机并备份。 [支付准备及账本升级](PAYMENT_CHANNEL_PREPARATION.md#超时未付原单)
 
 ### 发布归档签发与部署验签
 

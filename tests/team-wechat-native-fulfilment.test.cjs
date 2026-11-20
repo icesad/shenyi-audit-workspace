@@ -530,3 +530,52 @@ test('the four-table billing baseline upgrades additively and preserves order ro
   assert.equal(billing.readOrder({teamId: 'team-a', actorId: 'admin-a', orderId: id}).payment, null);
   assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(), []);
 });
+
+test('the prior fulfilment schema upgrades without guessing the prepay history of existing orders', async t => {
+  const f = await fixture(t, {baseOnly:true,persistent:true});
+  const [{assertWechatNativeBillingReady}] = await dependencies;
+  f.db.exec(readFileSync(path.join(__dirname,'../server/team/wechat-native-fulfilment-schema.sql'),'utf8'));
+  const id = randomUUID(), expiresAt = f.time.value + 90_000;
+  f.db.prepare(`INSERT INTO main.team_billing_wechat_native_orders
+    (order_id,team_id,actor_id,request_id,app_id,merchant_id,product,description,offer_id,offer_revision,seats,
+     term_revision,amount_minor,currency,created_at,expires_at)
+    VALUES (?,'team-a','admin-a',?,?,?,'team-annual-renewal','Synthetic annual','synthetic-annual',
+      1,3,NULL,288000,'CNY',?,?)`).run(id,randomUUID(),appId,merchantId,f.time.value,expiresAt);
+  const facts = () => f.db.prepare('SELECT * FROM main.team_billing_wechat_native_orders WHERE order_id=?').get(id);
+  const prior = facts();
+  assert.throws(() => assertWechatNativeBillingReady(f.db), /Incompatible/);
+  f.install();
+  assertWechatNativeBillingReady(f.db);
+  assert.deepEqual(facts(),prior);
+  const billing = f.other();
+  const access = {teamId:'team-a',actorId:'admin-a',orderId:id};
+  f.time.value = expiresAt;
+  const bytes = Buffer.from(JSON.stringify({code:'ORDER_NOT_EXIST',message:'synthetic legacy order'}));
+  f.provider.reply = new Response(bytes,{status:404,headers:signedHeaders(bytes,f.time.value)});
+  await assert.rejects(billing.closeExpiredOrder(access),{code:'WECHAT_NATIVE_CLOSE_UNCONFIRMED'});
+  assert.deepEqual(f.provider.calls,['GET']);
+  assert.equal(billing.readOrder(access).expiredUnsent,undefined);
+  assert.equal(rows(f.db,'team_billing_wechat_native_lifecycle'),0);
+  assert.deepEqual(facts(),prior);
+  assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('unexpected payment on an order closed locally is held without holding unrelated renewals', async t => {
+  const f = await fixture(t,{persistent:true});
+  const expired = f.lock({expiresAt:initialTime+90_000}), payable = f.lock();
+  f.time.value = expired.expiresAt;
+  assert.equal((await f.billing.closeExpiredOrder(scope(expired))).expiredUnsent,true);
+  assert.equal((await f.other().closeExpiredOrder(scope(expired))).expiredUnsent,true);
+  assert.deepEqual(f.provider.calls,[]);
+  assert.throws(() => f.db.prepare('DELETE FROM main.team_billing_wechat_native_lifecycle WHERE order_id=?').run(expired.id),
+    /WECHAT_NATIVE_IMMUTABLE/);
+  const recorded = await f.pay(expired,expired.expiresAt-1000);
+  assert.equal(recorded.status,'needs_review');
+  assert.equal(f.billing.readOrder(scope(expired)).expiredUnsent,true);
+  await assert.rejects(async () => f.billing.fulfilPayment(scope(expired)),{code:'WECHAT_NATIVE_FULFILMENT_REVIEW'});
+  f.time.value += 1000;
+  await f.pay(payable);
+  assert.equal((f.billing.fulfilPayment(scope(payable))).payment.status,'fulfilled');
+  assert.equal(rows(f.db,'team_billing_wechat_native_payments'),2);
+  assert.equal(rows(f.db,'team_billing_wechat_native_fulfilments'),1);
+});

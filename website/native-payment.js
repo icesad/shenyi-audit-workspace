@@ -9,6 +9,7 @@
   const image = byId('payment-qr-image');
   const generate = byId('show-qr');
   const check = byId('check-payment');
+  const closeOrder = byId('close-order');
   const checkoutContent = byId('checkout-content');
   const seatsInput = byId('selected-seats');
   const seatError = byId('seat-error');
@@ -20,6 +21,7 @@
     confirm: '/api/website-pay/confirm',
     code: '/api/website-pay/code',
     check: '/api/website-pay/check',
+    close: '/api/website-pay/close',
   };
   const productNames = {
     'team-annual-renewal': '团队年订阅',
@@ -31,7 +33,7 @@
     fulfilled: ['权益已到账', '服务端已确认订阅或席位生效，可返回审易客户端查看。'],
     needs_review: ['订单待复核', '请保留订单编号并联系团队管理员核对。'],
     closed: ['订单已关闭', '需要继续购买时，请返回审易客户端处理。'],
-    expired: ['已过付款截止', '若您已扫码付款，仍可查询这笔订单。'],
+    expired: ['已过付款截止', '请核对这笔订单的最终状态。'],
   };
   const numberFormat = new Intl.NumberFormat('zh-CN');
   const timeFormat = new Intl.DateTimeFormat('zh-CN', {
@@ -50,6 +52,7 @@
   let checkout = null;
   let quote = null;
   let uncertain = null;
+  let closeUncertain = false;
   let activeController = null;
   let closed = false;
   let handoffDeadline = null;
@@ -153,6 +156,7 @@
     clearTimeout(handoffTimer);
     order = null;
     uncertain = null;
+    closeUncertain = false;
     clearCheckout();
     clearQr();
     content.hidden = true;
@@ -192,6 +196,12 @@
     status.dataset.state = mode;
   }
 
+  function reportUnconfirmedClose() {
+    closeUncertain = true;
+    byId('scan-instructions').textContent = '请先查询这笔原订单的付款结果。';
+    notice('尚未确认订单已关闭', '页面不会自动再次关闭订单。', 'review');
+  }
+
   function controls() {
     const busy = activeController !== null;
     const pending = order?.status === 'pending';
@@ -204,6 +214,8 @@
     generate.disabled = busy || !handoff || !barcode.hidden;
     check.hidden = !order || order.status === 'fulfilled';
     check.disabled = busy || !handoff;
+    closeOrder.hidden = order?.status !== 'expired';
+    closeOrder.disabled = busy || !handoff || closeOrder.hidden || closeUncertain;
   }
 
   function amountText(minor) {
@@ -219,8 +231,8 @@
     byId('order-id').textContent = value.id;
     byId('order-seats').textContent = `${numberFormat.format(value.seats)} 席`;
     byId('order-expires').textContent = timeFormat.format(value.expiresAt);
-    byId('scan-instructions').textContent = value.status === 'pending'
-      ? '请先核对订单，再获取本单付款码。' : states[value.status][1];
+    byId('scan-instructions').textContent = value.status === 'pending' ? '请先核对订单，再获取本单付款码。' :
+      value.status === 'expired' ? '如已扫码付款，请先查询付款结果。尚未付款时，可关闭这笔订单。' : states[value.status][1];
     content.hidden = false;
     notice(...states[value.status], value.status === 'needs_review' ? 'review' : 'normal');
   }
@@ -319,8 +331,9 @@
     const next = result.order;
     const keys = action === 'code' && Object.hasOwn(result, 'qr') ? ['order', 'handoffExpiresInMs', 'qr'] : ['order', 'handoffExpiresInMs'];
     const attempt = confirmation ?? uncertain;
-    if (!exact(result, keys) || !validOrder(next) || !sameLockedOrder(next) || (checkout && next.product !== checkout.product)) {
-      if (attempt) throw new Error();
+    if (!exact(result, keys) || !validOrder(next) || !sameLockedOrder(next) ||
+      (checkout && next.product !== checkout.product) || (action === 'close' && next.status === 'pending')) {
+      if (attempt || action === 'close') throw new Error();
       reset('无法核对原订单', '请返回审易客户端，重新打开原订单后再试。');
       return null;
     }
@@ -331,6 +344,7 @@
     if (checkout) clearCheckout();
     order = next;
     showOrder(next);
+    if (action === 'check') closeUncertain = false;
     if (quoteDiffers) notice('已找到本次保存的订单', '订单与刚才的报价有差异，请查看已保存的金额、席位数及付款状态。', 'review');
     if (next.status !== 'pending') clearQr();
     else if (action === 'code') {
@@ -349,19 +363,28 @@
       }
       return check;
     }
+    if (action === 'close') {
+      if (next.status === 'expired') {
+        reportUnconfirmedClose();
+        return check;
+      }
+      return byId('status-title');
+    }
     return showReceipt ? byId('order-title') : null;
   }
 
   async function request(action, fields = {}) {
     if (!handoff || expireHandoff() || activeController || closed) return;
     if (action === 'confirm' && (expireQuote() || !quote || selectedSeats() !== quote.seats)) return;
+    if (action === 'close' && (order?.status !== 'expired' || closeUncertain)) return;
     const confirmation = action === 'confirm' ? {product:checkout.product, quote} : null;
     const requestStartedAt = performance.now();
     const controller = new AbortController();
     activeController = controller;
     let focusAfter;
-    const timeout = setTimeout(() => controller.abort(), 8_000);
+    const timeout = setTimeout(() => controller.abort(), action === 'close' ? 18_000 : 8_000);
     controls();
+    if (action === 'close') notice('正在请求关闭订单', '正在核对这笔订单的付款状态。');
     try {
       const response = await fetch(paths[action], {
         method: 'POST',
@@ -406,7 +429,7 @@
       if (closed || activeController !== controller) return;
       const {handoffExpiresInMs} = result ?? {};
       if (!boundedInteger(handoffExpiresInMs, 1, 120_000)) {
-        if (confirmation || uncertain || action === 'quote') throw new Error();
+        if (confirmation || uncertain || action === 'quote' || action === 'close') throw new Error();
         reset('无法核对原订单', '请返回审易客户端，重新打开原订单后再试。');
         return;
       }
@@ -416,7 +439,10 @@
     } catch {
       if (closed || activeController !== controller) return;
       clearQr();
-      if (confirmation || uncertain) {
+      if (action === 'close') {
+        reportUnconfirmedClose();
+        focusAfter = check;
+      } else if (confirmation || uncertain) {
         uncertain ??= confirmation;
         clearQuote();
         notice('订单结果尚未确认', '请先核对本次订单是否已保存。页面不会自动再次提交。', 'review');
@@ -424,6 +450,8 @@
       } else if (action === 'quote') {
         clearQuote();
         notice('暂时无法核对报价', '请检查席位后重新获取报价。', 'review');
+      } else if (order && closeUncertain) {
+        reportUnconfirmedClose();
       } else if (order) {
         notice('暂时无法确认付款结果', '请先查询同一订单，再决定是否扫码。', 'review');
       } else {
@@ -460,6 +488,7 @@
   });
   generate.addEventListener('click', () => request('code'));
   check.addEventListener('click', () => request('check'));
+  closeOrder.addEventListener('click', () => request('close'));
   function checkExpiry() {
     if (!expireHandoff()) expireQuote();
   }

@@ -109,6 +109,7 @@
   "server/team/wechat-native-checkout-pricing.mjs",
   "server/team/wechat-native-callback.mjs",
   "server/team/wechat-native-fulfilment-schema.sql",
+  "server/team/wechat-native-expiry-schema.sql",
   "server/team/wechat-native-notification.mjs",
   "server/team/wechat-native-orders.mjs",
   "server/team/wechat-native-protocol.mjs",
