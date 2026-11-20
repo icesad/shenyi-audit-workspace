@@ -2,11 +2,19 @@
 
 此目录包用于本地发行验证。它包含 `Shenyi.exe`、同目录的 Electron 运行文件和桌面客户端。包内没有安装程序、服务端或连接配置。运行时请保留完整目录。
 
-## 2026-11-20 当前 Windows x64 签前候选
+## 2026-11-20 协作 Windows 候选的 MSI 管理映像
+
+本轮使用来自 `e28ae2a` 的 0.61.0 Windows x64 签前候选。它此前已在实际 Windows 客户端通过合成官网原单付款测试。独立检查的 84 个应用源文件与该提交及当前工作区的 Git 版本逐字节一致。 [Windows 双人评审包重建](STATUS.md#2026-11-20-windows-双人评审包重建)
+
+使用一次性 Ed25519 测试签名生成带 `DO-NOT-INSTALL` 标记的 MSI。Windows Installer 原生结构校验和 `msiexec /a` 成功。管理映像的应用目录含 2,008 个文件，另有 64 字节测试签名。共 2,009 项载荷，合计 402,195,856 字节。两次核对均显示 MSI 产品未注册。原始 MSI 的 SHA-256 为 `2cac3fd3d160bf899f306bce256a95f0d73c329c9f45f43e23dfe90239ffa3ef`。 [Windows Installer 管理映像说明](https://learn.microsoft.com/en-us/windows/win32/msi/administrative-installation)
+
+实际签名核验入口分别拒绝错误摘要和未签测试包。正式接收仍需发布方签名及时戳，并在获准的 Windows 环境验收机器安装、权限、升级、回退和卸载。验收记录位于 `D:/codex-temp/shenyi-windows-e28-msi-admin-20261120/verification.json`。
+
+## 2026-11-20 较早 Windows x64 签前候选
 
 0.61.0 签前候选来自提交 `e90c663`，包含批量对账中断续接的客户端改动。交付 ZIP 位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/delivery/Shenyi-windows-x64-unsigned-e90c663.zip`，SHA-256 为 `7048fd5c9daee41b2091084753a82521e1c695ca81eb782c2e938a61dc5d9663`。包内包含便携目录和候选清单。独立验收校对了 2,007 个 ZIP 成员。
 
-现行 Windows 账务一键评审包已在同一源码提交实测，83 个允许打包的应用源码文件与本候选逐字节一致。正式 Authenticode 签名、安装包与升级仍待验。 [签前交接和验收记录](STATUS.md#2026-11-20-刷新-windows-和-macos-签前候选)
+该版本的 Windows 账务一键评审包已在同一源码提交实测，83 个允许打包的应用源码文件与本候选逐字节一致。正式 Authenticode 签名、安装包与升级仍待验。 [签前交接和验收记录](STATUS.md#2026-11-20-刷新-windows-和-macos-签前候选)
 
 同源测试 MSI 已通过 Windows Installer 原生结构检查及 `msiexec /a` 管理提取。完整管理映像逐项匹配 2,007 个候选文件和一次性测试签名，原系统产品注册保持。正式接收器拒绝错误摘要和原样未签测试包。记录见 `D:/codex-temp/shenyi-windows-e90-msi-admin-20261120/verification.json`。
 

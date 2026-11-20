@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 协作 Windows MSI 管理映像验收
+
+0.61.0 协作候选 `e28ae2a` 通过 Windows Installer 原生结构校验和 `msiexec /a`。2,008 个应用目录文件和独立测试签名逐项一致，产品在提取前后均未注册。实际 Authenticode 检查分别拒绝错误摘要和未签测试包。68 项相关回归通过。受信签名、系统安装、升级和卸载待实机验收。 [Windows 候选与证据](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-协作-windows-候选的-msi-管理映像)
+
 ## 2026-11-20 微信资金账单跨日退款核对
 
 候选 `96008cd` 可显式指定一个早于主记账日的交易账单日，在同一 SQLite 只读事务内核对跨日退款出账。两个交易账单出现重复退款编号时，相关资金流水留待复核。报告保留补充账单日期和两个摘要，并为跨日关联标出证据日。492 项相关回归和 52 项独立测试通过。Windows 从发布源码归档解包复跑 3 项跨日命令通过。真实商户和实际退款继续待验。 [操作说明](PAYMENT_CHANNEL_PREPARATION.md#补充较早账单日的退款证据)
@@ -198,7 +202,7 @@ macOS ZIP 与 Windows MSI 正式接收必须同时提供发行文件 SHA-256 和
 
 ## 2026-11-20 当前 Windows 测试 MSI 管理提取
 
-用 `e90c663` 的 0.61.0 Windows x64 签前归档生成隔离测试 MSI。Windows Installer 原生结构检查和 `msiexec /a` 管理提取通过。原候选 2,007 个文件与一次性测试签名逐项核对，应用负载摘要及产品注册保持。正式接收器以不同原因拒绝错误摘要和原样未签测试包。67 项相关回归通过，两处原预览保持。正式证书、系统安装及升级待验。证据见 `D:/codex-temp/shenyi-windows-e90-msi-admin-20261120/verification.json`。 [Windows 发行候选](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-当前-windows-x64-签前候选)
+用 `e90c663` 的 0.61.0 Windows x64 签前归档生成隔离测试 MSI。Windows Installer 原生结构检查和 `msiexec /a` 管理提取通过。原候选 2,007 个文件与一次性测试签名逐项核对，应用负载摘要及产品注册保持。正式接收器以不同原因拒绝错误摘要和原样未签测试包。67 项相关回归通过，两处原预览保持。正式证书、系统安装及升级待验。证据见 `D:/codex-temp/shenyi-windows-e90-msi-admin-20261120/verification.json`。 [Windows 发行候选](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-较早-windows-x64-签前候选)
 
 ## 2026-11-20 当前 Linux 受管候选切换与回退
 
@@ -210,7 +214,7 @@ macOS ZIP 与 Windows MSI 正式接收必须同时提供发行文件 SHA-256 和
 
 将 Windows x64、macOS Apple 芯片与 Intel 三份 0.61.0 签前候选统一刷新至 `e90c663`，包含批量对账续接相关的四个客户端文件。三平台共 1,934 个应用文件逐项一致，83 个应用源码文件匹配同一提交和已原生跑通的 Windows 账务一键评审包。Windows 归档和 macOS 双架构交接包均通过独立复验，144 项相关回归全部通过。两处原预览保持。
 
-交接说明位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/delivery/签名前交接-e90c663.md`，证据位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/verification.json`。正式签名、Mac 公证、实际安装及升级、生产发布和双方签收待验。 [Windows 候选](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-当前-windows-x64-签前候选) · [macOS 候选](MACOS_DESKTOP_CANDIDATE.md#2026-11-20-上一份签前候选交接)
+交接说明位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/delivery/签名前交接-e90c663.md`，证据位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/verification.json`。正式签名、Mac 公证、实际安装及升级、生产发布和双方签收待验。 [Windows 候选](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-较早-windows-x64-签前候选) · [macOS 候选](MACOS_DESKTOP_CANDIDATE.md#2026-11-20-上一份签前候选交接)
 
 ## 2026-11-20 批量对账中断后续接
 
