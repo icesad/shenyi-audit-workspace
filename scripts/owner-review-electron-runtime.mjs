@@ -5,7 +5,7 @@ import path from 'node:path';
 import { verifyWindowsOwnerReview } from './verify-windows-owner-review.mjs';
 
 const runtimePrefix = 'runtime/electron/';
-const manifestLimit = 8 * 1024 * 1024;
+const manifestLimit = 2 * 1024 * 1024;
 const noFollow = constants.O_NOFOLLOW ?? 0;
 const identityFields = ['dev', 'ino', 'mode'];
 const fileFields = [...identityFields, 'nlink', 'size', 'mtimeNs', 'ctimeNs'];
@@ -78,6 +78,7 @@ async function copyRuntimeFile(source, destination, expected, buffer, files) {
     requireRuntime(equalStats(before, await input.stat({ bigint: true }), fileFields), '评审运行时源文件在打开时发生变化。');
     const output = await open(destination, constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | noFollow, 0o600);
     const entry = { filename: destination, info: null };
+    let writing = true;
     try {
       entry.info = await output.stat({ bigint: true });
       files.push(entry);
@@ -95,6 +96,7 @@ async function copyRuntimeFile(source, destination, expected, buffer, files) {
         length += bytesRead;
       }
       entry.info = await output.stat({ bigint: true });
+      writing = false;
       requireRuntime(length === expected.bytes && entry.info.size === BigInt(expected.bytes) &&
         equalStats(before, await input.stat({ bigint: true }), fileFields), '评审运行时源文件在复制期间发生变化。');
       const digest = createHash('sha256');
@@ -111,7 +113,14 @@ async function copyRuntimeFile(source, destination, expected, buffer, files) {
       await assertState(source, before, 'file');
       await assertState(destination, entry.info, 'file');
     } finally {
-      await output.close();
+      try {
+        if (writing && entry.info) {
+          const current = await output.stat({ bigint: true });
+          if (current.nlink === 1n && equalStats(entry.info, current, identityFields)) entry.info = current;
+        }
+      } finally {
+        await output.close();
+      }
     }
   } finally {
     await input.close();
@@ -181,8 +190,8 @@ export async function stageOwnerReviewElectronRuntime(portable, runDirectory) {
     }
     await assertState(runtimeSource, runtimeInfo, 'directory');
     await assertState(runRoot, runInfo, 'directory');
-    await assertState(manifestFile, manifestInfo, 'file');
-    await readVerifiedManifest(manifestFile, manifestSha256);
+    const { info: finalManifestInfo } = await readVerifiedManifest(manifestFile, manifestSha256);
+    requireRuntime(equalStats(manifestInfo, finalManifestInfo, fileFields), '评审运行时清单在复制期间发生变化。');
     for (const { filename, info } of files) await assertState(filename, info, 'file');
     return Object.freeze({ executable: path.join(directory, 'electron.exe'), close });
   } catch (error) {
