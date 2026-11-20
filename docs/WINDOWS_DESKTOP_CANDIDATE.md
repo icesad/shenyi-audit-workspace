@@ -10,6 +10,8 @@
 
 评审 ZIP 暂存于 `C:/Users/icesa/AppData/Local/Temp/shenyi-win-onboarding-6ef38ba/Shenyi-Owner-Review-6ef38ba-Win-x64.zip`，回执见 `D:/codex-temp/shenyi-windows-onboarding-review-20261121/verification.json`。打包及开通回归 118 项通过，独立复核核对了邀请恢复的运行文件和离线文档链接。邀请应答中断恢复已有源码客户端和隔离受管 HTTPS 实测。正式 MSI 签名安装、Mac 真机和真实试点另行验收。
 
+同一份 ZIP 后续完成了从空库开始的四职级合成试点验收。测试驱动直接启动已核验的包内 Electron，在独立 Windows 环境中验证四席邀请、两份原件的原生提交、经理预览和合伙人撤权后的拒绝。完整流程的证据与包内一键实启记录分别留存。 [四职级验收](PILOT_MANAGED_FIRST_TASK.md#2026-11-21-含开通恢复功能的评审包四职级验收)
+
 ## 2026-11-21 当前协作版本的 Windows 评审 ZIP 与独立客户端
 
 从私有协作提交 [`704959f`](https://github.com/icesad/shenyi-audit-workspace/commit/704959f6284c961ebda48d386f88c1d6e4883a71) 的干净 Git 归档构建。Windows 评审 ZIP 全新解包核对 2,501 个载荷文件，566 个源码、资源和文档文件与 Git 对象逐字节一致。独立候选核对 2,007 个载荷文件，其中 84 个受版本管理的应用文件与该提交一致。构建、ZIP 和解包暂存均在 C 盘，D 盘保留回执。
