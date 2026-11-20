@@ -28,6 +28,8 @@ const at = Date.parse('2024-03-01T00:00:00+08:00');
 const paidAt = Date.parse('2024-02-29T12:30:01+08:00');
 const applicantUrl = 'https://api.mch.weixin.qq.com/v3/bill/tradebill?bill_date=' + billDate + '&bill_type=ALL';
 const downloadUrl = 'https://api.mch.weixin.qq.com/v3/bill/downloadurl?token=synthetic-proof%2B';
+const fundsApplicant = 'https://api.mch.weixin.qq.com/v3/bill/fundflowbill?bill_date=' + billDate + '&account_type=BASIC';
+const fundsDownload = 'https://api.mch.weixin.qq.com/v3/billdownload/file?token=synthetic-funds%2B';
 const merchantRefundId = 'audit-refund@20240229';
 const refundId = '5000000000202402290000000031';
 const refundUrl = 'https://api.mch.weixin.qq.com/v3/refund/domestic/refunds/audit-refund%4020240229';
@@ -72,8 +74,22 @@ function statement(orderId, transactionId, refunds = []) {
   return Buffer.from(['\ufeff' + header, marked(detail), ...refundRows, totalsHeader, marked(totals), ''].join('\r\n'));
 }
 
-function signedDescriptor(bytes, now, sha1 = digest('sha1', bytes)) {
-  return signedResponse({hash_type:'SHA1', hash_value:sha1.toUpperCase(), download_url:downloadUrl}, now);
+function basicStatement(rows) {
+  const header = '记账时间,微信支付业务单号,资金流水单号,业务名称,业务类型,收支类型,收支金额(元),账户结余(元),资金变更提交申请人,备注,业务凭证号';
+  const summary = '资金流水总笔数,收入笔数,收入金额,支出笔数,支出金额';
+  const count = {收入:0,支出:0}, total = {收入:0,支出:0};
+  const marked = columns => '`' + columns.join(',`');
+  const data = rows.map(([clock,businessId,flowId,name,type,direction,amount,reference]) => {
+    count[direction]++;
+    total[direction] += amount;
+    return marked([billDate+' '+clock,businessId,flowId,name,type,direction,yuan(amount),'200.00','private-applicant',
+      'private-note, keep it in the provider file',reference]);
+  });
+  return Buffer.from([header,...data,summary,marked([rows.length,count.收入,yuan(total.收入),count.支出,yuan(total.支出)]),''].join('\n'));
+}
+
+function signedDescriptor(bytes, now, sha1 = digest('sha1', bytes), downloadAddress = downloadUrl) {
+  return signedResponse({hash_type:'SHA1', hash_value:sha1.toUpperCase(), download_url:downloadAddress}, now);
 }
 
 function signedResponse(body, now, key = providerKeys.privateKey) {
@@ -110,7 +126,7 @@ function assertRefundRequest(url, init) {
   assert.ok(verify('RSA-SHA256', payload, merchantKeys.publicKey, Buffer.from(signed.signature, 'base64')));
 }
 
-async function fixture(t, {withReceipt = true} = {}) {
+async function fixture(t, {withReceipt = true, includeOtherApp = false} = {}) {
   const [{initializeTeamDatabase}, {installWechatNativeBillingSchema}, {reconcileConfiguredWechatNativeBill}] = await dependencies;
   const writable = path.resolve(process.env.SHENYI_TEST_TMPDIR ?? tmpdir());
   await mkdir(writable, {recursive:true});
@@ -128,6 +144,7 @@ async function fixture(t, {withReceipt = true} = {}) {
   const merchantOrderId = orderId.replaceAll('-', '');
   const requestId = randomUUID();
   const transactionId = randomBytes(12).toString('hex');
+  const otherOrderId = randomUUID(), otherTransactionId = randomBytes(12).toString('hex');
   let serverId;
   const db = new DatabaseSync(database);
   try {
@@ -139,14 +156,19 @@ async function fixture(t, {withReceipt = true} = {}) {
       INSERT INTO main.team_users VALUES ('cli-admin','active');
       INSERT INTO main.team_operators VALUES ('cli-team','cli-admin','administrator','active');
     `);
-    db.prepare(`INSERT INTO main.team_billing_wechat_native_orders
+    const insertOrder = db.prepare(`INSERT INTO main.team_billing_wechat_native_orders
       (order_id,team_id,actor_id,request_id,app_id,merchant_id,product,description,offer_id,offer_revision,seats,term_revision,
         amount_minor,currency,created_at,expires_at)
-      VALUES (?,'cli-team','cli-admin',?,?,?,'team-annual-renewal','合成年度订单','synthetic-annual',1,3,NULL,109,'CNY',?,?)`)
-      .run(orderId, requestId, appId, merchantId, paidAt - 60000, paidAt + 60000);
+      VALUES (?,'cli-team','cli-admin',?,?,?,'team-annual-renewal','合成年度订单','synthetic-annual',1,3,NULL,109,'CNY',?,?)`);
+    const insertPayment = db.prepare(`INSERT INTO main.team_billing_wechat_native_payments
+      (order_id,merchant_id,transaction_id,paid_at,first_verified_at) VALUES (?,?,?,?,?)`);
+    insertOrder.run(orderId, requestId, appId, merchantId, paidAt - 60000, paidAt + 60000);
+    if (includeOtherApp) {
+      insertOrder.run(otherOrderId,randomUUID(),'wxotherapp12345',merchantId,paidAt-60000,paidAt+60000);
+      insertPayment.run(otherOrderId,merchantId,otherTransactionId,paidAt+120,paidAt+1000);
+    }
     if (withReceipt) {
-      db.prepare(`INSERT INTO main.team_billing_wechat_native_payments(order_id,merchant_id,transaction_id,paid_at,first_verified_at)
-        VALUES (?,?,?,?,?)`).run(orderId, merchantId, transactionId, paidAt + 120, paidAt + 1000);
+      insertPayment.run(orderId, merchantId, transactionId, paidAt + 120, paidAt + 1000);
       db.prepare('INSERT INTO main.team_billing_wechat_native_query_confirmations(order_id,verified_at) VALUES (?,?)')
         .run(orderId, paidAt + 1000);
     }
@@ -184,9 +206,10 @@ async function fixture(t, {withReceipt = true} = {}) {
   }
   return {
     directory, database, filename, serverId, merchantOrderId, transactionId, rawBill, calls, mockProvider,
+    otherMerchantOrderId:otherOrderId.replaceAll('-', ''), otherTransactionId,
     billWithRefunds:(...rows) => statement(merchantOrderId, transactionId, rows),
     run:(output, options = {}) => reconcileConfiguredWechatNativeBill({filename, output, billDate:options.billDate ?? billDate,
-      merchantRefundId:options.merchantRefundId},
+      merchantRefundId:options.merchantRefundId,includeBasicFunds:options.includeBasicFunds},
       {fetchImpl:options.fetchImpl ?? mockProvider(), now:() => at}),
     async assertUnchanged() { assert.deepEqual(await readFile(database), originalDb); },
   };
@@ -214,6 +237,7 @@ async function assertReport(f, output, createdAt) {
   assert.deepEqual(entry.findings, ['ENTITLEMENT_PENDING']);
   assert.equal(entry.statementPayments[0].amountMinor, 109);
   assert.equal(Object.hasOwn(report, 'refundVerification'), false);
+  assert.equal(Object.hasOwn(report, 'basicFunds'), false);
   for (const secret of [openId, apiV3Key, description, 'operator-reference', 'synthetic-proof']) {
     assert.equal(text.includes(secret), false, 'A private profile or excluded bill field appeared in the report');
   }
@@ -260,10 +284,12 @@ async function assertRefundReport(f, output, bill, expected) {
   return report;
 }
 
-function runCli(f, output, {bill = f.rawBill, merchantRefundId, refund} = {}) {
+function runCli(f, output, {bill = f.rawBill, merchantRefundId, refund, funds, fundsSha1} = {}) {
   const now = Date.now();
   const replies = [[applicantUrl, signedDescriptor(bill, now)], [downloadUrl, {raw:bill, headers:{}}]];
   if (refund) replies.push([refundUrl, signedResponse(refund.body, now, refund.key)]);
+  if (funds) replies.push([fundsApplicant,signedDescriptor(funds,now,fundsSha1,fundsDownload)],
+    [fundsDownload,{raw:funds,headers:{}}]);
   // Every URL in the isolated child is handled by this synthetic in-memory table.
   const fixtures = replies.map(([url, reply]) => [url, {bytes:reply.raw.toString('base64'), headers:reply.headers}]);
   const guard = `const fixtures=new Map(${JSON.stringify(fixtures)});
@@ -274,6 +300,7 @@ function runCli(f, output, {bill = f.rawBill, merchantRefundId, refund} = {}) {
     };`;
   const preload = 'data:text/javascript,' + encodeURIComponent(guard);
   const flags = merchantRefundId === undefined ? [] : ['--verify-refund', merchantRefundId];
+  if (funds) flags.push('--verify-basic-funds');
   return command(process.execPath,
     ['--import', preload, startScript, '--reconcile-native-bill', billDate, '--config', f.filename, '--output', output, ...flags],
     {cwd:f.directory, env:childEnvironment()});
@@ -333,6 +360,91 @@ test('the actual CLI order writes the reconciled report and emits only the summa
   assert.deepEqual(JSON.parse(result.stdout), {event:'native-bill-reconciled', billDate, counts:report.counts});
   assert.ok(!result.stdout.includes(f.merchantOrderId));
   assert.ok(!result.stdout.includes(output));
+});
+
+test('the production BASIC option verifies both bills and projects only corroborated account movements', async t => {
+  const f = await fixture(t,{includeOtherApp:true});
+  const {transactionId,merchantOrderId} = f;
+  const secondRefundId = '5000000000202402290000000032';
+  const secondReference = 'audit-refund@second';
+  const bill = f.billWithRefunds({}, {refundId:secondRefundId,merchantRefundId:secondReference});
+  const funds = basicStatement([
+    ['12:30:02',transactionId,'test-flow-shared','交易','交易','收入',101,merchantOrderId],
+    ['12:30:02',transactionId,'test-flow-shared','交易','扣除交易手续费','支出',1,merchantOrderId],
+    ['16:18:01',refundId,'test-flow-refund','退款','退款','支出',46,merchantRefundId],
+    ['16:18:02',transactionId,'test-flow-original-refund','退款','退款','支出',46,secondReference],
+    ['16:18:03',refundId,'private-conflicting-flow','退款','退款','支出',46,secondReference],
+    ['16:18:04',transactionId,'private-empty-ref','交易','交易','收入',101,''],
+    ['16:18:05',f.otherTransactionId,'private-other-app','交易','交易','收入',101,f.otherMerchantOrderId],
+    ['16:18:06',transactionId,'private-unknown-flow','交易','新类型','收入',9,merchantOrderId],
+    ['12:00:00',transactionId,'private-before-payment','交易','交易','收入',42,merchantOrderId],
+    ['16:18:07',transactionId,'private-wrong-direction','交易','交易','支出',7,merchantOrderId],
+  ]);
+  const output = path.join(f.directory,'basic-funds.json');
+  const result = await runCli(f,output,{bill,funds});
+  assert.equal(result.code,0,result.stderr);
+  const text = await readFile(output,'utf8');
+  const report = JSON.parse(text);
+  assert.equal(report.statementSha256,digest('sha256',bill));
+  const {basicFunds} = report;
+  assert.equal(basicFunds.accountType,'BASIC');
+  assert.equal(basicFunds.statementSha1,digest('sha1',funds));
+  assert.equal(basicFunds.statementSha256,digest('sha256',funds));
+  assert.deepEqual(basicFunds.summary,{rowCount:10,creditCount:5,creditAmountMinor:354,debitCount:5,debitAmountMinor:146});
+  assert.deepEqual(basicFunds.entries.map(row=>[row.kind,row.flowId,row.amountMinor,row.refundId]), [
+    ['payment','test-flow-shared',101,undefined],['payment_fee','test-flow-shared',1,undefined],
+    ['refund','test-flow-refund',46,refundId],['refund','test-flow-original-refund',46,secondRefundId],
+  ]);
+  assert.ok(basicFunds.entries.every(row=>row.merchantOrderId===merchantOrderId && row.transactionId===transactionId));
+  assert.equal(basicFunds.linkedRows,4);
+  assert.equal(basicFunds.unlinkedRows,6);
+  assert.doesNotMatch(text,/private-|synthetic-funds|balanceMinor/);
+  assert.ok(!text.includes(f.otherMerchantOrderId));
+  assert.ok(!text.includes(f.otherTransactionId));
+  assert.deepEqual(JSON.parse(result.stdout).basicFunds,{linkedRows:4,unlinkedRows:6});
+  assert.ok(!result.stdout.includes(merchantOrderId));
+  await f.assertUnchanged();
+});
+
+test('the BASIC option leaves no report for an inconsistent signed file or a failed digest check', async t => {
+  const f = await fixture(t);
+  const output = path.join(f.directory,'invalid-basic-funds.json');
+  const valid = basicStatement([['12:30:02',f.transactionId,'test-flow','交易','交易','收入',101,f.merchantOrderId]]);
+  for (const [funds,fundsSha1,code] of [
+    [valid,'0'.repeat(40),'WECHAT_NATIVE_PROVIDER_UNAVAILABLE'],
+    [Buffer.from(valid.toString('utf8').replace('`1.01,`0,`0.00','`0.01,`0,`0.00')),undefined,'WECHAT_NATIVE_FUND_BILL_INVALID'],
+  ]) {
+    const result = await runCli(f,output,{funds,fundsSha1});
+    assert.equal(result.code,1,result.stderr);
+    assert.equal(JSON.parse(result.stderr).code,code);
+    assert.equal(result.stdout,'');
+    await assert.rejects(stat(output),{code:'ENOENT'});
+    assert.ok(!(await readdir(f.directory)).some(name=>name.endsWith('.tmp')));
+    await f.assertUnchanged();
+  }
+});
+
+test('an identity change during the BASIC download prevents publication against a replaced ledger', async t => {
+  const f = await fixture(t);
+  const output = path.join(f.directory,'replaced-basic-funds.json');
+  const saved = path.join(f.directory,'initial.sqlite');
+  const funds = basicStatement([['12:30:02',f.transactionId,'test-flow','交易','交易','收入',101,f.merchantOrderId]]);
+  const descriptor = signedDescriptor(funds,at,undefined,fundsDownload);
+  const trade = f.mockProvider();
+  let replaced = false;
+  await assert.rejects(f.run(output,{includeBasicFunds:true,fetchImpl:async (url,init) => {
+    if (url===fundsApplicant) return new Response(descriptor.raw,{headers:descriptor.headers});
+    if (url===fundsDownload) {
+      await rename(f.database,saved);
+      await copyFile(saved,f.database);
+      replaced = true;
+      return new Response(funds);
+    }
+    return trade(url,init);
+  }}),{code:'MANAGED_DATABASE_NOT_READY'});
+  assert.equal(replaced,true);
+  await assert.rejects(stat(output),{code:'ENOENT'});
+  await f.assertUnchanged();
 });
 
 test('a signed refund result is checked against gross amounts and preserves the bill-time PROCESSING status', async t => {

@@ -121,6 +121,53 @@ function reportFromSnapshot(db, {billDate,merchantId,appId,sha1,rows,summary}, {
   return {schemaVersion:1,billDate,merchantId,appId,statementSha1:sha1,counts,orders};
 }
 
+const FUNDS_PAYMENTS = new Map([['交易','payment'], ['扣除交易手续费','payment_fee']]);
+
+function reconcileBasicFunds(db, report, {rows,summary,sha1,sha256}) {
+  const payment = db.prepare(`SELECT o.merchant_order_id AS merchantOrderId, p.paid_at AS paidAt
+    FROM main.team_billing_wechat_native_payments p
+    JOIN main.team_billing_wechat_native_orders o ON o.order_id=p.order_id AND o.merchant_id=p.merchant_id
+    WHERE p.merchant_id=? AND p.transaction_id=? AND o.app_id=?`);
+  const {merchantId,appId} = report;
+  const refundsById = new Map(), refundsByReference = new Map();
+  for (const order of report.orders) {
+    if (order.currency!=='CNY' || order.findings.includes('ORDER_SCOPE_MISMATCH')) continue;
+    for (const refund of order.statementRefunds) {
+      if (order.local?.transactionId!==refund.transactionId || refund.currency!=='CNY' ||
+          refund.occurredAt<Math.floor(order.local.paidAt/1000)*1000 ||
+          refund.amountMinor>order.local.amountMinor) continue;
+      const candidate = {...refund,merchantOrderId:order.merchantOrderId};
+      refundsById.set(refund.refundId,candidate);
+      refundsByReference.set(refund.merchantRefundId,candidate);
+    }
+  }
+  const entries = [];
+  for (const {accountedAt,businessId,flowId,businessName,businessType,direction,amountMinor,merchantReference} of rows) {
+    const paymentKind = businessName==='交易' && FUNDS_PAYMENTS.get(businessType);
+    const isRefund = businessName==='退款' && businessType==='退款' && direction==='debit';
+    if (paymentKind && direction===(paymentKind==='payment'?'credit':'debit') && matches(TRANSACTION_ID,businessId)) {
+      const order = payment.get(merchantId,businessId,appId);
+      if (order && accountedAt>=Math.floor(order.paidAt/1000)*1000 &&
+          merchantReference===order.merchantOrderId) {
+        entries.push({kind:paymentKind,accountedAt,flowId,direction,amountMinor,
+          merchantOrderId:order.merchantOrderId,transactionId:businessId});
+      }
+    } else if (isRefund) {
+      const byId = refundsById.get(businessId);
+      const byReference = refundsByReference.get(merchantReference);
+      // A refund posting can carry either the refund ID or the original payment ID.
+      const candidate = byId ?? (byReference?.transactionId===businessId ? byReference : null);
+      if (candidate && candidate===byReference && accountedAt>=candidate.occurredAt) {
+        const {merchantOrderId,transactionId,refundId,merchantRefundId} = candidate;
+        entries.push({kind:'refund',accountedAt,flowId,direction,amountMinor,merchantOrderId,
+          transactionId,refundId,merchantRefundId});
+      }
+    }
+  }
+  return {accountType:'BASIC',statementSha1:sha1,statementSha256:sha256,summary,linkedRows:entries.length,
+    unlinkedRows:summary.rowCount-entries.length,entries};
+}
+
 function refundOutsideScope() {
   throw Object.assign(new Error('这笔退款缺少可与微信核对的本地原单或可信交易记录。'),
     {code:'WECHAT_NATIVE_REFUND_NOT_IN_SCOPE'});
@@ -156,6 +203,7 @@ export function reconcileWechatNativeTradeBill(db, input) {
   try {
     assertWechatNativeBillingReady(db);
     const report = reportFromSnapshot(db,input,day);
+    if (input.basicFunds) report.basicFunds = reconcileBasicFunds(db,report,input.basicFunds);
     db.exec('COMMIT');
     return report;
   } catch (error) {

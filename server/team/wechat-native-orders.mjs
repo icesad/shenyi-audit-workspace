@@ -173,6 +173,20 @@ export function createWechatNativeOrders({
     }
   }
 
+  async function downloadBill(billDate, endpoint, scope) {
+    requireBillDate(billDate);
+    const at = now();
+    if (!boundedInteger(at, 0, MAX_PAYMENT_TIME)) providerUnavailable();
+    const {data} = await request('GET', `${endpoint}?bill_date=${billDate}&${scope}`, at);
+    if (data.hash_type !== 'SHA1' || !matches(/^[0-9a-fA-F]{40}$/, data.hash_value)) providerUnavailable();
+    const path = billDownloadPath(data.download_url);
+    const sha1 = data.hash_value.toLowerCase();
+    const downloadAt = now();
+    if (!boundedInteger(downloadAt, at, MAX_PAYMENT_TIME)) providerUnavailable();
+    const bytes = await request('GET', path, downloadAt, undefined, {fileSha1: sha1});
+    return Object.freeze({billDate, bytes, sha1});
+  }
+
   return Object.freeze({
     async createOrder(order) {
       const at = now();
@@ -250,18 +264,12 @@ export function createWechatNativeOrders({
       return Object.freeze({status, createdAt, succeededAt, verifiedAt: receivedAt});
     },
 
-    async downloadTradeBill(billDate) {
-      requireBillDate(billDate);
-      const at = now();
-      if (!boundedInteger(at, 0, MAX_PAYMENT_TIME)) providerUnavailable();
-      const {data} = await request('GET', `/v3/bill/tradebill?bill_date=${billDate}&bill_type=ALL`, at);
-      if (data.hash_type !== 'SHA1' || !matches(/^[0-9a-fA-F]{40}$/, data.hash_value)) providerUnavailable();
-      const path = billDownloadPath(data.download_url);
-      const sha1 = data.hash_value.toLowerCase();
-      const downloadAt = now();
-      if (!boundedInteger(downloadAt, at, MAX_PAYMENT_TIME)) providerUnavailable();
-      const bytes = await request('GET', path, downloadAt, undefined, {fileSha1: sha1});
-      return Object.freeze({billDate, bytes, sha1});
+    downloadTradeBill(billDate) {
+      return downloadBill(billDate, '/v3/bill/tradebill', 'bill_type=ALL');
+    },
+
+    downloadBasicFundBill(billDate) {
+      return downloadBill(billDate, '/v3/bill/fundflowbill', 'account_type=BASIC');
     },
   });
 }

@@ -350,21 +350,22 @@ test('only a signed order-not-exist body with HTTP 404 reports an absent WeChat 
 
 const billDate = '2026-11-19';
 const billApplyPath = `/v3/bill/tradebill?bill_date=${billDate}&bill_type=ALL`;
+const basicFundApplyPath = `/v3/bill/fundflowbill?bill_date=${billDate}&account_type=BASIC`;
 const billDownloadPaths = ['/v3/bill/downloadurl?token=one%2fexample%2B%3D', '/v3/billdownload/file?token=two-example'];
 const billBytes = Buffer.from('\ufeff合成商户账单,金额\r\n样例,3.50\r\n');
 const billHash = createHash('sha1').update(billBytes).digest('hex');
 const billDescriptor = (downloadPath = billDownloadPaths[0], changes = {}) => ({hash_type: 'SHA1',
   hash_value: billHash.toUpperCase(), download_url: `https://api.mch.weixin.qq.com${downloadPath}`, ...changes});
 
-test('the signed bill descriptor and either official file path preserve raw request and bill bytes', async t => {
+test('ALL trade and BASIC funds bill requests sign both official file paths and preserve original bytes', async t => {
   const requests = [];
   let applied = 0;
   const server = http.createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     requests.push({method: request.method, path: request.url, headers: request.headers, body: Buffer.concat(chunks)});
-    if (request.url === billApplyPath) {
-      const packet = signedResponse(billDescriptor(billDownloadPaths[applied++]));
+    if (request.url === billApplyPath || request.url === basicFundApplyPath) {
+      const packet = signedResponse(billDescriptor(billDownloadPaths[applied++ % billDownloadPaths.length]));
       response.writeHead(packet.status, Object.fromEntries(packet.headers));
       response.end(Buffer.from(await packet.arrayBuffer()));
     } else {
@@ -381,19 +382,21 @@ test('the signed bill descriptor and either official file path preserve raw requ
     const response = await fetch(`http://127.0.0.1:${server.address().port}${url.pathname}${url.search}`, init);
     return new Response(response.body, {status: response.status, headers: response.headers});
   });
-  for (const path of billDownloadPaths) {
-    const bill = await checkout.downloadTradeBill(billDate);
-    assert.deepEqual(bill, {billDate, bytes: billBytes, sha1: billHash});
-    const [application, download] = requests.splice(0);
-    assert.equal(application.path, billApplyPath);
-    assert.equal(download.path, path);
-    assert.equal(application.headers.accept, 'application/json');
-    assert.equal(download.headers.accept, '*/*');
-    assert.equal(download.headers['accept-encoding'], 'identity');
-    for (const request of [application, download]) {
-      assert.equal(request.method, 'GET');
-      assert.equal(request.body.length, 0);
-      assertRequestSignature(request);
+  for (const [method, applyPath] of [['downloadTradeBill', billApplyPath], ['downloadBasicFundBill', basicFundApplyPath]]) {
+    for (const path of billDownloadPaths) {
+      assert.deepEqual(await checkout[method](billDate), {billDate, bytes: billBytes, sha1: billHash});
+      assert.equal(requests.length, 2);
+      const [application, download] = requests.splice(0);
+      assert.equal(application.path, applyPath);
+      assert.equal(download.path, path);
+      assert.equal(application.headers.accept, 'application/json');
+      assert.equal(download.headers.accept, '*/*');
+      assert.equal(download.headers['accept-encoding'], 'identity');
+      for (const request of [application, download]) {
+        assert.equal(request.method, 'GET');
+        assert.equal(request.body.length, 0);
+        assertRequestSignature(request);
+      }
     }
   }
 });
@@ -403,7 +406,10 @@ test('bill dates and signed descriptor scope are checked before any file downloa
   const unused = await client(() => { calls++; throw new Error('Unexpected request'); });
   for (const value of [undefined, '2026-11-31', '2026-02-29', '2026-11-19\n', '2026-11-19&bill_type=REFUND']) {
     await assert.rejects(unused.downloadTradeBill(value), {code: 'WECHAT_NATIVE_BILL_DATE_INVALID'});
+    await assert.rejects(unused.downloadBasicFundBill(value), {code: 'WECHAT_NATIVE_BILL_DATE_INVALID'});
   }
+  await assert.rejects(unused.downloadBasicFundBill('2026-11-19&account_type=OPERATION'),
+    {code: 'WECHAT_NATIVE_BILL_DATE_INVALID'});
   assert.equal(calls, 0);
   const invalidUrls = ['http://api.mch.weixin.qq.com/v3/billdownload/file?token=x',
     'https://api.mch.weixin.qq.com.example.invalid/v3/billdownload/file?token=x',
@@ -424,6 +430,18 @@ test('bill dates and signed descriptor scope are checked before any file downloa
     const checkout = await client(() => { sends++; return packet; });
     await assert.rejects(checkout.downloadTradeBill(billDate), {code: 'WECHAT_NATIVE_PROVIDER_UNAVAILABLE'});
     assert.equal(sends, 1);
+  }
+});
+
+test('BASIC funds statements unavailable or still generating leave the download unresolved', async () => {
+  for (const providerCode of ['NO_STATEMENT_EXIST', 'STATEMENT_CREATING']) {
+    const requests = [];
+    const checkout = await client(input => {
+      requests.push(input);
+      return signedResponse({code: providerCode, message: 'synthetic'}, {status: 400});
+    });
+    await assert.rejects(checkout.downloadBasicFundBill(billDate), {code: 'WECHAT_NATIVE_PROVIDER_UNAVAILABLE'});
+    assert.deepEqual(requests, [`https://api.mch.weixin.qq.com${basicFundApplyPath}`]);
   }
 });
 
