@@ -39,6 +39,9 @@ const unavailable = () => { throw new ApiError(503,'WEBSITE_PAYMENT_UNAVAILABLE'
 const rateLimit = () => { throw new ApiError(429,'WEBSITE_PAYMENT_RATE_LIMIT','请稍后再核对订单。'); };
 const notFound = () => json({error:{code:'NOT_FOUND',message:'无法访问此资源。'}},404);
 const quoteConflict = () => { throw new ApiError(409,'WECHAT_NATIVE_QUOTE_CONFLICT','请核对原订单或重新报价。'); };
+const previousOrderUnresolved = () => {
+  throw new ApiError(409,'WECHAT_NATIVE_PREVIOUS_ORDER_UNRESOLVED','请先核对上一笔订单的付款和到账状态。');
+};
 
 export const isNativeWebsitePath = path => paths.has(path) || actions.has(path);
 export const isNativeWebsiteIssuerPath = path => ISSUER.test(path);
@@ -101,10 +104,28 @@ export async function createWechatNativeWebsite({db, origin, billing, catalog:ca
       ...(options ?? nativeCheckoutOptions(db,teamId,purchase.product,state.at))};
   }
 
+  function assertPreviousOrderResolved(ticket) {
+    const {previousRequestId,purchase,teamId,userId} = ticket;
+    if (previousRequestId === undefined) return;
+    let prior;
+    try {
+      prior = billing.readOrderForRequest({teamId,actorId:userId,product:purchase.product,requestId:previousRequestId});
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.code !== 'NOT_FOUND') throw error;
+      previousOrderUnresolved();
+    }
+    if (!prior) previousOrderUnresolved();
+    const {payment,providerReviewStates} = prior;
+    const fulfilled = payment?.status === 'fulfilled' && payment.fulfilment && !payment.providerReviewStates?.length;
+    const closedUnpaid = !payment && providerReviewStates?.includes('CLOSED') && !providerReviewStates.includes('REFUND');
+    if (!fulfilled && !closedUnpaid) previousOrderUnresolved();
+  }
+
   function quoteResponse(seats, authorize) {
     const {state,quote,checkout} = transaction(db,() => {
       const state = authorize();
       if (state.result) quoteConflict();
+      assertPreviousOrderResolved(state.ticket);
       const {teamId,purchase,expiresAt} = state.ticket;
       const {options,quote} = priceNativeCheckout(db,catalog,{teamId,product:purchase.product,
         seats,at:state.at,handoffExpiresAt:expiresAt});
@@ -133,6 +154,7 @@ export async function createWechatNativeWebsite({db, origin, billing, catalog:ca
             result.order.termRevision !== termRevision) quoteConflict();
         return state;
       }
+      assertPreviousOrderResolved(ticket);
       const expiresAt = confirmNativeCheckout(db,catalog,{teamId,product:purchase.product,quote,at,handoffExpiresAt:ticket.expiresAt});
       billing.lockOrderWithinTransaction({teamId,actorId:ticket.userId,...purchase,
         offerId,offerRevision,seats,amountMinor,termRevision,expiresAt},at);
@@ -155,6 +177,7 @@ export async function createWechatNativeWebsite({db, origin, billing, catalog:ca
   }
 
   return Object.freeze({
+    canPurchase:catalog !== undefined,
     async issue(request, context) {
       const url = new URL(request.url), route = ISSUER.exec(url.pathname);
       if (!route || request.url !== origin + url.pathname) return notFound();
@@ -162,25 +185,33 @@ export async function createWechatNativeWebsite({db, origin, billing, catalog:ca
       if (!context) throw new ApiError(403,'DEVICE_PROOF_REQUIRED','请从已绑定设备打开官网订单页。');
       const buying = Boolean(route[2]);
       if (buying && !catalog) return notFound();
-      const body = await readJson(request,buying ? ['product','requestId'] : ['orderId'],1024);
+      const body = await readJson(request,buying ? ['product','requestId','previousRequestId'] : ['orderId'],1024);
       if (buying ? ![ANNUAL_PRODUCT,SEAT_PRODUCT].includes(body.product) || !matches(UUID,body.requestId) :
         !matches(UUID,body.orderId)) invalid();
+      const {previousRequestId} = body;
+      if (previousRequestId !== undefined && (!matches(UUID,previousRequestId) || previousRequestId === body.requestId)) invalid();
       const token = randomBytes(32).toString('base64url');
       const scope = transaction(db,() => {
         const at = clock();
         const ticket = websiteHandoffScope(db,request,context,{teamId:route[1],handoff:token,at});
         const actor = {teamId:ticket.teamId,actorId:ticket.userId};
         if (buying) {
-          billing.readOrderForRequest({...actor,...body});
-          return {...ticket,purchase:body};
+          const purchase = {product:body.product,requestId:body.requestId};
+          const existing = billing.readOrderForRequest({...actor,...purchase});
+          const scope = {...ticket,purchase,previousRequestId};
+          if (!existing) assertPreviousOrderResolved(scope);
+          return scope;
         }
         billing.readOrder({...actor,orderId:body.orderId});
         return {...ticket,orderId:body.orderId};
       });
       for (const [hash,ticket] of handoffs) if (scope.issuedAt >= ticket.expiresAt) handoffs.delete(hash);
       if (handoffs.size >= MAX_OUTSTANDING) rateLimit();
+      const expiresInMs = scope.expiresAt-clock();
+      if (expiresInMs < 1 || expiresInMs > 120_000) expired();
       handoffs.set(digest(token),scope);
-      return json({handoff:token,expiresAt:scope.expiresAt},201);
+      return json({handoff:token,expiresAt:scope.expiresAt,
+        ...(request.headers.get('X-Shenyi-Native-Checkout')==='native-v1'?{expiresInMs}:{})},201);
     },
     async serve(request) {
       const url = new URL(request.url), file = assets.get(url.pathname);

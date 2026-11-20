@@ -72,7 +72,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
     const websiteCheckoutPath=isWebsiteCheckoutBrowserPath(url.pathname);
     const simulationPath=[SIMULATION_NOTIFICATION_PATH,SIMULATION_PAYMENT_EXCEPTION_PATH,SIMULATION_ORDER_CLOSURE_PATH].includes(url.pathname);
     if(managedService&&(websiteCheckoutPath||simulationPath))return json({error:{code:'NOT_FOUND',message:'无法访问此资源。'}},404);
-    const options={db,now,identityProviders,serviceMode,websiteCheckout,subscriptionEnforcement:subscriptionEnforcementMode(subscriptionEnforcement,identityProviders)};
+    const options={db,now,identityProviders,serviceMode,websiteCheckout,nativeWebsitePayment,subscriptionEnforcement:subscriptionEnforcementMode(subscriptionEnforcement,identityProviders)};
     options.seatCapacityEnforcement=seatCapacityMode(seatCapacityEnforcement,options);
     options.billingSimulation=billingSimulationConfiguration(billingSimulation,options);
     options.websiteCheckoutActive=websiteCheckoutAvailable(db,options);

@@ -21,6 +21,7 @@ const apiBase = 'https://localhost';
 const checkout = '/api/website-pay';
 const issuer = teamId => '/api/teams/' + teamId + '/billing/native-website-handoff';
 const purchaseIssuer = teamId => '/api/teams/' + teamId + '/billing/native-website-order-handoff';
+const billingOverviewRoute = teamId => '/api/teams/' + teamId + '/billing/overview';
 const notifyUrl = 'https://shenyi.example.invalid/api/billing/wechat-native/notify';
 const appId = 'wxsynthetic1234567';
 const merchantId = '1000000000';
@@ -174,16 +175,20 @@ async function fixture(t, {enabled = true, provider, catalog} = {}) {
     assert.equal(activated.status, 201, activated.text);
     const lease = activated.data.lease;
     const heldToken = activated.data.token;
-    function heldPost(route, value) {
+    function heldRequest(method, route, value, headers = {}) {
+      const body = method === 'POST' ? JSON.stringify(value) : undefined;
       const claims = {serverId, userId:actorId, sessionBinding:deviceProof.sessionBinding(heldToken),
-        deviceId:lease.deviceId, bindingRevision:lease.bindingRevision, leaseId:lease.id, method:'POST', pathAndQuery:route,
-        bodySha256:digest(JSON.stringify(value)), nonce:randomBytes(32).toString('base64url')};
-      return post(route, value, {authorization:'Bearer ' + heldToken, origin:'shenyi://app',
+        deviceId:lease.deviceId, bindingRevision:lease.bindingRevision, leaseId:lease.id, method, pathAndQuery:route,
+        bodySha256:digest(body ?? ''), nonce:randomBytes(32).toString('base64url')};
+      const deviceHeaders = {...headers, authorization:'Bearer ' + heldToken, origin:'shenyi://app',
         'x-shenyi-device-lease':lease.token, 'x-shenyi-device-nonce':claims.nonce,
         'x-shenyi-device-body-sha256':claims.bodySha256,
-        'x-shenyi-device-signature':sign(null, deviceProof.requestProofBytes(claims), pair.privateKey).toString('base64url')});
+        'x-shenyi-device-signature':sign(null, deviceProof.requestProofBytes(claims), pair.privateKey).toString('base64url')};
+      return send(route, {method, body, headers:{...deviceHeaders,
+        ...(body === undefined ? {} : {'content-type':'application/json', 'content-length':Buffer.byteLength(body)})}});
     }
-    return {heldPost, lease,
+    return {heldPost:(route, value) => heldRequest('POST', route, value),
+      heldGet:(route, headers) => heldRequest('GET', route, undefined, headers), lease,
       revoke() { db.prepare('UPDATE main.team_device_leases SET revoked_at=? WHERE lease_id=?').run(Date.now(), lease.id); },
       expire() { db.prepare('UPDATE main.team_device_leases SET expires_at=? WHERE lease_id=?').run(Date.now() - 1000, lease.id); }};
   }
@@ -210,7 +215,8 @@ async function fixture(t, {enabled = true, provider, catalog} = {}) {
       await start(activeCatalog);
     },
     issue:(session, orderId) => issueHandoff(session, issuer(teamId), {orderId}),
-    purchase:(session, product, requestId = randomUUID()) => issueHandoff(session, purchaseIssuer(teamId), {product, requestId}),
+    purchase:(session, product, requestId = randomUUID(), previousRequestId) =>
+      issueHandoff(session, purchaseIssuer(teamId), {product, requestId, ...(previousRequestId === undefined ? {} : {previousRequestId})}),
     browser(action, handoff, {body = {}, headers = {}} = {}) {
       return post(checkout + '/' + action, {handoff, ...body}, {origin:apiBase, ...headers});
     }};
@@ -399,12 +405,16 @@ test('a provider-issued code is withheld if the requester loses the device lease
 
 test('a verified payment with insufficient seat capacity stays pending fulfilment', async t => {
   let order;
-  const f = await fixture(t, {provider:() => signedProviderResponse(verifiedTrade(order))});
+  const f = await fixture(t, {catalog:priceCatalog, provider:() => signedProviderResponse(verifiedTrade(order))});
   order = f.lock({seats:1});
-  const handoff = await f.issue(await f.device(), order.id);
+  const session = await f.device();
+  const handoff = await f.issue(session, order.id);
   addActiveWorkers(f.db);
   expectOrder(await f.browser('check', handoff), order, 'pending_fulfilment');
   expectOrder(await f.browser('order', handoff), order, 'pending_fulfilment');
+  expectUnresolved(await session.heldPost(purchaseIssuer(teamId),
+    {product:annual, requestId:randomUUID(), previousRequestId:order.requestId}));
+  assert.equal(count(f.db, 'team_billing_wechat_native_orders'), 1);
   assert.equal(count(f.db, 'team_billing_wechat_native_payments'), 1);
   assert.equal(count(f.db, 'team_billing_wechat_native_fulfilments'), 0);
   assert.equal(count(f.db, 'team_subscription_events'), 0);
@@ -801,4 +811,142 @@ test('managed CLI startup validates the optional Native merchant price catalog w
   }
   assert.equal(count(f.db, 'team_billing_wechat_native_orders'), 0);
   assertNoNativePayment(f);
+});
+
+test('managed billing overview exposes Native checkout capability only to the negotiated authorized view', async t => {
+  const capability = {'X-Shenyi-Native-Checkout':'native-v1'};
+  const route = billingOverviewRoute(teamId);
+  const f = await fixture(t, {catalog:priceCatalog});
+  const session = await f.device();
+  const normal = await session.heldGet(route);
+  assert.equal(normal.status, 200, normal.text);
+  assert.equal(Object.hasOwn(normal.data, 'nativeCheckout'), false);
+  const unsupported = await session.heldGet(route, {'X-Shenyi-Native-Checkout':'future-v2'});
+  assert.equal(unsupported.status, 200, unsupported.text);
+  assert.deepEqual(unsupported.data, normal.data);
+  const optedIn = await session.heldGet(route, capability);
+  assert.equal(optedIn.status, 200, optedIn.text);
+  assert.deepEqual(optedIn.data, {...normal.data, nativeCheckout:{canPurchase:true}});
+  assert.equal((await f.send(route, {method:'GET', headers:capability})).status, 401);
+  const foreign = await session.heldGet(billingOverviewRoute('team-b'), capability);
+  assert.equal(foreign.status, 404, foreign.text);
+  assert.equal(Object.hasOwn(foreign.data, 'nativeCheckout'), false);
+
+  await f.restart();
+  const existing = await session.heldGet(route, capability);
+  assert.equal(existing.status, 200, existing.text);
+  assert.deepEqual(existing.data, {...normal.data, nativeCheckout:{canPurchase:false}});
+  assertNoNativePayment(f);
+
+  const disabled = await fixture(t, {enabled:false});
+  const disabledSession = await disabled.device();
+  const originView = await disabledSession.heldGet(route);
+  const disabledView = await disabledSession.heldGet(route, capability);
+  assert.equal(originView.status, 200, originView.text);
+  assert.equal(disabledView.status, 200, disabledView.text);
+  assert.equal(Object.hasOwn(originView.data, 'nativeCheckout'), false);
+  assert.deepEqual(disabledView.data, originView.data);
+  assertNoNativePayment(disabled);
+});
+
+function expectUnresolved(reply) {
+  assert.equal(reply.status, 409, reply.text);
+  assert.equal(reply.data.error.code, 'WECHAT_NATIVE_PREVIOUS_ORDER_UNRESOLVED');
+  assert.deepEqual(Object.keys(reply.data), ['error']);
+}
+
+test('desktop cannot replace a missing, pending, or expired order without verified closure', async t => {
+  t.mock.timers.enable({apis:['Date'], now:Date.now()});
+  const f = await fixture(t, {catalog:priceCatalog});
+  const pending = f.lock();
+  const foreign = f.lock({teamId:'team-b', actorId:'admin-b'});
+  const expired = f.lock({expiresAt:Math.floor(Date.now() / 1000) * 1000 + 60000});
+  const session = await f.device();
+  t.mock.timers.setTime(expired.expiresAt);
+  const original = await f.issue(session, expired.id);
+  expectOrder(await f.browser('order', original), expired, 'expired');
+
+  const route = purchaseIssuer(teamId);
+  for (const previousRequestId of [randomUUID(), pending.requestId, expired.requestId, foreign.requestId]) {
+    expectUnresolved(await session.heldPost(route, {product:annual, requestId:randomUUID(), previousRequestId}));
+  }
+  const repeat = await session.heldPost(route, {product:annual, requestId:pending.requestId, previousRequestId:pending.requestId});
+  assert.equal(repeat.status, 400, repeat.text);
+  const malformed = await session.heldPost(route, {product:annual, requestId:randomUUID(), previousRequestId:42});
+  assert.equal(malformed.status, 400, malformed.text);
+  assert.equal(count(f.db, 'team_billing_wechat_native_orders'), 3);
+  assertNoNativePayment(f);
+});
+
+test('desktop can start a new purchase after verified fulfilment of the same actor and product', async t => {
+  let old;
+  const f = await fixture(t, {catalog:priceCatalog, provider:() => signedProviderResponse(verifiedTrade(old))});
+  old = f.lock();
+  const session = await f.device();
+  const original = await f.issue(session, old.id);
+  expectOrder(await f.browser('check', original), old, 'fulfilled');
+  expectUnresolved(await session.heldPost(purchaseIssuer(teamId),
+    {product:seat, requestId:randomUUID(), previousRequestId:old.requestId}));
+  const nextId = randomUUID();
+  const replacement = await f.purchase(session, annual, nextId, old.requestId);
+  const page = await f.browser('order', replacement);
+  expectLease(page, ['checkout']);
+  expectCheckout(page.data.checkout, annual);
+  const quote = await getQuote(f, replacement, annual, 3);
+  const response = await f.browser('confirm', replacement, {body:{quoteId:quote.id}});
+  const order = response.data?.order;
+  assert.ok(order, response.text);
+  expectOrder(response, {...order, amountMinor:quote.amountMinor}, 'pending');
+  assert.notEqual(order.id, old.id);
+  assert.equal(f.db.prepare('SELECT request_id FROM main.team_billing_wechat_native_orders WHERE order_id=?').get(order.id).request_id,
+    nextId);
+  assert.equal(count(f.db, 'team_billing_wechat_native_orders'), 2);
+  assert.equal(count(f.db, 'team_billing_wechat_native_payments'), 1);
+  assert.equal(count(f.db, 'team_billing_wechat_native_fulfilments'), 1);
+  assert.equal(f.calls.length, 1);
+});
+
+test('a verified refund blocks a new purchase while preserving the already locked successor', async t => {
+  t.mock.timers.enable({apis:['Date'], now:Date.now()});
+  let old, coworker, providerState = 'CLOSED';
+  const f = await fixture(t, {catalog:priceCatalog, provider:target => {
+    if (target.pathname.endsWith('/' + coworker.merchantOrderId)) return signedProviderResponse(verifiedTrade(coworker, 'CLOSED'));
+    assert.ok(target.pathname.endsWith('/' + old.merchantOrderId));
+    return signedProviderResponse(verifiedTrade(old, providerState));
+  }});
+  f.db.exec("UPDATE main.team_operators SET team_id='team-a' WHERE user_id='admin-b'");
+  coworker = f.lock({actorId:'admin-b'});
+  old = f.lock();
+  const session = await f.device();
+  const coworkerHandoff = await f.issue(session, coworker.id);
+  expectOrder(await f.browser('check', coworkerHandoff), coworker, 'closed');
+  expectUnresolved(await session.heldPost(purchaseIssuer(teamId),
+    {product:annual, requestId:randomUUID(), previousRequestId:coworker.requestId}));
+  const original = await f.issue(session, old.id);
+  expectOrder(await f.browser('check', original), old, 'closed');
+  const candidateId = randomUUID();
+  const candidate = await f.purchase(session, annual, candidateId, old.requestId);
+  const toQuote = await f.purchase(session, annual, candidateId, old.requestId);
+  const quote = await getQuote(f, candidate, annual, 3);
+  const successorId = randomUUID();
+  const successor = await f.purchase(session, annual, successorId, old.requestId);
+  const successorQuote = await getQuote(f, successor, annual, 3);
+  const locked = await f.browser('confirm', successor, {body:{quoteId:successorQuote.id}});
+  const order = locked.data?.order;
+  assert.ok(order, locked.text);
+  expectOrder(locked, {...order, amountMinor:successorQuote.amountMinor}, 'pending');
+
+  t.mock.timers.tick(2000);
+  providerState = 'REFUND';
+  expectOrder(await f.browser('check', original), old, 'needs_review');
+  const reopened = await f.purchase(session, annual, successorId, old.requestId);
+  expectOrder(await f.browser('order', reopened), order, 'pending');
+  expectUnresolved(await session.heldPost(purchaseIssuer(teamId),
+    {product:annual, requestId:candidateId, previousRequestId:old.requestId}));
+  expectUnresolved(await f.browser('quote', toQuote, {body:{seats:3}}));
+  expectUnresolved(await f.browser('confirm', candidate, {body:{quoteId:quote.id}}));
+  assert.equal(count(f.db, 'team_billing_wechat_native_orders'), 3);
+  assert.equal(count(f.db, 'team_billing_wechat_native_payments'), 0);
+  assert.equal(count(f.db, 'team_billing_wechat_native_fulfilments'), 0);
+  assert.equal(f.calls.length, 3);
 });

@@ -1,10 +1,11 @@
 'use strict';
+const {randomUUID}=require('node:crypto');
 const {isProxy}=require('node:util').types;
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const BILLING_ROOT='/api/auth/billing/access';
-const BILLING_PATH=/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/billing\/(?:overview|website-handoff|website-seat-handoff|reconciliation|(?:orders|seat-orders)(?:\?limit=20(?:&after=([0-9a-f-]{36}))?|\/([0-9a-f-]{36})(?:\/(?:reconcile|resume-fulfilment))?)?)$/;
+const BILLING_PATH=/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/billing\/(?:overview|website-handoff|website-seat-handoff|native-website(?:-order)?-handoff|reconciliation|(?:orders|seat-orders)(?:\?limit=20(?:&after=([0-9a-f-]{36}))?|\/([0-9a-f-]{36})(?:\/(?:reconcile|resume-fulfilment))?)?)$/;
 const REFUND_ACCESS='/api/auth/refund-intake/access';
 const REFUND_PATH=/^\/api\/platform\/billing\/refund-intakes\/(?:annual|seat)\/([0-9a-f-]{36})(?:\?beforeRevision=([1-9][0-9]{0,15}))?$/;
 const REFUND_REFERENCE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
@@ -24,6 +25,7 @@ const BILLING_ERRORS=Object.freeze({
   402:{SUBSCRIPTION_WRITE_UNAVAILABLE:'当前订阅期限不支持增购席位。'},
   403:{VERIFICATION_FAILED:'当前密码未通过核验，请重新输入。'},
   409:{
+    WECHAT_NATIVE_PREVIOUS_ORDER_UNRESOLVED:'请先在官网核对上一笔购买。权益到账或确认关单后可以开始下一笔。',
     BILLING_OFFER_CHANGED:'模拟账务方案已改变，请刷新后重新核对。',
     BILLING_RENEWAL_SEATS_RECONCILIATION_REQUIRED:'模拟续费席位无法确认，请核对已使用席位、预留邀请及待处理订单。',
     BILLING_CONFLICT:'模拟订单或收款状态需要核对，请保留原订单。',
@@ -178,7 +180,7 @@ function overviewView(value,teamId,reject){
   const commonKeys=['teamId','simulation','subscription','seats'];
   const simulationKeys=['annualOffers','renewalSeats','seatOffer','canReconcile'];
   const optionalKeys=['canReconcilePaymentExceptions','canReconcileBillingBatch','canResumeBillingBatch','canResumeFulfilment','websiteCheckout'];
-  const overview=fields(value,commonKeys,reject,[...simulationKeys,...optionalKeys]);
+  const overview=fields(value,commonKeys,reject,[...simulationKeys,...optionalKeys,'nativeCheckout']);
   if(overview.teamId!==teamId||!boolean(overview.simulation))reject();
   if(Object.hasOwn(overview,'websiteCheckout')&&(!overview.simulation||overview.websiteCheckout!==true))reject();
   const subscription=fields(overview.subscription,['state','revision','startsAt','endsAt'],reject,['renewalReminderDays','pilot']);
@@ -191,9 +193,13 @@ function overviewView(value,teamId,reject){
   if(!Object.values(seats).every(value=>integer(value))||seats.usedSeats!==seats.activeBusinessSeats+seats.reservedInvitationSeats||
     seats.availableSeats!==Math.max(0,seats.purchasedSeats-seats.usedSeats))reject();
   if(!overview.simulation){
-    if(Object.keys(overview).length!==commonKeys.length)reject();
-    return {teamId,simulation:false,subscription,seats};
+    const native = Object.hasOwn(overview,'nativeCheckout');
+    if(Object.keys(overview).length!==commonKeys.length+Number(native))reject();
+    const capability=native?fields(overview.nativeCheckout,['canPurchase'],reject):null;
+    if(capability&&!boolean(capability.canPurchase))reject();
+    return {teamId,simulation:false,subscription,seats,...(native?{nativeCheckout:capability}:{})};
   }
+  if(Object.hasOwn(overview,'nativeCheckout'))reject();
   if(!simulationKeys.every(key=>Object.hasOwn(overview,key))||!boolean(overview.canReconcile))reject();
   const capabilities={canReconcile:overview.canReconcile,...(overview.websiteCheckout===true?{websiteCheckout:true}:{})};
   if(Object.hasOwn(overview,'canReconcilePaymentExceptions')){
@@ -272,7 +278,7 @@ function refundIntakeView(value,{kind,orderId,beforeRevision},reject){
   };
 }
 
-function createBillingClient({request,failure,websiteCheckout}){
+function createBillingClient({request,failure,websiteCheckout,nativeCheckout}){
   const badInput=()=>{throw failure('INVALID_INPUT','模拟账务操作参数无效。');};
   const badResponse=()=>{throw failure('INVALID_RESPONSE','模拟账务响应无法确认，请按原操作核对。');};
   const scoped=(teamId,kind)=>{
@@ -288,7 +294,54 @@ function createBillingClient({request,failure,websiteCheckout}){
     if(response.simulation!==true)badResponse();
     return {order:orderView(response.order,scope,badResponse)};
   };
+  let openingNative=false;
+  function nativeInputError(){throw failure('INVALID_INPUT','请核对购买类型或原订单编号。');}
+  function nativeStorageError(){throw failure('NATIVE_PURCHASE_STORAGE_UNAVAILABLE','无法读取或保存本次购买记录，请先在官网核对原订单。');}
+  async function openNativeWebsiteCheckout(input){
+    const selection=fields(input,['teamId'],nativeInputError,['kind','orderId','newPurchase']);
+    const {teamId,kind,orderId,newPurchase}=selection, knownOrder=Object.hasOwn(selection,'orderId');
+    if(!match(ID,teamId)||(knownOrder
+      ? !match(UUID,orderId)||Object.hasOwn(selection,'kind')||Object.hasOwn(selection,'newPurchase')
+      : (kind!=='annual'&&kind!=='seat')||(Object.hasOwn(selection,'newPurchase')&&newPurchase!==true)))nativeInputError();
+    if(nativeCheckout?.configured!==true)throw failure('WEBSITE_CHECKOUT_UNAVAILABLE','当前电脑未连接受信官网付款服务。');
+    if(openingNative)throw failure('WEBSITE_CHECKOUT_IN_PROGRESS','正在打开官网订单页，请稍候。');
+    openingNative=true;
+    try{
+      const {assertCurrent,actorId}=nativeCheckout.capture();
+      assertCurrent();
+      const scope=[nativeCheckout.apiBase,nativeCheckout.serverId,actorId,teamId,kind];
+      let existing,intent;
+      if(!knownOrder){
+        try{existing=await nativeCheckout.intents.read(scope);}catch{nativeStorageError();}
+        assertCurrent();
+        if(existing!==null&&(!match(UUID,existing?.requestId)||
+          existing.previousRequestId!==null&&(!match(UUID,existing.previousRequestId)||existing.requestId===existing.previousRequestId)))nativeStorageError();
+        if(newPurchase&&existing===null)throw failure('WECHAT_NATIVE_PREVIOUS_ORDER_UNRESOLVED','请先打开或继续本次购买。');
+        intent=newPurchase||existing===null?{requestId:randomUUID(),previousRequestId:existing?.requestId??null}:existing;
+      }
+      const route='/api/teams/'+teamId+'/billing/native-website'+(knownOrder?'':'-order')+'-handoff';
+      const body=knownOrder?{orderId}:{product:PRODUCTS[kind],requestId:intent.requestId,
+        ...(intent.previousRequestId===null?{}:{previousRequestId:intent.previousRequestId})};
+      const startedAt=performance.now();
+      const value=fields(await request(route,{method:'POST',body,beforeSend:assertCurrent}),['handoff','expiresAt','expiresInMs'],badResponse);
+      assertCurrent();
+      if(!match(/^[A-Za-z0-9_-]{43}$/,value.handoff)||Buffer.from(value.handoff,'base64url').toString('base64url')!==value.handoff||
+         !timestamp(value.expiresAt)||value.expiresAt<=0||!integer(value.expiresInMs,1,120_000))badResponse();
+      const deadline=startedAt+value.expiresInMs;
+      if(performance.now()>=deadline)badResponse();
+      if(!knownOrder&&intent!==existing){
+        try{await nativeCheckout.intents.write(scope,intent);}catch{nativeStorageError();}
+      }
+      assertCurrent();
+      if(performance.now()>=deadline)badResponse();
+      try{await nativeCheckout.open(value.handoff);}
+      catch{assertCurrent();throw failure('WEBSITE_CHECKOUT_OPEN_FAILED','无法确认官网页面已打开，请核对浏览器后再操作。');}
+      assertCurrent();
+      return {opened:true};
+    }finally{openingNative=false;}
+  }
   return {
+    openNativeWebsiteCheckout,
     async getBillingAccess(input){
       if(input!==undefined)badInput();
       const data=fields(await request(BILLING_ROOT),['teams'],badResponse);
@@ -303,6 +356,7 @@ function createBillingClient({request,failure,websiteCheckout}){
     async getBillingOverview(input){
       const {teamId}=fields(input,['teamId'],badInput);
       const overview=overviewView(await request(scoped(teamId)),teamId,badResponse);
+      if(overview.nativeCheckout&&nativeCheckout?.configured!==true)badResponse();
       return overview.websiteCheckout===true?{...overview,websiteCheckoutReady:websiteCheckout?.configured===true}:overview;
     },
     async openWebsiteCheckout(input){

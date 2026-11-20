@@ -57,7 +57,7 @@ function billingAccess(request,options){
   return json({teams});
  });
 }
-function billingOverview(db,teamId,at,billingSimulation,{expiryReminder,resumeFulfilment,resumeBatch,pilotSource,websiteCheckout}){
+function billingOverview(db,teamId,at,billingSimulation,{expiryReminder,resumeFulfilment,resumeBatch,pilotSource,websiteCheckout,nativeCheckout}){
  const current=readSubscriptionState(db,teamId,at),{state,revision,startsAt,endsAt}=current;
  const subscription={state,revision,startsAt,endsAt},remaining=endsAt-at;
  if(pilotSource&&!billingSimulation&&currentTermIsPilot(db,current))subscription.pilot=true;
@@ -65,7 +65,7 @@ function billingOverview(db,teamId,at,billingSimulation,{expiryReminder,resumeFu
   subscription.renewalReminderDays=Math.ceil(remaining/MS_PER_DAY);
  }
  const summary={teamId,subscription,seats:readSeatCapacity(db,teamId,at)};
- if(!billingSimulation)return json({...summary,simulation:false});
+ if(!billingSimulation)return json({...summary,simulation:false,...(nativeCheckout?{nativeCheckout}:{})});
  const unitAmountMinor=billingSimulation.annualSeatUnitAmountMinor;
  const renewalSeats=unitAmountMinor===undefined?null:{
   ...readAnnualSeatRenewalDefaults(db,teamId,at),unitAmountMinor,currency:'CNY',
@@ -343,6 +343,9 @@ export async function handleBillingRequest(request,options={}){
   resumeBatch:request.headers.get('X-Shenyi-Billing-Batch')==='resumable-v1',
   pilotSource:options.serviceMode==='managed-service'&&request.headers.get('X-Shenyi-Billing-Source')==='approved-pilot-v1',
   websiteCheckout:options.websiteCheckoutActive&&request.headers.get('X-Shenyi-Website-Checkout')==='candidate-v1',
+  nativeCheckout:options.serviceMode==='managed-service'&&options.nativeWebsitePayment&&
+   request.headers.get('X-Shenyi-Native-Checkout')==='native-v1'
+   ?{canPurchase:options.nativeWebsitePayment.canPurchase===true}:undefined,
  }));
  if(kind==='offers')return scoped(()=>json({simulation:true,offers:billingSimulation.offers}));
  if(kind==='renewal-seats')return scoped(()=>{

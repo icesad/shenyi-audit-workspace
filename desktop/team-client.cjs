@@ -134,13 +134,16 @@ async function preservationBytes(response,limit,check,signal,label='资料保全
   }finally{for(const chunk of chunks)chunk.fill(0);if(!complete)void reader.cancel().catch(()=>{});}
 }
 
-function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wechatPolicy,openAuthorization,openCheckoutExternal,now=Date.now,deviceIdentity,trustedService,isolatedPreview} = {}) {
+function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wechatPolicy,openAuthorization,openCheckoutExternal,
+  openNativeCheckoutExternal,nativeCheckoutIntents,now=Date.now,deviceIdentity,trustedService,isolatedPreview} = {}) {
   if (baseUrl !== API_BASE || typeof fetchImpl !== 'function') throw failure('INVALID_SERVER', '预览版只连接本机审易服务。');
   if(trustedService!==undefined&&isolatedPreview!==undefined)throw failure('INVALID_SERVER','团队服务配置不能混用。');
   const trusted=isolatedPreview!==undefined?createIsolatedPreviewTransport({profile:isolatedPreview,fetchImpl,boundedBytes,error:failure}):trustedService===undefined?null:createTrustedTeamServiceTransport({profile:trustedService,fetchImpl,boundedBytes,error:failure});
   if(trusted&&(!deviceIdentity||!['win32','darwin'].includes(deviceIdentity.platform)||!deviceIdentity.vault||!['getPublicIdentity','signChallenge','signRequest'].every(name=>typeof deviceIdentity.vault[name]==='function')))throw failure('DEVICE_VAULT_UNAVAILABLE','受信团队服务需要系统保护的设备密钥。');
   const checkoutProfile=trustedService===undefined?null:validateTrustedTeamService(trustedService);
   const checkoutOrigin=checkoutProfile&&Object.hasOwn(checkoutProfile,'checkoutOrigin')?checkoutProfile.checkoutOrigin:null;
+  const nativeCheckoutReady=!!checkoutProfile&&typeof openNativeCheckoutExternal==='function'&&
+    typeof nativeCheckoutIntents?.read==='function'&&typeof nativeCheckoutIntents?.write==='function';
   const requestUrl=route=>trusted?trusted.url(route):API_BASE+route;
   let token = null, current = null, generation = 0,wechat,device,replacement,workpaperClient;
   const projectMigrationInvalidators=new Set();
@@ -181,8 +184,10 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
       throw failure('INVALID_INPUT','微信关联需要指定账号的已绑定设备。');
     }
     const protectedRoute=linking||device?.required&&!device.isBootstrap(method,route);
-    if(billing&&!protectedRoute)throw failure('DEVICE_NOT_READY','模拟账务需要当前已持钥核验的业务登录。');
+    if(billing&&!protectedRoute)throw failure('DEVICE_NOT_READY','账务需要当前已持钥核验的业务登录。');
     const billingOverviewView=billing&&protectedRoute&&authenticated&&!temporaryBearer&&method==='GET'&&body===undefined&&!binary&&route.endsWith('/overview');
+    const nativeCheckoutView=nativeCheckoutReady&&(billingOverviewView||
+      billing&&method==='POST'&&/\/billing\/native-website(?:-order)?-handoff$/.test(route));
     if(protectedRoute&&(!authenticated||temporaryBearer&&!linking))throw failure('INVALID_INPUT','此操作需要当前已证明的设备会话。');
     const signed=linking?await wechatLinkProof(bytes):protectedRoute?await device.prepare(method,route,bytes):null;
     if(linking&&!signed)throw failure('DEVICE_NOT_READY','请先使用已经绑定的电脑确认微信关联。');
@@ -204,7 +209,8 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     materialCheck();beforeSend?.();let response;
     const target=requestUrl(route);
     try { onDispatch?.();response = await fetchImpl(target, {method, redirect: 'error', signal: transportSignal,
-      headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'}),...(signed?.headers??{}),...(billingOverviewView?{'X-Shenyi-Billing-View':'expiry-reminder-v1','X-Shenyi-Billing-Recovery':'recorded-payment-v1','X-Shenyi-Billing-Source':'approved-pilot-v1','X-Shenyi-Website-Checkout':'candidate-v1','X-Shenyi-Billing-Batch':'resumable-v1'}:{})},
+      headers: {'Origin': 'shenyi://app', ...(authenticated ? {Authorization: `Bearer ${bearer}`} : {}), ...(body === undefined ? {} : {'Content-Type': 'application/json'}),...(signed?.headers??{}),...(billingOverviewView?{'X-Shenyi-Billing-View':'expiry-reminder-v1','X-Shenyi-Billing-Recovery':'recorded-payment-v1','X-Shenyi-Billing-Source':'approved-pilot-v1','X-Shenyi-Website-Checkout':'candidate-v1','X-Shenyi-Billing-Batch':'resumable-v1'}:{}),
+        ...(nativeCheckoutView?{'X-Shenyi-Native-Checkout':'native-v1'}:{})},
       ...(serialized === undefined ? {} : {body: serialized})}); }
     catch { if (at !== generation) throw failure('SESSION_CHANGED', '账号状态已改变，请重新操作。');signed?.assertCurrent();if(guardedHooks)materialCheck();if(!temporaryBearer||temporaryBearer===token)device?.pause();throw failure('SERVICE_UNAVAILABLE', protectedRoute&&!['GET','HEAD'].includes(method)?'已发操作结果未确认，业务已暂停；联网后请先核对结果，再决定是否重新操作。':(isolatedPreview?'无法连接独立合成预览，业务已暂停；请核对该候选窗口。':trusted?'无法连接受信HTTPS团队服务，业务已暂停；联网后请重新核验。':'无法连接本机团队服务，业务已暂停；联网后请重新核验。')); }
     if (at !== generation) {
@@ -380,22 +386,27 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
   const captureWorkpaper=()=>{if(!token||!current)throw failure('SIGN_IN_REQUIRED','请先登录。',401);if(!device.required)throw failure('DEVICE_NOT_READY','底稿需要当前已持钥核验的业务登录。');const at=generation,bearer=token,actorId=current.account.id,deviceGuard=device.guard();const assertCurrent=()=>{if(at!==generation||token!==bearer||current?.account.id!==actorId)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');deviceGuard();};assertCurrent();return{actorId,assertCurrent};};
   workpaperClient=createWorkpaperClient({request,failure,capture:captureWorkpaper});
   const billingRequest=(route,options)=>{
-    if(!isBillingRoute(route))throw failure('INVALID_INPUT','模拟账务操作范围无效。');
-    return request(route,{...options,unavailableMessage:'模拟账务暂不可用，请稍后核对。',
-      messagesOverride:{404:'无法访问该团队、订单或账务操作。',409:'模拟账务状态已改变，请保留原操作并核对。'}});
+    if(!isBillingRoute(route))throw failure('INVALID_INPUT','账务操作范围无效。');
+    return request(route,{...options,unavailableMessage:'账务暂不可用，请稍后核对。',
+      messagesOverride:{404:'无法访问该团队、订单或账务操作。',409:'账务状态已改变，请保留原操作并核对。'}});
   };
+  function captureCheckout(){
+    if(!token||!current)throw failure('SIGN_IN_REQUIRED','请先登录。',401);
+    if(!device?.required)throw failure('DEVICE_NOT_READY','官网账务需要当前已持钥核验的登录。');
+    const at=generation,bearer=token,actorId=current.account.id,guard=device.guard();
+    const assertCurrent=()=>{if(at!==generation||token!==bearer||current?.account.id!==actorId)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');guard();};
+    return {actorId,assertCurrent};
+  }
   return Object.freeze({
     ...workpaperClient,
     ...createBillingClient({request:billingRequest,failure,websiteCheckout:{
       configured:!!checkoutOrigin&&typeof openCheckoutExternal==='function',now,
-      capture(){
-        if(!token||!current)throw failure('SIGN_IN_REQUIRED','请先登录。',401);
-        if(!device?.required)throw failure('DEVICE_NOT_READY','官网合成下单需要当前已持钥核验的登录。');
-        const at=generation,bearer=token,actorId=current.account.id,guard=device.guard();
-        return ()=>{if(at!==generation||token!==bearer||current?.account.id!==actorId)throw failure('SESSION_CHANGED','账号状态已改变，请重新操作。');guard();};
-      },
+      capture:()=>captureCheckout().assertCurrent,
       open:(handoff,kind)=>openCheckoutExternal(checkoutOrigin+(kind==='seat'?'/checkout/seats/':'/checkout/')+'#handoff='+handoff),
-    }}),
+    },nativeCheckout:nativeCheckoutReady?{
+      configured:true,apiBase:checkoutProfile.apiBase,serverId:checkoutProfile.serverId,intents:nativeCheckoutIntents,
+      capture:captureCheckout,open:handoff=>openNativeCheckoutExternal(checkoutProfile.apiBase+'/api/website-pay/#handoff='+handoff),
+    }:null}),
     ...createWorkpaperExportClient({request,failure,capture:captureWorkpaper,getWorkpaperClient:()=>workpaperClient}),
     ...preservationExport,
     ...materials,

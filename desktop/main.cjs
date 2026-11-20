@@ -7,6 +7,7 @@ const {loadTeamServiceConfiguration}=require('./team-service-config.cjs');
 const {loadIsolatedPreviewConfiguration,loadOwnerReviewManagedPilotConfiguration}=require('./isolated-preview-config.cjs');
 const {registerDesktopBridge,APP_URL} = require('./bridge.cjs');
 const {createDeviceKeyVault}=require('./device-key-vault.cjs');
+const {createNativeCheckoutIntents}=require('./native-checkout-intents.cjs');
 const {resolveDeviceVaultDirectory}=require('./device-key-directory.cjs');
 const {PREVIEW_SCHEME}=require('./material-preview-window.cjs');
 
@@ -103,6 +104,7 @@ async function main() {
   const vault=createDeviceKeyVault({directory:installedVault??reviewContext?.deviceVaultDirectory??resolveDeviceVaultDirectory(),safeStorage});
   let ownerReviewWindows=null;
   const client=createTeamClient({baseUrl:API_BASE,...(serviceConfiguration.profile?{trustedService:serviceConfiguration.profile}:{}),...(isolatedPreview?{isolatedPreview:isolatedPreview.profile}:{}),wechatPolicy,openAuthorization:url=>shell.openExternal(url),openCheckoutExternal:url=>ownerReviewCheckout?ownerReviewWindows.open(url):shell.openExternal(url),
+    openNativeCheckoutExternal:url=>shell.openExternal(url),nativeCheckoutIntents:createNativeCheckoutIntents(dataRoot),
     deviceIdentity:{vault,platform:process.platform,displayName:process.platform==='darwin'?'我的Mac电脑':'我的Windows电脑'}});
   const win=new BrowserWindow({width:1210,height:800,minWidth:840,minHeight:600,show:false,title:ownerReviewManagedPilot?'审易 · 受管试点评审':'审易 · 团队采集预览',backgroundColor:'#f5f6f2',
     webPreferences:{preload:path.join(__dirname,'preload.cjs'),session:isolated,nodeIntegration:false,nodeIntegrationInWorker:false,contextIsolation:true,sandbox:true,webSecurity:true,allowRunningInsecureContent:false,webviewTag:false,devTools:!app.isPackaged}});

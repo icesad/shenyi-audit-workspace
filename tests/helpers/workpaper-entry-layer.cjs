@@ -10,7 +10,9 @@ const BILLING_RPC=Object.freeze([
 const BILLING_BATCH_RPC=Object.freeze([['reconcileBillingPage','billing-page-reconcile']]);
 const REFUND_INTAKE_RPC=Object.freeze([['getRefundIntakeAccess','refund-intake-access'],['getRefundIntake','refund-intake-read'],
  ['recordRefundIntake','refund-intake-record']]);
-const WEBSITE_CHECKOUT_RPC=Object.freeze([['openWebsiteCheckout','website-checkout-open']]);
+const WEBSITE_CHECKOUT_RPC=Object.freeze([
+ ['openWebsiteCheckout','website-checkout-open'],['openNativeWebsiteCheckout','native-website-checkout-open'],
+]);
 const ADDED_RPC=Object.freeze([...RPC,...BILLING_RPC,...BILLING_BATCH_RPC,...REFUND_INTAKE_RPC,...WEBSITE_CHECKOUT_RPC]);
 const digest=names=>createHash('sha256').update(names.join('\n')).digest('hex');
 function oldNames(names,suffix,baseline,{allowHistorical=false}={}){

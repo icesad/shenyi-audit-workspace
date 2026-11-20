@@ -1,28 +1,47 @@
 "use strict";
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {createHash,sign,verify}=require('node:crypto');
+const fs=require('node:fs/promises');
+const path=require('node:path');
+const os=require('node:os');
 const {createTeamClient}=require('../desktop/team-client.cjs');
 const {createBillingClient,isBillingRoute}=require('../desktop/billing-client.cjs');
+const {createNativeCheckoutIntents}=require('../desktop/native-checkout-intents.cjs');
 const {createBusinessRoleFixture,keyPair,PASSWORD}=require('./helpers/business-role-fixture.cjs');
 const proof=require('../shared/device-proof.cjs');
 const CODE=Buffer.alloc(32,31).toString('base64url'),ORIGIN='https://127.0.0.1:43322',TEAM='team-a';
 const OVERVIEW={teamId:TEAM,simulation:true,subscription:{state:'active',revision:1,startsAt:1,endsAt:2000000000000},seats:{purchasedSeats:1,activeBusinessSeats:0,reservedInvitationSeats:0,usedSeats:0,availableSeats:1},annualOffers:[],renewalSeats:null,seatOffer:null,canReconcile:false,websiteCheckout:true};
+const NATIVE_OVERVIEW={teamId:TEAM,simulation:false,subscription:OVERVIEW.subscription,seats:OVERVIEW.seats,nativeCheckout:{canPurchase:true}};
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
-async function fixture(t,{version=3,open,reply}={}){
+async function nativeStore(t){
+ const parent=path.resolve(process.env.SHENYI_TEST_TMPDIR??os.tmpdir());
+ await fs.mkdir(parent,{recursive:true});
+ const root=await fs.mkdtemp(path.join(parent,'shenyi-desktop-intents-'));
+ t.after(()=>fs.rm(root,{recursive:true}));
+ return {root,intents:createNativeCheckoutIntents(root)};
+}
+async function fixture(t,{version=3,open,reply,nativeIntents,nativeOverview=NATIVE_OVERVIEW}={}){
  const f=await createBusinessRoleFixture(t),pair=keyPair(),fingerprint=proof.parsePublicKey(pair.encoded).fingerprint,calls=[],opened=[],signed=[];
  const serverId=f.db.prepare("SELECT value FROM team_database_metadata WHERE name='device-server-id'").get().value;
  const profile={schemaVersion:version,apiBase:'https://team.example.invalid',serverId,...(version===3?{checkoutOrigin:ORIGIN}:{})};
  const vault={getPublicIdentity:async()=>({publicKey:pair.encoded,fingerprint}),signChallenge:async fields=>sign(null,proof.challengeBytes(fields),pair.privateKey).toString('base64url'),signRequest:async fields=>{signed.push(fields);return sign(null,proof.requestProofBytes(fields),pair.privateKey).toString('base64url');}};
- let response=reply??(()=>({handoff:CODE,expiresAt:f.clock.value+120000}));
- const client=createTeamClient({now:()=>f.clock.value,trustedService:profile,deviceIdentity:{vault,platform:'win32',displayName:'Synthetic checkout device'},openCheckoutExternal:open===null?undefined:async url=>{opened.push(url);return open?.(url);},fetchImpl:async(url,settings)=>{
+ let response=reply;
+ const nativeOpened=[];
+ const client=createTeamClient({now:()=>f.clock.value,trustedService:profile,deviceIdentity:{vault,platform:'win32',displayName:'Synthetic checkout device'},openCheckoutExternal:open===null?undefined:async url=>{opened.push(url);return open?.(url);},
+  ...(nativeIntents?{nativeCheckoutIntents:nativeIntents,openNativeCheckoutExternal:async url=>{nativeOpened.push(url);return open?.(url);}}:{}),
+  fetchImpl:async(url,settings)=>{
   const route=new URL(url).pathname;calls.push({route,...settings,headers:new Headers(settings.headers)});let result;
-  if(/\/billing\/website(?:-seat)?-handoff$/.test(route))result=Response.json(await response());
-  else if(route.endsWith('/billing/overview'))result=Response.json(OVERVIEW);
+  if(/\/billing\/(?:website(?:-seat)?-handoff|native-website(?:-order)?-handoff)$/.test(route)){
+   const value=response?await response(settings):{handoff:CODE,expiresAt:f.clock.value+120000,
+    ...(route.includes('/native-website')?{expiresInMs:120000}:{})};
+   result=value instanceof Response?value:Response.json(value);
+  }
+  else if(route.endsWith('/billing/overview'))result=Response.json(nativeIntents?nativeOverview:OVERVIEW);
   else result=await f.dispatch(new Request(url,settings));
   result.headers.set('X-Shenyi-Server-Id',serverId);Object.defineProperty(result,'url',{value:url});return result;
  }});
  await client.login({username:'administrator-demo',password:PASSWORD});await client.enrollDevice({displayName:'Synthetic checkout device',currentPassword:PASSWORD,confirmed:true});
- t.after(()=>client.clearSession());return {client,calls,opened,signed,pair,f,profile,setReply(value){response=value;}};
+ t.after(()=>client.clearSession());return {client,calls,opened,nativeOpened,signed,pair,f,profile,setReply(value){response=value;}};
 }
 test('website handoff is one protected empty POST and only a fixed pinned URL reaches the fake shell',async t=>{
  const f=await fixture(t);assert.equal(isBillingRoute('/api/teams/'+TEAM+'/billing/website-handoff'),true);assert.equal(isBillingRoute('/api/teams/'+TEAM+'/billing/website-handoff?url=x'),false);
@@ -110,4 +129,89 @@ test('supplied order IDs must be exact lowercase UUIDs before any handoff is req
  assert.equal(reads,0);
  assert.equal(f.calls.length,before);
  assert.deepEqual(f.opened,[]);
+});
+
+test('Native desktop purchase persists its UUID and predecessor across retries and rejected advances',async t=>{
+ const {root,intents}=await nativeStore(t);
+ let failOnce=true;
+ const f=await fixture(t,{nativeIntents:intents,open:()=>{if(failOnce){failOnce=false;throw Error('Synthetic opener failure');}}});
+ const selection={teamId:TEAM,kind:'annual'};
+ assert.deepEqual(await f.client.getBillingOverview({teamId:TEAM}),NATIVE_OVERVIEW);
+ assert.equal(f.calls.at(-1).headers.get('X-Shenyi-Native-Checkout'),'native-v1');
+ await assert.rejects(f.client.openNativeWebsiteCheckout(selection),{code:'WEBSITE_CHECKOUT_OPEN_FAILED'});
+ const first=JSON.parse(f.calls.at(-1).body);
+ assert.deepEqual(Object.keys(first).sort(),['product','requestId']);
+ assert.equal(first.product,'team-annual-renewal');
+ const directory=path.join(root,'native-checkout-intents');
+ const [file]=await fs.readdir(directory);
+ assert.equal(await fs.readFile(path.join(directory,file),'utf8'),first.requestId);
+ assert.deepEqual(await f.client.openNativeWebsiteCheckout(selection),{opened:true});
+ assert.deepEqual(JSON.parse(f.calls.at(-1).body),first);
+ assert.equal(f.nativeOpened.at(-1),f.profile.apiBase+'/api/website-pay/#handoff='+CODE);
+ assert.deepEqual(f.opened,[]);
+ f.setReply(()=>Response.json({error:{code:'WECHAT_NATIVE_PREVIOUS_ORDER_UNRESOLVED'}},{status:409}));
+ await assert.rejects(f.client.openNativeWebsiteCheckout({...selection,newPurchase:true}),{code:'WECHAT_NATIVE_PREVIOUS_ORDER_UNRESOLVED'});
+ assert.equal(await fs.readFile(path.join(directory,file),'utf8'),first.requestId);
+ f.setReply(()=>({handoff:CODE,expiresAt:f.f.clock.value+120000,expiresInMs:120000}));
+ await f.client.openNativeWebsiteCheckout({...selection,newPurchase:true});
+ const second=JSON.parse(f.calls.at(-1).body);
+ assert.equal(second.previousRequestId,first.requestId);
+ assert.notEqual(second.requestId,first.requestId);
+ assert.equal(await fs.readFile(path.join(directory,file),'utf8'),second.requestId+'\n'+first.requestId);
+ await f.client.openNativeWebsiteCheckout(selection);
+ assert.deepEqual(JSON.parse(f.calls.at(-1).body),second);
+ const call=f.calls.at(-1),fields=f.signed.at(-1);
+ assert.equal(call.route,'/api/teams/'+TEAM+'/billing/native-website-order-handoff');
+ assert.equal(call.redirect,'error');
+ assert.equal(fields.bodySha256,createHash('sha256').update(call.body).digest('hex'));
+ assert.ok(verify(null,proof.requestProofBytes(fields),f.pair.publicKey,Buffer.from(call.headers.get('X-Shenyi-Device-Signature'),'base64url')));
+});
+
+test('catalogless original recovery signs just the order UUID and returns no ticket or browser URL through IPC',async t=>{
+ const {intents}=await nativeStore(t);
+ const f=await fixture(t,{nativeIntents:intents,nativeOverview:{...NATIVE_OVERVIEW,nativeCheckout:{canPurchase:false}}});
+ const {registerDesktopBridge,APP_URL}=require('../desktop/bridge.cjs'),{EventEmitter}=require('node:events');
+ const handlers=new Map(),contents=new EventEmitter();
+ contents.mainFrame={url:APP_URL};
+ const event={sender:contents,senderFrame:contents.mainFrame};
+ t.after(registerDesktopBridge({ipcMain:{handle:(name,fn)=>handlers.set(name,fn),removeHandler:name=>handlers.delete(name)},window:{webContents:contents},client:f.client,dialog:{}}));
+ const channel=handlers.get('shenyi:native-website-checkout-open');
+ const orderId='abcdef01-0000-4000-8000-000000000009';
+ assert.equal((await f.client.getBillingOverview({teamId:TEAM})).nativeCheckout.canPurchase,false);
+ const before=f.calls.length;
+ for(const input of [{teamId:TEAM,orderId:orderId.toUpperCase()},{teamId:TEAM,orderId,kind:'annual'},{teamId:TEAM,orderId,url:ORIGIN},
+  {teamId:TEAM,kind:'annual',requestId:orderId},{teamId:TEAM,kind:'annual',newPurchase:false}]){
+  assert.equal((await channel(event,input)).error.code,'INVALID_INPUT');
+ }
+ assert.equal((await channel({sender:{},senderFrame:contents.mainFrame},{teamId:TEAM,orderId})).error.code,'UNTRUSTED_SENDER');
+ assert.equal(f.calls.length,before);
+ assert.deepEqual(await channel(event,{teamId:TEAM,orderId}),{ok:true,value:{opened:true}});
+ assert.equal(f.calls.at(-1).route,'/api/teams/'+TEAM+'/billing/native-website-handoff');
+ assert.equal(f.calls.at(-1).body,JSON.stringify({orderId}));
+ assert.equal(f.nativeOpened.at(-1),f.profile.apiBase+'/api/website-pay/#handoff='+CODE);
+});
+
+test('Native desktop rejects forged response fields, serializes handoffs and discards late replies after logout',async t=>{
+ const {intents}=await nativeStore(t);
+ const f=await fixture(t,{nativeIntents:intents});
+ const selection={teamId:TEAM,kind:'seat'};
+ for(const reply of [{handoff:CODE,expiresAt:1,expiresInMs:120000,url:ORIGIN},
+  {handoff:CODE.slice(0,-1)+'_',expiresAt:1,expiresInMs:120000},{handoff:CODE,expiresAt:0,expiresInMs:120000},
+  {handoff:CODE,expiresAt:1},{handoff:CODE,expiresAt:1,expiresInMs:120001},null]){
+  f.setReply(()=>reply);
+  await assert.rejects(f.client.openNativeWebsiteCheckout(selection),{code:'INVALID_RESPONSE'});
+ }
+ f.setReply(async()=>{await new Promise(resolve=>setTimeout(resolve,12));return {handoff:CODE,expiresAt:1,expiresInMs:1};});
+ await assert.rejects(f.client.openNativeWebsiteCheckout(selection),{code:'INVALID_RESPONSE'});
+ assert.equal(f.nativeOpened.length,0);
+ const wait=deferred();
+ f.setReply(()=>wait.promise);
+ const before=f.calls.length;
+ const pending=f.client.openNativeWebsiteCheckout(selection);
+ while(!f.calls.slice(before).some(call=>call.route.endsWith('/native-website-order-handoff')))await new Promise(resolve=>setImmediate(resolve));
+ await assert.rejects(f.client.openNativeWebsiteCheckout(selection),{code:'WEBSITE_CHECKOUT_IN_PROGRESS'});
+ await f.client.logout();
+ wait.resolve({handoff:CODE,expiresAt:f.f.clock.value+120000,expiresInMs:120000});
+ await assert.rejects(pending,{code:'SESSION_CHANGED'});
+ assert.equal(f.nativeOpened.length,0);
 });

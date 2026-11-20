@@ -71,6 +71,7 @@
     const panel = node('panel');
     const supported = methods.every(method => typeof api?.[method] === 'function');
     const lookupSupported = typeof api?.getBillingOrder === 'function';
+    const nativeSupported = typeof api?.openNativeWebsiteCheckout === 'function';
     let scope = '', identity = '', revision = 0, accessRead = null, team = '', teams = [];
     let overview = null, overviewRead = null, ordersRead = null, orders = [], nextCursor = null, pageCursor = null, previousCursors = [];
     let kind = 'annual', confirmation = null, mutation = null;
@@ -137,6 +138,19 @@
         typeof api?.openWebsiteCheckout === 'function';
     }
 
+    function nativeCheckoutReady() {
+      return nativeSupported && overview?.simulation === false && typeof overview.nativeCheckout?.canPurchase === 'boolean';
+    }
+
+    function drawNativeControls(blocked) {
+      const enabled = nativeCheckoutReady();
+      const canPurchase = enabled && overview.nativeCheckout.canPurchase;
+      node('native-checkout-section').hidden = !enabled;
+      node('native-purchase').hidden = !canPurchase;
+      node('native-kind').disabled = node('native-continue').disabled = node('native-next').disabled = blocked || !canPurchase;
+      node('native-order-id').disabled = node('native-open-order').disabled = blocked || !enabled;
+    }
+
     function canOpenWebsiteReceipt(order) {
       if (!websiteCheckoutReady() || order?.teamId !== team || typeof order.id !== 'string' ||
           orderIdPattern.exec(order.id)?.[0] !== order.id) return false;
@@ -157,6 +171,7 @@
       node('refresh').disabled = blocked || !!accessRead;
       node('overview').hidden = !overview;
       node('checkout-section').hidden = node('orders-section').hidden = !simulation;
+      drawNativeControls(blocked || !!accessRead);
       node('website-checkout-section').hidden = !website;
       node('website-checkout').hidden = !websiteReady;
       node('website-checkout').disabled = blocked || !!accessRead || !!ordersRead || !websiteReady;
@@ -312,6 +327,9 @@
       drawExpiryReminder();
       node('selected-seats').value = '';
       node('seat-quantity').value = '';
+      node('native-kind').value = 'annual';
+      node('native-order-id').value = '';
+      node('native-order-id').removeAttribute('aria-invalid');
       controls();
     }
 
@@ -429,6 +447,8 @@
       const pilot = subscription.pilot === true;
       node('notice').textContent = overview.simulation
         ? '本机模拟账务。创建订单和核对状态均不收款。'
+        : nativeCheckoutReady() && overview.nativeCheckout.canPurchase ? '请在官网核对金额、确认订单和扫码付款。'
+        : nativeCheckoutReady() ? '可在官网打开已有订单，核对付款状态。'
         : pilot ? '本团队当前显示获批的试点期限与席位。' : '当前仅可查阅订阅与席位。在线续费尚未开通。';
       const term = subscription.startsAt == null ? '' : '　' + date(subscription.startsAt) + ' 至 ' + date(subscription.endsAt) + '（北京时间）';
       node('term').textContent = (pilot ? '团队试点 · ' : '团队年订阅 · ') + (subscriptionStates[subscription.state] || '状态待核对') + term;
@@ -668,6 +688,63 @@
       }
     }
 
+    async function openNativeWebsiteCheckout(action) {
+      const original = action === 'order';
+      const button = node(original ? 'native-open-order' : 'native-' + action);
+      const at = capture();
+      if (!currentView(at) || !nativeCheckoutReady() || button.disabled || mutation || accessRead || overviewRead || getContext().busy) return;
+      const input = { teamId: at.team };
+      if (original) {
+        const field = node('native-order-id');
+        const orderId = field.value;
+        if (orderIdPattern.exec(orderId)?.[0] !== orderId) {
+          field.setAttribute('aria-invalid', 'true');
+          message('请输入完整的原订单编号，包含小写字母和连字符。', true);
+          field.focus();
+          return;
+        }
+        input.orderId = orderId;
+      } else {
+        const purchaseKind = node('native-kind').value;
+        if (!overview.nativeCheckout.canPurchase || !Object.hasOwn(orderNames, purchaseKind)) return;
+        input.kind = purchaseKind;
+        if (action === 'next') input.newPurchase = true;
+      }
+      const restoreFocus = trackActionFocus(button);
+      const operation = {};
+      mutation = operation;
+      message(original ? '正在打开官网原订单…' : '正在打开官网购买页…');
+      controls();
+      try {
+        const value = await invoke('openNativeWebsiteCheckout', input);
+        if (!currentView(at) || mutation !== operation) return;
+        if (value?.opened !== true || Object.keys(value).length !== 1) throw new Error('Unexpected website handoff result');
+        message(original ? '已打开官网原订单。请在浏览器中核对付款状态。' : '已打开官网购买页。请在浏览器中核对本次订单。');
+      } catch (error) {
+        if (!currentView(at) || mutation !== operation || handleSessionError(error)) return;
+        const code = error?.code;
+        if (code === 'WECHAT_NATIVE_PREVIOUS_ORDER_UNRESOLVED') {
+          message('上一笔购买尚无已到账或已关闭的确认。请选择「打开或继续本次购买」，在官网核对原订单。', true);
+        } else if (code === 'NATIVE_PURCHASE_STORAGE_UNAVAILABLE') {
+          message('本机暂时无法保存购买记录。请检查客户端存储，或凭原订单编号在官网核对。', true);
+        } else if (code === 'WEBSITE_CHECKOUT_IN_PROGRESS') {
+          message('正在打开官网，请稍候。');
+        } else if (original && permissionErrors.has(code)) {
+          message('无法打开该原订单，请核对订单编号、账务团队和权限。', true);
+        } else if (code === 'FORBIDDEN' || code === 'HTTP_403') {
+          discardTeam();
+        } else {
+          message(original ? '无法确认官网原订单已打开。请先检查浏览器，再按原编号重试。' :
+            '无法确认官网购买页已打开。请先检查浏览器，再选择「打开或继续本次购买」。', true);
+        }
+      } finally {
+        const owned = mutation === operation;
+        if (owned) mutation = null;
+        controls();
+        restoreFocus?.(() => owned && currentView(at) && !button.disabled ? button : null);
+      }
+    }
+
     async function createOrder() {
       if (overview?.websiteCheckout === true || node('confirm').disabled || overview?.simulation !== true || !confirmation || !currentView(capture())) return;
       const at = capture();
@@ -850,6 +927,16 @@
     for (const name of ['annual-offer', 'selected-seats', 'seat-quantity']) node(name).addEventListener('input', () => { clearConfirmation(); message(); controls(); });
     node('website-checkout').addEventListener('click', () => void openWebsiteCheckout());
     node('website-seat-checkout').addEventListener('click', () => void openWebsiteCheckout('seat'));
+    node('native-continue').addEventListener('click', () => void openNativeWebsiteCheckout('continue'));
+    node('native-next').addEventListener('click', () => void openNativeWebsiteCheckout('next'));
+    node('native-open-order').addEventListener('click', () => void openNativeWebsiteCheckout('order'));
+    node('native-order-id').addEventListener('input', event => event.currentTarget.removeAttribute('aria-invalid'));
+    node('native-order-id').addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.isComposing) {
+        event.preventDefault();
+        void openNativeWebsiteCheckout('order');
+      }
+    });
     node('review').addEventListener('click', review);
     node('confirm').addEventListener('click', () => void createOrder());
     node('cancel').addEventListener('click', () => { clearConfirmation(); message(); controls(); node('review').focus(); });

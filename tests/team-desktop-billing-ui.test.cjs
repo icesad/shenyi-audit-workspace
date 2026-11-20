@@ -1127,3 +1127,96 @@ test('an unavailable original receipt leaves the current team and list in place'
   assert.equal(button().disabled, false);
   assert.equal(websiteOpenInputs(f).length, 1);
 });
+
+const nativeOverview = (teamId, canPurchase = true) => ({ ...managedSnapshot(teamId), nativeCheckout: { canPurchase } });
+const nativeOpenInputs = f => f.calls.filter(call => call.name === 'openNativeWebsiteCheckout').map(call => ({ ...call.input }));
+const nativeOrderId = 'e38cc747-0e49-4746-8e11-1fe03ff7b4fb';
+
+test('managed Native checkout keeps continuing a purchase distinct from explicit advancement', async t => {
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok(nativeOverview(teamId)),
+    openNativeWebsiteCheckout: input => input.newPurchase ? fail('WECHAT_NATIVE_PREVIOUS_ORDER_UNRESOLVED') : ok({ opened: true })
+  });
+  await f.open();
+  assert.equal(f.id('native-checkout-section').hidden, false);
+  assert.equal(f.id('native-purchase').hidden, false);
+  assert.equal(f.id('checkout-section').hidden, true);
+  assert.equal(f.id('orders-section').hidden, true);
+  assert.deepEqual(nativeOpenInputs(f), []);
+  assert.match(f.id('native-purchase-hint').textContent, /确认已到账或已关闭/);
+  f.id('native-continue').click();
+  await until(() => f.id('message').textContent.includes('已打开官网购买页'));
+  f.change('native-kind', 'seat');
+  f.id('native-next').click();
+  await until(() => f.id('message').textContent.includes('上一笔购买尚无'));
+  f.id('native-continue').click();
+  await until(() => f.id('message').textContent.includes('已打开官网购买页'));
+  assert.deepEqual(nativeOpenInputs(f), [
+    { teamId: 'a', kind: 'annual' },
+    { teamId: 'a', kind: 'seat', newPurchase: true },
+    { teamId: 'a', kind: 'seat' }
+  ]);
+  assert.equal(f.calls.some(call => /^(createBillingOrder|listBillingOrders|reconcileBillingOrder)$/.test(call.name)), false);
+});
+
+test('Native receipt opens without a pricing catalog only for an exact canonical order identifier', async t => {
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok(nativeOverview(teamId, false)),
+    openNativeWebsiteCheckout: () => ({ ok: false, error: { code: 'WEBSITE_CHECKOUT_OPEN_FAILED', message: 'https://private.invalid/#handoff=PRIVATE_TICKET' } })
+  });
+  await f.open();
+  assert.equal(f.id('native-checkout-section').hidden, false);
+  assert.equal(f.id('native-purchase').hidden, true);
+  f.id('native-continue').click();
+  f.id('native-next').click();
+  for (const value of ['', nativeOrderId.toUpperCase(), ' ' + nativeOrderId, nativeOrderId + ' ', nativeOrderId + '0']) {
+    f.change('native-order-id', value, 'input');
+    f.id('native-open-order').click();
+    assert.equal(f.id('native-order-id').getAttribute('aria-invalid'), 'true');
+    assert.deepEqual(nativeOpenInputs(f), []);
+  }
+  f.change('native-order-id', nativeOrderId, 'input');
+  const field = f.id('native-order-id');
+  field.dispatchEvent(new field.ownerDocument.defaultView.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await until(() => f.id('message').textContent.includes('按原编号重试'));
+  assert.deepEqual(nativeOpenInputs(f), [{ teamId: 'a', orderId: nativeOrderId }]);
+  assert.equal(f.id('panel').textContent.includes('PRIVATE_TICKET'), false);
+  assert.equal(f.id('panel').textContent.includes('private.invalid'), false);
+});
+
+test('only managed billing with a supported bridge can expose Native checkout', async t => {
+  for (const [overview, bridge] of [
+    [{ ...snapshot('a'), nativeCheckout: { canPurchase: true } }, () => ok({ opened: true })],
+    [nativeOverview('a'), undefined],
+    [{ ...managedSnapshot('a'), nativeCheckout: { canPurchase: 'true' } }, () => ok({ opened: true })]
+  ]) {
+    const f = fixture(t, { getBillingOverview: () => ok(overview), openNativeWebsiteCheckout: bridge });
+    await f.open();
+    assert.equal(f.id('native-checkout-section').hidden, true);
+    f.id('native-continue').click();
+    f.id('native-open-order').click();
+    assert.deepEqual(nativeOpenInputs(f), []);
+  }
+});
+
+test('Native checkout allows one open at a time and discards a stale result after team changes', async t => {
+  const opening = deferred();
+  const f = fixture(t, { getBillingOverview: ({ teamId }) => ok(nativeOverview(teamId)), openNativeWebsiteCheckout: () => opening.promise });
+  await f.open();
+  f.change('native-order-id', nativeOrderId, 'input');
+  f.id('native-open-order').click();
+  f.id('native-continue').click();
+  f.id('native-next').click();
+  f.id('native-open-order').click();
+  assert.equal(f.id('native-open-order').disabled, true);
+  assert.equal(f.id('native-continue').disabled, true);
+  assert.deepEqual(nativeOpenInputs(f), [{ teamId: 'a', orderId: nativeOrderId }]);
+  f.change('team', 'b');
+  await until(() => f.id('team').value === 'b' && !f.id('overview').hidden);
+  assert.equal(f.id('native-order-id').value, '');
+  assert.equal(f.id('native-open-order').disabled, true);
+  opening.resolve(fail('SIGN_IN_REQUIRED'));
+  await until(() => !f.id('native-open-order').disabled);
+  assert.equal(f.id('message').textContent, '');
+  assert.deepEqual(f.callbacks, []);
+});

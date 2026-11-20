@@ -122,6 +122,21 @@
           <p id="billing-term" class="billing-term"></p>
           <p id="billing-expiry-reminder" class="identity-note" role="status" hidden></p>
           <dl id="billing-seats" class="billing-metrics"></dl>
+          <section id="billing-native-checkout-section" class="billing-section" aria-labelledby="billing-native-checkout-heading" hidden>
+            <h4 id="billing-native-checkout-heading">官网订单与微信支付</h4>
+            <div id="billing-native-purchase" hidden>
+              <div class="billing-toolbar">
+                <div><label for="billing-native-kind">购买类型</label><select id="billing-native-kind"><option value="annual">团队年订阅</option><option value="seat">增购席位</option></select></div>
+                <button id="billing-native-continue" class="button primary" type="button" aria-describedby="billing-native-purchase-hint">打开或继续本次购买</button>
+                <button id="billing-native-next" class="button" type="button" aria-describedby="billing-native-purchase-hint">开始下一笔购买</button>
+              </div>
+              <p id="billing-native-purchase-hint" class="identity-note">首次购买或恢复时选择「打开或继续本次购买」。同类型上一笔经确认已到账或已关闭后，才能开始下一笔。</p>
+            </div>
+            <div class="billing-toolbar billing-order-lookup">
+              <div><label for="billing-native-order-id">原订单编号</label><input id="billing-native-order-id" type="text" maxlength="128" autocomplete="off" spellcheck="false" placeholder="粘贴完整订单编号"></div>
+              <button id="billing-native-open-order" class="button" type="button">在官网打开原单</button>
+            </div>
+          </section>
           <section id="billing-website-checkout-section" class="billing-section" aria-labelledby="billing-website-checkout-heading" hidden>
             <h4 id="billing-website-checkout-heading">官网合成下单</h4>
             <p id="billing-website-checkout-hint" class="identity-note"></p>

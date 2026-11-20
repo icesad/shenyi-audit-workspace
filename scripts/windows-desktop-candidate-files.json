@@ -24,6 +24,7 @@
   ],
   "sourceFiles": [
     "desktop/billing-client.cjs",
+    "desktop/native-checkout-intents.cjs",
     "desktop/bridge.cjs",
     "desktop/collection-workspace-client.cjs",
     "desktop/collection-workspace.cjs",
