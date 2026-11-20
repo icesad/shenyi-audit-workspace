@@ -23,9 +23,13 @@ const rehearsalRoutes = [
   '/api/website-checkout/seat-orders',
 ];
 
-async function run(args, ca) {
+async function run(args, ca, monitorEnvironment = {}) {
+  const env = childEnvironment({ NODE_EXTRA_CA_CERTS: ca });
+  delete env.SHENYI_MONITOR_TRANSITIONS;
+  delete env.STATE_DIRECTORY;
+  Object.assign(env, monitorEnvironment);
   const result = await command(process.execPath, ['--dns-result-order=ipv4first', checker, ...args], {
-    cwd: root, env: childEnvironment({ NODE_EXTRA_CA_CERTS: ca }), timeout: 15_000,
+    cwd: root, env, timeout: 15_000,
   });
   assert.equal(result.signal, null, result.stderr);
   const lines = result.stdout.trim().split(/\r?\n/);
@@ -113,6 +117,28 @@ function failedCheck(result, name, code) {
   assert.equal(result.result.checks[name].code, code);
 }
 
+async function monitorDirectory(under) {
+  const directory = await fs.mkdtemp(path.join(under, 'monitor-state-'));
+  if (process.platform !== 'win32') await fs.chmod(directory, 0o700);
+  return { directory, filename: path.join(directory, 'state.json') };
+}
+
+function monitorTransition(result, { code, status, previousStatus, event, issues }) {
+  assert.equal(result.code, code, result.stdout + result.stderr);
+  assert.equal(result.result.status, status);
+  assert.equal(Object.hasOwn(result.result, 'monitorError'), false);
+  const transition = result.result.monitor;
+  assert.ok(transition, 'Missing transition report');
+  assert.deepEqual(Object.keys(transition).sort(), ['changed', 'changedAt', 'event', 'issues', 'previousStatus', 'transitionId']);
+  assert.equal(typeof transition.transitionId, 'string');
+  assert.ok(transition.transitionId.length > 0);
+  assert.equal(typeof transition.changedAt, 'string');
+  assert.ok(Number.isFinite(Date.parse(transition.changedAt)));
+  assert.deepEqual({ changed: transition.changed, event: transition.event, previousStatus: transition.previousStatus,
+    issues: transition.issues }, { changed: true, event, previousStatus, issues });
+  return transition;
+}
+
 test('release lifecycle CLI verifies owned TLS endpoints, boundaries, and diagnostics', { timeout: 90_000 }, async t => {
   const f = await fixture(t);
   const scenario = (name, action) => t.test(name, async () => { await f.reset(); await action(); });
@@ -121,6 +147,7 @@ test('release lifecycle CLI verifies owned TLS endpoints, boundaries, and diagno
     const result = await f.run();
     assert.equal(result.code, 0, result.stdout + result.stderr);
     assert.equal(result.result.status, 'healthy');
+    assert.deepEqual(Object.keys(result.result).sort(), ['checks', 'status']);
     assert.equal(Object.keys(result.result.checks).length, 9);
     assert.ok(Object.values(result.result.checks).every(value => value.status === 'pass'));
     for (const name of ['backendIdentity', 'publicIdentity']) {
@@ -267,6 +294,112 @@ test('release lifecycle CLI verifies owned TLS endpoints, boundaries, and diagno
     await fs.writeFile(f.filename, JSON.stringify(missing));
     failedCheck(await f.run(), 'databaseVolume', 'DATABASE_VOLUME_UNAVAILABLE');
     await assert.rejects(fs.stat(missing.database), { code: 'ENOENT' });
+  });
+
+  await scenario('monitor records stable transitions across real TLS warning, failures, and recovery', async () => {
+    const { directory, filename } = await monitorDirectory(f.directory);
+    const args = [...f.args, '--monitor-state-directory', directory];
+    const issue = (facet, status, code) => ({ facet, status, code });
+    const runMonitor = async expected => monitorTransition(await run(args, f.publicCa), expected);
+    const initial = await runMonitor({ code: 0, status: 'healthy', previousStatus: null, event: 'initialized', issues: [] });
+    const stateEntry = await fs.lstat(filename);
+    assert.equal(stateEntry.isFile(), true);
+    assert.equal(stateEntry.nlink, 1);
+    if (process.platform !== 'win32') assert.equal(stateEntry.mode & 0o777, 0o600);
+    const initialBytes = await fs.readFile(filename);
+    const repeated = await run(args, f.publicCa);
+    assert.equal(repeated.code, 0);
+    assert.deepEqual(repeated.result.monitor, { ...initial, changed: false });
+    assert.deepEqual(await fs.readFile(filename), initialBytes);
+
+    const certificateThreshold = args.indexOf('--certificate-warning-days') + 1;
+    args[certificateThreshold] = '5';
+    const warning = await runMonitor({ code: 2, status: 'warning', previousStatus: 'healthy', event: 'opened',
+      issues: [issue('backendCertificate', 'warning', 'CERTIFICATE_EXPIRING'), issue('publicCertificate', 'warning', 'CERTIFICATE_EXPIRING')] });
+    args[certificateThreshold] = '1';
+    let exposedRoute = '/ready';
+    let statusCode = 200;
+    const privateBody = 'Synthetic monitoring response: never include this body in state or report';
+    f.state.edge = (req, answer) => req.url === exposedRoute ? { status: statusCode, body: privateBody } : answer;
+    const failed = await runMonitor({ code: 1, status: 'failed', previousStatus: 'warning', event: 'changed',
+      issues: [issue('publicReadinessHidden', 'fail', 'PRIVATE_ROUTE_VISIBLE')] });
+    const failureBytes = await fs.readFile(filename);
+    statusCode = 403;
+    const measuredAgain = await run(args, f.publicCa);
+    failedCheck(measuredAgain, 'publicReadinessHidden', 'PRIVATE_ROUTE_VISIBLE');
+    assert.equal(measuredAgain.result.checks.publicReadinessHidden.httpStatus, 403);
+    assert.deepEqual(measuredAgain.result.monitor, { ...failed, changed: false });
+    assert.deepEqual(await fs.readFile(filename), failureBytes);
+    for (const sensitive of [f.configuration.apiBase, f.configuration.serverId, f.directory, privateBody, '/ready', 'httpStatus']) {
+      assert.equal(failureBytes.toString('utf8').includes(sensitive), false);
+      assert.equal(JSON.stringify(measuredAgain.result.monitor).includes(sensitive), false);
+    }
+
+    exposedRoute = '/health';
+    const newFailure = await runMonitor({ code: 1, status: 'failed', previousStatus: 'failed', event: 'changed',
+      issues: [issue('publicHealthHidden', 'fail', 'PRIVATE_ROUTE_VISIBLE')] });
+    delete f.state.edge;
+    const recovered = await runMonitor({ code: 0, status: 'healthy', previousStatus: 'failed', event: 'recovered', issues: [] });
+    assert.equal(new Set([initial, warning, failed, newFailure, recovered].map(item => item.transitionId)).size, 5);
+    const recoveredBytes = await fs.readFile(filename);
+    const after = await run(args, f.publicCa);
+    assert.equal(after.code, 0);
+    assert.deepEqual(after.result.monitor, { ...recovered, changed: false });
+    assert.deepEqual(await fs.readFile(filename), recoveredBytes);
+    assert.deepEqual(await fs.readdir(directory), ['state.json']);
+    assert.deepEqual(await fs.readFile(f.configuration.database), f.databaseBytes);
+  });
+
+  await scenario('systemd state directory is used only with an explicit transition opt-in', async () => {
+    const { directory, filename } = await monitorDirectory(f.directory);
+    const legacy = await run(f.args, f.publicCa, { STATE_DIRECTORY: directory });
+    assert.equal(legacy.code, 0);
+    assert.deepEqual(Object.keys(legacy.result).sort(), ['checks', 'status']);
+    await assert.rejects(fs.lstat(filename), { code: 'ENOENT' });
+    const enabled = await run(f.args, f.publicCa, { STATE_DIRECTORY: directory, SHENYI_MONITOR_TRANSITIONS: '1' });
+    const initialized = monitorTransition(enabled, { code: 0, status: 'healthy', previousStatus: null, event: 'initialized', issues: [] });
+    const byFlag = await run([...f.args, '--monitor-state-directory', directory], f.publicCa);
+    assert.equal(byFlag.code, 0);
+    assert.deepEqual(byFlag.result.monitor, { ...initialized, changed: false });
+  });
+
+  await scenario('corrupt and hard-linked monitor state are preserved, with the probe result available', async () => {
+    const poison = Buffer.from('{ "synthetic-sensitive-state": "must never appear in output"');
+    for (const hardLinked of [false, true]) {
+      const { directory, filename } = await monitorDirectory(f.directory);
+      const target = hardLinked ? path.join(f.directory, 'held-monitor-state') : filename;
+      const args = [...f.args, '--monitor-state-directory', directory];
+      let original;
+      if (hardLinked) {
+        monitorTransition(await run(args, f.publicCa), { code: 0, status: 'healthy', previousStatus: null,
+          event: 'initialized', issues: [] });
+        original = await fs.readFile(filename);
+        await fs.link(filename, target);
+      } else {
+        original = poison;
+        await fs.writeFile(filename, original, { flag: 'wx', mode: 0o600 });
+      }
+      const before = await fs.lstat(filename, { bigint: true });
+      assert.equal(before.nlink, hardLinked ? 2n : 1n);
+      const result = await run(args, f.publicCa);
+      assert.equal(result.code, 1, result.stdout + result.stderr);
+      assert.equal(result.result.status, 'healthy');
+      assert.equal(result.result.monitorError, 'MONITOR_STATE_UNAVAILABLE');
+      assert.equal(Object.hasOwn(result.result, 'monitor'), false);
+      assert.equal(Object.keys(result.result.checks).length, 9);
+      assert.ok(Object.values(result.result.checks).every(check => check.status === 'pass'));
+      for (const sensitive of ['synthetic-sensitive-state', f.directory, f.configuration.serverId]) {
+        assert.equal(result.stdout.includes(sensitive), false);
+        assert.equal(result.stderr.includes(sensitive), false);
+      }
+      assert.deepEqual(await fs.readFile(filename), original);
+      assert.deepEqual(await fs.readFile(target), original);
+      const after = await fs.lstat(filename, { bigint: true });
+      assert.equal(after.ino, before.ino);
+      assert.equal(after.nlink, before.nlink);
+      assert.equal(after.mtimeNs, before.mtimeNs);
+      assert.deepEqual(await fs.readdir(directory), ['state.json']);
+    }
   });
 
   await scenario('invalid arguments and unsafe profile/CA paths fail before network access', async () => {

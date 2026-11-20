@@ -4,6 +4,10 @@ Description=Check Shenyi team service readiness and TLS
 [Service]
 Type=oneshot
 DynamicUser=yes
+StateDirectory=shenyi-team-monitor
+StateDirectoryMode=0700
+UMask=0077
+Environment=SHENYI_MONITOR_TRANSITIONS=1
 LoadCredential=service.json:/etc/shenyi-team/service.json
 LoadCredential=backend-ca.pem:/etc/nginx/shenyi-team/backend-ca.pem
 Environment=SHENYI_MONITOR_DISK_WARNING_BYTES=10737418240

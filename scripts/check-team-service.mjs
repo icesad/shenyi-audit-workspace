@@ -8,6 +8,7 @@ import path from 'node:path';
 import { checkServerIdentity } from 'node:tls';
 import { fileURLToPath } from 'node:url';
 import { loadManagedServiceConfiguration } from './start-team-service.mjs';
+import { recordTeamMonitorObservation } from './team-monitor-state.mjs';
 
 const deadlineMs = 5000;
 const maxBodyBytes = 16 * 1024;
@@ -192,7 +193,7 @@ async function checkService(profile, ca, diskWarningBytes, certificateWarningDay
 
 function parseArguments(args) {
   const values = Object.create(null);
-  const allowed = ['--config', '--backend-ca', ...Object.keys(defaults)];
+  const allowed = ['--config', '--backend-ca', '--monitor-state-directory', ...Object.keys(defaults)];
   for (let index = 0; index < args.length; index += 2) {
     const [name, value] = args.slice(index, index + 2);
     if (!allowed.includes(name) || Object.hasOwn(values, name) || !value || value.startsWith('--')) abort('INVALID_ARGUMENTS');
@@ -202,11 +203,13 @@ function parseArguments(args) {
   const disk = values['--disk-warning-bytes'] ?? defaults['--disk-warning-bytes'];
   const days = values['--certificate-warning-days'] ?? defaults['--certificate-warning-days'];
   if (!/^[1-9][0-9]{0,18}$/.test(disk) || !/^[1-9][0-9]{0,2}$/.test(days) || Number(days) > 365) abort('INVALID_ARGUMENTS');
-  return { configuration: localPath(values['--config']), backendCa: localPath(values['--backend-ca']), diskWarningBytes: BigInt(disk), certificateWarningDays: Number(days) };
+  const monitorDirectory = values['--monitor-state-directory'] ??
+    (process.env.SHENYI_MONITOR_TRANSITIONS === '1' ? (process.env.STATE_DIRECTORY ?? '') : null);
+  return { configuration: localPath(values['--config']), backendCa: localPath(values['--backend-ca']),
+    diskWarningBytes: BigInt(disk), certificateWarningDays: Number(days), monitorDirectory };
 }
 
-async function main(args) {
-  const options = parseArguments(args);
+async function buildReport(options) {
   const profile = await loadManagedServiceConfiguration(options.configuration);
   if (!profile.listenPort || [profile.database, profile.tlsKey, options.configuration].some(file => !path.relative(file, options.backendCa))) {
     abort('INVALID_CONFIGURATION');
@@ -216,15 +219,31 @@ async function main(args) {
   const checks = await checkService(profile, ca, options.diskWarningBytes, options.certificateWarningDays);
   const statuses = Object.values(checks).map(result => result.status);
   const status = statuses.includes('fail') ? 'failed' : statuses.includes('warning') ? 'warning' : 'healthy';
-  console.log(JSON.stringify({ status, checks }));
-  process.exitCode = status === 'failed' ? 1 : status === 'warning' ? 2 : 0;
+  return { status, checks };
+}
+
+function failedReport(error) {
+  const code = ['INVALID_ARGUMENTS', 'INVALID_BACKEND_CA'].includes(error?.code) ? error.code : 'INVALID_CONFIGURATION';
+  return { status: 'failed', code };
+}
+
+async function main(args) {
+  const options = parseArguments(args);
+  const report = await buildReport(options).catch(failedReport);
+  if (options.monitorDirectory !== null) {
+    try {
+      report.monitor = await recordTeamMonitorObservation(localPath(options.monitorDirectory), report);
+    } catch {
+      report.monitorError = 'MONITOR_STATE_UNAVAILABLE';
+    }
+  }
+  console.log(JSON.stringify(report));
+  process.exitCode = report.monitorError || report.status === 'failed' ? 1 : report.status === 'warning' ? 2 : 0;
 }
 
 if (process.argv[1] && !path.relative(path.resolve(process.argv[1]), fileURLToPath(import.meta.url))) {
   main(process.argv.slice(2)).catch(error => {
-    let code = 'INVALID_CONFIGURATION';
-    if (['INVALID_ARGUMENTS', 'INVALID_BACKEND_CA'].includes(error?.code)) code = error.code;
-    console.log(JSON.stringify({ status: 'failed', code }));
+    console.log(JSON.stringify(failedReport(error)));
     process.exitCode = 1;
   });
 }

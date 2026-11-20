@@ -12,7 +12,7 @@ git archive --format=tar --output="$release_dir/shenyi-team-${release}.tar" "$re
   package.json package-lock.json dist shared server/team deploy/linux \
   website/native-payment.html website/native-payment.css website/native-payment.js website/styles.css \
   scripts/start-team-service.mjs scripts/bootstrap-managed-team.mjs scripts/team-database-backup.mjs \
-  scripts/check-team-service.mjs scripts/check-linux-team-file-permissions.py \
+  scripts/check-team-service.mjs scripts/team-monitor-state.mjs scripts/check-linux-team-file-permissions.py \
   docs/LINUX_TEAM_DEPLOYMENT.md docs/MANAGED_TEAM_SERVICE.md docs/TEAM_OFFLINE_BACKUP.md docs/PAYMENT_CHANNEL_PREPARATION.md
 sha256sum "$release_dir/shenyi-team-${release}.tar"
 ```
@@ -195,6 +195,19 @@ journalctl -u shenyi-team-monitor.service -n 30 --no-pager
 ```
 
 通过服务单元的 drop-in 覆盖 `SHENYI_MONITOR_DISK_WARNING_BYTES` 和 `SHENYI_MONITOR_CERTIFICATE_WARNING_DAYS`。默认分别为 10 GiB 和 30 天。生产监控验收应核对实际阈值、journal 保留和授权告警接收渠道。
+
+定时服务通过 `SHENYI_MONITOR_TRANSITIONS=1` 启用本地状态，使用 systemd 分配的专用 `STATE_DIRECTORY`。目录权限为 `0700`，状态文件权限为 `0600`。每次仍向 journal 写入一行检查 JSON。附加的 `monitor` 字段用于识别告警与恢复。 [systemd 持久目录与 DynamicUser](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#RuntimeDirectory=)
+
+| `monitor.event` | 对应变化 |
+| --- | --- |
+| `initialized` | 初次观察健康状态 |
+| `opened` | 初次观察异常或从健康进入告警、失败 |
+| `changed` | 已有异常的级别或原因改变，包括失败降至告警 |
+| `recovered` | 告警或失败之后重新观察到健康 |
+
+状态与原因均相同时，保留同一 `transitionId` 和 `changedAt`，`changed` 为 false。原因只采用检查项名称、等级和已知诊断代码。运维读取 journal 时，可按 `transitionId` 合并重复采样，按 `changedAt` 定位观察时刻。观察间隔内的实际故障起止仍以其他服务证据为准。状态文件无法核验时，保留既有状态和探针详情，日志增加 `MONITOR_STATE_UNAVAILABLE`，该次退出码为 1。
+
+手工探针与发布回退验证继续使用原命令。已配置的新定时服务切回早期发布时，旧探针继续输出周期健康结果，状态时间戳表示新版探针最近确认的状态变化。生产告警接收渠道在获准后接入。
 
 ## 续期 Nginx 对外证书
 
