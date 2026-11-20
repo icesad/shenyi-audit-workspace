@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 含新版官网的 Windows 双人评审包
+
+使用已提交源码 `652bcff` 离线构建新 Windows x64 便携评审 ZIP，包含新版官网。新旧包的 2,484 项载荷独立逐个核对，变化为官网 HTML、CSS 和构建时重生成的两份合成底稿。全新解压后官网桌面与手机预览正常，实际订阅一键在同包生成两笔模拟订单并在授权到期后重开原回执。独立冷验、包前后校验及 71 项相关回归通过。ZIP 与 SHA-256 见 `D:/codex-temp/shenyi-integrated-review-20261120/verification.json`。 [双人走查](PILOT_OWNER_REVIEW.md)
+
 ## 2026-11-20 同一评审包的官网原单回查
 
 同一份 `e90c663` Windows 评审 ZIP 现已实测官网一键。实际创建一张年费单和一张增购单，两份授权自然到期后从桌面重开同号只读回执，金额与原单一致，12 张账务表保持。两个回环 HTTPS 通过独立 TLS 核验，退出后监听关闭，2,484 个包内文件通过严格复验。94 项相关回归通过。证据见 `D:/codex-temp/shenyi-e90-website-receipts-1120/verification.json`。 [双人走查](PILOT_OWNER_REVIEW.md)
