@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 Windows 评审包运行目录隔离
+
+Windows 评审包已把 Electron 工作副本及原生选档日志限在本轮目录。新版一键登录和四职级原生选档后，同一解压目录原样通过严格复验。141 项相关测试通过。证据见 `D:/codex-temp/shenyi-owner-review-runtime-log-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-评审包运行目录隔离)
+
 ## 2026-11-20 Linux 备份后改密与恢复检查
 
 当前签名 Linux 候选已实测停服备份、真实合成改密、旧密码拒绝和同设备续用。改密后与旧备份比对返回 2，恢复副本被受管启动拒绝。109 项关联测试通过。证据见 `D:/codex-temp/shenyi-linux-post-backup-security-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-linux-备份后改密与恢复检查)
