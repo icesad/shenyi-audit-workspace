@@ -276,6 +276,8 @@ journalctl -u shenyi-team-monitor.service -n 30 --no-pager
 
 候选启动预检通过后，激活工具通过回环 TLS 核验后端域名或 IP，并使用部署的后端 CA。比较运行中后端发送的有序证书链与配置文件中链的证书摘要，PEM 行折叠差异不影响比较。握手失败、证书链不一致，或预检期间配置、证书、CA 与 systemd 调用发生变化，都会在写入切换日志和停止现有服务之前退出。正常进入切换的回执包含 `backendTlsPreflight: unchanged`。若有待生效的后端证书或信任链变更，先在独立窗口完成该变更并复核双路 HTTPS，再启用代码候选。 [OpenSSL 证书链与身份核验](https://docs.openssl.org/3.0/man1/openssl-s_client/#options)
 
+2026-11-21 在隔离 Ubuntu 24.04 上以同一个签名候选复验。配置分别改用另一 CA 签发的新密钥证书和原密钥证书，两次候选启动预检均返回 0，激活均在停服前返回 1。运行中的 systemd 调用、Nginx、发布目录、SQLite 及 2 KiB 合成原件保持。恢复原配置后，候选成功激活，保留旧发布目录。六次双路 HTTPS 检查各通过九项。验收回执见 `D:/codex-temp/shenyi-linux-activation-tls-20261121/run-4/verification.json`。
+
 隔离 Ubuntu 中，要求不存在的表和忽略退出信号的候选均在停服前被拒绝，原服务调用标识及 SQLite 字节一致。兼容候选的独立预检用时约 1.1 秒，随后切换通过双路 HTTPS 检查。此轮使用已准备的演练目录核验激活流程。证据见 `D:/codex-temp/shenyi-m7-db-preflight-20261119/verification.json`。
 
 新版工具在隔离 Ubuntu 实际验签并离线暂存 36 个生产依赖包。服务代码和依赖的同长度改动、增加文件、缺少文件均在运行候选和停服前被拒绝。恢复原样后，候选通过实际服务切换及双路 HTTPS，停服复核的数据库与合成原件保持。 [演练记录](STATUS.md#2026-11-20-m7bg-linux-发布目录完整性复核)
