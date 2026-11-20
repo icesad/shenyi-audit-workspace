@@ -1131,6 +1131,152 @@ test('an unavailable original receipt leaves the current team and list in place'
 const nativeOverview = (teamId, canPurchase = true) => ({ ...managedSnapshot(teamId), nativeCheckout: { canPurchase } });
 const nativeOpenInputs = f => f.calls.filter(call => call.name === 'openNativeWebsiteCheckout').map(call => ({ ...call.input }));
 const nativeOrderId = 'e38cc747-0e49-4746-8e11-1fe03ff7b4fb';
+const nativeHistoryOverview = (teamId, canPurchase = false) => ({
+  ...managedSnapshot(teamId), nativeCheckout: { canPurchase, orderHistory: true }
+});
+const historyInputs = f => f.calls.filter(call => call.name === 'listNativeBillingOrders').map(call => ({ ...call.input }));
+const nativeHistoryId = number => 'e38cc747-0e49-4746-8e11-' + String(number).padStart(12, '0');
+const nativeHistoryOrder = (number, fields = {}) => ({
+  id: nativeHistoryId(number), product: 'team-annual-renewal', createdAt: termStart + number,
+  amountMinor: 103050, currency: 'CNY', seats: 3, status: 'pending', ...fields
+});
+const nativeHistoryPage = (teamId, orders, nextCursor = null) => ({ teamId, orders, hasMore: nextCursor !== null, nextCursor });
+const nativeRows = f => [...f.id('native-history-list').querySelectorAll('li')].map(row => row.dataset.orderId);
+
+test('Native history finds and opens an existing official order with no local number or purchase catalog', async t => {
+  const order = nativeHistoryOrder(2, { status: 'fulfilled' });
+  const older = nativeHistoryOrder(1, { product: 'team-seat-addition', status: 'pending_fulfilment', seats: 1, amountMinor: 335 });
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok(nativeHistoryOverview(teamId)),
+    listNativeBillingOrders: ({ teamId }) => ok(nativeHistoryPage(teamId, [order, older])),
+    openNativeWebsiteCheckout: () => ok({ opened: true })
+  });
+  await f.open();
+  await until(() => nativeRows(f).length === 2);
+  assert.equal(f.id('native-history').hidden, false);
+  assert.equal(f.id('native-purchase').hidden, true);
+  assert.equal(f.id('native-order-id').value, '');
+  assert.equal(f.id('orders-section').hidden, true);
+  assert.equal(f.id('native-history-list').getAttribute('aria-busy'), 'false');
+  assert.deepEqual(historyInputs(f), [{ teamId: 'a' }]);
+  assert.deepEqual(nativeOpenInputs(f), []);
+  assert.deepEqual(nativeRows(f), [order.id, older.id]);
+  const list = f.id('native-history-list');
+  assert.match(list.textContent, /团队年订阅.*权益已到账.*[¥￥]1,030\.50.*3 席.*北京时间/);
+  assert.match(list.textContent, /增购席位.*收款已核实，待到账.*[¥￥]3\.35/);
+  const button = list.querySelector(`[data-billing-native-receipt="${older.id}"]`);
+  assert.match(button.getAttribute('aria-label'), new RegExp(older.id));
+  button.click();
+  await until(() => f.id('message').textContent.includes('已打开官网原订单'));
+  assert.deepEqual(nativeOpenInputs(f), [{ teamId: 'a', orderId: older.id }]);
+  assert.equal(f.id('native-order-id').value, '');
+  assert.deepEqual(f.calls.map(call => call.name), ['getBillingAccess', 'getBillingOverview', 'listNativeBillingOrders', 'openNativeWebsiteCheckout']);
+});
+
+test('Native order history pages by the last canonical order and refreshes from the newest page', async t => {
+  const orders = Array.from({ length: 20 }, (_, index) => nativeHistoryOrder(21 - index));
+  const cursor = orders.at(-1).id;
+  const older = nativeHistoryOrder(1);
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok(nativeHistoryOverview(teamId, true)),
+    listNativeBillingOrders: ({ teamId, after }) => ok(after === cursor
+      ? nativeHistoryPage(teamId, [older]) : nativeHistoryPage(teamId, orders, cursor)),
+    openNativeWebsiteCheckout: () => ok({ opened: true })
+  });
+  const document = f.panel.ownerDocument;
+  document.getElementById('workspace-view').hidden = false;
+  await f.open();
+  await until(() => nativeRows(f).length === 20);
+  assert.equal(f.id('native-history-previous').hidden, true);
+  const next = f.id('native-history-next');
+  next.focus();
+  assert.equal(document.activeElement, next);
+  next.click();
+  await until(() => nativeRows(f)[0] === older.id);
+  assert.deepEqual(nativeRows(f), [older.id]);
+  assert.equal(next.hidden, true);
+  assert.equal(document.activeElement, f.id('native-history-heading'));
+  assert.match(f.id('native-history-message').textContent, /第 2 页/);
+  f.id('native-history-previous').click();
+  await until(() => nativeRows(f).length === 20);
+  f.id('native-history-next').click();
+  await until(() => nativeRows(f)[0] === older.id);
+  f.id('native-history-refresh').click();
+  await until(() => nativeRows(f).length === 20);
+  assert.equal(f.id('native-history-previous').hidden, true);
+  assert.deepEqual(historyInputs(f), [{ teamId: 'a' }, { teamId: 'a', after: cursor }, { teamId: 'a' },
+    { teamId: 'a', after: cursor }, { teamId: 'a' }]);
+  assert.deepEqual(nativeOpenInputs(f), []);
+});
+
+test('changing team and signing out clear Native history and ignore late page answers and old row clicks', async t => {
+  const pendingA = deferred();
+  const pendingB = deferred();
+  const a = nativeHistoryOrder(3);
+  const b = nativeHistoryOrder(2);
+  let bReads = 0;
+  const f = fixture(t, {
+    getBillingOverview: ({ teamId }) => ok(nativeHistoryOverview(teamId)),
+    listNativeBillingOrders: ({ teamId, after }) => teamId === 'a' ? (after ? pendingA.promise : ok(nativeHistoryPage('a', [a], a.id)))
+      : ++bReads === 1 ? ok(nativeHistoryPage('b', [b])) : pendingB.promise,
+    openNativeWebsiteCheckout: () => ok({ opened: true })
+  });
+  await f.open();
+  await until(() => nativeRows(f)[0] === a.id);
+  f.id('native-history-next').click();
+  const old = f.id('native-history-list').querySelector('[data-billing-native-receipt]');
+  assert.equal(old.disabled, true);
+  assert.equal(f.id('native-history-list').getAttribute('aria-busy'), 'true');
+  f.change('team', 'b');
+  assert.deepEqual(nativeRows(f), []);
+  await until(() => nativeRows(f)[0] === b.id);
+  old.click();
+  pendingA.resolve(ok(nativeHistoryPage('a', [nativeHistoryOrder(1)])));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(nativeRows(f), [b.id]);
+  assert.deepEqual(nativeOpenInputs(f), []);
+  f.id('native-history-refresh').click();
+  await until(() => bReads === 2);
+  Object.assign(f.context, { ready: false, identity: '' });
+  f.view.update();
+  assert.deepEqual(nativeRows(f), []);
+  assert.equal(f.id('native-history').hidden, true);
+  pendingB.resolve(fail('SIGN_IN_REQUIRED'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(nativeRows(f), []);
+  assert.deepEqual(f.callbacks, []);
+});
+
+test('Native history ignores unsupported capabilities and refuses a mismatched team, cursor or response order', async t => {
+  const orders = [nativeHistoryOrder(2), nativeHistoryOrder(1)];
+  const reader = ({ teamId }) => ok(nativeHistoryPage(teamId, orders));
+  for (const [overview, listNativeBillingOrders] of [
+    [nativeOverview('a'), reader],
+    [nativeHistoryOverview('a'), undefined],
+    [{ ...snapshot('a'), nativeCheckout: { canPurchase: true, orderHistory: true } }, reader]
+  ]) {
+    const f = fixture(t, {
+      getBillingOverview: () => ok(overview), listNativeBillingOrders,
+      openNativeWebsiteCheckout: () => ok({ opened: true })
+    });
+    await f.open();
+    assert.equal(f.id('native-history').hidden, true);
+    f.id('native-history-refresh').click();
+    assert.deepEqual(historyInputs(f), []);
+  }
+  for (const page of [nativeHistoryPage('b', orders), nativeHistoryPage('a', orders, orders[0].id),
+    nativeHistoryPage('a', orders.toReversed())]) {
+    const f = fixture(t, {
+      getBillingOverview: () => ok(nativeHistoryOverview('a')),
+      listNativeBillingOrders: () => ok(page),
+      openNativeWebsiteCheckout: () => ok({ opened: true })
+    });
+    await f.open();
+    await until(() => f.id('native-history-message').textContent.includes('无法读取官网订单'));
+    assert.deepEqual(nativeRows(f), []);
+    assert.deepEqual(nativeOpenInputs(f), []);
+  }
+});
 
 test('managed Native checkout keeps continuing a purchase distinct from explicit advancement', async t => {
   const f = fixture(t, {

@@ -7,7 +7,7 @@ const {test}=require('node:test');
 const {APP_URL,registerDesktopBridge}=require('../desktop/bridge.cjs');
 const {createBillingClient,isBillingRoute,billingErrorMessage}=require('../desktop/billing-client.cjs');
 const {ClientError,createTeamClient}=require('../desktop/team-client.cjs');
-const {BILLING_RPC,BILLING_BATCH_RPC,REFUND_INTAKE_RPC,WEBSITE_CHECKOUT_RPC,workpaperOldApiNames,workpaperOldChannelNames}=require('./helpers/workpaper-entry-layer.cjs');
+const {BILLING_RPC,BILLING_BATCH_RPC,REFUND_INTAKE_RPC,WEBSITE_CHECKOUT_RPC,NATIVE_ORDER_HISTORY_RPC,workpaperOldApiNames,workpaperOldChannelNames}=require('./helpers/workpaper-entry-layer.cjs');
 
 const TEAM='team-a',CREATED=100,CONFIRMED=200,RENEWAL_START=1000,END=2000;
 const ID='01000000-0000-4000-8000-000000000000';
@@ -43,6 +43,44 @@ function fixture(){
   }});
   return {client,calls,responses};
 }
+
+test('Native order history reads one device-scoped page without consulting local purchase intents',async()=>{
+  const calls=[];
+  let current=true;
+  const assertCurrent=()=>{if(!current)throw new ClientError('SESSION_ENDED','fixture session ended');};
+  const order={id:ID,product:'team-annual-renewal',createdAt:CREATED,amountMinor:100,currency:'CNY',seats:0,status:'expired'};
+  let response={teamId:TEAM,orders:[order],hasMore:false,nextCursor:null};
+  const client=createBillingClient({failure:(...args)=>new ClientError(...args),nativeCheckout:{configured:true,
+    capture:()=>({assertCurrent})},request:async(route,options)=>{
+      assert.ok(isBillingRoute(route));
+      assert.deepEqual(options,{beforeSend:assertCurrent});
+      options.beforeSend();
+      calls.push(route);
+      return await response;
+    }});
+  assert.deepEqual(await client.listNativeBillingOrders({teamId:TEAM,after:REQUEST}),response);
+  const base='/api/teams/'+TEAM+'/billing/native-orders';
+  assert.deepEqual(calls,[base+'?limit=20&after='+REQUEST]);
+  for(const suffix of ['', '?limit=21', '?limit=20&after=123', '?limit=20&limit=20', '?limit=20&after='+REQUEST+'\n']){
+    assert.equal(isBillingRoute(base+suffix),false);
+  }
+  for(const invalid of [
+    {...response,teamId:'team-b'},
+    {...response,orders:[{...order,merchantId:'private'}]},
+    {...response,orders:[{...order,product:'team-seat-addition'}]},
+    {...response,orders:[{...order,amountMinor:2_147_483_648}]},
+    {...response,orders:[{...order,status:'paid'}]},
+    {...response,orders:[order,{...order,id:REQUEST,createdAt:CREATED+1}]},
+    {...response,orders:[order,{...order,id:REQUEST}]},
+    {...response,orders:[order,{...order,createdAt:CREATED-1}]},
+    {...response,hasMore:true,nextCursor:ID},
+  ]){
+    response=invalid;
+    await assert.rejects(client.listNativeBillingOrders({teamId:TEAM}),{code:'INVALID_RESPONSE'});
+  }
+  response=Promise.resolve({teamId:TEAM,orders:[],hasMore:false,nextCursor:null}).then(value=>{current=false;return value;});
+  await assert.rejects(client.listNativeBillingOrders({teamId:TEAM}),{code:'SESSION_ENDED'});
+});
 
 test('fixed billing paths and request bodies return only renderer-safe order fields',async()=>{
   const {client,calls,responses}=fixture();
@@ -501,8 +539,10 @@ test('billing preload actions and guarded bridge channels are exact and have no 
   const {client,calls,responses}=fixture(),handlers=new Map(),contents=new EventEmitter();
   contents.mainFrame={url:APP_URL};
   const event={sender:contents,senderFrame:contents.mainFrame};
+  const nativeHistoryInputs=[];
+  const nativeHistoryPage={orders:[],nextCursor:null};
   const dispose=registerDesktopBridge({ipcMain:{handle:(name,fn)=>handlers.set(name,fn),removeHandler:name=>handlers.delete(name)},
-    window:{webContents:contents},client:{...client,clearSession(){}},dialog:{}});
+    window:{webContents:contents},client:{...client,listNativeBillingOrders(input){nativeHistoryInputs.push(input);return nativeHistoryPage;},clearSession(){}},dialog:{}});
   let api;
   runInNewContext(readFileSync('desktop/preload.cjs','utf8'),{require(name){
     assert.equal(name,'electron');
@@ -511,7 +551,7 @@ test('billing preload actions and guarded bridge channels are exact and have no 
   }});
   try{
     assert.equal(workpaperOldApiNames(api).length,135);assert.equal(workpaperOldChannelNames(handlers).length,135);
-    const operations=[...BILLING_RPC,...BILLING_BATCH_RPC,...REFUND_INTAKE_RPC,...WEBSITE_CHECKOUT_RPC];
+    const operations=[...BILLING_RPC,...BILLING_BATCH_RPC,...REFUND_INTAKE_RPC,...WEBSITE_CHECKOUT_RPC,...NATIVE_ORDER_HISTORY_RPC];
     assert.deepEqual(Object.keys(api).slice(-operations.length),operations.map(([name])=>name));
     assert.deepEqual([...handlers.keys()].slice(-operations.length),operations.map(([,channel])=>'shenyi:'+channel));
     for(const [,operation] of operations){
@@ -524,6 +564,10 @@ test('billing preload actions and guarded bridge channels are exact and have no 
       contents.mainFrame.url=APP_URL;
     }
     assert.equal(calls.length,0);
+    assert.deepEqual(nativeHistoryInputs,[]);
+    const historyInput={teamId:TEAM};
+    assert.deepEqual(await api.listNativeBillingOrders(historyInput),{ok:true,value:nativeHistoryPage});
+    assert.deepEqual(nativeHistoryInputs,[historyInput]);
     responses.push(ACCESS,RECONCILIATION_PAGE,{simulation:true,order:ANNUAL_ORDER});
     assert.deepEqual(await api.getBillingAccess(),{ok:true,value:ACCESS});
     assert.deepEqual(await api.reconcileBillingPage({teamId:TEAM,kind:'annual'}),{

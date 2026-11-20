@@ -315,14 +315,22 @@ export async function handleBillingRequest(request,options={}){
   if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
   return billingAccess(request,{...options,now:options.now??Date.now});
  }
- const match=/^\/api\/teams\/([^/]+)\/billing\/(offers|orders|seats|seat-offer|seat-orders|renewal-seats|overview|reconciliation)(?:\/([^/]+)(?:\/(reconcile|resume-fulfilment))?)?$/.exec(url.pathname);
+ const match=/^\/api\/teams\/([^/]+)\/billing\/(offers|orders|seats|seat-offer|seat-orders|renewal-seats|overview|reconciliation|native-orders)(?:\/([^/]+)(?:\/(reconcile|resume-fulfilment))?)?$/.exec(url.pathname);
  if(!match)return null;
  const [,teamId,kind,orderId,action]=match;
- const isSeatOrder=kind==='seat-orders',isOrder=kind==='orders'||isSeatOrder;
+ const isSeatOrder=kind==='seat-orders',isOrder=kind==='orders'||isSeatOrder,isNativeHistory=kind==='native-orders';
  if(!matches(ID,teamId)||orderId&&(!isOrder||!matches(UUID,orderId)))deny();
- if(url.hash||url.href.endsWith('?')||(!isOrder||orderId)&&url.search)invalid();
+ if(url.hash||url.href.endsWith('?')||(!isOrder&&!isNativeHistory||orderId)&&url.search)invalid();
  const {db,billingSimulation,now=Date.now}=options,currentOptions={...options,now};
  const initial=actor(db,request,currentOptions,teamId);
+ const authorize=()=>actor(db,request,currentOptions,teamId,initial);
+ const scoped=action=>transaction(db,()=>{const current=authorize(),result=action(current);authorize();return result;});
+ if(isNativeHistory){
+  if(options.serviceMode!=='managed-service'||typeof options.nativeWebsitePayment?.listOrders!=='function')deny();
+  if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
+  const query=page(url);
+  return scoped(current=>json(options.nativeWebsitePayment.listOrders({teamId,actorId:current.userId,...query})));
+ }
  if(kind==='seats'||isSeatOrder||kind==='seat-offer'||kind==='renewal-seats'){
   if(!seatOrderingEnabled(options))unavailable();
  }
@@ -333,8 +341,6 @@ export async function handleBillingRequest(request,options={}){
  const allowed=reconcilesExistingOrders?'POST':isOrder&&!orderId?'GET, POST':'GET';
  if(!allowed.split(', ').includes(request.method))return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:allowed});
  if(options.websiteCheckoutActive&&request.method==='POST'&&!reconcilesExistingOrders)throw new ApiError(403,'WEBSITE_CHECKOUT_REQUIRED','请在官网候选订单页操作。');
- const authorize=()=>actor(db,request,currentOptions,teamId,initial);
- const scoped=action=>transaction(db,()=>{const current=authorize(),result=action(current);authorize();return result;});
  if(kind==='reconciliation')return reconcileBatch(request,{db,teamId,options:currentOptions,now,scoped,authorize});
  if(kind==='seats')return scoped(()=>json({seats:readSeatCapacity(db,teamId,time(now))}));
  if(kind==='overview')return scoped(()=>billingOverview(db,teamId,time(now),billingSimulation,{
@@ -345,7 +351,9 @@ export async function handleBillingRequest(request,options={}){
   websiteCheckout:options.websiteCheckoutActive&&request.headers.get('X-Shenyi-Website-Checkout')==='candidate-v1',
   nativeCheckout:options.serviceMode==='managed-service'&&options.nativeWebsitePayment&&
    request.headers.get('X-Shenyi-Native-Checkout')==='native-v1'
-   ?{canPurchase:options.nativeWebsitePayment.canPurchase===true}:undefined,
+   ?{canPurchase:options.nativeWebsitePayment.canPurchase===true,
+    ...(request.headers.get('X-Shenyi-Native-Order-History')==='v1'&&typeof options.nativeWebsitePayment.listOrders==='function'
+      ?{orderHistory:true}:{})}:undefined,
  }));
  if(kind==='offers')return scoped(()=>json({simulation:true,offers:billingSimulation.offers}));
  if(kind==='renewal-seats')return scoped(()=>{

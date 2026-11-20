@@ -170,4 +170,5 @@ contextBridge.exposeInMainWorld('shenyiTeam',Object.freeze({
   recordRefundIntake:input=>invoke('refund-intake-record',input),
   openWebsiteCheckout:input=>invoke('website-checkout-open',input),
   openNativeWebsiteCheckout:input=>invoke('native-website-checkout-open',input),
+  listNativeBillingOrders:input=>invoke('native-billing-orders',input),
 }));

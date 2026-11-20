@@ -12,6 +12,7 @@ const proof=require('../shared/device-proof.cjs');
 const CODE=Buffer.alloc(32,31).toString('base64url'),ORIGIN='https://127.0.0.1:43322',TEAM='team-a';
 const OVERVIEW={teamId:TEAM,simulation:true,subscription:{state:'active',revision:1,startsAt:1,endsAt:2000000000000},seats:{purchasedSeats:1,activeBusinessSeats:0,reservedInvitationSeats:0,usedSeats:0,availableSeats:1},annualOffers:[],renewalSeats:null,seatOffer:null,canReconcile:false,websiteCheckout:true};
 const NATIVE_OVERVIEW={teamId:TEAM,simulation:false,subscription:OVERVIEW.subscription,seats:OVERVIEW.seats,nativeCheckout:{canPurchase:true}};
+const NATIVE_HISTORY={teamId:TEAM,orders:[],hasMore:false,nextCursor:null};
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 async function nativeStore(t){
  const parent=path.resolve(process.env.SHENYI_TEST_TMPDIR??os.tmpdir());
@@ -30,13 +31,14 @@ async function fixture(t,{version=3,open,reply,nativeIntents,nativeOverview=NATI
  const client=createTeamClient({now:()=>f.clock.value,trustedService:profile,deviceIdentity:{vault,platform:'win32',displayName:'Synthetic checkout device'},openCheckoutExternal:open===null?undefined:async url=>{opened.push(url);return open?.(url);},
   ...(nativeIntents?{nativeCheckoutIntents:nativeIntents,openNativeCheckoutExternal:async url=>{nativeOpened.push(url);return open?.(url);}}:{}),
   fetchImpl:async(url,settings)=>{
-  const route=new URL(url).pathname;calls.push({route,...settings,headers:new Headers(settings.headers)});let result;
+  const parsed=new URL(url),route=parsed.pathname;calls.push({route,pathAndQuery:route+parsed.search,...settings,headers:new Headers(settings.headers)});let result;
   if(/\/billing\/(?:website(?:-seat)?-handoff|native-website(?:-order)?-handoff)$/.test(route)){
    const value=response?await response(settings):{handoff:CODE,expiresAt:f.clock.value+120000,
     ...(route.includes('/native-website')?{expiresInMs:120000}:{})};
    result=value instanceof Response?value:Response.json(value);
   }
   else if(route.endsWith('/billing/overview'))result=Response.json(nativeIntents?nativeOverview:OVERVIEW);
+  else if(route.endsWith('/billing/native-orders'))result=Response.json(NATIVE_HISTORY);
   else result=await f.dispatch(new Request(url,settings));
   result.headers.set('X-Shenyi-Server-Id',serverId);Object.defineProperty(result,'url',{value:url});return result;
  }});
@@ -47,6 +49,9 @@ test('website handoff is one protected empty POST and only a fixed pinned URL re
  const f=await fixture(t);assert.equal(isBillingRoute('/api/teams/'+TEAM+'/billing/website-handoff'),true);assert.equal(isBillingRoute('/api/teams/'+TEAM+'/billing/website-handoff?url=x'),false);
  assert.deepEqual(await f.client.openWebsiteCheckout({teamId:TEAM}),{opened:true});assert.deepEqual(f.opened,[ORIGIN+'/checkout/#handoff='+CODE]);const calls=f.calls.filter(x=>x.route.endsWith('/website-handoff'));assert.equal(calls.length,1);const call=calls[0];assert.equal(call.method,'POST');assert.equal(call.body,'{}');assert.ok(call.headers.get('Authorization'));assert.ok(call.headers.get('X-Shenyi-Device-Lease'));const fields=f.signed.at(-1);assert.equal(fields.pathAndQuery,'/api/teams/'+TEAM+'/billing/website-handoff');assert.ok(verify(null,proof.requestProofBytes(fields),f.pair.publicKey,Buffer.from(call.headers.get('X-Shenyi-Device-Signature'),'base64url')));assert.equal(call.headers.get('X-Shenyi-Website-Checkout'),null);
  const overview=await f.client.getBillingOverview({teamId:TEAM});assert.equal(overview.websiteCheckout,true);assert.equal(overview.websiteCheckoutReady,true);assert.equal(JSON.stringify(overview).includes(CODE),false);assert.equal(JSON.stringify(overview).includes(ORIGIN),false);
+ const overviewCall=f.calls.at(-1);
+ assert.equal(overviewCall.headers.get('X-Shenyi-Native-Checkout'),null);
+ assert.equal(overviewCall.headers.get('X-Shenyi-Native-Order-History'),null);
 });
 test('unconfigured profiles or missing shell never request a ticket and candidate readiness stays explicit',async t=>{
  for(const options of [{version:1},{open:null}]){const f=await fixture(t,options);assert.equal((await f.client.getBillingOverview({teamId:TEAM})).websiteCheckoutReady,false);await assert.rejects(f.client.openWebsiteCheckout({teamId:TEAM}),{code:'WEBSITE_CHECKOUT_UNAVAILABLE'});assert.equal(f.calls.some(c=>c.route.endsWith('/website-handoff')),false);assert.deepEqual(f.opened,[]);}
@@ -131,15 +136,47 @@ test('supplied order IDs must be exact lowercase UUIDs before any handoff is req
  assert.deepEqual(f.opened,[]);
 });
 
+test('Native order history uses only the exact signed GET and never opens the website',async t=>{
+ const {intents}=await nativeStore(t);
+ const f=await fixture(t,{nativeIntents:intents,nativeOverview:{...NATIVE_OVERVIEW,nativeCheckout:{canPurchase:true,orderHistory:true}}});
+ assert.deepEqual((await f.client.getBillingOverview({teamId:TEAM})).nativeCheckout,{canPurchase:true,orderHistory:true});
+ const limit='/api/teams/'+TEAM+'/billing/native-orders?limit=20';
+ const cursor='abcdef01-0000-4000-8000-000000000001';
+ for(const [input,pathAndQuery] of [[{teamId:TEAM},limit],[{teamId:TEAM,after:cursor},limit+'&after='+cursor]]){
+  assert.deepEqual(await f.client.listNativeBillingOrders(input),NATIVE_HISTORY);
+  const call=f.calls.at(-1),fields=f.signed.at(-1);
+  assert.equal(call.pathAndQuery,pathAndQuery);
+  assert.equal(call.method,'GET');
+  assert.equal(call.body,undefined);
+  assert.ok(call.headers.get('X-Shenyi-Device-Lease'));
+  assert.equal(call.headers.get('X-Shenyi-Native-Checkout'),null);
+  assert.equal(call.headers.get('X-Shenyi-Native-Order-History'),null);
+  assert.equal(fields.pathAndQuery,pathAndQuery);
+  assert.equal(fields.bodySha256,createHash('sha256').update('').digest('hex'));
+  assert.ok(verify(null,proof.requestProofBytes(fields),f.pair.publicKey,Buffer.from(call.headers.get('X-Shenyi-Device-Signature'),'base64url')));
+ }
+ assert.deepEqual(f.nativeOpened,[]);
+ const old=await fixture(t),before=old.calls.length;
+ await assert.rejects(old.client.listNativeBillingOrders({teamId:TEAM}),{code:'WEBSITE_CHECKOUT_UNAVAILABLE'});
+ assert.equal(old.calls.length,before);
+});
+
 test('Native desktop purchase persists its UUID and predecessor across retries and rejected advances',async t=>{
  const {root,intents}=await nativeStore(t);
  let failOnce=true;
  const f=await fixture(t,{nativeIntents:intents,open:()=>{if(failOnce){failOnce=false;throw Error('Synthetic opener failure');}}});
  const selection={teamId:TEAM,kind:'annual'};
  assert.deepEqual(await f.client.getBillingOverview({teamId:TEAM}),NATIVE_OVERVIEW);
- assert.equal(f.calls.at(-1).headers.get('X-Shenyi-Native-Checkout'),'native-v1');
+ const overviewCall=f.calls.at(-1);
+ assert.equal(overviewCall.method,'GET');
+ assert.equal(overviewCall.headers.get('X-Shenyi-Native-Checkout'),'native-v1');
+ assert.equal(overviewCall.headers.get('X-Shenyi-Native-Order-History'),'v1');
+ assert.ok(overviewCall.headers.get('X-Shenyi-Device-Lease'));
  await assert.rejects(f.client.openNativeWebsiteCheckout(selection),{code:'WEBSITE_CHECKOUT_OPEN_FAILED'});
- const first=JSON.parse(f.calls.at(-1).body);
+ const purchaseCall=f.calls.at(-1);
+ assert.equal(purchaseCall.headers.get('X-Shenyi-Native-Checkout'),'native-v1');
+ assert.equal(purchaseCall.headers.get('X-Shenyi-Native-Order-History'),null);
+ const first=JSON.parse(purchaseCall.body);
  assert.deepEqual(Object.keys(first).sort(),['product','requestId']);
  assert.equal(first.product,'team-annual-renewal');
  const directory=path.join(root,'native-checkout-intents');

@@ -82,15 +82,18 @@ export async function createWechatNativeWebsite({db, origin, billing, catalog:ca
     return safeMemberText(teamName.get(teamId)?.name,teamId);
   }
 
-  function projection({order,payment,providerReviewStates,expiredUnsent}, at) {
-    let status;
-    if (payment?.status === 'needs_review' || payment?.providerReviewStates?.length) status = 'needs_review';
-    else if (payment) status = payment.status;
-    else if (providerReviewStates?.includes('REFUND')) status = 'needs_review';
-    else if (providerReviewStates?.includes('CLOSED') || expiredUnsent) status = 'closed';
-    else status = at >= order.expiresAt ? 'expired' : 'pending';
+  function orderStatus({order,payment,providerReviewStates,expiredUnsent}, at) {
+    if (payment?.status === 'needs_review' || payment?.providerReviewStates?.length) return 'needs_review';
+    if (payment) return payment.status;
+    if (providerReviewStates?.includes('REFUND')) return 'needs_review';
+    if (providerReviewStates?.includes('CLOSED') || expiredUnsent) return 'closed';
+    return at >= order.expiresAt ? 'expired' : 'pending';
+  }
+
+  function projection(result, at) {
+    const {order} = result;
     return {id:order.id,product:order.product,teamName:nameOf(order.teamId),
-      amountMinor:order.amountMinor,seats:order.seats,currency:order.currency,expiresAt:order.expiresAt,status};
+      amountMinor:order.amountMinor,seats:order.seats,currency:order.currency,expiresAt:order.expiresAt,status:orderStatus(result,at)};
   }
 
   function response(state, qr) {
@@ -179,6 +182,13 @@ export async function createWechatNativeWebsite({db, origin, billing, catalog:ca
 
   return Object.freeze({
     canPurchase:catalog !== undefined,
+    listOrders(scope) {
+      const at = clock(), {orders,hasMore,nextCursor} = billing.listOrders(scope);
+      return {teamId:scope.teamId,orders:orders.map(result => {
+        const {id,product,createdAt,amountMinor,currency,seats} = result.order;
+        return {id,product,createdAt,amountMinor,currency,seats,status:orderStatus(result,at)};
+      }),hasMore,nextCursor};
+    },
     async issue(request, context) {
       const url = new URL(request.url), route = ISSUER.exec(url.pathname);
       if (!route || request.url !== origin + url.pathname) return notFound();

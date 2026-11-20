@@ -310,6 +310,7 @@ function registerDesktopBridge({ipcMain,window,client,dialog}) {
   handle('refund-intake-record',arg=>client.recordRefundIntake(arg));
   handle('website-checkout-open',arg=>client.openWebsiteCheckout(input(arg,['teamId','kind','orderId'])));
   handle('native-website-checkout-open',arg=>client.openNativeWebsiteCheckout(arg));
+  handle('native-billing-orders',arg=>client.listNativeBillingOrders(arg));
   return ()=>{for(const channel of channels)ipcMain.removeHandler(channel);parentContents.removeListener?.('did-start-navigation',parentNavigation);parentContents.removeListener?.('render-process-gone',clearRendererResources);workpaperBridge?.dispose();ledgerCheckBridge?.dispose();materialPreview?.dispose();submissionPreview?.dispose();materialMaintenance?.dispose();workspaceCreation?.dispose();workspaceFormalization?.dispose();materialPreservationExport?.dispose();workspaceSourceExport?.dispose();projectMaterials.dispose();projectMigration.dispose();client.clearSession();};
 }
 module.exports={APP_URL,registerDesktopBridge,readChosenFile,safeDownloadName};

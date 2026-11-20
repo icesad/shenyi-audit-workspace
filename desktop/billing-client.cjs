@@ -6,6 +6,7 @@ const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const BILLING_ROOT='/api/auth/billing/access';
 const BILLING_PATH=/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/billing\/(?:overview|website-handoff|website-seat-handoff|native-website(?:-order)?-handoff|reconciliation|(?:orders|seat-orders)(?:\?limit=20(?:&after=([0-9a-f-]{36}))?|\/([0-9a-f-]{36})(?:\/(?:reconcile|resume-fulfilment))?)?)$/;
+const NATIVE_HISTORY_PATH=/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/billing\/native-orders\?limit=20(?:&after=([0-9a-f-]{36}))?$/;
 const REFUND_ACCESS='/api/auth/refund-intake/access';
 const REFUND_PATH=/^\/api\/platform\/billing\/refund-intakes\/(?:annual|seat)\/([0-9a-f-]{36})(?:\?beforeRevision=([1-9][0-9]{0,15}))?$/;
 const REFUND_REFERENCE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
@@ -17,6 +18,7 @@ const MAX_BILLING_BYTES=128*1024;
 const PRODUCTS={annual:'team-annual-renewal',seat:'team-seat-addition'};
 const SUBSCRIPTION_STATES=new Set(['unconfigured','scheduled','active','expired']);
 const ORDER_STATES=new Set(['pending','closed','payment-verified','paid']);
+const NATIVE_ORDER_STATES=new Set(['pending','pending_fulfilment','fulfilled','needs_review','closed','expired']);
 const PAYMENT_EXCEPTION_KINDS=new Set(['refund','chargeback']);
 const RECONCILIATION_OUTCOMES=new Set(['no-evidence','matched','closed','awaiting-review','lookup-unavailable','evidence-rejected','local-failure']);
 const OFFER_KEYS=['id','revision','product','amountMinor','currency'];
@@ -55,6 +57,8 @@ function isBillingRoute(route){
   if(typeof route!=='string')return false;
   const refund=REFUND_PATH.exec(route);
   if(refund)return refund[0]===route&&match(UUID,refund[1])&&(!refund[2]||integer(Number(refund[2]),1));
+  const native=NATIVE_HISTORY_PATH.exec(route);
+  if(native)return native[0]===route&&(!native[1]||match(UUID,native[1]));
   const parts=BILLING_PATH.exec(route);
   return parts!==null&&parts[0]===route&&(!parts[1]||match(UUID,parts[1]))&&(!parts[2]||match(UUID,parts[2]));
 }
@@ -195,8 +199,9 @@ function overviewView(value,teamId,reject){
   if(!overview.simulation){
     const native = Object.hasOwn(overview,'nativeCheckout');
     if(Object.keys(overview).length!==commonKeys.length+Number(native))reject();
-    const capability=native?fields(overview.nativeCheckout,['canPurchase'],reject):null;
-    if(capability&&!boolean(capability.canPurchase))reject();
+    const capability=native?fields(overview.nativeCheckout,['canPurchase'],reject,['orderHistory']):null;
+    if(capability&&(!boolean(capability.canPurchase)||
+        (Object.hasOwn(capability,'orderHistory')&&capability.orderHistory!==true)))reject();
     return {teamId,simulation:false,subscription,seats,...(native?{nativeCheckout:capability}:{})};
   }
   if(Object.hasOwn(overview,'nativeCheckout'))reject();
@@ -233,6 +238,24 @@ function overviewView(value,teamId,reject){
       seatOffer.currency!=='CNY'||seatOffer.product!==PRODUCTS.seat)reject();
   }
   return {teamId,simulation:true,subscription,seats,annualOffers,renewalSeats,seatOffer,...capabilities};
+}
+
+function nativeHistoryView(value,teamId,after,reject){
+  const page=fields(value,['teamId','orders','hasMore','nextCursor'],reject);
+  if(page.teamId!==teamId||!boolean(page.hasMore))reject();
+  const orders=array(page.orders,PAGE_SIZE,reject).map(value=>{
+    const order=fields(value,['id','product','createdAt','amountMinor','currency','seats','status'],reject);
+    if(!match(UUID,order.id)||order.id===after||!Object.values(PRODUCTS).includes(order.product)||
+        !timestamp(order.createdAt)||!integer(order.amountMinor,1,2_147_483_647)||order.currency!=='CNY'||
+        !integer(order.seats,order.product===PRODUCTS.seat?1:0,1000)||!NATIVE_ORDER_STATES.has(order.status))reject();
+    return order;
+  });
+  if(new Set(orders.map(order=>order.id)).size!==orders.length||orders.some((order,index)=>{
+    if(index===0)return false;
+    const prior=orders[index-1];
+    return order.createdAt>prior.createdAt||(order.createdAt===prior.createdAt&&order.id>=prior.id);
+  })||(page.hasMore?(orders.length!==PAGE_SIZE||page.nextCursor!==orders.at(-1).id):page.nextCursor!==null))reject();
+  return {teamId,orders,hasMore:page.hasMore,nextCursor:page.nextCursor};
 }
 
 function reconciliationPageView(value,{teamId,kind,after},reject){
@@ -296,6 +319,7 @@ function createBillingClient({request,failure,websiteCheckout,nativeCheckout}){
   };
   let openingNative=false;
   function nativeInputError(){throw failure('INVALID_INPUT','请核对购买类型或原订单编号。');}
+  function nativeHistoryError(){throw failure('INVALID_RESPONSE','官网订单列表无法确认，请刷新后重试。');}
   function nativeStorageError(){throw failure('NATIVE_PURCHASE_STORAGE_UNAVAILABLE','无法读取或保存本次购买记录，请先在官网核对原订单。');}
   async function openNativeWebsiteCheckout(input){
     const selection=fields(input,['teamId'],nativeInputError,['kind','orderId','newPurchase']);
@@ -342,6 +366,17 @@ function createBillingClient({request,failure,websiteCheckout,nativeCheckout}){
   }
   return {
     openNativeWebsiteCheckout,
+    async listNativeBillingOrders(input){
+      const {teamId,after}=fields(input,['teamId'],nativeInputError,['after']);
+      if(!match(ID,teamId)||(after!==undefined&&!match(UUID,after)))nativeInputError();
+      if(nativeCheckout?.configured!==true)throw failure('WEBSITE_CHECKOUT_UNAVAILABLE','当前电脑未连接受信官网付款服务。');
+      const {assertCurrent}=nativeCheckout.capture();
+      assertCurrent();
+      const route='/api/teams/'+teamId+'/billing/native-orders?limit='+PAGE_SIZE+(after===undefined?'':'&after='+after);
+      const data=await request(route,{beforeSend:assertCurrent});
+      assertCurrent();
+      return nativeHistoryView(data,teamId,after,nativeHistoryError);
+    },
     async getBillingAccess(input){
       if(input!==undefined)badInput();
       const data=fields(await request(BILLING_ROOT),['teams'],badResponse);

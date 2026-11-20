@@ -22,6 +22,7 @@ const checkout = '/api/website-pay';
 const issuer = teamId => '/api/teams/' + teamId + '/billing/native-website-handoff';
 const purchaseIssuer = teamId => '/api/teams/' + teamId + '/billing/native-website-order-handoff';
 const billingOverviewRoute = teamId => '/api/teams/' + teamId + '/billing/overview';
+const orderHistoryRoute = teamId => '/api/teams/' + teamId + '/billing/native-orders';
 const notifyUrl = 'https://shenyi.example.invalid/api/billing/wechat-native/notify';
 const appId = 'wxsynthetic1234567';
 const merchantId = '1000000000';
@@ -181,8 +182,8 @@ async function fixture(t, {enabled = true, provider, catalog} = {}) {
     return send(route, {headers:{'content-type':'application/json', 'content-length':Buffer.byteLength(raw), ...headers}, body:raw});
   }
 
-  async function device() {
-    const login = await post('/api/auth/phone/login', credentials);
+  async function device({userId = actorId, phone = credentials.phone} = {}) {
+    const login = await post('/api/auth/phone/login', {...credentials, phone});
     assert.equal(login.status, 200, login.text);
     const {token} = login.data;
     const pair = generateKeyPairSync('ed25519');
@@ -200,7 +201,7 @@ async function fixture(t, {enabled = true, provider, catalog} = {}) {
     const heldToken = activated.data.token;
     function heldRequest(method, route, value, headers = {}) {
       const body = method === 'POST' ? JSON.stringify(value) : undefined;
-      const claims = {serverId, userId:actorId, sessionBinding:deviceProof.sessionBinding(heldToken),
+      const claims = {serverId, userId, sessionBinding:deviceProof.sessionBinding(heldToken),
         deviceId:lease.deviceId, bindingRevision:lease.bindingRevision, leaseId:lease.id, method, pathAndQuery:route,
         bodySha256:digest(body ?? ''), nonce:randomBytes(32).toString('base64url')};
       const deviceHeaders = {...headers, authorization:'Bearer ' + heldToken, origin:'shenyi://app',
@@ -216,8 +217,8 @@ async function fixture(t, {enabled = true, provider, catalog} = {}) {
       expire() { db.prepare('UPDATE main.team_device_leases SET expires_at=? WHERE lease_id=?').run(Date.now() - 1000, lease.id); }};
   }
 
-  function lock(changes = {}) {
-    const billing = createWechatNativeBilling({...wechatNativeCallback, ...outbound, db, now:() => now - 60_000});
+  function lock(changes = {}, {createdAt = now - 60_000, scope = {}} = {}) {
+    const billing = createWechatNativeBilling({...wechatNativeCallback, ...scope, ...outbound, db, now:() => createdAt});
     return billing.lockOrder({...quote, requestId:randomUUID(), expiresAt:now + 540_000, ...changes});
   }
   async function issueHandoff(session, route, body) {
@@ -838,6 +839,8 @@ test('managed CLI startup validates the optional Native merchant price catalog w
 
 test('managed billing overview exposes Native checkout capability only to the negotiated authorized view', async t => {
   const capability = {'X-Shenyi-Native-Checkout':'native-v1'};
+  const history = {'X-Shenyi-Native-Order-History':'v1'};
+  const capabilities = {...capability, ...history};
   const route = billingOverviewRoute(teamId);
   const f = await fixture(t, {catalog:priceCatalog});
   const session = await f.device();
@@ -850,6 +853,15 @@ test('managed billing overview exposes Native checkout capability only to the ne
   const optedIn = await session.heldGet(route, capability);
   assert.equal(optedIn.status, 200, optedIn.text);
   assert.deepEqual(optedIn.data, {...normal.data, nativeCheckout:{canPurchase:true}});
+  const historyView = await session.heldGet(route, capabilities);
+  assert.equal(historyView.status, 200, historyView.text);
+  assert.deepEqual(historyView.data, {...normal.data, nativeCheckout:{canPurchase:true,orderHistory:true}});
+  const historyOnly = await session.heldGet(route, history);
+  assert.equal(historyOnly.status, 200, historyOnly.text);
+  assert.deepEqual(historyOnly.data, normal.data);
+  const unsupportedHistory = await session.heldGet(route, {...capability,'X-Shenyi-Native-Order-History':'future-v2'});
+  assert.equal(unsupportedHistory.status, 200, unsupportedHistory.text);
+  assert.deepEqual(unsupportedHistory.data, optedIn.data);
   assert.equal((await f.send(route, {method:'GET', headers:capability})).status, 401);
   const foreign = await session.heldGet(billingOverviewRoute('team-b'), capability);
   assert.equal(foreign.status, 404, foreign.text);
@@ -859,17 +871,127 @@ test('managed billing overview exposes Native checkout capability only to the ne
   const existing = await session.heldGet(route, capability);
   assert.equal(existing.status, 200, existing.text);
   assert.deepEqual(existing.data, {...normal.data, nativeCheckout:{canPurchase:false}});
+  const existingHistory = await session.heldGet(route, capabilities);
+  assert.equal(existingHistory.status, 200, existingHistory.text);
+  assert.deepEqual(existingHistory.data, {...normal.data, nativeCheckout:{canPurchase:false,orderHistory:true}});
   assertNoNativePayment(f);
 
   const disabled = await fixture(t, {enabled:false});
   const disabledSession = await disabled.device();
   const originView = await disabledSession.heldGet(route);
-  const disabledView = await disabledSession.heldGet(route, capability);
+  const disabledView = await disabledSession.heldGet(route, capabilities);
   assert.equal(originView.status, 200, originView.text);
   assert.equal(disabledView.status, 200, disabledView.text);
   assert.equal(Object.hasOwn(originView.data, 'nativeCheckout'), false);
   assert.deepEqual(disabledView.data, originView.data);
+  const disabledHistory = await disabledSession.heldGet(orderHistoryRoute(teamId));
+  assert.equal(disabledHistory.status, 404, disabledHistory.text);
   assertNoNativePayment(disabled);
+});
+
+function orderHistoryEntry(order, status = 'pending') {
+  return {id:order.id, product:order.product, createdAt:order.createdAt, amountMinor:order.amountMinor,
+    currency:'CNY', seats:order.seats, status};
+}
+
+function expectOrderHistory(reply, orders, nextCursor = null) {
+  assert.equal(reply.status, 200, reply.text);
+  assert.deepEqual(reply.data, {teamId, orders, hasMore:nextCursor !== null, nextCursor});
+}
+
+function nativeHistoryLedger(db) {
+  const nativeTables = db.prepare(`SELECT name FROM main.sqlite_schema
+    WHERE type='table' AND name GLOB 'team_billing_wechat_native_*' ORDER BY name`).all();
+  const names = [...nativeTables.map(row => row.name), 'team_subscription_events', 'team_seat_capacity_grants'];
+  return names.map(name => [name, db.prepare(`SELECT * FROM main.${name} ORDER BY 1`).all()]);
+}
+
+test('signed Native history reads existing scoped orders for a different current administrator without changing the ledger', async t => {
+  const at = Math.floor(Date.now() / 1000) * 1000;
+  t.mock.timers.enable({apis:['Date'],now:at});
+  let paid, closed;
+  const f = await fixture(t, {provider:target => {
+    if (target.pathname.endsWith('/' + paid.merchantOrderId)) return signedProviderResponse(verifiedTrade(paid));
+    assert.ok(target.pathname.endsWith('/' + closed.merchantOrderId));
+    return signedProviderResponse(verifiedTrade(closed, 'CLOSED'));
+  }});
+  paid = f.lock({amountMinor:288001}, {createdAt:at - 62_000});
+  closed = f.lock({amountMinor:288002}, {createdAt:at - 61_000});
+  const expired = f.lock({expiresAt:at - 10_000}, {createdAt:at - 120_000});
+  const foreignTeam = f.lock({teamId:'team-b',actorId:'admin-b'});
+  const foreignApp = f.lock({}, {scope:{appId:'wxsynthetic7654321'}});
+  const foreignMerchant = f.lock({}, {scope:{merchantId:'1000000001'}});
+
+  const purchaser = await f.device();
+  expectOrder(await f.browser('check', await f.issue(purchaser, paid.id)), paid, 'fulfilled');
+  expectOrder(await f.browser('check', await f.issue(purchaser, closed.id)), closed, 'closed');
+  const pending = f.lock({product:seat,termRevision:1,amountMinor:10305,seats:2}, {createdAt:at});
+
+  const phoneAdmin = '+8613800000003';
+  const phoneWorker = '+8613800000004';
+  f.db.exec(`INSERT INTO main.team_users VALUES ('admin-a-successor','active'),('worker-a','active');
+    INSERT INTO main.team_operators VALUES ('team-a','admin-a-successor','administrator','active');
+    INSERT INTO main.team_memberships VALUES ('team-a','worker-a','assistant','active');
+    UPDATE main.team_operators SET status='revoked' WHERE team_id='team-a' AND user_id='admin-a';`);
+  const addCredential = f.db.prepare(`INSERT INTO main.team_credentials(user_id,username,display_name,password_hash)
+    VALUES (?,?,?,?)`);
+  const addPhone = f.db.prepare(`INSERT INTO main.team_phone_credentials(user_id,phone,verified_at) VALUES (?,?,?)`);
+  for (const [userId,phone] of [['admin-a-successor',phoneAdmin],['worker-a',phoneWorker]]) {
+    addCredential.run(userId,userId,'合成历史夹具',encodedPassword);
+    addPhone.run(userId,phone,at);
+  }
+  const administrator = await f.device({userId:'admin-a-successor',phone:phoneAdmin});
+  const worker = await f.device({userId:'worker-a',phone:phoneWorker});
+  const route = orderHistoryRoute(teamId);
+  const ledgerBefore = nativeHistoryLedger(f.db);
+  const callsBefore = f.calls.slice();
+
+  const expected = [orderHistoryEntry(pending), orderHistoryEntry(closed,'closed'),
+    orderHistoryEntry(paid,'fulfilled'), orderHistoryEntry(expired,'expired')];
+  expectOrderHistory(await administrator.heldGet(route), expected);
+  assert.equal((await f.send(route, {method:'GET'})).status, 401);
+  for (const denied of [await administrator.heldGet(orderHistoryRoute('team-b')), await worker.heldGet(route),
+    await purchaser.heldGet(route)]) {
+    assert.equal(denied.status, 404, denied.text);
+    assert.deepEqual(Object.keys(denied.data), ['error']);
+  }
+  for (const forbiddenCursor of [foreignTeam.id,foreignApp.id,foreignMerchant.id,randomUUID()]) {
+    const response = await administrator.heldGet(route + '?after=' + forbiddenCursor);
+    assert.equal(response.status, 404, response.text);
+    assert.deepEqual(Object.keys(response.data), ['error']);
+  }
+  assert.equal(callsBefore.length, 2);
+  assert.deepEqual(f.calls, callsBefore);
+  assert.deepEqual(nativeHistoryLedger(f.db), ledgerBefore);
+});
+
+test('signed Native history paginates by creation time and ID and rejects invalid query fields', async t => {
+  const f = await fixture(t);
+  const route = orderHistoryRoute(teamId);
+  const session = await f.device();
+  expectOrderHistory(await session.heldGet(route), []);
+  const first = f.lock();
+  const newest = f.lock({}, {createdAt:first.createdAt + 1000});
+  const oldest = f.lock({}, {createdAt:first.createdAt - 1000});
+  const sameTime = [first, ...Array.from({length:19}, () => f.lock())];
+  sameTime.sort((a,b) => b.id.localeCompare(a.id));
+  const expected = [newest, ...sameTime, oldest].map(order => orderHistoryEntry(order));
+  const ledgerBefore = nativeHistoryLedger(f.db);
+
+  expectOrderHistory(await session.heldGet(route), expected.slice(0,20), expected[19].id);
+  expectOrderHistory(await session.heldGet(route + '?limit=50'), expected);
+  expectOrderHistory(await session.heldGet(route + '?limit=1'), [expected[0]], expected[0].id);
+  expectOrderHistory(await session.heldGet(route + '?limit=2&after=' + expected[1].id), expected.slice(2,4), expected[3].id);
+  expectOrderHistory(await session.heldGet(route + '?after=' + expected[19].id), expected.slice(20));
+  expectOrderHistory(await session.heldGet(route + '?after=' + oldest.id), []);
+  for (const invalid of ['limit=0','limit=51','limit=-1','limit=1.5','limit=','limit=2&limit=2','after=',
+    'after=malformed','after='+first.id+'&after='+first.id,'teamId=team-a']) {
+    const response = await session.heldGet(route + '?' + invalid);
+    assert.equal(response.status, 400, response.text);
+    assert.deepEqual(Object.keys(response.data), ['error']);
+  }
+  assertNoNativePayment(f);
+  assert.deepEqual(nativeHistoryLedger(f.db), ledgerBefore);
 });
 
 function expectUnresolved(reply) {

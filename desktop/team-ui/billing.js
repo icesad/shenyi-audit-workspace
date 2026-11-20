@@ -3,6 +3,11 @@
 
   const orderNames = { annual: '团队年费', seat: '增购席位' };
   const orderStates = { pending: '待支付', closed: '超时关闭', 'payment-verified': '已核验，待到账', paid: '已到账' };
+  const nativeProducts = { 'team-annual-renewal': '团队年订阅', 'team-seat-addition': '增购席位' };
+  const nativeOrderStates = {
+    pending: '待付款', pending_fulfilment: '收款已核实，待到账', fulfilled: '权益已到账',
+    needs_review: '待复核', closed: '已关闭', expired: '已过付款截止'
+  };
   const paymentExceptionStates = { refund: '退款待复核', chargeback: '拒付待复核' };
   const batchOutcomes = {
     matched: '已核实',
@@ -27,6 +32,8 @@
   }
   const whole = value => /^[1-9][0-9]*$/.test(value) && Number.isSafeInteger(Number(value));
   const orderIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const nativeOrderId = value => typeof value === 'string' && orderIdPattern.exec(value)?.[0] === value;
+  const nativeNumber = (value, min, max) => Number.isSafeInteger(value) && !Object.is(value, -0) && value >= min && value <= max;
   const methods = ['getBillingAccess', 'getBillingOverview', 'listBillingOrders', 'createBillingOrder', 'reconcileBillingOrder'];
   const permissionErrors = new Set(['FORBIDDEN', 'HTTP_403', 'HTTP_404', 'NOT_FOUND']);
   const deviceErrors = new Set(['DEVICE_PROOF_REQUIRED', 'DEVICE_NOT_READY', 'DEVICE_STATE_CHANGED', 'DEVICE_VAULT_UNAVAILABLE', 'DEVICE_CAPABILITY_REQUIRED', 'DEVICE_SERVER_CHANGED']);
@@ -72,8 +79,10 @@
     const supported = methods.every(method => typeof api?.[method] === 'function');
     const lookupSupported = typeof api?.getBillingOrder === 'function';
     const nativeSupported = typeof api?.openNativeWebsiteCheckout === 'function';
+    const nativeHistorySupported = typeof api?.listNativeBillingOrders === 'function';
     let scope = '', identity = '', revision = 0, accessRead = null, team = '', teams = [];
     let overview = null, overviewRead = null, ordersRead = null, orders = [], nextCursor = null, pageCursor = null, previousCursors = [];
+    let nativeOrdersRead = null, nativeOrders = [], nativeNext = null, nativeCursor = null, nativePrevious = [];
     let kind = 'annual', confirmation = null, mutation = null;
     let batchReport = null, failedBatch = null, batchIntent = null;
     let lookupRead = null;
@@ -142,13 +151,29 @@
       return nativeSupported && overview?.simulation === false && typeof overview.nativeCheckout?.canPurchase === 'boolean';
     }
 
+    function nativeHistoryReady() {
+      return nativeHistorySupported && overview?.simulation === false && overview.nativeCheckout?.orderHistory === true;
+    }
+
     function drawNativeControls(blocked) {
       const enabled = nativeCheckoutReady();
       const canPurchase = enabled && overview.nativeCheckout.canPurchase;
+      const canRead = nativeHistoryReady();
       node('native-checkout-section').hidden = !enabled;
       node('native-purchase').hidden = !canPurchase;
       node('native-kind').disabled = node('native-continue').disabled = node('native-next').disabled = blocked || !canPurchase;
       node('native-order-id').disabled = node('native-open-order').disabled = blocked || !enabled;
+      node('native-history').hidden = !canRead;
+      node('native-history-list').setAttribute('aria-busy', String(Boolean(nativeOrdersRead)));
+      node('native-history-previous').hidden = nativePrevious.length === 0;
+      node('native-history-next').hidden = !nativeNext;
+      const historyBlocked = blocked || !canRead || Boolean(nativeOrdersRead);
+      node('native-history-refresh').disabled = historyBlocked;
+      node('native-history-previous').disabled = historyBlocked || nativePrevious.length === 0;
+      node('native-history-next').disabled = historyBlocked || !nativeNext;
+      for (const button of node('native-history-list').querySelectorAll('[data-billing-native-receipt]')) {
+        button.disabled = historyBlocked || !enabled;
+      }
     }
 
     function canOpenWebsiteReceipt(order) {
@@ -231,6 +256,21 @@
       previousCursors = [];
       node('order-list').replaceChildren();
       node('orders-message').textContent = '';
+    }
+
+    function nativeHistoryMessage(words = '', error = false) {
+      const feedback = node('native-history-message');
+      feedback.textContent = words;
+      feedback.classList.toggle('error', error);
+    }
+
+    function clearNativeOrders() {
+      nativeOrdersRead = null;
+      nativeOrders = [];
+      nativeCursor = nativeNext = null;
+      nativePrevious = [];
+      node('native-history-list').replaceChildren();
+      nativeHistoryMessage();
     }
 
     function lookupMessage(words = '', error = false) {
@@ -321,6 +361,7 @@
       overviewRead = null;
       clearConfirmation();
       clearOrders();
+      clearNativeOrders();
       clearBatch();
       message();
       for (const name of ['notice', 'term', 'seats', 'annual-offer', 'order-hint']) node(name).replaceChildren();
@@ -449,6 +490,7 @@
         ? '本机模拟账务。创建订单和核对状态均不收款。'
         : nativeCheckoutReady() && overview.nativeCheckout.canPurchase ? '请在官网核对金额、确认订单和扫码付款。'
         : nativeCheckoutReady() ? '可在官网打开已有订单，核对付款状态。'
+        : nativeHistoryReady() ? '可查阅本团队的官网订单记录。'
         : pilot ? '本团队当前显示获批的试点期限与席位。' : '当前仅可查阅订阅与席位。在线续费尚未开通。';
       const term = subscription.startsAt == null ? '' : '　' + date(subscription.startsAt) + ' 至 ' + date(subscription.endsAt) + '（北京时间）';
       node('term').textContent = (pilot ? '团队试点 · ' : '团队年订阅 · ') + (subscriptionStates[subscription.state] || '状态待核对') + term;
@@ -494,8 +536,13 @@
         if (!overview.simulation) {
           clearConfirmation();
           clearOrders();
-        } else if (keepOrders) drawOrders();
-        else void loadOrders();
+          if (nativeHistoryReady()) void loadNativeOrders();
+          else clearNativeOrders();
+        } else {
+          clearNativeOrders();
+          if (keepOrders) drawOrders();
+          else void loadOrders();
+        }
       } catch (error) {
         if (!currentView(read) || overviewRead !== read || handleSessionError(error)) return;
         if (permissionErrors.has(error?.code)) discardTeam();
@@ -573,6 +620,86 @@
     function drawOrders() {
       node('order-list').replaceChildren(...orders.map(order => orderRow(order)));
       node('orders-message').textContent = orders.length === 0 ? '暂无' + orderNames[kind] + '订单。' : previousCursors.length || nextCursor ? '第 ' + (previousCursors.length + 1) + ' 页' : '';
+    }
+
+    function nativeOrderRow(order) {
+      const row = element('li', undefined, 'billing-order');
+      row.dataset.orderId = order.id;
+      const header = element('div');
+      const state = element('strong', nativeOrderStates[order.status], 'billing-order-state');
+      state.dataset.state = order.status;
+      header.append(element('span', nativeProducts[order.product]), state,
+        element('span', amount(order.amountMinor), 'billing-order-amount'));
+      row.append(header, element('p', '订单 ' + order.id),
+        element('p', order.seats + ' 席 · ' + date(order.createdAt) + '（北京时间）'));
+      if (nativeCheckoutReady()) {
+        const button = element('button', '在官网核对原单', 'button');
+        button.type = 'button';
+        button.dataset.billingNativeReceipt = order.id;
+        button.setAttribute('aria-label', '在官网核对原单 ' + order.id);
+        const at = capture();
+        button.addEventListener('click', () => {
+          if (button.isConnected && currentView(at)) void openNativeWebsiteCheckout('order', { button, order });
+        });
+        row.append(button);
+      }
+      return row;
+    }
+
+    function validNativeOrderPage(value, teamId, after) {
+      if (value?.teamId !== teamId || !Array.isArray(value.orders) || value.orders.length > 20 || typeof value.hasMore !== 'boolean' ||
+          (value.hasMore ? !nativeOrderId(value.nextCursor) || value.nextCursor !== value.orders.at(-1)?.id : value.nextCursor !== null)) return false;
+      const seen = new Set([after]);
+      return value.orders.every((order, index) => {
+        if (!order || !nativeOrderId(order.id) || seen.has(order.id) || !Object.hasOwn(nativeProducts, order.product) ||
+            !Object.hasOwn(nativeOrderStates, order.status) || order.currency !== 'CNY' ||
+            !nativeNumber(order.createdAt, 0, 253_402_300_799_000) || !nativeNumber(order.amountMinor, 1, 2_147_483_647) ||
+            !nativeNumber(order.seats, order.product === 'team-seat-addition' ? 1 : 0, 1000)) return false;
+        const previous = value.orders[index - 1];
+        if (previous && (previous.createdAt < order.createdAt || previous.createdAt === order.createdAt && previous.id <= order.id)) return false;
+        seen.add(order.id);
+        return true;
+      });
+    }
+
+    async function loadNativeOrders(move = 'first', source) {
+      if (!nativeHistoryReady() || nativeOrdersRead || source?.disabled ||
+          move === 'next' && !nativeNext || move === 'previous' && !nativePrevious.length) return;
+      const read = capture();
+      if (!currentView(read)) return;
+      const after = move === 'next' ? nativeNext : move === 'previous' ? nativePrevious.at(-1) : null;
+      const restoreFocus = source ? trackActionFocus(source) : null;
+      nativeOrdersRead = read;
+      nativeHistoryMessage('正在读取官网订单…');
+      controls();
+      try {
+        const value = await invoke('listNativeBillingOrders', { teamId: read.team, ...(after ? { after } : {}) });
+        if (!currentView(read) || nativeOrdersRead !== read) return;
+        if (!validNativeOrderPage(value, read.team, after)) throw new Error('Unexpected Native order history');
+        if (move === 'next') nativePrevious.push(nativeCursor);
+        else if (move === 'previous') nativePrevious.pop();
+        else nativePrevious = [];
+        nativeCursor = after;
+        nativeNext = value.nextCursor;
+        nativeOrders = value.orders;
+        node('native-history-list').replaceChildren(...nativeOrders.map(nativeOrderRow));
+        nativeHistoryMessage(nativeOrders.length === 0 ? '暂无官网订单。' :
+          '第 ' + (nativePrevious.length + 1) + ' 页，共 ' + nativeOrders.length + ' 笔。');
+      } catch (error) {
+        if (!currentView(read) || nativeOrdersRead !== read || handleSessionError(error)) return;
+        if (error?.code === 'HTTP_403' || error?.code === 'FORBIDDEN') discardTeam();
+        else {
+          clearNativeOrders();
+          nativeHistoryMessage('无法读取官网订单，请刷新重试。', true);
+        }
+      } finally {
+        if (nativeOrdersRead === read) nativeOrdersRead = null;
+        controls();
+        restoreFocus?.(() => {
+          if (!currentView(read) || !nativeHistoryReady()) return null;
+          return source.hidden || source.disabled ? node('native-history-heading') : source;
+        });
+      }
     }
 
     function trackActionFocus(button) {
@@ -688,16 +815,17 @@
       }
     }
 
-    async function openNativeWebsiteCheckout(action) {
+    async function openNativeWebsiteCheckout(action, receipt) {
       const original = action === 'order';
-      const button = node(original ? 'native-open-order' : 'native-' + action);
+      const button = receipt?.button ?? node(original ? 'native-open-order' : 'native-' + action);
       const at = capture();
       if (!currentView(at) || !nativeCheckoutReady() || button.disabled || mutation || accessRead || overviewRead || getContext().busy) return;
       const input = { teamId: at.team };
       if (original) {
         const field = node('native-order-id');
-        const orderId = field.value;
-        if (orderIdPattern.exec(orderId)?.[0] !== orderId) {
+        const orderId = receipt?.order.id ?? field.value;
+        if (receipt && (!button.isConnected || !nativeHistoryReady() || !nativeOrders.includes(receipt.order))) return;
+        if (!nativeOrderId(orderId)) {
           field.setAttribute('aria-invalid', 'true');
           message('请输入完整的原订单编号，包含小写字母和连字符。', true);
           field.focus();
@@ -930,6 +1058,9 @@
     node('native-continue').addEventListener('click', () => void openNativeWebsiteCheckout('continue'));
     node('native-next').addEventListener('click', () => void openNativeWebsiteCheckout('next'));
     node('native-open-order').addEventListener('click', () => void openNativeWebsiteCheckout('order'));
+    for (const [name, move] of [['refresh', 'first'], ['next', 'next'], ['previous', 'previous']]) {
+      node('native-history-' + name).addEventListener('click', event => void loadNativeOrders(move, event.currentTarget));
+    }
     node('native-order-id').addEventListener('input', event => event.currentTarget.removeAttribute('aria-invalid'));
     node('native-order-id').addEventListener('keydown', event => {
       if (event.key === 'Enter' && !event.isComposing) {

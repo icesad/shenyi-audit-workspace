@@ -137,6 +137,18 @@
               <button id="billing-native-open-order" class="button" type="button">在官网打开原单</button>
             </div>
           </section>
+          <section id="billing-native-history" class="billing-section" aria-labelledby="billing-native-history-heading" hidden>
+            <div class="billing-actions billing-orders-heading">
+              <h4 id="billing-native-history-heading" tabindex="-1">本团队官网订单</h4>
+              <button id="billing-native-history-refresh" class="button" type="button" aria-controls="billing-native-history-list">刷新官网订单</button>
+            </div>
+            <p id="billing-native-history-message" class="feedback" role="status" aria-live="polite"></p>
+            <ul id="billing-native-history-list" class="billing-order-list" aria-labelledby="billing-native-history-heading"></ul>
+            <div class="billing-actions">
+              <button id="billing-native-history-previous" class="button" type="button" aria-controls="billing-native-history-list" hidden>上一页</button>
+              <button id="billing-native-history-next" class="button" type="button" aria-controls="billing-native-history-list" hidden>下一页</button>
+            </div>
+          </section>
           <section id="billing-website-checkout-section" class="billing-section" aria-labelledby="billing-website-checkout-heading" hidden>
             <h4 id="billing-website-checkout-heading">官网合成下单</h4>
             <p id="billing-website-checkout-hint" class="identity-note"></p>

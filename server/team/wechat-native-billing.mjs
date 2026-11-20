@@ -180,13 +180,17 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
     return at;
   }
 
+  function orderRecord(row) {
+    const payment = paymentValue(row);
+    return {order: orderValue(row), payment, ...(payment ? {} : providerReviewStates(row)),
+      ...(row.expired_unsent ? {expiredUnsent: true} : {})};
+  }
+
   function readOrder({teamId, actorId, orderId}) {
     if (!matches(ID, teamId) || !matches(ID, actorId) || !matches(UUID, orderId)) invalid();
     const row = readByAdministrator.get(actorId, teamId, orderId, merchantId, appId);
     if (!row) deny();
-    const payment = paymentValue(row);
-    return {order: orderValue(row), payment, ...(payment ? {} : providerReviewStates(row)),
-      ...(row.expired_unsent ? {expiredUnsent: true} : {})};
+    return orderRecord(row);
   }
 
   function assertActiveSeatTerm(order, at) {
@@ -286,6 +290,12 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
     ${RECEIPT_JOINS}
     WHERE o.team_id = ? AND o.order_id = ? AND o.merchant_id = ? AND o.app_id = ?
       AND ${administratorTechnicalEligibilitySql()}`);
+  const listByAdministrator = db.prepare(`SELECT o.*, ${RECEIPT_FIELDS} FROM ${ORDER} o
+    JOIN main.team_operators operator ON operator.team_id = o.team_id AND operator.user_id = ?
+    ${RECEIPT_JOINS}
+    WHERE o.team_id = ? AND o.merchant_id = ? AND o.app_id = ?
+      AND ${administratorTechnicalEligibilitySql()} AND (o.created_at, o.order_id) < (?, ?)
+    ORDER BY o.created_at DESC, o.order_id DESC LIMIT ?`);
   const readRequestOrder = db.prepare(`SELECT * FROM ${ORDER} WHERE team_id = ? AND request_id = ?`);
   const readLifecycle = db.prepare(`SELECT event FROM ${LIFECYCLE} WHERE order_id = ?`);
   const appendLifecycle = db.prepare(`INSERT INTO ${LIFECYCLE} (order_id,event,recorded_at) VALUES (?,?,?)`);
@@ -334,6 +344,18 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
     return readOrder({teamId, actorId, orderId:prior.order_id});
   }
 
+  function listOrders({teamId, actorId, after = null, limit = 20}) {
+    if (!matches(ID, teamId) || !matches(ID, actorId) || !boundedInteger(limit, 1, 50) ||
+        (after !== null && !matches(UUID, after))) invalid();
+    if (!administratorTechnicalEligible(db, actorId, teamId)) deny();
+    const anchor = after === null ? null : readByAdministrator.get(actorId, teamId, after, merchantId, appId);
+    if (after !== null && !anchor) deny();
+    const rows = listByAdministrator.all(actorId, teamId, merchantId, appId,
+      anchor?.created_at ?? Number.MAX_SAFE_INTEGER, anchor?.order_id ?? '', limit + 1);
+    const orders = rows.slice(0, limit).map(orderRecord), hasMore = rows.length > limit;
+    return {orders, hasMore, nextCursor:hasMore ? orders.at(-1).order.id : null};
+  }
+
   async function observeQuery(order) {
     const result = await provider.queryOrder(order);
     if (result.state === 'SUCCESS') capture(result, 'query');
@@ -358,6 +380,7 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
     lockOrderWithinTransaction,
     readOrderForRequest,
     readOrder,
+    listOrders,
     async createPaymentCode(access, {authorize = () => {}} = {}) {
       const scope = {...access};
       const locked = write(db, () => {
