@@ -30,13 +30,16 @@ async function splitFixture(t){
 }
 function windows(context,{loading}={}){
  const parent=new EventEmitter();parent.webContents=new EventEmitter();parent.isDestroyed=()=>false;const created=[],sessions=[],timers=[];
+ const desktop={visible:true,minimized:false,enabled:true,focusCount:0};
+ parent.isVisible=()=>desktop.visible;parent.isMinimized=()=>desktop.minimized;parent.isEnabled=()=>desktop.enabled;
+ parent.focus=()=>{desktop.focusCount++;};
  class Session extends EventEmitter{constructor(){super();this.webRequest={onBeforeRequest:fn=>this.request=fn};this.cleared=0;this.disconnected=0;}setCertificateVerifyProc(fn){this.verify=fn;}setPermissionRequestHandler(fn){this.permission=fn;}setPermissionCheckHandler(fn){this.permissionCheck=fn;}setDevicePermissionHandler(fn){this.devicePermission=fn;}async clearStorageData(){this.cleared++;}async closeAllConnections(){this.disconnected++;}}
- class Window extends EventEmitter{constructor(options){super();this.options=options;this.webContents=new EventEmitter();this.webContents.setWindowOpenHandler=fn=>this.openHandler=fn;this.destroyed=false;this.visible=false;created.push(this);}isDestroyed(){return this.destroyed;}async loadURL(url){this.url=url;if(loading)return loading(this);}show(){this.visible=true;}hide(){this.visible=false;}destroy(){if(this.destroyed)return;this.destroyed=true;this.emit('closed');this.webContents.emit('destroyed');}}
+ class Window extends EventEmitter{constructor(options){super();this.options=options;this.webContents=new EventEmitter();this.webContents.setWindowOpenHandler=fn=>this.openHandler=fn;this.destroyed=false;this.visible=false;this.focused=false;created.push(this);}isDestroyed(){return this.destroyed;}isFocused(){return this.focused;}async loadURL(url){this.url=url;if(loading)return loading(this);}show(){this.visible=true;}hide(){this.visible=false;}destroy(){if(this.destroyed)return;this.destroyed=true;this.emit('closed');this.webContents.emit('destroyed');}}
  const manager=helper.createOwnerReviewCheckoutWindows({context,parent,BrowserWindow:Window,session:{fromPartition(name,options){const session=new Session();sessions.push({name,options,session});return session;}},setTimeoutImpl(fn,ms){const timer={fn,ms,cleared:false,unref(){this.unreferenced=true;}};timers.push(timer);return timer;},clearTimeoutImpl(timer){if(timer)timer.cleared=true;}});
  const request=(index,url,{method='GET',resourceType='xhr'}={})=>{let result;sessions[index].session.request({url,method,resourceType},value=>result=value);return result.cancel;};
  const verify=(index,certificate=CERTS.valid,hostname='127.0.0.1')=>{let result;sessions[index].session.verify({hostname,certificate:{data:certificate},isIssuedByKnownRoot:true,verificationResult:'OK'},value=>result=value);return result;};
  const event=(target,name,...args)=>{const e={prevented:false,preventDefault(){this.prevented=true;}};target.emit(name,e,...args);return e.prevented;};
- return {parent,manager,created,sessions,timers,request,verify,event};
+ return {parent,desktop,manager,created,sessions,timers,request,verify,event};
 }
 test('the helper is inert without the explicit flag and never grants a fabricated context',async()=>{
  assert.equal(await helper.loadOwnerReviewCheckoutConfiguration({env:{},isPackaged:true}),null);assert.throws(()=>helper.createOwnerReviewCheckoutWindows({context:{kind:'shenyi-owner-review-checkout-v1'}}),invalid);await assert.rejects(helper.loadOwnerReviewCheckoutConfiguration({env:null}),invalid);
@@ -157,6 +160,29 @@ test('permissions, downloads, child windows and redirects are denied; same-origi
 });
 test('closing the main desktop destroys all review children and leaves their sessions permanently denied',async t=>{
  const f=await fixture(t),w=windows(await f.load());await w.manager.open(ORIGIN+'/checkout/#handoff='+CODE);await w.manager.open(ORIGIN+'/checkout/seats/#handoff='+CODE);w.parent.emit('closed');assert.ok(w.created.every(win=>win.destroyed&&!win.visible));for(let i=0;i<2;i++){assert.equal(w.request(i,ORIGIN+'/styles.css'),true);assert.equal(w.verify(i),-2);assert.equal(w.sessions[i].session.cleared,1);assert.equal(w.sessions[i].session.disconnected,1);}w.manager.closeAll();await assert.rejects(w.manager.open(ORIGIN+'/checkout/#handoff='+CODE),invalid);
+});
+test('normal close hands the foreground checkout back to its own visible desktop without interrupting unrelated focus',async t=>{
+ const f=await fixture(t),w=windows(await f.load());
+ const open=async()=>{await w.manager.open(ORIGIN+'/checkout/#handoff='+CODE);return w.created.at(-1);};
+ const normalClose=win=>{assert.equal(w.event(win,'close'),false);win.destroy();};
+ const active=await open();active.focused=true;normalClose(active);
+ assert.equal(w.desktop.focusCount,1);
+ assert.equal(w.sessions[0].session.cleared,1);
+ const background=await open();
+ const sibling=await open();sibling.focused=true;normalClose(background);
+ assert.equal(w.desktop.focusCount,1);
+ assert.equal(sibling.isDestroyed(),false);
+ for(const [key,value] of [['visible',false],['minimized',true],['enabled',false]]){
+  const unavailable=await open();unavailable.focused=true;
+  const previous=w.desktop[key];w.desktop[key]=value;normalClose(unavailable);w.desktop[key]=previous;
+  assert.equal(w.desktop.focusCount,1,key);
+ }
+ const canceled=await open();canceled.focused=true;
+ canceled.emit('close',{defaultPrevented:true});
+ assert.equal(w.desktop.focusCount,1);
+ assert.equal(canceled.isDestroyed(),false);
+ w.manager.closeAll();
+ assert.equal(w.desktop.focusCount,1,'closing or expiring the manager must not redirect focus');
 });
 test('load failure, parent closure during load and startup timeout never show a stale child or leak its URL',async t=>{
  const f=await fixture(t);const rejected=windows(await f.load(),{loading:()=>Promise.reject(Error('private '+CODE))});await assert.rejects(rejected.manager.open(ORIGIN+'/checkout/#handoff='+CODE),invalid);assert.equal(rejected.created[0].destroyed,true);rejected.manager.closeAll();

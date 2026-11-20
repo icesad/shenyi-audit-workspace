@@ -77,6 +77,11 @@ function createOwnerReviewCheckoutWindows({context,parent,BrowserWindow,session,
   let ended=false,departed=false,startupTimer,rejectStartup;const listeners=[];
   const listen=(object,event,handler)=>{object.on(event,handler);listeners.push([object,event,handler]);};
   const win=new BrowserWindow({parent,show:false,width:1160,height:900,minWidth:760,minHeight:640,title,backgroundColor:'#f5f6f2',autoHideMenuBar:true,webPreferences:{session:isolated,nodeIntegration:false,nodeIntegrationInWorker:false,contextIsolation:true,sandbox:true,webSecurity:true,allowRunningInsecureContent:false,webviewTag:false,devTools:false}});
+  // Use the foreground state before the checkout window loses its native focus.
+  listen(win,'close',event=>{
+    if(event.defaultPrevented||!current()||!win.isFocused()||!parent.isVisible()||parent.isMinimized()||!parent.isEnabled())return;
+    parent.focus();
+  });
   function finish(){if(ended)return;ended=true;clearTimeoutImpl(startupTimer);rejectStartup?.(fail());rejectStartup=null;windows.delete(close);for(const [object,event,handler]of listeners)object.removeListener(event,handler);listeners.length=0;isolated.webRequest.onBeforeRequest((_details,callback)=>callback({cancel:true}));isolated.setCertificateVerifyProc((_details,callback)=>callback(-2));isolated.removeListener('will-download',blockDownload);void Promise.resolve(isolated.closeAllConnections?.()).catch(()=>{});void Promise.resolve(isolated.clearStorageData?.()).catch(()=>{});}
   function close(){if(ended)return;try{win.hide();if(!win.isDestroyed())win.destroy();}finally{finish();}}
   function blockDownload(event){event.preventDefault();}
