@@ -179,12 +179,25 @@ export async function loadBuildInventory(checkout = root, { platform = 'win32', 
     name: 'shenyi-team-desktop', productName: '审易', version: appSource.version, private: true,
     main: 'desktop/main.cjs', dependencies: { jsdom: appSource.dependencies.jsdom },
   };
-  if (appPackage.version !== appLock.packages[''].version || Object.keys(appSource.dependencies).length !== 1 || Object.keys(appLock.packages[''].dependencies).length !== 1 ||
-      appPackage.dependencies.jsdom !== appLock.packages[''].dependencies.jsdom ||
+  const lockRoot = appLock.packages[''];
+  const directDependencies = Object.keys(appSource.dependencies);
+  const qrPath = 'node_modules/qrcode-generator';
+  const qr = appLock.packages[qrPath];
+  const qrVersion = appSource.dependencies['qrcode-generator'];
+  if (appPackage.version !== lockRoot.version ||
+      directDependencies.some(name => !['jsdom', 'qrcode-generator'].includes(name)) ||
+      Object.keys(lockRoot.dependencies).length !== directDependencies.length ||
+      directDependencies.some(name => lockRoot.dependencies[name] !== appSource.dependencies[name]) ||
       appPackage.dependencies.jsdom !== appLock.packages['node_modules/jsdom'].version) {
     throw new Error('桌面生产依赖或版本已变化，请先更新包清单。');
   }
-  const production = Object.entries(appLock.packages).filter(([name, record]) => name && !record.dev);
+  // QR generation runs on the managed server. It has no transitive runtime dependencies.
+  if (qrVersion === undefined ? qr !== undefined :
+    (!qr || qr.version !== qrVersion || qr.dev || qr.link ||
+      ['dependencies','optionalDependencies','peerDependencies'].some(key => Object.hasOwn(qr,key)))) {
+    throw new Error('服务端二维码依赖与桌面包清单不一致。');
+  }
+  const production = Object.entries(appLock.packages).filter(([name, record]) => name && name !== qrPath && !record.dev);
   for (const [name, record] of production) {
     if (!name.startsWith('node_modules/') || !npmPackageName.test(name.slice('node_modules/'.length)) || record.link ||
         !record.resolved?.startsWith('https://registry.npmjs.org/') || !/^sha512-/.test(record.integrity ?? '')) {
