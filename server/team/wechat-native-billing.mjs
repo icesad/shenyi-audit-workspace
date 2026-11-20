@@ -34,6 +34,8 @@ const RECEIPT_JOINS = `LEFT JOIN ${PAYMENT} p ON p.order_id = o.order_id
 const conflict = () => { throw new ApiError(409, 'WECHAT_NATIVE_BILLING_CONFLICT', '微信支付订单或收款记录无法核实，请核对原订单。'); };
 const needsReview = () => { throw new ApiError(409, 'WECHAT_NATIVE_FULFILMENT_REVIEW', '收款已保存，当前条件未能兑现权益。'); };
 const insufficientSeats = () => { throw new ApiError(409, 'WECHAT_NATIVE_INSUFFICIENT_SEATS', '购买的席位不足以覆盖已启用成员和邀请预留。'); };
+const CALLBACK_LOCK_TIMEOUT_MS = 500;
+let schemaDefinition;
 
 function requireForeignKeys(db) {
   if (db.prepare('PRAGMA foreign_keys').get()?.foreign_keys !== 1) throw new Error('WeChat billing requires SQLite foreign keys');
@@ -44,7 +46,7 @@ function schemaEntries(db) {
     WHERE tbl_name GLOB 'team_billing_wechat_native_*' ORDER BY name`).all();
 }
 
-export function installWechatNativeBillingSchema(db) {
+function assertTeamSchema(db) {
   requireForeignKeys(db);
   const version = db.prepare("SELECT value FROM main.team_database_metadata WHERE name = 'prototype-version'").get();
   if (version?.value !== '2') throw new Error('WeChat billing requires a provisioned team database');
@@ -52,6 +54,10 @@ export function installWechatNativeBillingSchema(db) {
   db.prepare('SELECT user_id FROM main.team_users LIMIT 0').get();
   db.prepare('SELECT team_id, revision FROM main.team_subscription_events LIMIT 0').get();
   db.prepare('SELECT grant_id FROM main.team_seat_capacity_grants LIMIT 0').get();
+}
+
+function billingSchemaDefinition() {
+  if (schemaDefinition) return schemaDefinition;
   const schema = readFileSync(new URL('./wechat-native-billing-schema.sql', import.meta.url), 'utf8');
   const fulfilmentSchema = readFileSync(new URL('./wechat-native-fulfilment-schema.sql', import.meta.url), 'utf8');
   const expected = new DatabaseSync(':memory:');
@@ -64,6 +70,18 @@ export function installWechatNativeBillingSchema(db) {
   } finally {
     expected.close();
   }
+  schemaDefinition = {schema, fulfilmentSchema, baseManifest, manifest};
+  return schemaDefinition;
+}
+
+export function assertWechatNativeBillingReady(db) {
+  assertTeamSchema(db);
+  if (JSON.stringify(schemaEntries(db)) !== billingSchemaDefinition().manifest) throw new Error('Incompatible WeChat billing schema');
+}
+
+export function installWechatNativeBillingSchema(db) {
+  assertTeamSchema(db);
+  const {schema, fulfilmentSchema, baseManifest, manifest} = billingSchemaDefinition();
   transaction(db, () => {
     const entries = schemaEntries(db);
     if (entries.length === 0) db.exec(schema);
@@ -72,9 +90,20 @@ export function installWechatNativeBillingSchema(db) {
   });
 }
 
-function write(db, action) {
+export function withWechatNativeCallbackLockBudget(db, action) {
+  // A JavaScript deadline cannot interrupt a synchronous SQLite lock wait.
+  // Restore the connection's original policy before returning to other routes.
+  const originalTimeout = db.prepare('PRAGMA busy_timeout').get().timeout;
+  if (originalTimeout <= CALLBACK_LOCK_TIMEOUT_MS) return action();
+  db.exec('PRAGMA busy_timeout = ' + CALLBACK_LOCK_TIMEOUT_MS);
+  try { return action(); }
+  finally { db.exec('PRAGMA busy_timeout = ' + originalTimeout); }
+}
+
+function write(db, action, {providerCallback = false} = {}) {
   requireForeignKeys(db);
   if (db.isTransaction) conflict();
+  if (providerCallback) return withWechatNativeCallbackLockBudget(db, () => transaction(db, action));
   try {
     return transaction(db, action);
   } catch (error) {
@@ -113,26 +142,29 @@ function paymentValue(row) {
 }
 
 /** Server-only. Callers authorize the session and quote before passing locked terms. */
-export function createWechatNativeBilling({db, apiV3Key, now = Date.now, ...configuration}) {
+export function createWechatNativeBilling(options) {
+  return connectWechatNativeBilling(options, false);
+}
+
+export function createWechatNativePaymentReceiver({db, appId, merchantId, apiV3Key, keys}) {
+  assertWechatNativeBillingReady(db);
+  return connectWechatNativeBilling({db, appId, merchantId, apiV3Key, keys}, true).receiveNotification;
+}
+
+function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configuration}, providerCallback) {
   requireForeignKeys(db);
   const {appId, merchantId, keys} = configuration;
-  const provider = createWechatNativeOrders({...configuration, now});
   const readByProviderOrder = db.prepare(`SELECT * FROM ${ORDER} WHERE merchant_id = ? AND merchant_order_id = ? AND app_id = ?`);
   const verify = createWechatNativeNotificationVerifier({
     appId, merchantId, apiV3Key, keys, now,
     readOrder: target => {
-      const row = readByProviderOrder.get(target.merchantId, target.merchantOrderId, target.appId);
+      const read = () => readByProviderOrder.get(target.merchantId, target.merchantOrderId, target.appId);
+      const row = providerCallback ? withWechatNativeCallbackLockBudget(db, read) : read();
       return row ? orderValue(row) : null;
     },
   });
   const readById = db.prepare(`SELECT o.*, ${RECEIPT_FIELDS} FROM ${ORDER} o
     ${RECEIPT_JOINS} WHERE o.order_id = ?`);
-  const readByAdministrator = db.prepare(`SELECT o.*, ${RECEIPT_FIELDS} FROM ${ORDER} o
-    JOIN main.team_operators operator ON operator.team_id = o.team_id AND operator.user_id = ?
-    ${RECEIPT_JOINS}
-    WHERE o.team_id = ? AND o.order_id = ? AND o.merchant_id = ? AND o.app_id = ?
-      AND ${administratorTechnicalEligibilitySql()}`);
-
   function readCurrentTime() {
     const at = now();
     if (!boundedInteger(at, 0, MAX_PAYMENT_TIME)) conflict();
@@ -223,7 +255,7 @@ export function createWechatNativeBilling({db, apiV3Key, now = Date.now, ...conf
         db.prepare(`INSERT INTO ${QUERY} (order_id, verified_at) VALUES (?, ?)`).run(row.order_id, at);
       }
       return paymentValue(readById.get(row.order_id));
-    });
+    }, {providerCallback});
   }
 
   function recordProviderReview(orderId, state) {
@@ -234,6 +266,15 @@ export function createWechatNativeBilling({db, apiV3Key, now = Date.now, ...conf
     });
   }
 
+  const receiveNotification = async input => capture(await verify(input), 'notification');
+  if (providerCallback) return {receiveNotification};
+
+  const provider = createWechatNativeOrders({...configuration, now});
+  const readByAdministrator = db.prepare(`SELECT o.*, ${RECEIPT_FIELDS} FROM ${ORDER} o
+    JOIN main.team_operators operator ON operator.team_id = o.team_id AND operator.user_id = ?
+    ${RECEIPT_JOINS}
+    WHERE o.team_id = ? AND o.order_id = ? AND o.merchant_id = ? AND o.app_id = ?
+      AND ${administratorTechnicalEligibilitySql()}`);
   return Object.freeze({
     lockOrder(input) {
       const {teamId, actorId, requestId, product, offerId, offerRevision, seats, termRevision, amountMinor, expiresAt} = input;
@@ -286,9 +327,7 @@ export function createWechatNativeBilling({db, apiV3Key, now = Date.now, ...conf
       const current = readOrder(scope);
       return current.payment ? current : {...current, state: result.state};
     },
-    async receiveNotification(input) {
-      return capture(await verify(input), 'notification');
-    },
+    receiveNotification,
     fulfilPayment(access) {
       const scope = {...access};
       return write(db, () => {

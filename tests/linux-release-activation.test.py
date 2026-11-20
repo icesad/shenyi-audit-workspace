@@ -486,7 +486,7 @@ class RecoveryTests(unittest.TestCase):
         self.assert_activation_refused(f, preflight_started=True)
 
     def test_startup_input_changes_cannot_stop_the_current_service(self):
-        for field in ('tlsCertificate', 'tlsKey', 'smsProfile', 'wechatProfile'):
+        for field in ('tlsCertificate', 'tlsKey', 'smsProfile', 'wechatProfile', 'wechatNativeCallbackProfile'):
             with self.subTest(field=field):
                 f, _ = self.fresh_deployment()
                 filename = f.release.CONFIG.with_name(field)

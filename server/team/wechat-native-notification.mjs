@@ -7,7 +7,7 @@ import {
 } from './wechat-native-protocol.mjs';
 
 const MAX_CIPHERTEXT = 1_048_576;
-const MAX_BODY = MAX_CIPHERTEXT + 4096;
+export const WECHAT_NATIVE_NOTIFICATION_MAX_BYTES = MAX_CIPHERTEXT + 4096;
 const EVENT_ID = /^[A-Za-z0-9_-]{1,36}$/;
 
 const invalid = () => { throw new ApiError(400, 'WECHAT_NATIVE_NOTIFICATION_INVALID', '微信支付通知内容无效。'); };
@@ -40,7 +40,7 @@ export function createWechatNativeNotificationVerifier({appId, merchantId, apiV3
   const apiKey = Buffer.from(apiV3Key);
 
   return async function verifyNotification({headers, body}) {
-    if (!Buffer.isBuffer(body) || !body.length || body.length > MAX_BODY) invalid();
+    if (!Buffer.isBuffer(body) || !body.length || body.length > WECHAT_NATIVE_NOTIFICATION_MAX_BYTES) invalid();
     const receivedAt = now();
     const signedAt = verifySignature(headers, body, receivedAt) ?? unauthenticated();
     const notification = parseWechatRecord(body) ?? invalid();

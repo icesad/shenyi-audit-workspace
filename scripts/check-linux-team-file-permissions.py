@@ -123,7 +123,7 @@ def configured_paths(group, groups):
     require(isinstance(profile, dict), check, 'INVALID_CONFIGURATION')
     paths = {}
     mandatory = ('database', 'tlsCertificate', 'tlsKey')
-    for key in (*mandatory, 'smsProfile', 'wechatProfile'):
+    for key in (*mandatory, 'smsProfile', 'wechatProfile', 'wechatNativeCallbackProfile'):
         if key not in profile and key not in mandatory:
             continue
         value = profile.get(key)
@@ -174,7 +174,7 @@ def audit():
     require(account.pw_uid > 0 and group > 0 and account.pw_gid == group, 'serviceAccount', 'ACCOUNT_MISMATCH')
     paths = configured_paths(group, groups)
     checks = {'configuration': 'pass', 'serviceAccount': 'pass'}
-    for key in ('tlsCertificate', 'tlsKey', 'smsProfile', 'wechatProfile'):
+    for key in ('tlsCertificate', 'tlsKey', 'smsProfile', 'wechatProfile', 'wechatNativeCallbackProfile'):
         if key in paths:
             root_file(paths[key], group, groups, key, secret=key != 'tlsCertificate')
         checks[key] = 'pass' if key in paths else 'not-configured'

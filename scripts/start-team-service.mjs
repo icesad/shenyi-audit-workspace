@@ -7,11 +7,13 @@ import { fileURLToPath } from 'node:url';
 import { assertManagedDatabaseReady } from '../server/team/managed-database-readiness.mjs';
 import { createAliyunSms } from '../server/team/aliyun-sms.mjs';
 import { createWechatOpenPlatform } from '../server/team/wechat-open-platform.mjs';
+import { assertWechatNativeBillingReady } from '../server/team/wechat-native-billing.mjs';
+import { APP_ID, MERCHANT_ID, createWechatSignatureVerifier, matches } from '../server/team/wechat-native-protocol.mjs';
 import { sqliteExistingFileUri } from '../server/team/sqlite-existing-file.mjs';
 
 const checkout = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fields = ['schemaVersion', 'database', 'apiBase', 'serverId', 'listenPort', 'tlsCertificate', 'tlsKey'];
-const optionalFields = ['smsProfile', 'reviewedRecovery', 'wechatProfile'];
+const optionalFields = ['smsProfile', 'reviewedRecovery', 'wechatProfile', 'wechatNativeCallbackProfile'];
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const configCode = 'MANAGED_SERVICE_CONFIGURATION_INVALID';
 const messages = {
@@ -23,6 +25,7 @@ const messages = {
   MANAGED_TLS_INVALID: '证书和私钥无法用于配置的 HTTPS 地址。',
   MANAGED_SMS_INVALID: '短信服务配置无效。请检查独立配置文件及模板。',
   MANAGED_WECHAT_INVALID: '微信扫码服务配置无效。请检查独立配置文件、应用和回调域名。',
+  MANAGED_WECHAT_NATIVE_CALLBACK_NOT_READY: '微信支付通知配置或账本未就绪。',
   MANAGED_SERVICE_LISTEN_FAILED: '团队服务未能监听配置的本机端口。',
   MANAGED_SERVICE_STOP_FAILED: '团队服务关闭未完成。',
 };
@@ -129,13 +132,15 @@ export async function loadManagedServiceConfiguration(filename) {
     const filenames = [configPath, database, tlsCertificate, tlsKey];
     const smsProfile = Object.hasOwn(value, 'smsProfile') ? localPath(value.smsProfile) : undefined;
     const wechatProfile = Object.hasOwn(value, 'wechatProfile') ? localPath(value.wechatProfile) : undefined;
+    const wechatNativeCallbackProfile = Object.hasOwn(value, 'wechatNativeCallbackProfile') ? localPath(value.wechatNativeCallbackProfile) : undefined;
     if ((Object.hasOwn(value, 'reviewedRecovery') && typeof value.reviewedRecovery !== 'boolean') ||
       (value.reviewedRecovery === true && !smsProfile)) fail(configCode);
     if (smsProfile) filenames.push(smsProfile);
     if (wechatProfile) filenames.push(wechatProfile);
+    if (wechatNativeCallbackProfile) filenames.push(wechatNativeCallbackProfile);
     if (filenames.some((name, index) => inside(repository, name) || filenames.slice(0, index).some(previous => !path.relative(previous, name)))) fail(configCode);
     return Object.freeze({ ...value, database, tlsCertificate, tlsKey, ...(smsProfile ? { smsProfile } : {}),
-      ...(wechatProfile ? { wechatProfile } : {}) });
+      ...(wechatProfile ? { wechatProfile } : {}), ...(wechatNativeCallbackProfile ? { wechatNativeCallbackProfile } : {}) });
   } catch {
     fail(configCode);
   }
@@ -179,6 +184,30 @@ async function loadWechatProvider(filename, apiBase) {
   }
 }
 
+async function loadWechatNativeCallback(filename) {
+  if (filename === undefined) return;
+  const code = 'MANAGED_WECHAT_NATIVE_CALLBACK_NOT_READY';
+  let bytes, key;
+  try {
+    bytes = await readLocalFile(filename, 16 * 1024, code);
+    const {schemaVersion, provider, ...settings} = parseProfile(bytes, code);
+    const {appId, merchantId, apiV3Key, keys} = settings;
+    if (schemaVersion !== 1 || provider !== 'wechat-pay-native-v3' || Object.keys(settings).length !== 4 ||
+        !matches(APP_ID, appId) || !matches(MERCHANT_ID, merchantId) || !matches(/^[A-Za-z0-9_-]{43}$/, apiV3Key) ||
+        !Array.isArray(keys) || keys.some(entry => !entry || Object.keys(entry).length !== 2 ||
+          typeof entry.id !== 'string' || typeof entry.key !== 'string')) fail(code);
+    key = Buffer.from(apiV3Key, 'base64url');
+    if (key.length !== 32 || key.toString('base64url') !== apiV3Key) fail(code);
+    createWechatSignatureVerifier(keys);
+    return {appId, merchantId, apiV3Key:key, keys};
+  } catch {
+    key?.fill(0);
+    fail(code);
+  } finally {
+    bytes?.fill(0);
+  }
+}
+
 function databaseReadinessOptions({ reviewedRecovery = false, wechatProfile }) {
   return { reviewedRecovery, wechatEnabled: wechatProfile !== undefined };
 }
@@ -193,6 +222,7 @@ async function checkManagedDatabase(configuration, examine) {
       entry = await existingFile(database, code);
       readonly = new DatabaseSync(sqliteExistingFileUri(database, 'ro'), { readOnly: true, timeout: 5000 });
       assertManagedDatabaseReady(readonly, serverId, databaseReadinessOptions(configuration));
+      if (configuration.wechatNativeCallbackProfile !== undefined) assertWechatNativeBillingReady(readonly);
       if (path.relative(path.toNamespacedPath(database), readonly.location()) || !sameFile(entry, await existingFile(database, code))) fail(code);
     } catch {
       fail(code);
@@ -221,17 +251,20 @@ async function openManagedDatabase(configuration) {
 
 async function withManagedServiceInputs(filename, use) {
   const configuration = await loadManagedServiceConfiguration(filename);
-  const { serverId, apiBase, listenPort: port, tlsCertificate, tlsKey, smsProfile, reviewedRecovery = false, wechatProfile } = configuration;
-  let key, smsProvider;
+  const { serverId, apiBase, listenPort: port, tlsCertificate, tlsKey, smsProfile, reviewedRecovery = false,
+    wechatProfile, wechatNativeCallbackProfile } = configuration;
+  let key, smsProvider, wechatNativeCallback;
   try {
     smsProvider = await loadSmsProvider(smsProfile);
     const wechat = await loadWechatProvider(wechatProfile, apiBase);
+    wechatNativeCallback = await loadWechatNativeCallback(wechatNativeCallbackProfile);
     const cert = await readLocalFile(tlsCertificate, 128 * 1024, 'MANAGED_TLS_INVALID');
     key = await readLocalFile(tlsKey, 32 * 1024, 'MANAGED_TLS_INVALID');
-    return await use(configuration, { apiBase, port, serverId, cert, key, ...smsProvider, reviewedRecovery, wechat });
+    return await use(configuration, { apiBase, port, serverId, cert, key, ...smsProvider, reviewedRecovery, wechat, wechatNativeCallback });
   } finally {
     key?.fill(0);
     smsProvider?.phonePepper.fill(0);
+    wechatNativeCallback?.apiV3Key.fill(0);
   }
 }
 
