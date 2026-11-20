@@ -2,6 +2,14 @@
 
 候选归档分别面向 Apple 芯片 `arm64` 和 Intel `x64`，当前锁定的 Electron 需要 macOS 13 或更新版本。两份构件使用同一份审易客户端源码与生产依赖清单。产物用于后续在 Mac 上签名并验收。 [Electron macOS 支持范围](https://www.electronjs.org/docs/latest/breaking-changes#removed-macos-12-support)
 
+## 2026-11-21 当前协作提交的 macOS 双架构签前交接
+
+从与 Windows 评审相同的协作提交 [`704959f`](https://github.com/icesad/shenyi-audit-workspace/commit/704959f6284c961ebda48d386f88c1d6e4883a71) 构建 Apple 芯片和 Intel 两份 0.61.0 候选。两份归档各核对 1,935 个应用文件和 14 个相对符号链接，应用负载摘要一致。独立接收目录另逐架构核对 84 个 Git 源文件和 6 个随包工具。
+
+接收方按包内 `README.md` 核对两架构原 ZIP。外层 `Shenyi-macOS-Signing-Handoff-0.61.0-704959f.zip` 的 SHA-256 为 `c4eeac997046731b0f28b63c33e8f0dbe7619e4dd7bf5271a9fa11b201f81c08`，本机路径见 `D:/codex-temp/shenyi-mac-704959f-20261121/verification.json`。新 `MAC-ACCEPTANCE.md` 补齐 `--installed-version`，即使回退也用曾接受的最高版本，首次接收且无历史记录时才用 `0.0.0`。实机表增加新配置或批准换机后找回前任同队微信订单的验收。
+
+独立接收使用随包工具验证两种架构和一次性 Ed25519 交接签名，拒绝错架构、同版、降版和校验失败的签名。Windows 上正式接收命令按预期返回 `MACOS_REQUIRED`。正式接收的最高版本判断通过受控工具边界验证。 Developer ID、Apple 公证和正式 ZIP 接收，以及 Finder、Keychain、默认浏览器和安装升级仍需 Mac 实机验收。
+
 ## 2026-11-20 协作版本签前交接
 
 Apple 芯片与 Intel 两份 0.61.0 签前候选及接收工具均来自 GitHub 协作提交 `e28ae2a569cce503ad2edc82580b484b318830f0`。交接 ZIP 位于 `D:/codex-temp/shenyi-macos-collaboration-20261120/delivery/Shenyi-macOS-Signing-Handoff-0.61.0-e28ae2a.zip`，SHA-256 为 `1d8e25e681832caa0a298e8f74aa4646688fd862893574d3633ffa3f6cc41b72`。包内 README 给出接收命令，`MAC-ACCEPTANCE.md` 给出管理员配置和双架构实机签收步骤。
