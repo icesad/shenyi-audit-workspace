@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const {createHash, createHmac, generateKeyPairSync, randomBytes, sign} = require('node:crypto');
+const {createHash, createHmac, generateKeyPairSync, randomBytes, randomUUID, sign} = require('node:crypto');
 const fs = require('node:fs/promises');
 const https = require('node:https');
 const {tmpdir} = require('node:os');
@@ -536,4 +536,116 @@ test('first-administrator approval response loss can be reconciled, revoked and 
     assert.ok([discardedCode,newCode,owner.password,admin.password].every(secret => !persisted.includes(Buffer.from(secret))),
       'Database persisted a cleartext invitation or password');
   } finally { cold.close(); }
+});
+
+test('lost employee invitation reply is reconciled by request ID without reserving a second pilot seat', async t => {
+  const f = await fixture(t);
+  const {call, db, supplier} = f;
+  const ownerSession = await bind(call, owner);
+  const {request} = expectStatus(await call(operations, {session:ownerSession,
+    body:{teamName:'合成员工邀请恢复',adminPhone:admin.phone}}),201);
+  const review = operations+'/'+request.id+'/review';
+  const approved = expectStatus(await call(review,{session:ownerSession,
+    body:{decision:'approve',revision:request.revision,currentPassword:owner.password}}),200);
+  const adminId = await verifyActivation(f,{base:'/api/auth/first-administrator',invite:approved.invitationCode,
+    credentials:admin,purpose:'first-admin',table:'team_first_administrator_challenges',
+    idColumn:'request_id',targetId:request.id,displayName:'合成首管理员'});
+  const opened = expectStatus(await call(operations,{session:ownerSession}),200).requests.find(row=>row.id===request.id);
+  expectStatus(await call(review,{session:ownerSession,body:{decision:'approve-pilot',revision:opened.revision,
+    currentPassword:owner.password,endsAt:Date.now()+60*60_000,seats:1}}),200);
+  const adminSession = await bind(call, admin);
+  assert.equal(adminSession.account.id,adminId);
+  const team = '/api/teams/'+opened.teamId;
+  const invitations = team+'/employee-invitations';
+  const activation = '/api/auth/onboarding';
+  const requestId = randomUUID();
+  const invitationInput = {requestId,phone:employee.phone,role:'assistant'};
+  const lookup = (id,session=adminSession)=>call(invitations+'?requestId='+id,{session});
+  const seats = async(active,reserved,available) => assert.deepEqual(
+    expectStatus(await call(team+'/billing/seats',{session:adminSession}),200),
+    {seats:{purchasedSeats:1,activeBusinessSeats:active,reservedInvitationSeats:reserved,
+      usedSeats:active+reserved,availableSeats:available}},
+  );
+  const assertLookup = (reply,id,status,inviteId,hiddenCode) => {
+    assertRedacted(reply,[employee.normalized,'"invitationCode"','"token_hash"',...(hiddenCode?[hiddenCode]:[])]);
+    const body = expectStatus(reply,200);
+    assert.deepEqual(body,{requestId:id,nextCursor:null,invitations:status?[{
+      invitationId:inviteId,teamId:opened.teamId,role:'assistant',phoneMasked:'+8613****9103',status,
+      expiresAt:body.invitations[0]?.expiresAt,
+    }]:[]});
+    if(status)assert.ok(Number.isSafeInteger(body.invitations[0].expiresAt));
+  };
+  assert.deepEqual(expectStatus(await call(invitations+'/access',{session:adminSession}),200),
+    {canInvite:true,creationLookup:true});
+  assertLookup(await lookup(requestId),requestId);
+  await seats(0,0,1);
+
+  let lost;
+  await assert.rejects(call(invitations,{session:adminSession,body:invitationInput,captureLostResponse(reply) {
+    const data = expectStatus(reply,201);
+    assert.equal(data.requestId,requestId);
+    assert.equal(data.teamId,opened.teamId);
+    assert.ok(typeof data.invitationCode==='string'&&data.invitationCode.length===43);
+    lost={id:data.invitationId,code:data.invitationCode};
+  }}),{code:'ECONNRESET'});
+  await seats(0,1,0);
+  assertLookup(await lookup(requestId),requestId,'pending',lost.id,lost.code);
+  assertRedacted(await call(invitations,{session:adminSession}),[lost.code,employee.normalized]);
+  expectStatus(await lookup(requestId,ownerSession),404,'NOT_FOUND');
+
+  const replay = await call(invitations,{session:adminSession,body:{...invitationInput,role:'intern'}});
+  expectStatus(replay,409,'INVITATION_CREATION_ALREADY_RECORDED');
+  assertRedacted(replay,[lost.code,employee.normalized]);
+  assertLookup(await lookup(requestId),requestId,'pending',lost.id,lost.code);
+  assert.equal(count(db,'team_operator_employee_invitations'),1);
+  await seats(0,1,0);
+
+  const delivery = supplier.expect();
+  const challengeRequest = call(activation+'/challenges',{body:{invitationCode:lost.code,phone:employee.phone}});
+  let activeCode;
+  try {
+    const wire = await Promise.race([delivery.observed,challengeRequest.then(()=>{
+      throw new Error('Expected delivery for the original synthetic invitation');
+    })]);
+    activeCode = assertProviderWire(wire,'activate',employee.normalized);
+  } finally {delivery.respond(Response.json({Code:'OK',RequestId:providerPrivateDetail}));}
+  const {challengeId} = expectStatus(await challengeRequest,202);
+  expectStatus(await call(invitations+'/'+lost.id+'/revoke',{session:adminSession,body:{}}),200);
+  assertLookup(await lookup(requestId),requestId,'revoked',lost.id,lost.code);
+  assert.equal(db.prepare('SELECT delivery_state FROM team_operator_employee_activation_challenges WHERE challenge_id=?')
+    .get(challengeId).delivery_state,'failed');
+  expectStatus(await call(activation+'/activate',{body:{invitationCode:lost.code,phone:employee.phone,
+    challengeId,code:activeCode,password:employee.password,displayName:'合成助理',accept:true}}),404,'NOT_FOUND');
+  await seats(0,0,1);
+  expectStatus(await call(invitations,{session:adminSession,body:invitationInput}),409,'INVITATION_CREATION_ALREADY_RECORDED');
+  await seats(0,0,1);
+
+  const replacementId = randomUUID();
+  const fresh = expectStatus(await call(invitations,{session:adminSession,body:{...invitationInput,requestId:replacementId}}),201);
+  assert.equal(fresh.requestId,replacementId);
+  assert.notEqual(fresh.invitationId,lost.id);
+  await seats(0,1,0);
+  const employeeId = await verifyActivation(f,{base:activation,invite:fresh.invitationCode,credentials:employee,
+    purpose:'activate',table:'team_operator_employee_activation_challenges',idColumn:'invitation_id',
+    targetId:fresh.invitationId,displayName:'合成采集助理'});
+  assertLookup(await lookup(replacementId),replacementId,'accepted',fresh.invitationId,fresh.invitationCode);
+  await seats(1,0,0);
+  for(const session of [adminSession,ownerSession])expectStatus(await call('/api/auth/logout',{session,body:{}}),200);
+  await f.close();
+
+  const cold = new DatabaseSync(path.toNamespacedPath(f.boot.databasePath),{readOnly:true});
+  try {
+    assert.equal(cold.prepare('PRAGMA quick_check').get().quick_check,'ok');
+    assert.deepEqual(cold.prepare('PRAGMA foreign_key_check').all(),[]);
+    const rows=cold.prepare('SELECT invitation_id,revoked_at,accepted_at FROM team_operator_employee_invitations').all();
+    assert.equal(rows.length,2);
+    const prior=rows.find(row=>row.invitation_id===lost.id),replacement=rows.find(row=>row.invitation_id===fresh.invitationId);
+    assert.ok(Number.isSafeInteger(prior.revoked_at)&&prior.accepted_at===null);
+    assert.ok(Number.isSafeInteger(replacement.accepted_at)&&replacement.revoked_at===null);
+    assert.deepEqual(cold.prepare('SELECT user_id,role FROM team_memberships WHERE team_id=?').all(opened.teamId)
+      .map(row=>[row.user_id,row.role]),[[employeeId,'assistant']]);
+    assert.equal(count(cold,'team_seat_capacity_grants'),1);
+    const bytes = await fs.readFile(f.boot.databasePath);
+    assert.ok([lost.code,fresh.invitationCode].every(code=>!bytes.includes(Buffer.from(code))),'Database persisted a cleartext invitation');
+  } finally {cold.close();}
 });

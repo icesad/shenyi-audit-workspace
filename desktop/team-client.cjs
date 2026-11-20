@@ -41,14 +41,30 @@ function passwordInput(value) {
   if (typeof value !== 'string' || value.length < 1 || value.length > 1024) throw failure('INVALID_INPUT', '请填写账号密码。');
   return value;
 }
-function invitationCodeInput(value){if(typeof value!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(value)||Buffer.from(value,'base64url').toString('base64url')!==value)throw failure('INVALID_INPUT','请填写本次收到的完整邀请码。');return value;}
+function invitationCodeValid(value){return typeof value==='string'&&/^[A-Za-z0-9_-]{43}$/.test(value)&&Buffer.from(value,'base64url').toString('base64url')===value;}
+function invitationCodeInput(value){if(!invitationCodeValid(value))throw failure('INVALID_INPUT','请填写本次收到的完整邀请码。');return value;}
+function invitationRequestIdValid(value){return typeof value==='string'&&value.length===36&&SESSION_ID.test(value);}
+function invitationRequestIdInput(value){
+  if(!invitationRequestIdValid(value))throw failure('INVALID_INPUT','邀请请求编号无效，请核对原操作。');
+  return value;
+}
+function expectedInvitationId(teamId,accountId,requestId){
+  // Match the scoped ID format in server/team/employee-invitations-api.mjs.
+  return 'ei-'+createHash('sha256').update(JSON.stringify(['employee-invitation-v1',teamId,accountId,requestId])).digest('hex').slice(0,32);
+}
 function invitationCursorValid(value){return typeof value==='string'&&value.length>=1&&value.length<=1024&&/^[A-Za-z0-9_-]+$/.test(value)&&Buffer.from(value,'base64url').toString('base64url')===value;}
 function invitationListQuery(input){
-  exactKeys(input,['teamId','after','limit']);
+  exactKeys(input,['teamId','after','limit','requestId']);
   const query=new URLSearchParams();
+  if(Object.hasOwn(input,'requestId')){
+    if(Object.hasOwn(input,'after')||Object.hasOwn(input,'limit'))throw failure('INVALID_INPUT','按请求编号核对邀请时不能指定分页。');
+    const requestId=invitationRequestIdInput(input.requestId);
+    query.set('requestId',requestId);
+    return {suffix:'?'+query.toString(),limit:1,requestId};
+  }
   if(Object.hasOwn(input,'after')){if(!invitationCursorValid(input.after))throw failure('INVALID_INPUT','邀请翻页位置无效，请刷新列表。');query.set('after',input.after);}
   if(Object.hasOwn(input,'limit')){if(!Number.isSafeInteger(input.limit)||input.limit<1||input.limit>50)throw failure('INVALID_INPUT','邀请每页数量需要1至50。');query.set('limit',String(input.limit));}
-  return query.size?'?'+query.toString():'';
+  return {suffix:query.size?'?'+query.toString():'',limit:input.limit??50};
 }
 function invitationView(value,expectedTeam){
   if(!value||typeof value.teamId!=='string'||!ID.test(value.teamId)||(expectedTeam&&value.teamId!==expectedTeam)||!['intern','assistant'].includes(value.role)||typeof value.phoneMasked!=='string'||!/^[+0-9* ]{7,32}$/.test(value.phoneMasked)||!value.phoneMasked.includes('*')||!Number.isSafeInteger(value.expiresAt))throw failure('INVALID_RESPONSE','邀请信息格式无效。');
@@ -237,8 +253,11 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
         }
         const invitationRejected=(response.status===402&&code==='SUBSCRIPTION_WRITE_UNAVAILABLE')||
           (response.status===409&&code==='SEAT_CAPACITY_EXHAUSTED');
-        if(invitationRejected&&method==='POST'&&/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/employee-invitations$/.test(route)){
-          throw failure(code,'本次邀请未创建，请核对团队订阅与席位。',response.status);
+        if(method==='POST'&&/^\/api\/teams\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/employee-invitations$/.test(route)){
+          if(invitationRejected)throw failure(code,'本次邀请未创建，请核对团队订阅与席位。',response.status);
+          if(response.status===409&&code==='INVITATION_CREATION_ALREADY_RECORDED'&&invitationRequestIdValid(body?.requestId)){
+            throw failure(code,'该邀请请求已有记录，请按原请求编号核对。',response.status);
+          }
         }
       }
       // Do not forward arbitrary provider messages, stack traces, or response bodies.
@@ -582,25 +601,42 @@ function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wech
     revokeOtherSessions:input=>bulkRevokeSessions(input,false),
     revokeAllSessions:input=>bulkRevokeSessions(input,true),
     async getOnboardingStatus(){const data=await onboardingRequest('/api/auth/onboarding/capabilities',{authenticated:false});if(typeof data?.available!=='boolean'||data.invitationOnly!==true)throw failure('INVALID_RESPONSE','员工激活服务状态无效。');return {available:data.available,invitationOnly:true};},
-    async getInvitationAccess(input){exactKeys(input,['teamId']);const data=await onboardingRequest(invitationPath(input.teamId)+'/access');if(typeof data?.canInvite!=='boolean')throw failure('INVALID_RESPONSE','邀请权限状态无效。');return {canInvite:data.canInvite};},
+    async getInvitationAccess(input){
+      exactKeys(input,['teamId']);const data=await onboardingRequest(invitationPath(input.teamId)+'/access');
+      if(typeof data?.canInvite!=='boolean')throw failure('INVALID_RESPONSE','邀请权限状态无效。');
+      const hasLookup=Object.hasOwn(data,'creationLookup');
+      if(hasLookup&&typeof data.creationLookup!=='boolean')throw failure('INVALID_RESPONSE','邀请权限状态无效。');
+      return {canInvite:data.canInvite,...(data.canInvite&&hasLookup&&data.creationLookup===true?{creationLookup:true}:{})};
+    },
     async createEmployeeInvitation(input){
-      exactKeys(input,['teamId','phone','role']);if(!['intern','assistant'].includes(input.role))throw failure('INVALID_INPUT','邀请职级只可选择实习生或助理。');
-      const data=await onboardingRequest(invitationPath(input.teamId),{method:'POST',body:{phone:phoneInput(input.phone),role:input.role}}),view=invitationView(data,input.teamId);
+      exactKeys(input,['teamId','phone','role','requestId']);if(!['intern','assistant'].includes(input.role))throw failure('INVALID_INPUT','邀请职级只可选择实习生或助理。');
+      const requestId=Object.hasOwn(input,'requestId')?invitationRequestIdInput(input.requestId):undefined;
+      const expectedId=requestId?expectedInvitationId(input.teamId,current?.account.id,requestId):undefined;
+      const data=await onboardingRequest(invitationPath(input.teamId),{method:'POST',
+        body:{phone:phoneInput(input.phone),role:input.role,...(requestId?{requestId}:{})}});
+      if(requestId&&(data?.requestId!==requestId||!Object.hasOwn(data,'requestId')||data.invitationId!==expectedId||
+        data.role!==input.role||!invitationCodeValid(data.invitationCode)))throw failure('INVALID_RESPONSE','无法确认邀请创建回执，请按原请求编号核对。');
+      const view=invitationView(data,input.teamId);
       if(typeof data.invitationId!=='string'||!ID.test(data.invitationId))throw failure('INVALID_RESPONSE','邀请信息格式无效。');
-      return {...view,invitationId:data.invitationId,invitationCode:invitationCodeInput(data.invitationCode)};
+      return {...view,invitationId:data.invitationId,invitationCode:invitationCodeInput(data.invitationCode),...(requestId?{requestId}:{})};
     },
     async listEmployeeInvitations(input){
-      const query=invitationListQuery(input),data=await onboardingRequest(invitationPath(input.teamId)+query);
-      if(!Array.isArray(data?.invitations)||data.invitations.length>(input.limit??50))throw failure('INVALID_RESPONSE','邀请列表格式无效。');
+      const {suffix,limit,requestId}=invitationListQuery(input);
+      const expectedId=requestId?expectedInvitationId(input.teamId,current?.account.id,requestId):undefined;
+      const data=await onboardingRequest(invitationPath(input.teamId)+suffix);
+      if(!Array.isArray(data?.invitations)||data.invitations.length>limit)throw failure('INVALID_RESPONSE','邀请列表格式无效。');
       // Only the original unpaged call may consume a legacy server response.
       const hasCursor=Object.hasOwn(data,'nextCursor');
-      if((query&&!hasCursor)||(hasCursor&&data.nextCursor!==null&&(!invitationCursorValid(data.nextCursor)||data.nextCursor===input.after||data.invitations.length===0)))throw failure('INVALID_RESPONSE','邀请翻页信息无效，请刷新列表。');
+      if(requestId){
+        if(!Object.hasOwn(data,'requestId')||data.requestId!==requestId||!hasCursor||data.nextCursor!==null||
+          data.invitations.some(row=>row?.invitationId!==expectedId))throw failure('INVALID_RESPONSE','无法核对该邀请请求，请按原请求编号重查。');
+      }else if((suffix&&!hasCursor)||(hasCursor&&data.nextCursor!==null&&(!invitationCursorValid(data.nextCursor)||data.nextCursor===input.after||data.invitations.length===0)))throw failure('INVALID_RESPONSE','邀请翻页信息无效，请刷新列表。');
       const invitations=data.invitations.map(item=>{
         const view=invitationView(item,input.teamId);
         if(typeof item.invitationId!=='string'||!ID.test(item.invitationId)||!['pending','revoked','accepted','expired'].includes(item.status))throw failure('INVALID_RESPONSE','邀请列表格式无效。');
         return {...view,invitationId:item.invitationId,status:item.status};
       });
-      return {invitations,nextCursor:hasCursor?data.nextCursor:null};
+      return {invitations,nextCursor:hasCursor?data.nextCursor:null,...(requestId?{requestId}:{})};
     },
     async revokeEmployeeInvitation(input){exactKeys(input,['teamId','invitationId']);const data=await onboardingRequest(invitationPath(input.teamId)+'/'+id(input.invitationId)+'/revoke',{method:'POST',body:{}});if(data?.revoked!==true)throw failure('INVALID_RESPONSE','撤销结果无效。');return {revoked:true};},
     async previewEmployeeInvitation(input){const body=activationTarget(input,['invitationCode','phone']);return invitationView(await onboardingRequest('/api/auth/onboarding/preview',{method:'POST',authenticated:false,body}));},

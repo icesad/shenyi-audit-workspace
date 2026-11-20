@@ -27,7 +27,8 @@
   let firstAdminEpoch=0,firstAdminWorking=false,firstAdminPreview=null,firstAdminChallenge=null,firstAdminMutation=null;
   let provisioningEpoch=0,provisioningAllowed=false,provisioningWorking=false,provisioningRows=[],provisioningMutation=null,provisioningPanelOpened=false;
   let provisioningCursors=[null],provisioningNextCursor=null,provisioningRecovery=null;
-  let administrationTeams=[],invitationTeamId='';
+  let administrationTeams=[],invitationTeamId='',invitationCreationLookup=false,invitationRecoveryReceipt=null,invitationResumeTeam=null;
+  const invitationRecoveries=new Map();
   let recoveryEpoch=0,recoveryWorking=false,recoveryChallenge=null,recoveryMutation=null,recoveryRequest=null;
   let recoveryReviewMode=false,recoveryReviewAvailable=false,recoveryReviewStatusEpoch=0,recoveryReviewReceipt=null,recoveryReviewSubmission=null;
   let recoveryReviewsEpoch=0,recoveryReviewsAllowed=false,recoveryReviewsRows=[],recoveryReviewsWorking=false,recoveryReviewsMutation=null,recoveryReviewsOpened=false;
@@ -239,6 +240,7 @@
   function suspendDeviceView(text=''){
     resetReplacementReviews();
     if(provisioningPending()&&provisioningMutation.recovery)provisioningRecovery=provisioningMutation.recovery;
+    if(session&&invitationTeamId&&invitationRecoveries.size)invitationResumeTeam={accountId:session.account.id,teamId:invitationTeamId};
     if(session&&!deviceAccount)deviceAccount=deviceAccountView(session);if(text)deviceLocalIssue=text;showLogin({keepDevice:true});byId('password').value='';byId('device-enroll-consent').checked=false;updateIdentityControls();
   }
   async function acceptAuthenticatedSession(value){
@@ -308,7 +310,7 @@
   function resetWorkpapers(){workpapers?.reset();for(const node of document.querySelectorAll('#workpaper-panel input[type=password]'))node.value='';}
   function resetLedgerChecks(){ledgerChecks?.reset();for(const node of document.querySelectorAll('#ledger-check-panel input[type=password]'))node.value='';}
   function clearRefundIntakePassword(){const input=byId('refund-intake-password');if(input)input.value='';}
-  function showLogin({keepDevice=false}={}){resetLedgerChecks();resetWorkpapers();stopTaskSubmissionPreview();if(keepDevice)clearRefundIntakePassword();else resetDevicePresentation();accountIdentityEpoch++;resetMyDeviceOverview();resetProjectMigration();resetAdministratorBusinessRole();resetProjectAccess();resetBusinessRole();resetMemberManagement();taskUploadOperation=null;resetTaskSubmissionAccess();resetTaskManagement();resetRecovery(true,true);resetAccountSessions();resetPasswordChange();resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);resetProvisioning(true,true,keepDevice);resetRecoveryReviews();resetInvitations();administrationTeams=[];invitationTeamId='';byId('invitation-team').replaceChildren();session=null;if(!keepDevice){billing?.reset();refundIntake?.reset();}teamId='';tasks=[];selected=null;submissions=[];revision=0;hasMore=false;viewEpoch++;byId('workspace-view').hidden=true;byId('session-actions').hidden=true;byId('login-view').hidden=false;for(const id of ['username','password','search'])byId(id).value='';for(const id of ['account-name','role-label','task-count','workspace-message','phone-bind-message'])byId(id).textContent='';clearPhoneProof();byId('phone-bind-panel').open=false;byId('task-list').replaceChildren();byId('team-select').replaceChildren();byId('task-detail').replaceChildren();setBusy(false);}
+  function showLogin({keepDevice=false}={}){resetLedgerChecks();resetWorkpapers();stopTaskSubmissionPreview();if(keepDevice)clearRefundIntakePassword();else resetDevicePresentation();accountIdentityEpoch++;resetMyDeviceOverview();resetProjectMigration();resetAdministratorBusinessRole();resetProjectAccess();resetBusinessRole();resetMemberManagement();taskUploadOperation=null;resetTaskSubmissionAccess();resetTaskManagement();resetRecovery(true,true);resetAccountSessions();resetPasswordChange();resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);resetProvisioning(true,true,keepDevice);resetRecoveryReviews();if(!keepDevice)clearInvitationRecoveries();resetInvitations();administrationTeams=[];invitationTeamId='';byId('invitation-team').replaceChildren();session=null;if(!keepDevice){billing?.reset();refundIntake?.reset();}teamId='';tasks=[];selected=null;submissions=[];revision=0;hasMore=false;viewEpoch++;byId('workspace-view').hidden=true;byId('session-actions').hidden=true;byId('login-view').hidden=false;for(const id of ['username','password','search'])byId(id).value='';for(const id of ['account-name','role-label','task-count','workspace-message','phone-bind-message'])byId(id).textContent='';clearPhoneProof();byId('phone-bind-panel').open=false;byId('task-list').replaceChildren();byId('team-select').replaceChildren();byId('task-detail').replaceChildren();setBusy(false);}
   async function call(name,arg){if(!api)throw {code:'DESKTOP_REQUIRED',message:'请使用审易桌面客户端打开此页面。'};const actorAt=accountIdentityEpoch,deviceAt=deviceUiEpoch,result=await api[name](arg);if(actorAt!==accountIdentityEpoch||deviceAt!==deviceUiEpoch)throw {code:'STALE_RESPONSE'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED')showLogin();throw result?.error||{message:'操作未完成，请重试。'};}return result.value;}
   async function loadIdentityMethods(){
     const at=++methodsEpoch;
@@ -1356,6 +1358,9 @@
   byId('member-management-search-button').addEventListener('click',()=>void loadMemberManagement());byId('member-management-refresh').addEventListener('click',()=>void loadMemberManagement());byId('member-management-more').addEventListener('click',()=>void loadMemberManagement(true));byId('member-management-password').addEventListener('input',updateMemberManagementControls);byId('member-management-disable-form').addEventListener('submit',event=>void disableMemberManagement(event));
   function rebuildInvitationTeams(){
     const teams=new Map((session?.memberships||[]).map(member=>[member.teamId,{teamId:member.teamId,teamName:member.teamId}]));for(const team of administrationTeams)teams.set(team.teamId,team);
+    if(invitationResumeTeam&&invitationResumeTeam.accountId===session?.account.id&&teams.has(invitationResumeTeam.teamId)){
+      invitationTeamId=invitationResumeTeam.teamId;invitationResumeTeam=null;
+    }
     const select=byId('invitation-team');select.replaceChildren();for(const team of teams.values()){const option=el('option',team.teamName);option.value=team.teamId;select.append(option);}if(!teams.has(invitationTeamId))invitationTeamId=teams.has(teamId)?teamId:teams.keys().next().value||'';select.value=invitationTeamId;select.hidden=teams.size<2;byId('employee-invitations-panel').querySelector('label[for=invitation-team]').hidden=teams.size<2;
   }
   async function loadTeamAdministration(){
@@ -1363,7 +1368,7 @@
     try{const value=await accountSessionsCall('getTeamAdministration',undefined,actor);if(!sameAccountSessionsActor(actor))return;const previous=invitationTeamId;administrationTeams=value.teams;rebuildInvitationTeams();if(invitationTeamId!==previous)void loadInvitationAccess();if(!teamId&&administrationTeams.length)message('workspace-message','当前账号可管理员工邀请，尚未获指派审计角色或资料权限。');}
     catch{if(sameAccountSessionsActor(actor)){administrationTeams=[];rebuildInvitationTeams();}}
   }
-  byId('invitation-team').addEventListener('change',()=>{invitationTeamId=byId('invitation-team').value;void loadInvitationAccess();});
+  byId('invitation-team').addEventListener('change',()=>{invitationResumeTeam=null;invitationTeamId=byId('invitation-team').value;void loadInvitationAccess();});
 
   function onboardingApiReady(){return ['getOnboardingStatus','previewEmployeeInvitation','requestEmployeeActivation','activateEmployee'].every(name=>typeof api?.[name]==='function');}
   function updateOnboardingControls(){
@@ -1376,12 +1381,18 @@
     byId('activation-submit').disabled=busy||activationWorking||!ready||!onboardingAvailable||!proof||!byId('activation-accept').checked;
     byId('activation-cancel').disabled=false;
     const invitationLocked=busy||invitationWorking||invitationMutationPending(),invitationReady=!!session&&invitationAllowed&&invitationPageLoaded;
-    byId('employee-invitation-fields').disabled=invitationLocked||!invitationReady;
-    for(const id of ['invitation-phone','invitation-role','invitation-create'])byId(id).disabled=invitationLocked||!invitationReady;
+    const recovering=activeInvitationRecovery(),retry=!!recovering&&recovering.phase==='retry'&&invitationCreationLookup;
+    const invitationCreateReady=!!session&&invitationAllowed&&(recovering?retry:invitationPageLoaded);
+    byId('employee-invitation-fields').disabled=invitationLocked||!invitationCreateReady;
+    byId('invitation-phone').disabled=invitationLocked||!invitationCreateReady;
+    byId('invitation-role').disabled=invitationLocked||!invitationCreateReady||retry;
+    byId('invitation-create').disabled=invitationLocked||!invitationCreateReady;
+    byId('invitation-create').textContent=retry?'用原编号重试':'创建邀请';
     byId('invitation-refresh').disabled=invitationLocked||!invitationAllowed;
     byId('invitation-prev').disabled=invitationLocked||!invitationReady||invitationCursors.length<2;
     byId('invitation-next').disabled=invitationLocked||!invitationReady||!invitationNextCursor;
-    for(const button of byId('employee-invitation-list').querySelectorAll('button'))button.disabled=invitationLocked||!invitationReady;
+    for(const button of byId('employee-invitation-list').querySelectorAll('button'))button.disabled=invitationLocked||!invitationReady||!!recovering;
+    renderInvitationRecovery(invitationLocked);
     updateFirstAdminControls();updateProvisioningControls();
     byId('invitation-team').disabled=invitationLocked;
     byId('invitation-service-status').textContent=onboardingAvailable?'员工需本人完成手机号验证并确认加入。':'短信激活服务尚未开通。创建邀请不会发送消息，员工暂不能完成激活。';
@@ -1410,6 +1421,40 @@
     catch(error){if(at===activationEpoch)message('activation-message',error.message||'邀请无法使用，请联系管理员。',true);}
     finally{if(at===activationEpoch){activationWorking=false;updateOnboardingControls();}}
   }
+  const invitationStatusWords={pending:'待激活',revoked:'已撤销',accepted:'已使用',expired:'已过期'};
+  function activeInvitationRecovery(target=invitationTeamId){
+    const entry=invitationRecoveries.get(target);
+    return session&&entry?.accountId===session.account.id?entry:null;
+  }
+  function clearInvitationRecoveries(){invitationRecoveries.clear();invitationResumeTeam=null;}
+  function retainInvitationRecoveries(accountId){
+    for(const [team,entry] of invitationRecoveries)if(entry.accountId!==accountId)invitationRecoveries.delete(team);
+    if(invitationResumeTeam?.accountId!==accountId)invitationResumeTeam=null;
+  }
+  function renderInvitationRecovery(locked){
+    const section=byId('invitation-recovery'),lookup=byId('invitation-recovery-read'),revoke=byId('invitation-recovery-revoke');
+    const visible=invitationAllowed&&byId('employee-invitations-panel').open;
+    const entry=visible?activeInvitationRecovery():null,receipt=visible?invitationRecoveryReceipt:null;
+    const data=entry||receipt,record=entry?.record??receipt?.record;
+    section.hidden=!data;
+    lookup.hidden=!entry;lookup.disabled=locked||!entry;
+    revoke.hidden=entry?.phase!=='found'||record?.status!=='pending';revoke.disabled=locked||revoke.hidden;
+    let text='';
+    if(data){
+      const number='查询编号 '+data.requestId+'。';
+      if(record){
+        text=number+'邀请记录 '+record.invitationId+' · '+record.phoneMasked+' · '+labels[record.role]+' · '+invitationStatusWords[record.status]+'。';
+        if(entry)text+='如受邀人尚未激活且没有可用的邀请码，可撤销这条邀请。确认撤销后再创建新邀请。';
+        else if(record.status==='accepted')text+='请受邀人使用已激活的账号登录。';
+      }else if(entry.phase==='retry'&&invitationCreationLookup){
+        text=number+'暂未查到对应邀请。请重新输入原受邀手机号，核对岗位后，用原编号重试。';
+      }else{
+        text=number+'请先核对这次邀请的状态，再继续处理本团队的邀请。';
+      }
+    }
+    const status=byId('invitation-recovery-message');
+    if(status.textContent!==text)status.textContent=text;
+  }
   function clearIssuedInvitation(){byId('issued-invitation').hidden=true;byId('issued-invitation-description').textContent='';byId('issued-invitation-code').value='';}
   function showIssuedInvitation(value){
     byId('issued-invitation-description').textContent=value.phoneMasked+' · '+labels[value.role]+' · 团队 '+value.teamId+' · 有效至 '+new Date(value.expiresAt).toLocaleString('zh-CN');
@@ -1418,7 +1463,7 @@
   }
   function clearInvitationPage(reset=true){invitationPageRows=[];invitationNextCursor=null;invitationPageLoaded=false;if(reset)invitationCursors=[null];byId('employee-invitation-list').replaceChildren();byId('invitation-page-status').textContent='';}
   function resetInvitations(close=true){
-    invitationEpoch++;invitationWorking=false;invitationAllowed=false;
+    invitationEpoch++;invitationWorking=false;invitationAllowed=false;invitationCreationLookup=false;invitationRecoveryReceipt=null;
     const panel=byId('employee-invitations-panel');panel.hidden=true;if(close)panel.open=false;
     invitationPanelOpen=panel.open;
     clearIssuedInvitation();byId('invitation-phone').value='';byId('invitation-role').value='intern';clearInvitationPage();message('invitation-message','');updateOnboardingControls();return invitationEpoch;
@@ -1427,18 +1472,41 @@
   function invitationContext(){return {at:invitationEpoch,target:invitationTeamId,actor:accountSessionsActor(),device:deviceUiEpoch,main:session?.device?.epoch,open:byId('employee-invitations-panel').open};}
   function currentInvitationView(c){return c.at===invitationEpoch&&sameAccountSessionsActor(c.actor)&&invitationTeamId===c.target&&c.device===deviceUiEpoch&&c.main===session?.device?.epoch&&deviceBusinessReady(session?.device)&&deviceBusinessReady()&&(!c.open||byId('employee-invitations-panel').open);}
   async function invitationCall(name,input,c){const result=await api[name](input);if(!currentInvitationView(c))throw {code:'STALE_INVITATION_VIEW'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message',result.error.message||'登录已失效，请重新登录。',true);}throw result?.error||{code:'INVALID_RESPONSE'};}return result.value;}
+  function invitationAccessLost(error){return ['SIGN_IN_REQUIRED','HTTP_401','HTTP_403','HTTP_404'].includes(error?.code);}
+  function failInvitationRead(c){
+    if(!currentInvitationView(c))return;
+    if(activeInvitationRecovery(c.target)&&invitationAllowed){
+      message('invitation-message','邀请列表暂时无法读取。仍可按编号核对上次创建的邀请。',true);
+    }else resetInvitations();
+  }
+  async function readInvitationAccess(c){
+    let permission;
+    try{permission=await invitationCall('getInvitationAccess',{teamId:c.target},c);}
+    catch(error){
+      if(!currentInvitationView(c)||!invitationAccessLost(error))throw error;
+      invitationRecoveries.delete(c.target);resetInvitations();return false;
+    }
+    if(typeof permission?.canInvite!=='boolean'||Object.hasOwn(permission,'creationLookup')&&typeof permission.creationLookup!=='boolean')throw {code:'INVALID_RESPONSE'};
+    if(!permission.canInvite){invitationRecoveries.delete(c.target);resetInvitations();return false;}
+    invitationCreationLookup=permission.creationLookup===true;
+    const entry=activeInvitationRecovery(c.target);
+    if(entry){
+      invitationAllowed=true;byId('employee-invitations-panel').hidden=false;
+      if(entry.phase==='retry')byId('invitation-role').value=entry.role;
+    }
+    return true;
+  }
   function validInvitationCursor(value){return typeof value==='string'&&value.length>=1&&value.length<=1024&&/^[A-Za-z0-9_-]+$/.test(value);}
   function invitationPage(value,c,cursors){if(!value||!Array.isArray(value.invitations)||value.invitations.length>50||cursors.length>1&&!Object.hasOwn(value,'nextCursor'))throw {code:'INVALID_RESPONSE'};const next=Object.hasOwn(value,'nextCursor')?value.nextCursor:null,items=value.invitations;if(next!==null&&(!validInvitationCursor(next)||cursors.includes(next)))throw {code:'INVALID_RESPONSE'};if(!items.every(item=>item&&typeof item.invitationId==='string'&&item.invitationId.length>=1&&item.invitationId.length<=128&&item.teamId===c.target&&['intern','assistant'].includes(item.role)&&['pending','accepted','revoked','expired'].includes(item.status)&&typeof item.phoneMasked==='string'&&item.phoneMasked.length<=80&&Number.isSafeInteger(item.expiresAt)&&item.expiresAt>=0))throw {code:'INVALID_RESPONSE'};return {items,next};}
   function renderInvitations(items){
-    const list=byId('employee-invitation-list');list.replaceChildren();const words={pending:'待激活',revoked:'已撤销',accepted:'已使用',expired:'已过期'};
+    const list=byId('employee-invitation-list');list.replaceChildren();const words=invitationStatusWords;
     if(!items.length)list.append(el('li','本页暂无邀请记录。'));
     for(const item of items){const row=el('li'),description=el('div');description.append(el('strong',item.phoneMasked+' · '+labels[item.role]+' · '+words[item.status]),el('small','有效至 '+new Date(item.expiresAt).toLocaleString('zh-CN')));row.append(description);if(item.status==='pending'){const revoke=el('button','撤销','button');revoke.type='button';revoke.addEventListener('click',()=>revokeInvitation(item.invitationId));row.append(revoke);}list.append(row);}
     byId('invitation-page-status').textContent='第 '+invitationCursors.length+' 页 · 本页 '+items.length+' 条';updateOnboardingControls();
   }
   async function refreshInvitationList(c,cursors,issued=null){
     clearInvitationPage(issued!==null);updateOnboardingControls();
-    const permission=await invitationCall('getInvitationAccess',{teamId:c.target},c);
-    if(permission?.canInvite!==true){resetInvitations();return false;}
+    if(!await readInvitationAccess(c))return false;
     const after=cursors.at(-1);
     let value;
     try{value=await invitationCall('listEmployeeInvitations',{teamId:c.target,limit:50,...(after?{after}:{})},c);}
@@ -1458,18 +1526,19 @@
     if(!session||!invitationTeamId||!['getInvitationAccess','listEmployeeInvitations','createEmployeeInvitation','revokeEmployeeInvitation'].every(name=>typeof api?.[name]==='function'))return;
     const c=invitationContext();invitationWorking=true;updateOnboardingControls();
     try{await refreshInvitationList(c,[null]);}
-    catch{if(currentInvitationView(c))resetInvitations();}
+    catch{failInvitationRead(c);}
     finally{if(at===invitationEpoch){invitationWorking=false;updateOnboardingControls();}}
   }
   async function moveInvitationPage(direction){
     if(busy||invitationWorking||invitationMutationPending()||!invitationAllowed||!invitationPageLoaded||direction<0&&invitationCursors.length<2||direction>0&&!invitationNextCursor)return;
     const cursors=direction>0?[...invitationCursors,invitationNextCursor]:invitationCursors.slice(0,-1);invitationEpoch++;const c=invitationContext();invitationWorking=true;clearIssuedInvitation();updateOnboardingControls();
     try{if(await refreshInvitationList(c,cursors))message('invitation-message','已读取当前页；仅显示本页记录，不提供总数。');}
-    catch{if(currentInvitationView(c))resetInvitations();}
+    catch{failInvitationRead(c);}
     finally{if(c.at===invitationEpoch){invitationWorking=false;updateOnboardingControls();}}
   }
   async function revokeInvitation(invitationId){
-    if(busy||invitationWorking||invitationMutationPending()||!invitationAllowed||!invitationPageLoaded||!invitationPageRows.some(row=>row.invitationId===invitationId&&row.status==='pending'))return;
+    if(busy||invitationWorking||invitationMutationPending()||!invitationAllowed||!invitationPageLoaded||activeInvitationRecovery()||
+      !invitationPageRows.some(row=>row.invitationId===invitationId&&row.status==='pending'))return;
     const c=invitationContext(),job={actor:c.actor},cursors=[...invitationCursors];invitationMutation=job;invitationWorking=true;clearIssuedInvitation();updateOnboardingControls();
     try{await invitationCall('revokeEmployeeInvitation',{teamId:c.target,invitationId},c);if(await refreshInvitationList(c,cursors)&&currentInvitationView(c))message('invitation-message','邀请状态已更新，已重新读取当前页。');}
     catch{if(currentInvitationView(c))resetInvitations();}
@@ -1501,30 +1570,131 @@
     finally{if(at===activationEpoch){byId('activation-password').value='';byId('activation-code').value='';byId('activation-accept').checked=false;activationWorking=false;updateOnboardingControls();}}
   });
   byId('activation-cancel').addEventListener('click',()=>{const submitted=activationWorking&&!!activationChallenge;resetActivation(true,true);if(submitted)message('login-message','已清除输入；已提交的激活可能已完成，可用手机号登录核对。');});
-  byId('employee-invitation-form').addEventListener('submit',async event=>{
-    event.preventDefault();if(busy||invitationWorking||invitationMutationPending()||!invitationAllowed||!invitationPageLoaded)return;const c=invitationContext(),job={actor:c.actor},input={teamId:c.target,phone:byId('invitation-phone').value,role:byId('invitation-role').value};invitationMutation=job;invitationWorking=true;clearIssuedInvitation();updateOnboardingControls();
+  function validInvitationRecoveryIdentity(row,c,entry){
+    return row&&row.teamId===c.target&&row.role===entry.role&&typeof row.invitationId==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(row.invitationId)&&
+      (!entry.invitationId||entry.invitationId===row.invitationId)&&typeof row.phoneMasked==='string'&&
+      /^[+0-9* ]{7,32}$/.test(row.phoneMasked)&&row.phoneMasked.includes('*')&&Number.isSafeInteger(row.expiresAt)&&row.expiresAt>=0;
+  }
+  async function readInvitationRecovery(c,entry){
+    if(!await readInvitationAccess(c))return;
+    if(!invitationCreationLookup){message('invitation-message','当前服务暂不能按编号核对。请稍后再刷新核对。',true);return;}
+    const value=await invitationCall('listEmployeeInvitations',{teamId:c.target,requestId:entry.requestId},c);
+    if(!value||Object.keys(value).length!==3||value.requestId!==entry.requestId||value.nextCursor!==null||!Array.isArray(value.invitations)||
+      value.invitations.length>1||value.invitations.some(row=>!validInvitationRecoveryIdentity(row,c,entry)||
+        !Object.hasOwn(invitationStatusWords,row.status)))throw {code:'INVALID_RESPONSE'};
+    const row=value.invitations[0];
+    if(!row){
+      if(entry.invitationId){message('invitation-message','暂未读到先前核对过的邀请。请保留编号并重新核对。',true);return;}
+      entry.phase='retry';byId('invitation-role').value=entry.role;
+      message('invitation-message','已核对本次查询。需要重试时，请填写原受邀手机号并使用原编号。');
+      return;
+    }
+    const record={invitationId:row.invitationId,status:row.status,role:row.role,phoneMasked:row.phoneMasked};
+    entry.invitationId=record.invitationId;
+    if(record.status==='pending'){
+      entry.phase='found';entry.record=record;
+      message('invitation-message','已核对邀请记录。邀请码只在创建时显示，请参照该记录处理。');
+      return;
+    }
+    invitationRecoveryReceipt={requestId:entry.requestId,record};invitationRecoveries.delete(c.target);
+    try{
+      if(await refreshInvitationList(c,invitationCursors)&&currentInvitationView(c))message('invitation-message','已核对邀请状态。请按显示的记录继续。');
+    }catch(error){
+      if(!currentInvitationView(c))return;
+      if(invitationAccessLost(error))resetInvitations();
+      else message('invitation-message','已核对本次邀请，邀请列表暂未刷新。请刷新列表后继续。',true);
+    }
+  }
+  async function resolveInvitationRecovery(revoke=false){
+    const entry=activeInvitationRecovery(),panel=byId('employee-invitations-panel');
+    if(!entry||busy||invitationWorking||invitationMutationPending()||!invitationAllowed||!panel.open||
+      revoke&&(entry.phase!=='found'||entry.record?.status!=='pending'))return;
+    const c=invitationContext(),job={actor:c.actor};
+    if(revoke)invitationMutation=job;
+    invitationWorking=true;entry.phase='check';entry.record=null;clearIssuedInvitation();
+    byId('invitation-phone').value='';updateOnboardingControls();
+    message('invitation-message',revoke?'正在提交撤销并核对本次邀请…':'正在按原编号核对邀请…');
+    try{
+      if(revoke){
+        if(!await readInvitationAccess(c))return;
+        if(!invitationCreationLookup){message('invitation-message','当前服务暂不能核对本次邀请。请稍后再核对。',true);return;}
+        try{
+          const value=await invitationCall('revokeEmployeeInvitation',{teamId:c.target,invitationId:entry.invitationId},c);
+          if(value?.revoked!==true)throw {code:'INVALID_RESPONSE'};
+        }catch{
+          if(currentInvitationView(c))message('invitation-message','未能确认撤销结果，请按原编号核对，再决定下一步。',true);
+          return;
+        }
+      }
+      await readInvitationRecovery(c,entry);
+    }catch(error){
+      if(!currentInvitationView(c))return;
+      message('invitation-message','邀请状态暂时无法确认，请按原编号重新核对。',true);
+    }finally{
+      if(invitationMutation===job)invitationMutation=null;
+      if(c.at===invitationEpoch)invitationWorking=false;
+      updateOnboardingControls();
+    }
+  }
+  function uncertainInvitationCreation(error){
+    return passwordChangeUncertain(error)||['HTTP_408','HTTP_409','HTTP_429','INVITATION_CREATION_ALREADY_RECORDED',
+      'DEVICE_PROOF_REQUIRED','DEVICE_BODY_MISMATCH','DEVICE_REQUEST_REPLAY','DEVICE_PROOF_LIMIT','DEVICE_STATE_CHANGED'].includes(error?.code);
+  }
+  async function createInvitation(event){
+    event.preventDefault();
+    const prior=activeInvitationRecovery(),panel=byId('employee-invitations-panel');
+    const retry=prior?.phase==='retry'&&invitationCreationLookup;
+    if(busy||invitationWorking||invitationMutationPending()||!invitationAllowed||!panel.open||
+      (prior?!retry:!invitationPageLoaded))return;
+    const c=invitationContext(),input={teamId:c.target,phone:byId('invitation-phone').value,role:byId('invitation-role').value};
+    if(!input.phone.trim()||!['intern','assistant'].includes(input.role)||retry&&input.role!==prior.role){message('invitation-message','请填写受邀手机号并核对岗位。',true);return;}
+    const requestId=prior?.requestId??(invitationCreationLookup?window.crypto?.randomUUID?.():null);
+    if(invitationCreationLookup&&!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(requestId??'')){
+      message('invitation-message','当前客户端无法生成邀请查询编号，请重新打开或更新客户端。',true);return;
+    }
+    const entry=prior||(requestId?{accountId:c.actor.id,requestId,role:input.role}:null);
+    if(entry){input.requestId=entry.requestId;entry.phase='check';invitationRecoveries.set(c.target,entry);}
+    const job={actor:c.actor};invitationMutation=job;invitationWorking=true;invitationRecoveryReceipt=null;clearIssuedInvitation();updateOnboardingControls();
     try{
       const value=await invitationCall('createEmployeeInvitation',input,c);
+      if(entry&&(value?.requestId!==entry.requestId||!validInvitationRecoveryIdentity(value,c,entry)||
+        typeof value.invitationCode!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(value.invitationCode)))throw {code:'INVALID_RESPONSE'};
       if(!currentInvitationView(c))return;
+      if(entry)entry.invitationId=value.invitationId;
       byId('invitation-phone').value='';
-      if(!await refreshInvitationList(c,[null],value)||!currentInvitationView(c))return;
-      showIssuedInvitation(value);
-      message('invitation-message','邀请已创建，未发送消息。已返回首页；请核对后自行转交本次邀请码。');
+      const refreshed=await refreshInvitationList(c,[null],value);
+      if(!currentInvitationView(c))return;
+      if(!refreshed&&byId('issued-invitation').hidden)return;
+      if(entry)invitationRecoveries.delete(c.target);
+      if(refreshed){showIssuedInvitation(value);message('invitation-message','邀请已创建，未发送消息。已返回首页；请核对后自行转交本次邀请码。');}
     }
     catch(error){
       if(!currentInvitationView(c))return;
-      const notice=error?.code==='SEAT_CAPACITY_EXHAUSTED'?'可用席位已用完。请核对待激活邀请和当前席位。':
-        error?.code==='SUBSCRIPTION_WRITE_UNAVAILABLE'?'当前订阅不可创建邀请。请在订阅与席位中核对当前状态。':'';
+      const code=error?.code;
+      const notice=code==='SEAT_CAPACITY_EXHAUSTED'?'可用席位已用完。请核对待激活邀请和当前席位。':
+        code==='SUBSCRIPTION_WRITE_UNAVAILABLE'?'当前订阅不可创建邀请。请在订阅与席位中核对当前状态。':'';
+      if(entry&&(entry.invitationId||!invitationAccessLost(error)&&(prior||uncertainInvitationCreation(error)))){
+        byId('invitation-phone').value='';clearIssuedInvitation();
+        message('invitation-message',notice||'邀请结果暂未确认，请按原编号核对后再继续。',true);return;
+      }
+      if(entry)invitationRecoveries.delete(c.target);
       if(!notice){resetInvitations();return;}
       byId('invitation-phone').value='';
       try{if(await refreshInvitationList(c,[null])&&currentInvitationView(c))message('invitation-message',notice,true);}
-      catch{if(currentInvitationView(c))resetInvitations();}
+      catch{failInvitationRead(c);}
     }
     finally{if(invitationMutation===job)invitationMutation=null;if(c.at===invitationEpoch)invitationWorking=false;updateOnboardingControls();}
-  });
-  function closeInvitationPage(){invitationEpoch++;invitationWorking=false;invitationPanelOpen=false;clearIssuedInvitation();clearInvitationPage();byId('invitation-phone').value='';byId('invitation-role').value='intern';message('invitation-message','');updateOnboardingControls();}
+  }
+  byId('employee-invitation-form').addEventListener('submit',event=>void createInvitation(event));
+  byId('invitation-recovery-read').addEventListener('click',()=>void resolveInvitationRecovery());
+  byId('invitation-recovery-revoke').addEventListener('click',()=>void resolveInvitationRecovery(true));
+  function closeInvitationPage(){invitationEpoch++;invitationWorking=false;invitationPanelOpen=false;invitationRecoveryReceipt=null;clearIssuedInvitation();clearInvitationPage();byId('invitation-phone').value='';byId('invitation-role').value='intern';message('invitation-message','');updateOnboardingControls();}
   byId('employee-invitations-panel').querySelector('summary').addEventListener('click',()=>{if(byId('employee-invitations-panel').open)closeInvitationPage();});
-  byId('employee-invitations-panel').addEventListener('toggle',()=>{const open=byId('employee-invitations-panel').open;if(!open){if(invitationPanelOpen)closeInvitationPage();return;}invitationPanelOpen=true;if(!invitationPageLoaded&&!invitationWorking&&invitationAllowed&&!invitationMutationPending())void loadInvitationAccess();});
+  byId('employee-invitations-panel').addEventListener('toggle',()=>{
+    if(!byId('employee-invitations-panel').open){if(invitationPanelOpen)closeInvitationPage();return;}
+    invitationPanelOpen=true;updateOnboardingControls();
+    if(!invitationPageLoaded&&!invitationWorking&&invitationAllowed&&!invitationMutationPending())void loadInvitationAccess();
+  });
   byId('invitation-refresh').addEventListener('click',()=>void loadInvitationAccess());
   byId('invitation-prev').addEventListener('click',()=>void moveInvitationPage(-1));byId('invitation-next').addEventListener('click',()=>void moveInvitationPage(1));
   window.addEventListener('offline',()=>resetInvitations());
@@ -1533,7 +1703,7 @@
   byId('wechat-cancel').addEventListener('click',()=>{if(!wechatActive())return;resetDevicePresentation();resetWechat();terminalWechat('canceled','本次微信授权已取消，可重新开始。');});
   byId('wechat-link-submit').addEventListener('click',async()=>{if(busy||wechatWorking||wechatState!=='binding_required')return;if(wechatExpiresAt&&wechatExpiresAt<=Date.now()){terminalWechat('expired','本次微信授权已过期，请重新开始。',true);return;}const phone=byId('wechat-link-phone').value,password=byId('wechat-link-password').value;if(!phone.trim()||!password){message('wechat-status','请填写本人现有账号的已验证手机号和密码。',true);return;}const at=wechatEpoch;wechatState='linking';wechatWorking=true;message('wechat-status','正在验证账号并确认关联…');updateIdentityControls();try{await applyWechatResult(await wechatCall('linkWechatAccount',{phone,password},at),at);}catch(error){if(at===wechatEpoch){if(['HTTP_410','TRANSACTION_EXPIRED'].includes(error.code))terminalWechat('expired','本次微信授权已过期，请重新开始。',true);else if(error.code==='WECHAT_NOT_LINKABLE'){resetWechat();terminalWechat('failed','本次微信授权状态已改变，请重新开始。',true);}else{wechatState='binding_required';message('wechat-status',error.message||'关联未完成，请核对账号后重试或取消。',true);}}}finally{if(at===wechatEpoch){byId('wechat-link-password').value='';wechatWorking=false;updateIdentityControls();}}});
   for(const id of ['wechat-link-phone','wechat-link-password'])byId(id).addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();byId('wechat-link-submit').click();}});
-  window.addEventListener('beforeunload',()=>{ledgerChecks?.destroy();workpapers?.destroy();workspaceSource?.destroy();myDeviceObserver.disconnect();resetMyDeviceOverview();resetProjectMigration();resetAdministratorBusinessRole();resetProjectAccess();resetBusinessRole();deviceUiClosed=true;billing?.destroy();refundIntake?.destroy();clearInterval(devicePollTimer);resetDevicePresentation();resetMemberManagement();resetTaskSubmissionAccess();resetTaskManagement();resetRecovery(true,true);resetAccountSessions();resetPasswordChange();resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);resetProvisioning();resetRecoveryReviews();resetInvitations();});
+  window.addEventListener('beforeunload',()=>{ledgerChecks?.destroy();workpapers?.destroy();workspaceSource?.destroy();myDeviceObserver.disconnect();resetMyDeviceOverview();resetProjectMigration();resetAdministratorBusinessRole();resetProjectAccess();resetBusinessRole();deviceUiClosed=true;billing?.destroy();refundIntake?.destroy();clearInterval(devicePollTimer);resetDevicePresentation();resetMemberManagement();resetTaskSubmissionAccess();resetTaskManagement();resetRecovery(true,true);resetAccountSessions();resetPasswordChange();resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);resetProvisioning();resetRecoveryReviews();clearInvitationRecoveries();resetInvitations();});
   function taskManagementReady(){return ['getTaskManagement','listTaskAssignees','assignTask','returnTask'].every(name=>typeof api?.[name]==='function');}
   function taskManagementContext(){return session&&selected?{actor:accountSessionsActor(),teamId,taskId:selected.id,view:viewEpoch}:null;}
   function sameTaskManagement(context){return !!context&&sameAccountSessionsActor(context.actor)&&context.teamId===teamId&&context.taskId===selected?.id&&context.view===viewEpoch;}
@@ -1738,7 +1908,7 @@
     catch(error){if(sameTaskManagement(context))message('workspace-message',error.message||'原件保存结果无法确认，请核对后重试。',true);}
     finally{if(sameTaskManagement(context)&&busyEpoch===downloadBusyEpoch){setBusy(false);renderDetail();}}
   }
-  async function enter(value){resetLedgerChecks();resetWorkpapers();if(!deviceApiReady()||!validDeviceSnapshot(value?.device)||!deviceBusinessReady(value.device)){await acceptAuthenticatedSession(value);return;}accountIdentityEpoch++;resetMyDeviceOverview();resetProjectMigration();resetAdministratorBusinessRole();resetProjectAccess();resetBusinessRole();resetMemberManagement();taskUploadOperation=null;resetTaskSubmissionAccess();selected=null;submissions=[];revision=0;renderDetail();resetTaskManagement();resetRecovery(true,true);resetAccountSessions();resetPasswordChange();resetWechat(false);resetActivation(true,true);resetFirstAdmin(true,true);resetProvisioning(true,true,provisioningRecovery?.accountId===value.account.id);resetRecoveryReviews();resetInvitations();administrationTeams=[];session=value;viewEpoch++;clearPhoneProof();message('phone-bind-message','');byId('phone-bind-panel').open=false;byId('login-view').hidden=true;byId('workspace-view').hidden=false;byId('session-actions').hidden=false;byId('account-name').textContent=session.account.displayName;byId('password').value='';const select=byId('team-select');select.replaceChildren();for(const member of session.memberships){const option=el('option',member.teamId);option.value=member.teamId;select.append(option);}teamId=session.memberships[0]?.teamId||'';invitationTeamId=teamId;rebuildInvitationTeams();updateRole();void loadIdentityMethods();void loadOnboardingStatus();void loadInvitationAccess();void loadProvisioningAccess();void loadRecoveryReviewsAccess();void loadTeamAdministration();void loadMemberManagementAccess();void loadReplacementReviewAccess();void loadBusinessRoleAccess();void loadProjectAccess();void loadAdministratorBusinessRoleAccess();void loadProjectMigrationAccess();if(teamId)void loadTasks();else{tasks=[];renderTasks();detailEmpty();message('workspace-message','当前账号尚未获指派审计角色或资料权限。');}}
+  async function enter(value){resetLedgerChecks();resetWorkpapers();if(!deviceApiReady()||!validDeviceSnapshot(value?.device)||!deviceBusinessReady(value.device)){await acceptAuthenticatedSession(value);return;}accountIdentityEpoch++;resetMyDeviceOverview();resetProjectMigration();resetAdministratorBusinessRole();resetProjectAccess();resetBusinessRole();resetMemberManagement();taskUploadOperation=null;resetTaskSubmissionAccess();selected=null;submissions=[];revision=0;renderDetail();resetTaskManagement();resetRecovery(true,true);resetAccountSessions();resetPasswordChange();resetWechat(false);resetActivation(true,true);resetFirstAdmin(true,true);resetProvisioning(true,true,provisioningRecovery?.accountId===value.account.id);resetRecoveryReviews();retainInvitationRecoveries(value.account.id);resetInvitations();administrationTeams=[];session=value;viewEpoch++;clearPhoneProof();message('phone-bind-message','');byId('phone-bind-panel').open=false;byId('login-view').hidden=true;byId('workspace-view').hidden=false;byId('session-actions').hidden=false;byId('account-name').textContent=session.account.displayName;byId('password').value='';const select=byId('team-select');select.replaceChildren();for(const member of session.memberships){const option=el('option',member.teamId);option.value=member.teamId;select.append(option);}teamId=session.memberships[0]?.teamId||'';invitationTeamId=teamId;rebuildInvitationTeams();updateRole();void loadIdentityMethods();void loadOnboardingStatus();void loadInvitationAccess();void loadProvisioningAccess();void loadRecoveryReviewsAccess();void loadTeamAdministration();void loadMemberManagementAccess();void loadReplacementReviewAccess();void loadBusinessRoleAccess();void loadProjectAccess();void loadAdministratorBusinessRoleAccess();void loadProjectMigrationAccess();if(teamId)void loadTasks();else{tasks=[];renderTasks();detailEmpty();message('workspace-message','当前账号尚未获指派审计角色或资料权限。');}}
   function updateRole(){billing?.update();refundIntake?.update();ledgerChecks?.sync();workpapers?.sync();byId('role-label').textContent=labels[session?.memberships.find(member=>member.teamId===teamId)?.role]||'未指派角色';}
   function watchWorkspaceNavigation(){
     const workspace=byId('workspace-view'),navigation=byId('workspace-navigation'),groups=byId('workspace-navigation-groups');
@@ -1817,7 +1987,7 @@
   byId('send-bind-code').addEventListener('click',async()=>{if(busy||!session)return;if(!methodsReady||!methods.phoneVerification){message('phone-bind-message','短信验证服务尚未开通，未发送验证码。',true);return;}const at=viewEpoch,phone=byId('bind-phone').value;clearPhoneProof(false);setBusy(true);message('phone-bind-message','正在请求短信验证…');try{const result=await call('requestPhoneBind',{phone});if(at!==viewEpoch||byId('bind-phone').value!==phone)return;challengeId=result.challengeId;challengeExpiresAt=result.expiresAt;challengePhone=phone;message('phone-bind-message','验证码发送请求已完成，请填写收到的验证码及当前账号密码。');}catch(error){if(at===viewEpoch)message('phone-bind-message',error.message,true);}finally{if(at===viewEpoch)setBusy(false);}});
   byId('phone-bind-form').addEventListener('submit',async event=>{event.preventDefault();if(busy||!session)return;if(!challengeId||challengeExpiresAt<=Date.now()||byId('bind-phone').value!==challengePhone){clearPhoneProof(false);message('phone-bind-message','本次验证码已失效，请重新获取。',true);return;}const at=viewEpoch,proof={challengeId,code:byId('bind-code').value,currentPassword:byId('bind-current-password').value};let completed=false;setBusy(true);try{const result=await call('bindPhone',proof);if(at!==viewEpoch)return;completed=true;message('phone-bind-message','手机号已验证并绑定：'+result.phoneMasked);}catch(error){if(at===viewEpoch)message('phone-bind-message',error.message,true);}finally{if(at===viewEpoch){if(completed)clearPhoneProof();else{byId('bind-code').value='';byId('bind-current-password').value='';}setBusy(false);}}});
   byId('logout').addEventListener('click',()=>void exitDeviceSession());byId('device-exit').addEventListener('click',()=>void exitDeviceSession());byId('device-retry').addEventListener('click',()=>void reconnectCurrentDevice());for(const id of ['password','device-name'])byId(id).addEventListener('input',updateDeviceControls);byId('device-enroll-consent').addEventListener('change',updateDeviceControls);
-  byId('refresh').addEventListener('click',()=>{if(activeProvisioningRecovery()&&!provisioningAllowed&&!provisioningWorking)void loadProvisioningAccess();void loadInvitationAccess();loadTasks();});byId('load-more').addEventListener('click',()=>loadTasks(true));byId('team-select').addEventListener('change',()=>{resetAccountSessions();resetPasswordChange();teamId=byId('team-select').value;invitationTeamId=teamId;rebuildInvitationTeams();updateRole();void loadInvitationAccess();loadTasks();});byId('search-form').addEventListener('submit',event=>{event.preventDefault();loadTasks();});
+  byId('refresh').addEventListener('click',()=>{if(activeProvisioningRecovery()&&!provisioningAllowed&&!provisioningWorking)void loadProvisioningAccess();void loadInvitationAccess();loadTasks();});byId('load-more').addEventListener('click',()=>loadTasks(true));byId('team-select').addEventListener('change',()=>{resetAccountSessions();resetPasswordChange();teamId=byId('team-select').value;invitationResumeTeam=null;invitationTeamId=teamId;rebuildInvitationTeams();updateRole();void loadInvitationAccess();loadTasks();});byId('search-form').addEventListener('submit',event=>{event.preventDefault();loadTasks();});
   workspaceSource=createWorkspaceSourceView();
   projectMaterials=window.createProjectMaterialsView?.({api,onLockChange:()=>updateProjectAccessControls(),getContext:()=>{const s=projectAccessState,a=accountSessionsActor();return s.project&&(s.project.kind!=='collection-workspace'||s.project.businessConfirmed===true)?{requiresMapping:s.project.kind==='collection-workspace',actor:a.id+':'+a.epoch,userId:a.id,device:deviceUiEpoch+':'+session?.device?.epoch,teamId:s.team,projectId:s.projectId,title:s.project.title,status:s.project.status,ready:projectAccessReady()&&byId('project-access-panel').open&&!byId('project-access-panel').hidden,busy}:null;},onUnauthorized:()=>{showLogin();message('login-message','当前资料登录已失效，请重新登录。',true);}});
   ledgerChecks=window.createLedgerCheckView?.({api,getContext:()=>{const a=accountSessionsActor(),membership=session?.memberships.find(m=>m.teamId===teamId);return{actor:a.id+':'+a.epoch,userId:a.id,device:deviceUiEpoch+':'+session?.device?.epoch,teamId,role:membership?.role,ready:projectAccessReady()&&!byId('workspace-view').hidden,busy};},onUnauthorized:()=>{showLogin();message('login-message','\u8d26\u8868\u767b\u5f55\u5df2\u5931\u6548\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55\u3002',true);}});

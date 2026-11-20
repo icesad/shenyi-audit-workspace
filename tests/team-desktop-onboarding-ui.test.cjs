@@ -122,7 +122,7 @@ test('logout discards a late newly-created invitation and its transfer code',asy
 });
 
 test('an expired authenticated invitation operation clears the entire old workspace',async t=>{
-  const f=fixture(t,{getInvitationAccess:async()=>safe({canInvite:true}),createEmployeeInvitation:async()=>fail('SIGN_IN_REQUIRED','登录已失效，请重新登录。')});await login(f);await until(()=>!f.id('employee-invitations-panel').hidden);f.id('invitation-phone').value=PHONE;f.submit('employee-invitation-form');await until(()=>f.id('workspace-view').hidden);assert.equal(f.id('account-name').textContent,'');assert.equal(f.id('issued-invitation-code').value,'');assert.equal(f.id('employee-invitation-list').textContent,'');assert.equal(f.id('login-submit').disabled,false);
+  const f=fixture(t,{getInvitationAccess:async()=>safe({canInvite:true}),createEmployeeInvitation:async()=>fail('SIGN_IN_REQUIRED','登录已失效，请重新登录。')});await login(f);await until(()=>!f.id('employee-invitations-panel').hidden);f.id('employee-invitations-panel').querySelector('summary').click();f.id('invitation-phone').value=PHONE;f.submit('employee-invitation-form');await until(()=>f.id('workspace-view').hidden);assert.equal(count(f,'createEmployeeInvitation'),1);assert.equal(f.id('account-name').textContent,'');assert.equal(f.id('issued-invitation-code').value,'');assert.equal(f.id('employee-invitation-list').textContent,'');assert.equal(f.id('login-submit').disabled,false);
 });
 
 test('closing the activation panel or unloading the window clears all entered proofs',async t=>{

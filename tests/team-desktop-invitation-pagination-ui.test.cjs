@@ -194,3 +194,216 @@ test('unknown submission results remain closed and are not treated as explicit c
   assert.equal(count(f,'createEmployeeInvitation'),2);assert.equal(lists(f).length,listBefore);assert.equal(count(f,'getInvitationAccess'),accessBefore);
  }
 });
+
+
+const creationAccess=()=>ok({canInvite:true,creationLookup:true});
+const createdReply=(item,requestId)=>{
+ const {status,...view}=item;
+ return ok({...view,requestId,invitationCode:CODE});
+};
+const creates=f=>f.calls.filter(x=>x.name==='createEmployeeInvitation');
+const exactReads=f=>lists(f).filter(x=>Object.hasOwn(x.input,'requestId'));
+const recoveryText=f=>f.id('invitation-recovery-message').textContent;
+const receipt=(input,invitations)=>ok({requestId:input.requestId,invitations,nextCursor:null});
+async function lostCreation(f,{teamId='team-a',role='assistant'}={}){
+ f.id('invitation-phone').value=PHONE;f.id('invitation-role').value=role;f.submit();
+ await until(()=>recoveryText(f).includes('查询编号')&&!f.id('invitation-recovery-read').disabled);
+ const last=creates(f).at(-1).input;
+ assert.deepEqual({...last,requestId:'recorded-id'},{teamId,phone:PHONE,role,requestId:'recorded-id'});
+ assert.match(last.requestId,/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
+ assert.equal(f.id('invitation-phone').value,'');
+ assert.equal(f.id('issued-invitation-code').value,'');
+ return last.requestId;
+}
+
+test('keyed successful invitation uses the echoed UUID and keeps the confirmed one-time code through a list throttle',async t=>{
+ const f=fixture(t);let captured;
+ f.handlers.access=creationAccess;
+ f.handlers.create=async input=>{captured=input;return createdReply(row(input.teamId,201,{role:input.role}),input.requestId);};
+ await f.login();await f.open();
+ f.handlers.list=async()=>fail('HTTP_429');
+ await f.createInvitation();
+ assert.match(captured.requestId,/^[a-f0-9-]{36}$/);
+ assert.equal(f.id('issued-invitation-code').value,CODE);
+ assert.equal(f.id('invitation-recovery').hidden,true);
+ assert.equal(f.id('invitation-create').disabled,true);
+ assert.equal(exactReads(f).length,0);
+ f.handlers.list=null;f.click('invitation-refresh');
+ assert.equal(f.id('issued-invitation-code').value,'');
+ await until(()=>!f.id('invitation-create').disabled);
+ assert.equal(creates(f).length,1);
+});
+
+test('lost keyed creation can recover and deliberately revoke only the checked invitation before a fresh create',async t=>{
+ const f=fixture(t);let captured,record;
+ f.handlers.access=creationAccess;
+ f.handlers.create=async input=>{
+   if(captured)return createdReply(row(input.teamId,202,{role:input.role}),input.requestId);
+   captured=input;record=row(input.teamId,201,{invitationId:'known-committed-invite',role:input.role});
+   f.rows[input.teamId].unshift(record);
+   return fail('HTTP_429');
+ };
+ f.handlers.list=input=>input.requestId?receipt(input,[record]):f.page(input);
+ f.handlers.revoke=async input=>{assert.equal(input.invitationId,record.invitationId);record.status='revoked';return ok({revoked:true});};
+ await f.login();await f.open();
+ const requestId=await lostCreation(f);
+ assert.equal(exactReads(f).length,0);
+ assert.equal(f.id('invitation-create').disabled,true);
+ assert.equal(f.id('invitation-phone').disabled,true);
+ const ordinary=f.id('employee-invitation-list').querySelector('button');
+ assert.equal(ordinary.disabled,true);
+ ordinary.dispatchEvent(new f.w.MouseEvent('click',{bubbles:true}));
+ f.submit();
+ assert.equal(creates(f).length,1);
+ assert.equal(count(f,'revokeEmployeeInvitation'),0);
+
+ const callsBefore=f.calls.length;
+ f.click('invitation-recovery-read');
+ await until(()=>!f.id('invitation-recovery-revoke').disabled);
+ assert.deepEqual(f.calls.slice(callsBefore).map(x=>x.name),['getInvitationAccess','listEmployeeInvitations']);
+ assert.deepEqual(exactReads(f).at(-1).input,{teamId:'team-a',requestId});
+ assert.match(recoveryText(f),/known-committed-invite.*待激活/);
+ assert.equal(f.id('issued-invitation-code').value,'');
+ assert.equal(f.id('invitation-create').disabled,true);
+
+ f.click('invitation-recovery-revoke');f.click('invitation-recovery-revoke');
+ await until(()=>recoveryText(f).includes('已撤销')&&!f.id('invitation-create').disabled);
+ assert.deepEqual(f.calls.find(x=>x.name==='revokeEmployeeInvitation').input,{teamId:'team-a',invitationId:record.invitationId});
+ assert.equal(count(f,'revokeEmployeeInvitation'),1);
+ assert.equal(exactReads(f).length,2);
+ assert.equal(f.id('issued-invitation-code').value,'');
+ await f.createInvitation();
+ assert.notEqual(creates(f).at(-1).input.requestId,requestId);
+ assert.equal(creates(f).length,2);
+});
+
+test('empty exact lookup permits deliberate same-key retry and duplicate acknowledgement returns to exact reads',async t=>{
+ const f=fixture(t);let countCreate=0,found=false;
+ f.handlers.access=creationAccess;
+ f.handlers.create=async()=>{
+   if(++countCreate===1)return fail('SERVICE_UNAVAILABLE');
+   found=true;
+   return fail('INVITATION_CREATION_ALREADY_RECORDED');
+ };
+ f.handlers.list=input=>input.requestId?receipt(input,found?[row(input.teamId,601,{invitationId:'original-after-delay'})]:[]):f.page(input);
+ await f.login();await f.open();
+ const requestId=await lostCreation(f);
+ f.click('invitation-recovery-read');
+ await until(()=>!f.id('invitation-create').disabled);
+ assert.match(recoveryText(f),/暂未查到.*原受邀手机号.*原编号重试/);
+ assert.equal(f.id('invitation-role').disabled,true);
+ assert.equal(f.id('invitation-role').value,'assistant');
+ f.submit();
+ assert.equal(creates(f).length,1);
+ f.id('invitation-phone').value=PHONE;
+ f.id('invitation-role').value='intern';f.submit();
+ assert.equal(creates(f).length,1,'this retry is for the previously selected role');
+ f.id('invitation-role').value='assistant';f.submit();f.submit();
+ await until(()=>f.id('invitation-create').disabled&&!f.id('invitation-recovery-read').disabled);
+ assert.deepEqual(creates(f).map(x=>x.input.requestId),[requestId,requestId]);
+ assert.equal(exactReads(f).length,1);
+ f.click('invitation-recovery-read');
+ await until(()=>recoveryText(f).includes('original-after-delay'));
+ assert.equal(creates(f).length,2);
+ assert.equal(f.id('invitation-create').disabled,true);
+ assert.equal(f.id('issued-invitation-code').value,'');
+});
+
+test('a lost exact revocation keeps the same request lookup and accepts an already used invitation without returning code',async t=>{
+ const f=fixture(t);let status='pending';
+ f.handlers.access=creationAccess;
+ f.handlers.create=async()=>fail('SERVICE_UNAVAILABLE');
+ f.handlers.list=input=>input.requestId?receipt(input,[row(input.teamId,601,{status,invitationId:'original-before-revoke'})]):f.page(input);
+ f.handlers.revoke=async()=>{status='accepted';return fail('SERVICE_UNAVAILABLE');};
+ await f.login();await f.open();const requestId=await lostCreation(f);
+ f.click('invitation-recovery-read');
+ await until(()=>!f.id('invitation-recovery-revoke').disabled);
+ f.click('invitation-recovery-revoke');
+ await until(()=>f.id('invitation-message').textContent.includes('未能确认撤销结果'));
+ assert.equal(f.id('invitation-create').disabled,true);
+ assert.equal(f.id('invitation-recovery-revoke').hidden,true);
+ assert.equal(exactReads(f).length,1);
+ f.click('invitation-recovery-read');
+ await until(()=>recoveryText(f).includes('已使用')&&!f.id('invitation-create').disabled);
+ assert.match(recoveryText(f),/已激活的账号登录/);
+ assert.equal(f.id('issued-invitation-code').value,'');
+ assert.deepEqual(exactReads(f).map(x=>x.input.requestId),[requestId,requestId]);
+ assert.equal(count(f,'revokeEmployeeInvitation'),1);
+ assert.equal(creates(f).length,1);
+});
+
+test('mismatching or temporarily hidden exact responses keep writes blocked while genuine fresh access denial clears scope',async t=>{
+ const f=fixture(t);let exactResult;
+ f.handlers.access=creationAccess;f.handlers.create=async()=>fail('INVALID_RESPONSE');
+ f.handlers.list=input=>input.requestId?exactResult:f.page(input);
+ await f.login();await f.open();const requestId=await lostCreation(f);
+ for(const malformed of [
+   ok({requestId:'wrong-request-id',invitations:[row('team-a',601)],nextCursor:null}),
+   ok({requestId,invitations:[row('team-b',601)],nextCursor:null}),
+   ok({requestId,invitations:[row('team-a',601,{role:'intern'})],nextCursor:null}),
+   ok({requestId,invitations:[row('team-a',601)],nextCursor:'unexpected-page'}),
+   fail('HTTP_404'),
+ ]){
+   exactResult=malformed;
+   const before=exactReads(f).length;
+   f.click('invitation-recovery-read');
+   await until(()=>exactReads(f).length===before+1&&!f.id('invitation-recovery-read').disabled);
+   assert.match(f.id('invitation-message').textContent,/暂时无法确认/);
+   assert.equal(f.id('invitation-create').disabled,true);
+   assert.equal(f.id('invitation-recovery-revoke').hidden,true);
+   assert.equal(f.id('issued-invitation-code').value,'');
+ }
+ const before=exactReads(f).length;
+ f.handlers.access=async()=>ok({canInvite:false});f.click('invitation-recovery-read');
+ await until(()=>f.id('employee-invitations-panel').hidden);
+ assert.equal(exactReads(f).length,before);
+ assert.equal(f.id('invitation-recovery').hidden,true);
+ assert.equal(recoveryText(f),'');
+ f.handlers.access=creationAccess;f.click('refresh');await f.open();
+ assert.equal(f.id('invitation-create').disabled,false);
+ assert.equal(f.id('invitation-recovery').hidden,true);
+ assert.equal(count(f,'revokeEmployeeInvitation'),0);
+});
+
+test('a stale exact read cannot cross team scope or sign out a still-authorized account',async t=>{
+ const f=fixture(t),reply=deferred();
+ f.handlers.access=creationAccess;f.handlers.create=async()=>fail('SERVICE_UNAVAILABLE');
+ f.handlers.list=input=>input.requestId?reply.promise:f.page(input);
+ await f.login();await f.open();const requestId=await lostCreation(f);
+ f.click('invitation-recovery-read');await until(()=>exactReads(f).length===1);
+ f.team('team-b');
+ await until(()=>f.id('invitation-team').value==='team-b'&&!f.id('invitation-create').disabled);
+ assert.equal(recoveryText(f),'');
+ reply.resolve(fail('SIGN_IN_REQUIRED'));await settle();
+ assert.equal(f.id('workspace-view').hidden,false);
+ assert.equal(f.id('invitation-recovery').hidden,true);
+ await f.open();f.team('team-a');
+ await until(()=>recoveryText(f).includes(requestId)&&!f.id('invitation-recovery-read').disabled);
+ assert.equal(f.id('invitation-create').disabled,true);
+ assert.equal(creates(f).length,1);
+});
+
+test('device pause discards a late create code while reconnect keeps the selected team and only the original UUID',async t=>{
+ const f=fixture(t),reply=deferred();
+ let item;
+ f.handlers.access=creationAccess;f.handlers.create=input=>{item=row(input.teamId,601,{invitationId:'before-pause',status:'expired'});return reply.promise;};
+ f.handlers.list=input=>input.requestId?receipt(input,[item]):f.page(input);
+ await f.login();await f.open();f.team('team-b');
+ await until(()=>f.id('invitation-team').value==='team-b'&&!f.id('invitation-create').disabled);
+ f.id('invitation-phone').value=PHONE;f.id('invitation-role').value='assistant';f.submit();
+ await until(()=>creates(f).length===1);
+ const input=creates(f)[0].input;
+ f.pause();await until(()=>f.id('workspace-view').hidden);
+ assert.equal(f.id('invitation-phone').value,'');
+ assert.equal(recoveryText(f),'');
+ reply.resolve(createdReply(item,input.requestId));await settle();
+ f.click('device-retry');await until(()=>!f.id('workspace-view').hidden);await f.open();
+ await until(()=>f.id('invitation-team').value==='team-b'&&recoveryText(f).includes(input.requestId));
+ assert.equal(f.id('invitation-create').disabled,true);
+ assert.equal(f.id('issued-invitation-code').value,'');
+ f.click('invitation-recovery-read');
+ await until(()=>recoveryText(f).includes('已过期')&&!f.id('invitation-create').disabled);
+ assert.deepEqual(exactReads(f)[0].input,{teamId:'team-b',requestId:input.requestId});
+ assert.equal(f.id('issued-invitation-code').value,'');
+ assert.equal(creates(f).length,1);
+});

@@ -10,6 +10,14 @@ import {hashPassword,verifyPassword,validPassword} from './passwords.mjs';
 import {canOperateTeam,hasAffiliation} from './administration-policy.mjs';
 import {ApiError,ID,deny,invalid,json,readJson,transaction} from './http-utils.mjs';
 const digest=value=>createHash('sha256').update(value).digest('hex');
+const CREATION_REQUEST_ID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+function creationRequestId(value){
+  if(typeof value!=='string'||value.length!==36||!CREATION_REQUEST_ID.test(value))invalid();
+  return value;
+}
+function creationInvitationId(teamId,userId,requestId){
+  return 'ei-'+digest(JSON.stringify(['employee-invitation-v1',teamId,userId,requestId])).slice(0,32);
+}
 const opaque=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{43}$/.test(value)&&Buffer.from(value,'base64url').toString('base64url')===value;
 const mask=phone=>phone.slice(0,5)+'****'+phone.slice(-4);
 const changed=()=>{throw new ApiError(409,'ACTIVATION_CONFLICT','账号或邀请状态已改变，请重新核对。');};
@@ -58,12 +66,25 @@ function invitationList(db,request,url,userId,teamId,now){
   }).sort(compareInvitations);
   const at=now();sameActor(db,request,userId,at);if(!canInvite(db,userId,teamId))deny();
   const page=rows.slice(0,limit),nextCursor=rows.length>limit?invitationPosition(userId,teamId,page[page.length-1]):null;
-  return json({invitations:page.map(row=>({invitationId:row.invitation_id,...publicInvitation(row),status:row.accepted_at!==null?'accepted':row.revoked_at!==null?'revoked':row.expires_at<=at?'expired':'pending'})),nextCursor});
+  return json({invitations:page.map(row=>invitationView(row,at)),nextCursor});
+}
+function invitationCreationRows(db,teamId,userId,invitationId){
+  return invitationRows(db,'invitation_id=? AND team_id=? AND invited_by=?',[invitationId,teamId,userId]);
+}
+function invitationCreationLookup(db,request,url,userId,teamId,now){
+  if(url.searchParams.size!==1)invalid();
+  const requestId=creationRequestId(url.searchParams.get('requestId'));
+  const rows=invitationCreationRows(db,teamId,userId,creationInvitationId(teamId,userId,requestId));
+  const at=now();sameActor(db,request,userId,at);if(!canInvite(db,userId,teamId)||rows.length>1)deny();
+  return json({invitations:rows.map(row=>invitationView(row,at)),nextCursor:null,requestId});
 }
 function canInvite(db,userId,teamId){return SOURCES.some(source=>source.authorized(db,userId,teamId));}
 function sameActor(db,request,userId,at){const actor=authenticated(db,request,at);if(actor.userId!==userId)deny();return actor;}
+function invitationRows(db,where,params){
+  return SOURCES.flatMap(source=>db.prepare('SELECT * FROM '+source.invitations+' WHERE '+where).all(...params).map(row=>({...row,source:source.name})));
+}
 function findInvitation(db,where,params){
-  const rows=SOURCES.flatMap(source=>db.prepare('SELECT * FROM '+source.invitations+' WHERE '+where).all(...params).map(row=>({...row,source:source.name})));
+  const rows=invitationRows(db,where,params);
   if(rows.length!==1)deny();return rows[0];
 }
 function activeMember(db,userId,teamId){return !!db.prepare(`SELECT 1 FROM team_memberships AS member
@@ -75,6 +96,10 @@ function liveInvitation(db,invitationCode,phone,at){
   return row;
 }
 function publicInvitation(row){return {teamId:row.team_id,role:row.role,phoneMasked:mask(row.phone),expiresAt:row.expires_at};}
+function invitationView(row,at){
+  const status=row.accepted_at!==null?'accepted':row.revoked_at!==null?'revoked':row.expires_at<=at?'expired':'pending';
+  return {invitationId:row.invitation_id,...publicInvitation(row),status};
+}
 function sameInvitation(before,after){return ['source','invitation_id','token_hash','team_id','phone','role','invited_by','created_at','expires_at'].every(key=>before[key]===after[key]);}
 function codeMac(row,code,pepper){return createHmac('sha256',pepper).update(JSON.stringify([row.challenge_id,row.invitation_id,row.invitation_hash,row.purpose,row.phone,row.expires_at,code])).digest('hex');}
 function validCode(row,code,pepper){return typeof code==='string'&&/^\d{6}$/.test(code)&&/^[a-f0-9]{64}$/.test(row.code_mac)&&timingSafeEqual(Buffer.from(row.code_mac,'hex'),Buffer.from(codeMac(row,code,pepper),'hex'));}
@@ -115,7 +140,7 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
     if(access){
       if(request.method!=='GET')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET'});
       if(!activeMember(db,identity.userId,teamId)&&!canOperateTeam(db,identity.userId,teamId))deny();
-      return json({canInvite:canInvite(db,identity.userId,teamId)});
+      return json(canInvite(db,identity.userId,teamId)?{canInvite:true,creationLookup:true}:{canInvite:false});
     }
     if(!canInvite(db,identity.userId,teamId))deny();
     if(revoke){
@@ -130,22 +155,34 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
         return json({revoked:true});
       });
     }
-    if(request.method==='GET')return invitationList(db,request,url,identity.userId,teamId,now);
+    if(request.method==='GET'){
+      return url.searchParams.has('requestId')?invitationCreationLookup(db,request,url,identity.userId,teamId,now):
+        invitationList(db,request,url,identity.userId,teamId,now);
+    }
     if(request.method!=='POST')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET, POST'});
-    const body=await readJson(request,['phone','role']),phone=normalizePhone(body.phone);
+    const body=await readJson(request,['phone','role','requestId']),phone=normalizePhone(body.phone);
     if(!['intern','assistant'].includes(body.role))invalid();
+    const requestId=Object.hasOwn(body,'requestId')?creationRequestId(body.requestId):null;
     sameActor(db,request,identity.userId,now());if(!canInvite(db,identity.userId,teamId))deny();
-    const subscriptionGuard=captureManagementSubscriptionGuard(db,teamId,{now,identityProviders,subscriptionEnforcement});
+    const subscriptionOptions={now,identityProviders,subscriptionEnforcement};
+    const legacyGuard=requestId===null?captureManagementSubscriptionGuard(db,teamId,subscriptionOptions):null;
     consume(db,'employee-invite:'+identity.userId,now(),15*60000,20);
     return transaction(db,()=>{
-      sameActor(db,request,identity.userId,now());const source=SOURCES.find(value=>value.authorized(db,identity.userId,teamId));if(!source)deny();subscriptionGuard?.assertCurrent();
+      sameActor(db,request,identity.userId,now());const source=SOURCES.find(value=>value.authorized(db,identity.userId,teamId));if(!source)deny();
+      const storedInvitationId=requestId===null?null:creationInvitationId(teamId,identity.userId,requestId);
+      if(storedInvitationId!==null&&invitationCreationRows(db,teamId,identity.userId,storedInvitationId).length){
+        throw new ApiError(409,'INVITATION_CREATION_ALREADY_RECORDED','该邀请已记录，请核对原申请。');
+      }
+      const subscriptionGuard=requestId===null?legacyGuard:captureManagementSubscriptionGuard(db,teamId,subscriptionOptions);
+      subscriptionGuard?.assertCurrent();
       const seatAdmission = captureSeatAdmission(db, teamId, {now,seatCapacityEnforcement});
-      const invitationCode=randomBytes(32).toString('base64url'),invitationId=randomUUID(),at=now(),expiresAt=at+24*60*60000;
+      const invitationCode=randomBytes(32).toString('base64url'),invitationId=storedInvitationId??randomUUID(),at=now(),expiresAt=at+24*60*60000;
       db.prepare(`INSERT INTO ${source.invitations}(invitation_id,token_hash,team_id,phone,role,invited_by,created_at,expires_at)
         VALUES (?,?,?,?,?,?,?,?)`).run(invitationId,digest(invitationCode),teamId,phone,body.role,identity.userId,at,expiresAt);
       const publishedAt=subscriptionGuard?.assertCurrent();
       if (seatAdmission && expiresAt <= seatAdmission.assertPublished(publishedAt)) changed();
-      return json({invitationCode,invitationId,expiresAt,teamId,role:body.role,phoneMasked:mask(phone)},201);
+      return json({invitationCode,invitationId,expiresAt,teamId,role:body.role,phoneMasked:mask(phone),
+        ...(requestId===null?{}:{requestId})},201);
     });
   }
   if(!['preview','challenges','activate'].includes(action))deny();

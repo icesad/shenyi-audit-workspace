@@ -33,7 +33,7 @@ test('onboarding capability is honest, supplier-independent, and separate from o
   const i=await invite(f);assert.equal((await call(f,'/api/auth/onboarding/challenges',{providers:{},body:{invitationCode:i.invitationCode,phone:PHONE}})).status,503);assert.equal(f.sent.length,0);
 });
 test('access is separate member.invite permission, never inferred from role or another team',async t=>{
-  const f=await fixture(t);assert.deepEqual((await call(f,admin+'/access',{method:'GET',token:f.manager})).data,{canInvite:true});
+  const f=await fixture(t);assert.deepEqual((await call(f,admin+'/access',{method:'GET',token:f.manager})).data,{canInvite:true,creationLookup:true});
   assert.deepEqual((await call(f,admin+'/access',{method:'GET',token:f.intern})).data,{canInvite:false});
   assert.equal((await call(f,admin+'/access',{method:'GET',token:f.foreign})).status,404);
   f.db.prepare("UPDATE team_admin_grants SET status='revoked' WHERE user_id='partner-a'").run();assert.deepEqual((await call(f,admin+'/access',{method:'GET',token:f.partner})).data,{canInvite:false});
@@ -44,6 +44,83 @@ test('manager may issue only intern/assistant invitations and list never returns
   const row=f.db.prepare('SELECT * FROM team_employee_invitations').get();assert.equal(row.token_hash,hash(i.invitationCode));assert.ok(!JSON.stringify(row).includes(i.invitationCode));
   const listed=await call(f,admin,{method:'GET',token:f.manager});assert.equal(listed.data.invitations.length,1);assert.equal(listed.data.invitations[0].status,'pending');assert.ok(!listed.raw.includes(PHONE));assert.ok(!listed.raw.includes(i.invitationCode));assert.ok(!listed.raw.includes('token_hash'));
   for(const role of ['manager','partner','owner',''])assert.equal((await call(f,admin,{token:f.manager,body:{phone:PHONE2,role}})).status,400);assert.equal(count(f,'team_employee_invitations'),1);
+});
+test('creation receipts look up only the authorized issuer and team and repeated requests never duplicate rows',async t=>{
+  const f=await fixture(t),requestId=randomUUID(),lookup=admin+'?requestId='+requestId;
+  const body={phone:PHONE,role:'intern',requestId};
+  const missing={invitations:[],nextCursor:null,requestId};
+  assert.deepEqual((await call(f,lookup,{method:'GET',token:f.manager})).data,missing);
+  const submissions=await Promise.all([
+    call(f,admin,{token:f.manager,body}),call(f,admin,{token:f.manager,body}),
+  ]);
+  assert.deepEqual(submissions.map(reply=>reply.status).sort(),[201,409]);
+  const created=submissions.find(reply=>reply.status===201).data;
+  const duplicate=submissions.find(reply=>reply.status===409);
+  const invitationId='ei-'+hash(JSON.stringify(['employee-invitation-v1','team-a','manager-a',requestId])).slice(0,32);
+  assert.equal(duplicate.data.error.code,'INVITATION_CREATION_ALREADY_RECORDED');
+  assert.equal(duplicate.raw.includes(created.invitationCode),false);
+  assert.equal(duplicate.raw.includes(invitationId),false);
+  assert.equal(created.requestId,requestId);
+  assert.equal(created.invitationId,invitationId);
+  assert.equal(count(f,'team_employee_invitations'),1);
+
+  const receipt={invitationId,teamId:'team-a',role:'intern',phoneMasked:created.phoneMasked,expiresAt:created.expiresAt,status:'pending'};
+  const recovered=await call(f,lookup,{method:'GET',token:f.manager});
+  assert.deepEqual(recovered.data,{invitations:[receipt],nextCursor:null,requestId});
+  assert.equal(recovered.raw.includes(created.invitationCode),false);
+  assert.equal(recovered.raw.includes(PHONE),false);
+  assert.deepEqual((await call(f,lookup,{method:'GET',token:f.partner})).data,missing);
+  assert.equal((await call(f,lookup,{method:'GET',token:f.intern})).status,404);
+  assert.equal((await call(f,lookup,{method:'GET',token:f.foreign})).status,404);
+  const otherTeam=admin.replace('team-a','team-b');
+  assert.deepEqual((await call(f,otherTeam+'?requestId='+requestId,{method:'GET',token:f.foreign})).data,missing);
+  const otherIssuer=await call(f,admin,{token:f.partner,body});
+  const otherTeamCreated=await call(f,otherTeam,{token:f.foreign,body});
+  assert.equal(otherIssuer.status,201);
+  assert.equal(otherTeamCreated.status,201);
+  assert.equal(new Set([invitationId,otherIssuer.data.invitationId,otherTeamCreated.data.invitationId]).size,3);
+  assert.deepEqual((await call(f,lookup,{method:'GET',token:f.manager})).data.invitations,[receipt]);
+
+  for(const malformed of [null,{},'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA','00000000-0000-5000-8000-000000000000',
+    '00000000-0000-4000-7000-000000000000',requestId+'\n']){
+    assert.equal((await call(f,admin,{token:f.manager,body:{...body,requestId:malformed}})).status,400);
+    assert.equal((await call(f,admin+'?requestId='+encodeURIComponent(malformed),{method:'GET',token:f.manager})).status,400);
+  }
+  for(const mixedQuery of ['&limit=1','&after=anything','&requestId='+requestId]){
+    assert.equal((await call(f,lookup+mixedQuery,{method:'GET',token:f.manager})).status,400);
+  }
+  assert.equal(count(f,'team_employee_invitations'),3);
+});
+
+test('creation lookup and duplicate protection survive an invitation authority source change',async t=>{
+  const f=await fixture(t),requestId=randomUUID(),body={phone:PHONE,role:'assistant',requestId};
+  const first=await call(f,admin,{token:f.manager,body});
+  assert.equal(first.status,201);
+  const lookup=admin+'?requestId='+requestId;
+  f.db.prepare("INSERT INTO team_operators VALUES ('team-a','manager-a','administrator','active')").run();
+  f.db.prepare("UPDATE team_admin_grants SET status='revoked' WHERE user_id='manager-a'").run();
+  assert.equal((await call(f,lookup,{method:'GET',token:f.manager})).status,404);
+  f.db.prepare(`INSERT INTO team_administrator_business_roles(team_id,user_id,role,status,member_role,reviewed_by,reviewed_at)
+    VALUES ('team-a','manager-a','manager','active','manager','invitee-a',?)`).run(f.now);
+  const inherited=await call(f,lookup,{method:'GET',token:f.manager});
+  assert.equal(inherited.status,200);
+  assert.equal(inherited.data.invitations[0].invitationId,first.data.invitationId);
+  const duplicate=await call(f,admin,{token:f.manager,body});
+  assert.equal(duplicate.status,409);
+  assert.equal(duplicate.data.error.code,'INVITATION_CREATION_ALREADY_RECORDED');
+  assert.equal(count(f,'team_employee_invitations'),1);
+  assert.equal(count(f,'team_operator_employee_invitations'),0);
+  assert.equal((await call(f,admin+'/'+first.data.invitationId+'/revoke',{token:f.manager,body:{}})).status,200);
+  assert.equal((await call(f,lookup,{method:'GET',token:f.manager})).data.invitations[0].status,'revoked');
+  assert.equal((await call(f,admin,{token:f.manager,body})).data.error.code,'INVITATION_CREATION_ALREADY_RECORDED');
+
+  const nextRequestId=randomUUID(),next=await call(f,admin,{token:f.manager,body:{...body,requestId:nextRequestId}});
+  assert.equal(next.status,201);
+  assert.equal(count(f,'team_operator_employee_invitations'),1);
+  f.now=next.data.expiresAt;
+  const expired=await call(f,admin+'?requestId='+nextRequestId,{method:'GET',token:f.manager});
+  assert.equal(expired.data.invitations[0].invitationId,next.data.invitationId);
+  assert.equal(expired.data.invitations[0].status,'expired');
 });
 test('new staff explicitly verifies and sets own password, creates one scoped membership and no session or grants',async t=>{
   const f=await fixture(t),i=await invite(f),c=await challenge(f,i),before=count(f,'team_sessions');
