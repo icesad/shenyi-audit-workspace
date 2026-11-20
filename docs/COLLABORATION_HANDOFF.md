@@ -1,23 +1,23 @@
 # 审易双人开发交接
 
-更新于 2026-11-20。两位开发者从下面的协作分支各开任务分支。协作基线包含团队客户端、服务端和官网。本轮交接纳入截至 `2b4b825` 的功能及验证记录，历史四来源报告单独验收。
+更新于 2026-11-21。两位开发者从同一协作分支各开任务分支。协作基线提供团队客户端、服务端、官网及合成测试。米老师可以先交接一项已有的审计业务改动，双方用同一提交和同一合成样例验收。
 
 | 项目 | 当前交接点 |
 | --- | --- |
 | 仓库 | 私有的 [icesad/shenyi-audit-workspace](https://github.com/icesad/shenyi-audit-workspace) |
 | 本阶段协作基线 | [`codex/team-collaboration-handoff-20261120`](https://github.com/icesad/shenyi-audit-workspace/tree/codex/team-collaboration-handoff-20261120) |
-| 本轮源码和验收记录截至 | [`2b4b825`](https://github.com/icesad/shenyi-audit-workspace/commit/2b4b8255034c9f977ad8d8d19f12240a96b78e52)，交接文档随分支继续更新 |
+| 本轮代码与验收记录 | [`8c50b8c`](https://github.com/icesad/shenyi-audit-workspace/commit/8c50b8c4bf38282c36e5622ea205ae4250d1f800)，以协作分支顶端提交为实际拉取版本 |
 | 当前收款候选 | 官网报价、锁单、扫码付款、查单与超时关单。Windows 客户端可打开或继续官网购买。各阶段提交和实际验收范围见下文。 |
 | 米老师的 GitHub 账号 | `mixue117`，已核对具有本仓库读写权限 |
 | 历史四来源报告 | `work/report-four-sources`，仍在草稿 PR #2，等待业务验收。 [查看草稿](https://github.com/icesad/shenyi-audit-workspace/pull/2) |
 
-协作分支承接团队应用和产品官网的评审候选。产品负责人核对远端提交后，以快进方式更新这条基线。两人的任务 PR 都先进入协作分支。本次候选待合入 `main` 和发布验收。
+两人的任务 PR 都以协作分支为目标。本次候选待合入 `main` 和发布验收。
 
-## 分工和第一件事
+## 分工和第一份业务提交
 
-- **米老师**负责审计流程、原表格式、底稿及报告规则。已有业务代码时，可以直接交接一笔具体修改。先保存在原目录或原工作分支，并记录该版本的提交号、修改目录、演示步骤与合成样例；再把选定提交或文件差异整理到从协作基线新建的业务分支，逐项核对。旧开发目录留作备份，避免整目录覆盖协作克隆。若手头版本的基线还不清楚，先在 Issue 记录可识别的版本和涉及文件，双方核对后再导入。
+- **米老师**负责审计流程、原表格式、底稿及报告规则，并确认预期业务结果。已有代码时，先保存原开发目录和版本，在 Issue 记录原提交号、涉及文件、想采用的业务规则及演示步骤。从协作分支建立自己的业务分支，挑出与该任务有关的提交或文件差异，逐项核对后推送。原版本无提交号时，记录软件版本或修改日期及准确文件名，保留原目录供双方对照。
 - **产品负责人**负责桌面易用性、组织和项目权限、账号与设备、订阅席位、官网及上线，负责技术验收与版本集成。接到业务分支后，先核对共同改动的入口、项目权限和数据兼容，再复跑对应工作流。收款上线目前还要确认正式价格目录和商户配置。 [支付接入说明](PAYMENT_CHANNEL_PREPARATION.md)
-- 业务跨到权限、存储或界面时，两人先在 Issue 约定改动的文件、接口和验收人。底稿的专业复核、新冻结和重开规则由米老师确认。 [底稿三权与业务边界](WORKPAPER_ACCESS_CONTRACT.md)
+- 业务跨到权限、存储或界面时，两人先在 Issue 约定改动的文件、接口和验收人。底稿的专业复核、新冻结和重开规则由米老师确认。现有底稿查阅、填写、导出权限和版本保存按已有合同与验收记录执行。 [底稿三权与业务边界](WORKPAPER_ACCESS_CONTRACT.md) · [模块入口和文件](ARCHITECTURE.md)
 
 四来源报告的历史草稿位于 `work/report-four-sources@894078b`。米老师可在 PR #2 复核四类来源、底稿填写、草稿保存和 Word 导出。选择要保留的历史改动后，在 Issue 写明采用的提交、业务规则和验收样例，再从协作基线开独立集成分支提交新 PR。米老师签收业务结果，产品负责人核对现有立项、账表、权限及底稿入口的回归。 [历史草稿 PR #2](https://github.com/icesad/shenyi-audit-workspace/pull/2) · [报告合并预演记录](STATUS.md#2026-11-20-历史报告草稿隔离合并预演)
 
@@ -69,15 +69,22 @@ npm --prefix desktop ci --ignore-scripts
 npm --prefix desktop run setup
 ```
 
-Windows 随后可双击 `Start-Team-Candidate-Preview.cmd` 打开独立合成桌面。macOS 可在根目录运行 `node scripts/team-isolated-preview.mjs`，实机仍待验收。`Start-Team-Website-Checkout-Candidate.cmd` 用于合成订单演练。新版微信付款须使用独立受管 HTTPS 配置。原有审核预览继续保留，2026-11-20 的两个本机入口复查均返回 HTTP 200。共享库保全备份、隔离升级预演及实际共享库切换是不同验收项，实际切换仍待验。 [桌面依赖](../desktop/README.md#本机运行) · [开发环境](DEVELOPMENT.md) · [独立团队桌面预览](ISOLATED_CANDIDATE_PREVIEW.md) · [官网预览](../website/README.md)
+Windows 可双击 `Start-Team-Candidate-Preview.cmd` 打开独立合成桌面。该入口需要可写的 D 盘。缺少 D 盘时可先用浏览器工作台。macOS 可在根目录运行 `node scripts/team-isolated-preview.mjs`，实机仍待验收。官网合成订单一键演练使用完整解压的 Windows 双人评审包中的 `Start-Team-Website-Checkout-Candidate.cmd`，需要包内的 Node 运行时。微信 Native 付款流程需要独立的受管 HTTPS 配置。共享库保全备份和隔离升级预演已有记录，实际共享库切换仍待验。 [桌面依赖](../desktop/README.md#本机运行) · [开发环境](DEVELOPMENT.md) · [独立团队桌面预览](ISOLATED_CANDIDATE_PREVIEW.md) · [官网预览及下单演练](../website/README.md)
 
 开发者可从仓库根目录复跑项目检查和直接相关回归。
 
 ```sh
 npm run check:repo
 npm run test:tools
-node --test tests/team-wechat-native-website.test.cjs tests/team-desktop-billing-ui.test.cjs
 ```
+
+按任务范围加跑专项。业务验收在独立环境记录操作入口、预期和实际结果。需要浏览器或特定样本的回归，可查开发文档配置对应依赖。 [测试说明](DEVELOPMENT.md#2-测试命令)
+
+| 修改范围 | 可复跑的合成用例 |
+| --- | --- |
+| 项目授权、采集任务、团队底稿 | `node --test tests/team-project-access-core.test.cjs tests/team-task-management-core.test.cjs tests/team-workpaper-http-resume.test.cjs` |
+| 官网扫码付款、桌面账务 | `node --test tests/team-wechat-native-website.test.cjs tests/team-desktop-billing-ui.test.cjs` |
+| 微信账单和 Linux 监控 | `node --test tests/team-wechat-native-fund-bill-parser.test.cjs tests/team-wechat-native-reconciliation-cli.test.cjs tests/team-service-release-check.test.cjs` |
 
 ## 官网与微信支付进度
 
@@ -89,6 +96,7 @@ node --test tests/team-wechat-native-website.test.cjs tests/team-desktop-billing
 | `27de470` | 到期未付款原单可显式请求关闭。已请求出码的订单按验签查询、关单和复查确认。覆盖本机合成应答及隔离账本迁移。 |
 | `8ca7a91` | 按北京时间账单日申请、下载和核验普通商户 `ALL` 账单，只读核对订单和收款。463 项相关检查及独立复跑的 18 项检查通过，零失败或跳过。 |
 | `021ad76` | 从该账单选定单笔退款，以本应用原单、可信收款和微信验签查询核对当前状态。合成环境中 474 项相关检查和 29 项独立复跑通过。真实退款执行、期限或席位处置仍待确认。 |
+| `6fa09e8`、`96008cd` | 只读核对基本账户资金账单和较早账单日退款。跨日退款专项共有 492 项相关检查通过。 |
 
 金额不符、缺单或退款等差异写入受控对账报告。真实商户账单、实际差异处置和退款执行仍待验收。拉取协作分支后，可按对账文件查看远端最新相关提交。 [支付接入与对账说明](PAYMENT_CHANNEL_PREPARATION.md#商户交易账单对账) · [阶段记录与测试证据](../进度.md)
 
@@ -107,12 +115,12 @@ node --test tests/team-wechat-native-trade-bill-parser.test.cjs tests/team-wecha
 
 | 范围 | 已验证 | 待实际验收 |
 | --- | --- | --- |
-| Windows `e28ae2a` | 双人评审包一键运行合成订单。独立 `Shenyi.exe` 经受管 HTTPS 核对设备绑定、重启后恢复官网原单和权益到账。 | 正式签名 MSI 的安装、升级及回退。 |
+| Windows `e28ae2a` | 双人评审包一键运行合成订单。桌面重启后可恢复官网原单并核对权益到账。直接运行 Windows Installer 管理映像验证双团队隔离，使用该映像的精确副本验收四职级采集、原生选件上传、预览和撤权。 | 正式签名 MSI 的安装、升级及回退。 |
 | macOS `e28ae2a` | Apple 芯片和 Intel 两包均完成离线签前核验。 | Developer ID 签名、公证、Mac 实机安装、绑定和升级。 |
-| Linux 验收记录 `2b4b825` | 隔离 Ubuntu 实测签名部署从 `e28ae2a` 切换至 `b53f334`，核对加密恢复，再回退原版。核对七张 Native 账本表和合成原件，恢复演练库按预期拒绝启动。 | 国内云生产配置、正式证书、真实商户及回调。 |
+| Linux `2b4b825`、`8c50b8c` | 隔离 Ubuntu 实测签名部署、账本加密恢复和回退。Linux 监控通过 10 次实际 systemd 定时调用，覆盖低磁盘、停服、恢复及旧版兼容。 | 国内云生产配置、外部告警送达、正式证书、真实商户及回调。 |
 | 审计业务 | 已有历史报告预演和合成结果可复跑。 | 米老师确认采用的专业规则及合并范围，双方签收。实际共享库升级和获准资料试点单独安排。 |
 
-签前构件、原开发机 `D:/codex-temp/` 下的验收日志与本机预览由原机保管。协作者从 GitHub 拉取源码、文档和合成测试，在各自环境重跑。 [详细验收记录](STATUS.md) · [macOS 接收步骤](MACOS_DESKTOP_CANDIDATE.md#2026-11-20-协作版本签前交接) · [Linux 发布和回退](LINUX_TEAM_DEPLOYMENT.md#重新启用已签版本)
+协作者从 GitHub 拉取源码、文档和合成测试，在各自电脑复跑。安装评审包、受管演练日志和原有预览由原开发机保管。 [最新验收记录](STATUS.md) · [Windows 管理映像实测](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-管理映像客户端的团队资料实测) · [macOS 接收步骤](MACOS_DESKTOP_CANDIDATE.md#2026-11-20-协作版本签前交接) · [Linux 发布和回退](LINUX_TEAM_DEPLOYMENT.md#重新启用已签版本)
 
 生产价格目录、增购折算分母、订单时效和退款后权益处置由产品负责人确认。上线申请以已确认的上海企业同主体收款为基础，先核对域名和阿里云资源，再按属地手续与正式回执推进。 [上线申请与域名服务器步骤](LAUNCH_INITIAL_APPLICATION_PACKET.md) · [商业化路线图](COMMERCIALIZATION_ROADMAP.md)
 
