@@ -1,30 +1,30 @@
 # 审易双人开发交接
 
-更新于 2026-11-20。适合产品负责人和米老师从同一套代码开始开发。
+更新于 2026-11-20。米老师和产品负责人从同一条协作分支开任务分支，在私有仓库里提交与复核改动。
 
 | 项目 | 当前交接点 |
 | --- | --- |
 | 仓库 | 私有的 [icesad/shenyi-audit-workspace](https://github.com/icesad/shenyi-audit-workspace) |
-| 本阶段协作基线 | `codex/team-collaboration-handoff-20261120` |
-| 本次交接的功能提交 | `a114502`，含微信支付 Native 原单扫码、验签查单和权益兑现 |
+| 本阶段协作基线 | [`codex/team-collaboration-handoff-20261120`](https://github.com/icesad/shenyi-audit-workspace/tree/codex/team-collaboration-handoff-20261120) |
+| 当前收款候选 | 官网报价、锁单、扫码付款、查单与超时关单。Windows 客户端可打开或继续官网购买。各阶段提交和实际验收范围见下文。 |
 | 米老师的 GitHub 账号 | `mixue117`，已核对具有本仓库读写权限 |
 | 历史四来源报告 | `work/report-four-sources`，仍在草稿 PR #2，等待业务验收。 [查看草稿](https://github.com/icesad/shenyi-audit-workspace/pull/2) |
 
-协作基线承接原评审候选，并纳入微信支付的锁单、可信收款账本、年费和席位兑现、HTTPS 回调及已锁定订单的官网付款。两位负责人在这条基线上集成开发，发布验收另走 `main`。
+协作分支承接团队应用和产品官网的评审候选。产品负责人核对远端提交后，以快进方式更新这条基线。两人的任务 PR 都先进入协作分支。本次候选待合入 `main` 和发布验收。
 
 ## 分工和第一件事
 
-- **米老师**负责审计流程、原表格式、底稿及报告规则。先从一项报告或底稿业务规则开始，在 Issue 记录入口、预期、可分享的合成样例和验收条件。已经在自己电脑开发的业务代码可以单开分支提交，并在 PR 中写明原始基线、涉及的模块和需核对的结果。
-- **产品负责人**负责桌面体验、团队权限、设备、订阅席位、官网及上线。收款侧下一项是接获准的正式报价和服务端锁单，再将桌面订单详情接到官网付款入口。正式商户和上线手续随实际条件推进。
-- 若同一功能同时涉及业务和技术，两人先在 Issue 约定各改的文件和验收人，再分别从协作基线开分支。
+- **米老师**负责审计流程、原表格式、底稿及报告规则。先选一项报告或底稿规则，在 Issue 记录入口、预期、合成样例和验收条件。已有业务代码可以单开任务分支提交，并在 PR 写明原始基线、涉及模块和需要复核的结果。
+- **产品负责人**负责桌面易用性、组织和项目权限、账号与设备、订阅席位、官网及上线，负责技术验收与版本集成。当前收款工作聚焦账单核对、生产目录确认和商户上线准备。 [支付接入说明](PAYMENT_CHANNEL_PREPARATION.md)
+- 业务跨到权限、存储或界面时，两人先在 Issue 约定改动的文件、接口和验收人。底稿的专业复核、新冻结和重开规则由米老师确认。 [底稿三权与业务边界](WORKPAPER_ACCESS_CONTRACT.md)
 
-四来源报告的历史草稿位于 `work/report-four-sources` 的 `894078b`。米老师可在 PR #2 复核四类来源、底稿填写和 Word 导出。若要接回历史代码，先在 Issue 记录采用的提交和业务规则，再从协作基线开独立集成分支，将选定改动纳入新 PR。由米老师核对业务结果，产品负责人核对集成及回归。 [历史草稿 PR #2](https://github.com/icesad/shenyi-audit-workspace/pull/2)
+四来源报告的历史草稿位于 `work/report-four-sources@894078b`。米老师可在 PR #2 复核四类来源、底稿填写、草稿保存和 Word 导出。选择要保留的历史改动后，在 Issue 写明采用的提交、业务规则和验收样例，再从协作基线开独立集成分支提交新 PR。米老师签收业务结果，产品负责人核对现有立项、账表、权限及底稿入口的回归。 [历史草稿 PR #2](https://github.com/icesad/shenyi-audit-workspace/pull/2) · [报告合并预演记录](STATUS.md#2026-11-20-历史报告草稿隔离合并预演)
 
 ## 把代码取到自己的电脑
 
-**只看资料或反馈。** 用自己的 GitHub 账号登录，打开仓库，在分支选择器切到 `codex/team-collaboration-handoff-20261120`。可以直接浏览文档或在 Issues 留下脱敏反馈。 [米老师操作步骤](GITHUB_BEGINNER_MI.md)
+**只看资料或反馈。** 用自己的 GitHub 账号登录，打开仓库，在分支选择器切到协作分支。可以直接浏览文件，或到 Issues 留下脱敏反馈。 [米老师操作步骤](GITHUB_BEGINNER_MI.md)
 
-**用 GitHub Desktop 开发。** 首次用 **File → Clone Repository**，选择审易私有仓库。已有克隆时先检查 **Changes**，保存手头的修改，再点 **Fetch origin**。在 **Current Branch** 找到上述协作基线并切换。从该分支点 **New Branch** 建自己的任务分支，例如 `work/mi-report-issue-编号` 或 `work/product-billing-issue-编号`。
+**用 GitHub Desktop 开发。** 初次点 **File → Clone Repository**，选择审易私有仓库。已克隆时先检查 **Changes**，把手头修改保存在原工作分支。点 **Fetch origin** 后，在 **Current Branch** 切换到协作分支。若显示 **Pull origin**，点一下取到最新提交。随后点 **New Branch**，用 Issue 编号命名自己的任务分支，例如 `work/mi-report-issue-123` 或 `work/product-billing-issue-123`。
 
 **用终端克隆。** 在准备存放源码的开发目录运行以下命令。已有本地仓库时使用下方第二组命令。
 
@@ -38,7 +38,7 @@ git fetch origin
 git switch --create codex/team-collaboration-handoff-20261120 --track origin/codex/team-collaboration-handoff-20261120
 ```
 
-本地已经有同名协作分支时，使用 `git switch codex/team-collaboration-handoff-20261120` 和 `git pull --ff-only`。开发前通过 `git status --short --branch` 核对分支和已有改动。
+本地已有同名协作分支时，用 `git switch codex/team-collaboration-handoff-20261120` 和 `git pull --ff-only` 更新。切换前运行 `git status --short --branch`，先在原工作分支保存已有修改。如果无法快进，保留本地提交并请产品负责人一起核对。
 
 **开自己的任务分支。** 下面以 Issue #123 作命令示例，实际使用项目中的 Issue 编号。
 
@@ -47,7 +47,7 @@ git fetch origin
 git switch --no-track -c work/mi-report-issue-123 origin/codex/team-collaboration-handoff-20261120
 ```
 
-任务分支完成提交后运行 `git push -u origin HEAD`。使用 GitHub Desktop 时，点击 **Publish branch** 推送，再到 GitHub 建立 PR。
+产品方从同一远端分支建任务分支，使用自己的 Issue 编号和任务名称。两人各自在自己的分支完成开发。
 
 ## 本地运行和复验
 
@@ -59,26 +59,58 @@ npm ci --ignore-scripts
 npm run dev
 ```
 
-工作台在 `http://127.0.0.1:8773/`。官网静态预览可另外运行 `node scripts/website-preview.mjs`，Windows 也可双击 `Start-Website-Preview.cmd`。按终端输出打开本机地址，用 `Ctrl+C` 停止。
+工作台在 `http://127.0.0.1:8773/`。官网静态预览可另外运行 `node scripts/website-preview.mjs`，Windows 也可双击 `Start-Website-Preview.cmd`。按终端输出打开本机地址，用 `Ctrl+C` 停止自己启动的服务。
 
-安装 [桌面依赖](../desktop/README.md#本机运行) 后，Windows 可双击 `Start-Team-Candidate-Preview.cmd` 打开独立合成桌面。macOS 可在根目录运行 `node scripts/team-isolated-preview.mjs`，仍需做实机验收。Windows 完整评审包还有 `Start-Team-Website-Checkout-Candidate.cmd`，可演练既有合成订单流程。 [开发环境](DEVELOPMENT.md) · [独立团队桌面预览](ISOLATED_CANDIDATE_PREVIEW.md) · [官网预览](../website/README.md)
+在仓库根目录安装桌面依赖：
 
-开发者可从仓库根目录复跑本轮检查。
+```sh
+npm --prefix desktop ci --ignore-scripts
+npm --prefix desktop run setup
+```
+
+Windows 随后可双击 `Start-Team-Candidate-Preview.cmd` 打开独立合成桌面。macOS 可在根目录运行 `node scripts/team-isolated-preview.mjs`，实机仍待验收。Windows 评审包里的 `Start-Team-Website-Checkout-Candidate.cmd` 用于合成订单演练。新版微信付款须使用独立受管 HTTPS 配置。已有审核窗口按用户决定保留，两条保留预览入口复查均返回 HTTP 200。实际共享库有只读备份与隔离副本升级预演记录。 [桌面依赖](../desktop/README.md#本机运行) · [开发环境](DEVELOPMENT.md) · [独立团队桌面预览](ISOLATED_CANDIDATE_PREVIEW.md) · [官网预览](../website/README.md)
+
+开发者可从仓库根目录复跑项目检查和直接相关回归。
 
 ```sh
 npm run check:repo
 npm run test:tools
-node --test tests/team-wechat-native-website.test.cjs
+node --test tests/team-wechat-native-website.test.cjs tests/team-desktop-billing-ui.test.cjs
 ```
 
-功能提交 `a114502` 的 172 项相关回归和 9 项本机 HTTPS 集成全部通过。另有独立复跑的 9 项集成测试、24 项 Linux 发布脚本测试及桌面和移动尺寸的 Chrome 页面测试。微信付款页用合成商户和已锁定原单验证。正式报价下单、桌面付款入口、真实商户及对账、Mac 安装升级仍待验收。历史进度中的 `D:/codex-temp/` 日志在原开发电脑保存，可用本页命令复验共享源码。 [当前进度](../进度.md) · [支付接入说明](PAYMENT_CHANNEL_PREPARATION.md#授权官网原单付款)
+## 官网与微信支付进度
+
+| 功能提交 | 可接续的功能和已验证范围 |
+| --- | --- |
+| `a114502` | 从短时授权打开已锁定原单，显式获取付款码和主动验签查单。通过本机受管 HTTPS 及 Chrome 桌面、移动尺寸验证。 |
+| `8d74d72` | 官网选择席位、报价及确认锁单。续费核对已占席和邀请预留，期中增购在原到期日以内。通过合成目录和收款应答验证。 |
+| `89648ca` | 从 Windows 桌面「订阅与席位」打开或继续本次购买、按编号打开原单。以本机受管 HTTPS 和实际 Electron 核对跨重启复用原单。签前便携候选另有实启记录。 |
+| `27de470` | 到期未付款原单可显式请求关闭。已请求出码的订单按验签查询、关单和复查确认。覆盖本机合成应答及隔离账本迁移。 |
+| `8ca7a91` | 按北京时间账单日申请、下载和核验普通商户 `ALL` 账单，只读核对订单和收款。463 项相关检查及独立复跑的 18 项检查通过，零失败或跳过。 |
+
+金额不符、缺单或退款等差异写入受控对账报告。真实商户账单、实际差异处置和退款执行仍待验收。拉取协作分支后，可按对账文件查看远端最新相关提交。 [支付接入与对账说明](PAYMENT_CHANNEL_PREPARATION.md#商户交易账单对账) · [阶段记录与测试证据](../进度.md)
+
+```sh
+git fetch origin
+git log -1 --format="%H %s" origin/codex/team-collaboration-handoff-20261120 -- server/team/wechat-native-reconciliation.mjs
+```
+
+确认上述文件在当前检出的分支后，可复跑合成对账用例。
+
+```sh
+node --test tests/team-wechat-native-trade-bill-parser.test.cjs tests/team-wechat-native-reconciliation.test.cjs tests/team-wechat-native-reconciliation-cli.test.cjs
+```
+
+原开发机的 `D:/codex-temp/` 日志记录本地复验和隔离预览。GitHub 上的源码与命令供两人的电脑各自复现。正式商户、生产 HTTPS 回调及部署、Windows 签名安装升级、macOS 实机与公证、实际共享库及真实资料试点需各自留存验收记录。价格、增购折算分母、订单时效和退款后权益处置由产品负责人确认。上线申请以已确认的上海企业同主体收款为基础，先核对域名和阿里云资源状态及属地手续，再按正式回执推进。 [上线申请与域名服务器步骤](LAUNCH_INITIAL_APPLICATION_PACKET.md) · [商业化路线图](COMMERCIALIZATION_ROADMAP.md)
 
 ## 提交、验收和合并
 
-1. 任务分支改好后运行直接相关测试。先用 `git status` 检查文件，再提交本任务的源码和文档。
-2. 将自己的任务分支推到同一个私有仓库。建立 PR 时明确选择 **base** 为 `codex/team-collaboration-handoff-20261120`，**compare** 为自己的任务分支。触及历史报告时，在正文注明 PR #2 和采用的报告提交。
-3. PR 写明关联 Issue、分支及提交号、实际改动、通过／失败／跳过项和对方复现步骤。米老师确认业务规则，产品负责人验收应用、权限和技术。验收后的集成由负责人处理。需要解决冲突时先对照两方改动和业务预期，再复跑受影响的流程。
-4. 源码和文档随 Git 同步。客户账套、底稿原件、合同、浏览器业务数据、密钥及本地数据库留在获准的专用环境。用合成样例复现问题，只在 Issue 和 PR 留脱敏结果。
+1. 在 Issue 写明操作入口、范围、期望结果、样例和验收人。开工后只提交本次约定的源码和文档。提交前运行直接相关测试，并用 `git status --short` 和 `git diff --cached --stat` 核对待提交文件。
+2. 在自己的任务分支 Commit。用 GitHub Desktop 点 **Publish branch** 或 **Push origin**，也可在终端运行 `git push -u origin HEAD`。推送完成后在 GitHub 的分支选择器核对分支和提交号。
+3. 建立 PR 时将 **base** 选为 `codex/team-collaboration-handoff-20261120`，将 **compare** 选为自己的任务分支。正文列出关联 Issue、改动范围、提交号、复现步骤、通过／失败／跳过及待验收项。涉及历史报告时附 PR #2 和采用的提交。
+4. 米老师确认审计业务结果，产品负责人核对应用、权限及测试。出现冲突时保留双方修改，由了解对应模块的人核对预期后处理，再复跑受影响的流程。产品负责人汇总验收后集成。
+
+源码和文档随 Git 同步。客户账套、底稿原件、合同、浏览器业务数据、支付对账报告、密钥及本地数据库留在获准的专用环境。Issue、PR 和截图只使用合成样例或经准许的脱敏结果。 [两台电脑的交接步骤与数据范围](COLLABORATION.md)
 
 | 需要继续查什么 | 从哪里开始 |
 | --- | --- |

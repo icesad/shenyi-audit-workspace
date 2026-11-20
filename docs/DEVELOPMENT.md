@@ -9,7 +9,7 @@
 - 克隆私有仓库需要被邀请的个人 GitHub 账号。不要把仓库下载到放客户账套的目录。
 
 ```sh
-git clone https://github.com/icesad/shenyi-audit-workspace.git
+git clone --branch codex/team-collaboration-handoff-20261120 https://github.com/icesad/shenyi-audit-workspace.git
 cd shenyi-audit-workspace
 npm ci --ignore-scripts
 npm run dev

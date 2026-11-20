@@ -2,7 +2,7 @@
 
 适用审易协作开发，苹果电脑优先，Windows 同样可用。更新于 2026-11-20。
 
-米老师现在可用 `mixue117` 打开私有仓库。接续本轮开发时，先看 [当前双人开发交接](COLLABORATION_HANDOFF.md) 中的协作基线和分工。
+米老师的 `mixue117` 已有私有仓库的读取和写入权限。使用自己的账号登录后，可以直接看文档、克隆仓库和上传自己的任务分支。下文注册和邀请步骤供以后新同事参考。 [当前双人开发交接](COLLABORATION_HANDOFF.md)
 
 **先读这句话：不会写代码，也可以参与。米老师先做「提需求、反馈问题、验收」即可，不需要先学终端命令。**
 
@@ -141,7 +141,7 @@ GitHub Desktop 下载完代码，并不会自动启动软件。请按仓库的 `
 2. 检查 **Changes**：若还有上次未提交修改，先停下处理，不要丢弃，也不要覆盖。
 3. 点击 **Fetch origin**，切到 [当前交接](COLLABORATION_HANDOFF.md) 约定的协作基线。如果出现 **Pull origin**，点击并等同步完成。
 4. 点击 **Current Branch → New Branch**，从当前基线建自己的分支，例如 `docs/mi-report-feedback`。
-5. 按已讨论的 Issue 修改文件。**不要直接改 main，不要顺手改没被要求的页面。**
+5. 按 Issue 约定修改文件。创建 PR 时，核对 GitHub 页面上 `base` 为 `codex/team-collaboration-handoff-20261120`，`compare` 为自己的分支。
 
 分支操作以 [官方 Desktop 分支说明](https://docs.github.com/en/desktop/making-changes-in-a-branch/managing-branches-in-github-desktop) 为准；Fetch 和 Pull 的区别见 [官方同步说明](https://docs.github.com/en/desktop/working-with-your-remote-repository-on-github-or-github-enterprise/syncing-your-branch-in-github-desktop)。
 
