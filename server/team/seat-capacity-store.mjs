@@ -19,7 +19,7 @@ function input(value){
 }
 function typed(v,min=0){if(typeof v!=='bigint'||v<BigInt(min)||v>MAX_BIG)conflict();return Number(v);}
 function one(db,sql,...args){const q=db.prepare(sql);q.setReadBigInts(true);return q.get(...args);}
-function team(db,teamId){if(!matches(ID,teamId))invalid();if(!one(db,"SELECT 1 FROM teams WHERE team_id=? AND status='active'",teamId))deny();}
+function team(db,teamId){if(!matches(ID,teamId))invalid();if(!one(db,"SELECT 1 FROM main.teams WHERE team_id=? AND status='active'",teamId))deny();}
 function fact(row){
  if(!row||!matches(UUID,row.grant_id)||!matches(ID,row.team_id)||!ref(row.source_ref)||!matches(SHA,row.request_sha256))conflict();
  const receipt={grantId:row.grant_id,teamId:row.team_id,seats:typed(row.seats,1),startsAt:typed(row.starts_at),endsAt:typed(row.ends_at),recordedAt:typed(row.recorded_at),sourceRef:row.source_ref};
@@ -33,7 +33,7 @@ export function recordSeatCapacityGrantWithinTransaction(db,value,{now=Date.now}
  if(typeof now!=='function')invalid();
  if(db.isTransaction!==true)conflict();
  team(db,v.teamId);
- const previous=one(db,'SELECT * FROM team_seat_capacity_grants WHERE grant_id=?',v.grantId);
+ const previous=one(db,'SELECT * FROM main.team_seat_capacity_grants WHERE grant_id=?',v.grantId);
  if(previous){
   const receipt=fact(previous);
   if(receipt.teamId!==v.teamId||previous.request_sha256!==hash)conflict();
@@ -41,9 +41,9 @@ export function recordSeatCapacityGrantWithinTransaction(db,value,{now=Date.now}
  }
  const recordedAt=now();
  if(!integer(recordedAt))conflict();
- const inserted=db.prepare('INSERT INTO team_seat_capacity_grants(grant_id,team_id,seats,starts_at,ends_at,recorded_at,source_ref,request_sha256) VALUES (?,?,?,?,?,?,?,?)').run(v.grantId,v.teamId,v.seats,v.startsAt,v.endsAt,recordedAt,v.sourceRef,hash);
+ const inserted=db.prepare('INSERT INTO main.team_seat_capacity_grants(grant_id,team_id,seats,starts_at,ends_at,recorded_at,source_ref,request_sha256) VALUES (?,?,?,?,?,?,?,?)').run(v.grantId,v.teamId,v.seats,v.startsAt,v.endsAt,recordedAt,v.sourceRef,hash);
  if(inserted.changes!==1)conflict();
- const receipt=fact(one(db,'SELECT * FROM team_seat_capacity_grants WHERE grant_id=?',v.grantId));
+ const receipt=fact(one(db,'SELECT * FROM main.team_seat_capacity_grants WHERE grant_id=?',v.grantId));
  if(receipt.teamId!==v.teamId||receipt.recordedAt!==recordedAt||FIELDS.some(k=>receipt[k]!==v[k]))conflict();
  team(db,v.teamId);
  return receipt;
@@ -70,16 +70,16 @@ export function recordSeatCapacityGrant(db,value,{now=Date.now}={}){
 }
 
 function read(db,teamId,at){
- team(db,teamId);let purchased=0n;const grants=db.prepare('SELECT * FROM team_seat_capacity_grants WHERE team_id=? ORDER BY grant_id');grants.setReadBigInts(true);
+ team(db,teamId);let purchased=0n;const grants=db.prepare('SELECT * FROM main.team_seat_capacity_grants WHERE team_id=? ORDER BY grant_id');grants.setReadBigInts(true);
  for(const row of grants.iterate(teamId)){const current=fact(row);if(current.teamId!==teamId)conflict();if(current.startsAt<=at&&at<current.endsAt){purchased+=BigInt(current.seats);if(purchased>MAX_BIG)conflict();}}
  const activeBusinessSeats=countActiveBusinessSeats(db,teamId);if(!integer(activeBusinessSeats))conflict();
  // Each pending invitation is a separate hold, even across sources or after
  // its inviter loses eligibility. Restoring that role does not create a seat
  // mutation; current activation authorization must still deny an invalid inviter.
  const reserved=typed(one(db,`SELECT COUNT(*) AS seats FROM (
-  SELECT 1 FROM team_invitations WHERE team_id=? AND accepted_at IS NULL AND expires_at>?
-  UNION ALL SELECT 1 FROM team_employee_invitations WHERE team_id=? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>?
-  UNION ALL SELECT 1 FROM team_operator_employee_invitations WHERE team_id=? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>?
+  SELECT 1 FROM main.team_invitations WHERE team_id=? AND accepted_at IS NULL AND expires_at>?
+  UNION ALL SELECT 1 FROM main.team_employee_invitations WHERE team_id=? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>?
+  UNION ALL SELECT 1 FROM main.team_operator_employee_invitations WHERE team_id=? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>?
  )`,teamId,at,teamId,at,teamId,at).seats);
  const used=BigInt(activeBusinessSeats)+BigInt(reserved);if(used>MAX_BIG)conflict();
  return Object.freeze({purchasedSeats:Number(purchased),activeBusinessSeats,reservedInvitationSeats:reserved,usedSeats:Number(used),availableSeats:Number(purchased>used?purchased-used:0n)});

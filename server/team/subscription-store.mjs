@@ -59,13 +59,13 @@ export function readSubscriptionState(db,teamId,at){
 // This is never an HTTP authority or an implicit transaction join by record().
 export function appendSubscriptionTermWithinTransaction(db,input,{now=Date.now}={}){
  const v=passiveInput(input),requestSha256=digest(v);if(typeof now!=='function')invalid();if(db.isTransaction!==true)conflict();
- const current=ledger(db,v.teamId),prior=query(db,'SELECT * FROM team_subscription_events WHERE operation_id=?',v.operationId);
+ const current=ledger(db,v.teamId),prior=query(db,'SELECT * FROM main.team_subscription_events WHERE operation_id=?',v.operationId);
  if(prior){const receipt=eventValue(prior);if(receipt.teamId!==v.teamId||prior.request_sha256!==requestSha256)conflict();return receipt;}
  if((current?.revision??0)!==v.expectedRevision)conflict();
  const revision=v.expectedRevision+1,recordedAt=serverNow(now);
- const inserted=db.prepare('INSERT INTO team_subscription_events(operation_id,team_id,revision,starts_at,ends_at,recorded_at,source_ref,request_sha256) VALUES (?,?,?,?,?,?,?,?)').run(v.operationId,v.teamId,revision,v.startsAt,v.endsAt,recordedAt,v.sourceRef,requestSha256);
+ const inserted=db.prepare('INSERT INTO main.team_subscription_events(operation_id,team_id,revision,starts_at,ends_at,recorded_at,source_ref,request_sha256) VALUES (?,?,?,?,?,?,?,?)').run(v.operationId,v.teamId,revision,v.startsAt,v.endsAt,recordedAt,v.sourceRef,requestSha256);
  if(inserted.changes!==1)conflict();
- const head=current?db.prepare('UPDATE team_subscription_heads SET revision=? WHERE team_id=? AND revision=?').run(revision,v.teamId,v.expectedRevision):db.prepare('INSERT INTO team_subscription_heads(team_id,revision) VALUES (?,?)').run(v.teamId,revision);
+ const head=current?db.prepare('UPDATE main.team_subscription_heads SET revision=? WHERE team_id=? AND revision=?').run(revision,v.teamId,v.expectedRevision):db.prepare('INSERT INTO main.team_subscription_heads(team_id,revision) VALUES (?,?)').run(v.teamId,revision);
  if(head.changes!==1)conflict();const receipt=ledger(db,v.teamId);
  if(!receipt||receipt.operationId!==v.operationId||receipt.revision!==revision||receipt.recordedAt!==recordedAt)conflict();return receipt;
 }
