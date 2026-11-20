@@ -17,13 +17,18 @@ const TARGET={teamId:REQUEST.teamId,teamName:REQUEST.teamName,phoneMasked:REQUES
 const CHALLENGE={challengeId:'challenge-first-admin',expiresAt:Date.now()+300000};
 const count=(f,name)=>f.calls.filter(item=>item.name===name).length;
 async function until(check){for(let i=0;i<120;i++){if(check())return;await new Promise(r=>setTimeout(r,0));}assert.ok(check(),'expected renderer state was not reached');}
-function fixture(t,overrides={}){
+function fixture(t,overrides={}, {manualDevicePoll=false}={}){
   const dom=new JSDOM(html,{url:'shenyi://app/index.html',runScripts:'outside-only'}),{window}=dom,d=window.document,calls=[],writes=[];
+  let pollDevice;
+  if(manualDevicePoll){
+    const defaultInterval=window.setInterval.bind(window);
+    window.setInterval=(action,ms,...args)=>{if(ms!==1000)return defaultInterval(action,ms,...args);pollDevice=action;return 0;};
+  }
   Object.defineProperty(window,'localStorage',{value:{setItem:(...args)=>writes.push(args),getItem:()=>null,removeItem:()=>{}}});
   const defaults={getAuthMethods:async()=>safe({mode:'local-preview',desktopWechatReady:false,methods:{demoUsername:true,phonePassword:true,phoneVerification:false,wechat:false,recovery:false}}),getOnboardingStatus:async()=>safe({available:true,invitationOnly:true}),login:async()=>safe(REVIEWER),loginPhone:async()=>safe(ADMIN),logout:async()=>safe({signedOut:true}),listTasks:async()=>safe({tasks:[],hasMore:false}),getInvitationAccess:async()=>safe({canInvite:false}),listEmployeeInvitations:async()=>safe({invitations:[]}),createEmployeeInvitation:async input=>safe({invitationId:'invite-employee',teamId:input.teamId,phoneMasked:REQUEST.phoneMasked,role:input.role,status:'pending',expiresAt:Date.now()+3600000,invitationCode:CODE}),revokeEmployeeInvitation:async()=>safe({revoked:true}),getTeamProvisioningAccess:async()=>safe({canReview:true}),listTeamProvisioningRequests:async()=>safe({requests:[REQUEST]}),createTeamProvisioningRequest:async()=>safe({request:REQUEST}),reviewTeamProvisioningRequest:async input=>safe({request:{...REQUEST,status:input.decision==='approve'?'approved':input.decision==='reject'?'rejected':'revoked',revision:2,expiresAt:Date.now()+3600000},...(input.decision==='approve'?{invitationCode:CODE}:{})}),getTeamAdministration:async()=>safe({teams:[]}),previewFirstAdministrator:async()=>safe(TARGET),requestFirstAdministratorActivation:async()=>safe(CHALLENGE),activateFirstAdministrator:async()=>safe({activated:true}),previewEmployeeInvitation:async()=>safe({}),requestEmployeeActivation:async()=>safe({}),activateEmployee:async()=>safe({activated:true})};
   window.shenyiTeam=Object.fromEntries(Object.entries({...defaults,...overrides}).map(([name,fn])=>[name,typeof fn==='function'?async arg=>{calls.push({name,arg});return fn(arg);}:fn]));
   window.shenyiTeam=withDeviceDiagnostic(window.shenyiTeam);window.eval(script);t.after(()=>window.close());
-  return {window,d,calls,writes,id:id=>d.getElementById(id),click:id=>d.getElementById(id).click(),submit:id=>d.getElementById(id).dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})),input:id=>d.getElementById(id).dispatchEvent(new window.Event('input',{bubbles:true})),change:id=>d.getElementById(id).dispatchEvent(new window.Event('change',{bubbles:true}))};
+  return {window,d,calls,writes,pollDevice:()=>pollDevice(),id:id=>d.getElementById(id),click:id=>d.getElementById(id).click(),submit:id=>d.getElementById(id).dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})),input:id=>d.getElementById(id).dispatchEvent(new window.Event('input',{bubbles:true})),change:id=>d.getElementById(id).dispatchEvent(new window.Event('change',{bubbles:true}))};
 }
 async function login(f){await until(()=>!f.id('login-submit').disabled);f.id('username').value='synthetic-user';f.id('password').value=PASSWORD;f.submit('login-form');await until(()=>!f.id('workspace-view').hidden&&!f.id('logout').disabled);}
 async function openReview(f){await until(()=>!f.id('team-provisioning-panel').hidden);f.id('team-provisioning-panel').querySelector('summary').click();await until(()=>!f.id('team-provisioning-password').disabled&&f.id('team-provisioning-list').children.length>0);}
@@ -57,7 +62,8 @@ test('closing review immediately clears the one-time activation code and passwor
   const f=fixture(t);await login(f);await openReview(f);reviewerProof(f);f.id('team-provisioning-list').querySelector('[data-decision=approve]').click();await until(()=>!f.id('issued-first-admin').hidden);f.id('team-provisioning-password').value=PASSWORD;f.id('team-provisioning-panel').querySelector('summary').click();assert.equal(f.id('issued-first-admin-code').value,'');assert.equal(f.id('team-provisioning-password').value,'');assert.equal(f.id('team-provisioning-list').children.length,0);await openReview(f);assert.equal(f.id('issued-first-admin').hidden,true);assert.equal(f.id('issued-first-admin-code').value,'');
 });
 test('a submitted review remains single-flight across close and reopen and never restores a discarded code',async t=>{
-  const wait=deferred(),f=fixture(t,{reviewTeamProvisioningRequest:()=>wait.promise});await login(f);await openReview(f);reviewerProof(f);f.id('team-provisioning-list').querySelector('[data-decision=approve]').click();await until(()=>count(f,'reviewTeamProvisioningRequest')===1);f.id('team-provisioning-panel').querySelector('summary').click();assert.match(f.id('workspace-message').textContent,/仍可能完成/);f.id('team-provisioning-panel').querySelector('summary').click();await until(()=>f.id('team-provisioning-message').textContent.includes('仍在处理中'));assert.equal(f.id('team-provisioning-password').disabled,true);f.submit('team-provisioning-form');assert.equal(count(f,'createTeamProvisioningRequest'),0);wait.resolve(safe({request:{...REQUEST,status:'approved',revision:2,expiresAt:TARGET.expiresAt},invitationCode:CODE}));await until(()=>!f.id('team-provisioning-password').disabled);assert.equal(f.id('issued-first-admin-code').value,'');assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+  const wait=deferred();let row=REQUEST;
+  const f=fixture(t,{reviewTeamProvisioningRequest:()=>wait.promise,listTeamProvisioningRequests:async()=>safe({requests:[row]})});await login(f);await openReview(f);reviewerProof(f);f.id('team-provisioning-list').querySelector('[data-decision=approve]').click();await until(()=>count(f,'reviewTeamProvisioningRequest')===1);f.id('team-provisioning-panel').querySelector('summary').click();assert.match(f.id('workspace-message').textContent,/仍可能完成/);f.id('team-provisioning-panel').querySelector('summary').click();await until(()=>f.id('team-provisioning-message').textContent.includes('仍在处理中'));assert.equal(f.id('team-provisioning-password').disabled,true);f.submit('team-provisioning-form');assert.equal(count(f,'createTeamProvisioningRequest'),0);row={...REQUEST,status:'approved',revision:2,expiresAt:TARGET.expiresAt};wait.resolve(safe({request:row,invitationCode:CODE}));await until(()=>!f.id('team-provisioning-password').disabled);assert.equal(f.id('issued-first-admin-code').value,'');assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
 });
 test('a previous reviewer late 401 cannot sign out a newly logged-in account',async t=>{
   let logins=0;const wait=deferred(),f=fixture(t,{login:async()=>safe(++logins===1?REVIEWER:OTHER),reviewTeamProvisioningRequest:()=>wait.promise});await login(f);await openReview(f);reviewerProof(f);f.id('team-provisioning-list').querySelector('[data-decision=approve]').click();f.click('logout');await until(()=>f.id('workspace-view').hidden);await login(f);wait.resolve(fail('SIGN_IN_REQUIRED','old-session-expired'));await new Promise(r=>setTimeout(r,0));assert.equal(f.id('workspace-view').hidden,false);assert.equal(f.id('account-name').textContent,OTHER.account.displayName);assert.equal(f.d.body.textContent.includes('old-session-expired'),false);assert.equal(f.id('issued-first-admin-code').value,'');
@@ -65,6 +71,200 @@ test('a previous reviewer late 401 cannot sign out a newly logged-in account',as
 test('uncertain review results are not described as canceled or as a definite failed approval',async t=>{
   const f=fixture(t,{reviewTeamProvisioningRequest:async()=>fail('SERVICE_UNAVAILABLE','SYNTHETIC_PRIVATE_DETAIL')});await login(f);await openReview(f);reviewerProof(f);f.id('team-provisioning-list').querySelector('[data-decision=approve]').click();await until(()=>f.id('team-provisioning-message').textContent.includes('未能确认'));assert.match(f.id('team-provisioning-message').textContent,/可能已完成/);assert.equal(f.d.body.textContent.includes('SYNTHETIC_PRIVATE_DETAIL'),false);assert.equal(f.id('issued-first-admin-code').value,'');assert.equal(f.id('team-provisioning-password').value,'');
 });
+
+test('lost approval blocks mutation until a fresh read of the exact request, including lookalike rows',async t=>{
+  const lookalike={...REQUEST,id:'other-request-with-same-display',teamId:'other-team'};
+  const approved={...REQUEST,status:'approved',revision:2,expiresAt:TARGET.expiresAt};
+  let outcomeLost=false,readMode='unavailable';
+  const f=fixture(t,{
+    listTeamProvisioningRequests:async input=>{
+      if(!outcomeLost)return safe({requests:[REQUEST,lookalike]});
+      if(readMode==='unavailable')return fail('HTTP_503','private-upstream-list-detail');
+      if(input?.after===lookalike.id)return safe({requests:[approved,{...lookalike,id:'neighbor-lookalike',teamId:'neighbor-team'}],nextCursor:null});
+      return safe({requests:[lookalike],nextCursor:lookalike.id});
+    },
+    reviewTeamProvisioningRequest:async()=>{outcomeLost=true;return fail('SERVICE_UNAVAILABLE','private-approval-detail');},
+  });
+  await login(f);await openReview(f);reviewerProof(f);
+  const review=f.d.querySelector('[data-request-id="'+REQUEST.id+'"] [data-decision="approve"]');
+  const refresh=f.id('team-provisioning-refresh'),password=f.id('team-provisioning-password'),message=f.id('team-provisioning-message');
+  const reads=count(f,'listTeamProvisioningRequests');
+  review.focus();review.click();
+  await until(()=>message.textContent.includes('未能确认批准'));
+  assert.match(message.textContent,/可能已完成.*刷新审核记录.*request-a/);
+  assert.equal(count(f,'listTeamProvisioningRequests'),reads,'an uncertain response does not retry the mutation or refresh implicitly');
+  assert.equal(password.disabled,true);
+  assert.equal(password.value,'');
+  assert.equal(f.d.activeElement,refresh);
+  assert.equal(f.id('team-provisioning-create').disabled,true);
+  reviewerProof(f);
+  review.dispatchEvent(new f.window.MouseEvent('click',{bubbles:true}));
+  f.id('team-provisioning-name').value=REQUEST.teamName;
+  f.id('team-provisioning-phone').value=PHONE;
+  f.submit('team-provisioning-form');
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+  assert.equal(count(f,'createTeamProvisioningRequest'),0);
+
+  refresh.click();
+  await until(()=>message.textContent.includes('暂时无法刷新'));
+  assert.equal(f.id('team-provisioning-panel').hidden,false);
+  assert.equal(refresh.disabled,false);
+  assert.equal(password.disabled,true);
+  readMode='paginated';
+  refresh.click();
+  await until(()=>!f.id('team-provisioning-next').disabled);
+  assert.match(message.textContent,/本页尚未核对到申请 request-a/);
+  assert.equal(f.id('team-provisioning-create').disabled,true);
+  assert.equal(password.disabled,true);
+  f.click('team-provisioning-next');
+  await until(()=>!password.disabled&&message.textContent.includes('已刷新申请 request-a'));
+  const text=f.id('team-provisioning-list').textContent;
+  assert.match(text,/尚未激活.*没有可用的原邀请码.*审核账号当前密码.*撤销激活凭据.*确认撤销后.*新申请/);
+  const matched=f.d.querySelector('[data-request-id="'+REQUEST.id+'"]');
+  assert.match(matched.textContent,/刚核对的申请 · 编号 request-a/);
+  assert.doesNotMatch(f.d.querySelector('[data-request-id="neighbor-lookalike"]').textContent,/刚核对的申请/);
+  assert.equal(matched.querySelector('[data-decision="approve"]'),null);
+  assert.equal(matched.querySelector('[data-decision="revoke"]').disabled,true);
+  assert.equal(f.id('issued-first-admin-code').value,'');
+  assert.equal(f.d.body.textContent.includes('private-'),false);
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+  assert.deepEqual(f.writes,[]);
+});
+
+test('a conflicting approval can be deliberately reviewed again only after the same request still reads pending',async t=>{
+  let attempts=0;
+  const f=fixture(t,{reviewTeamProvisioningRequest:async()=>{
+    if(++attempts===1)return fail('HTTP_409','private-conflict');
+    return safe({request:{...REQUEST,status:'approved',revision:2,expiresAt:TARGET.expiresAt},invitationCode:CODE});
+  }});
+  await login(f);await openReview(f);reviewerProof(f);
+  f.d.querySelector('[data-decision="approve"]').click();
+  const password=f.id('team-provisioning-password'),message=f.id('team-provisioning-message');
+  await until(()=>message.textContent.includes('申请状态已改变'));
+  assert.equal(password.disabled,true);
+  f.click('team-provisioning-refresh');
+  await until(()=>!password.disabled&&message.textContent.includes('当前仍待审核'));
+  assert.equal(password.value,'');
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+  reviewerProof(f);f.d.querySelector('[data-decision="approve"]').click();
+  await until(()=>f.id('issued-first-admin-code').value===CODE);
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),2);
+});
+
+test('lost revocation refreshes the original older page and directs an activated team to its existing account',async t=>{
+  const anchor={...REQUEST,id:'more-recent-request',teamId:'more-recent-team'};
+  let item={...REQUEST,status:'approved',revision:2,expiresAt:TARGET.expiresAt};
+  const f=fixture(t,{
+    listTeamProvisioningRequests:async input=>input?.after===anchor.id?safe({requests:[item],nextCursor:null}):safe({requests:[anchor],nextCursor:anchor.id}),
+    reviewTeamProvisioningRequest:async()=>{item={...item,status:'activated',revision:3};return fail('INVALID_RESPONSE','lost-revocation-detail');},
+  });
+  await login(f);await openReview(f);f.click('team-provisioning-next');
+  await until(()=>f.id('team-provisioning-page-status').textContent.startsWith('第 2 页'));
+  reviewerProof(f);f.d.querySelector('[data-decision="revoke"]').click();
+  const password=f.id('team-provisioning-password'),message=f.id('team-provisioning-message');
+  await until(()=>message.textContent.includes('未能确认撤销'));
+  assert.equal(password.disabled,true);
+  assert.equal(f.id('team-provisioning-prev').disabled,false);
+  f.click('team-provisioning-refresh');
+  await until(()=>!password.disabled&&message.textContent.includes('团队已开通'));
+  assert.deepEqual({...f.calls.findLast(call=>call.name==='listTeamProvisioningRequests').arg},{after:anchor.id});
+  assert.match(message.textContent,/现有手机号和密码登录本团队/);
+  assert.match(f.id('team-provisioning-list').textContent,/继续使用本团队/);
+  assert.equal(f.d.querySelector('[data-decision="revoke"]'),null);
+  assert.equal(count(f,'createTeamProvisioningRequest'),0);
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+});
+
+test('confirmed approval retains the one-time code through a list failure and rejects a below-receipt revision',async t=>{
+  const approved={...REQUEST,status:'approved',revision:2,expiresAt:TARGET.expiresAt};
+  let committed=false,refreshFailed=false,readItem=REQUEST;
+  const f=fixture(t,{
+    listTeamProvisioningRequests:async()=>{
+      if(committed&&!refreshFailed){refreshFailed=true;return fail('HTTP_429','temporary-fetch-limit');}
+      return safe({requests:[readItem]});
+    },
+    reviewTeamProvisioningRequest:async()=>{committed=true;return safe({request:approved,invitationCode:CODE});},
+  });
+  await login(f);await openReview(f);reviewerProof(f);f.d.querySelector('[data-decision="approve"]').click();
+  const message=f.id('team-provisioning-message'),password=f.id('team-provisioning-password');
+  await until(()=>message.textContent.includes('请先转交'));
+  assert.equal(f.id('issued-first-admin-code').value,CODE);
+  assert.equal(f.id('issued-first-admin').hidden,false);
+  assert.equal(password.value,'');
+  assert.equal(password.disabled,true);
+  assert.match(message.textContent,/刷新时邀请码将清除/);
+  f.click('team-provisioning-refresh');
+  await until(()=>message.textContent.includes('本页尚未核对到'));
+  assert.equal(f.id('issued-first-admin-code').value,'');
+  assert.equal(password.disabled,true);
+  readItem=approved;f.click('team-provisioning-refresh');
+  await until(()=>!password.disabled&&message.textContent.includes('当前已批准'));
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+  assert.equal(f.id('issued-first-admin-code').value,'');
+});
+
+test('confirmed approval discards the invitation immediately if follow-up list access has been lost',async t=>{
+  let committed=false;
+  const f=fixture(t,{
+    listTeamProvisioningRequests:async()=>committed?fail('HTTP_404','private-access-detail'):safe({requests:[REQUEST]}),
+    reviewTeamProvisioningRequest:async()=>{committed=true;return safe({request:{...REQUEST,status:'approved',revision:2,expiresAt:TARGET.expiresAt},invitationCode:CODE});},
+  });
+  await login(f);await openReview(f);reviewerProof(f);f.d.querySelector('[data-decision="approve"]').click();
+  await until(()=>f.id('workspace-message').textContent.includes('审核权限无法确认'));
+  assert.equal(f.id('team-provisioning-panel').hidden,true);
+  assert.equal(f.id('team-provisioning-list').children.length,0);
+  assert.equal(f.id('issued-first-admin-code').value,'');
+  assert.equal(f.id('team-provisioning-password').value,'');
+});
+
+test('device suspension before a response keeps only the exact recovery across reconnect and transient probe failures',async t=>{
+  const response=deferred(),fp='a'.repeat(64);
+  const device={id:'reviewer-device',displayName:'合成办公电脑',platform:'win32',keyFingerprint:fp,status:'active',revision:1};
+  const state=(value,epoch)=>({required:true,state:value,epoch,device:value==='signed_out'?null:device,
+    localFingerprint:value==='signed_out'?null:fp,expiresAt:value==='signed_out'?null:TARGET.expiresAt});
+  const anchor={...REQUEST,id:'earlier-page-boundary',teamId:'other-team'};
+  const approved={...REQUEST,status:'approved',revision:2,expiresAt:TARGET.expiresAt};
+  let snapshot=state('signed_out',0),reconnected=false,accessFails=true,listFails=true;
+  const f=fixture(t,{
+    login:async()=>safe({...REVIEWER,device:snapshot=state('ready',1)}),
+    getDeviceStatus:async()=>safe(snapshot),
+    reconnectDevice:async()=>{reconnected=true;return safe({...REVIEWER,device:snapshot=state('ready',3)});},
+    getTeamProvisioningAccess:async()=>reconnected&&accessFails?fail('SERVICE_UNAVAILABLE','private-access-read'):safe({canReview:true}),
+    listTeamProvisioningRequests:async input=>{
+      if(reconnected&&listFails)return fail('HTTP_503','private-list-read');
+      return input?.after===anchor.id?safe({requests:[reconnected?approved:REQUEST],nextCursor:null}):safe({requests:[anchor],nextCursor:anchor.id});
+    },
+    reviewTeamProvisioningRequest:()=>response.promise,
+  },{manualDevicePoll:true});
+  await login(f);await openReview(f);f.click('team-provisioning-next');
+  await until(()=>f.id('team-provisioning-page-status').textContent.startsWith('第 2 页'));
+  reviewerProof(f);f.d.querySelector('[data-decision="approve"]').click();
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+  snapshot=state('paused',2);f.pollDevice();
+  await until(()=>f.id('workspace-view').hidden&&!f.id('device-retry').hidden);
+  assert.equal(f.id('team-provisioning-password').value,'');
+  response.resolve(safe({request:approved,invitationCode:CODE}));
+  f.click('device-retry');
+  await until(()=>!f.id('workspace-view').hidden&&f.id('workspace-message').textContent.includes('暂时无法核对审核权限'));
+  assert.equal(f.id('team-provisioning-panel').hidden,true);
+  assert.equal(f.id('issued-first-admin-code').value,'');
+  accessFails=false;f.click('refresh');
+  await until(()=>!f.id('team-provisioning-panel').hidden);
+  f.id('team-provisioning-panel').querySelector('summary').click();
+  await until(()=>f.id('team-provisioning-message').textContent.includes('暂时无法刷新申请 request-a'));
+  assert.equal(f.id('team-provisioning-create').disabled,true);
+  assert.equal(f.id('team-provisioning-refresh').disabled,false);
+  assert.equal(f.id('team-provisioning-password').disabled,true);
+  assert.equal(f.id('issued-first-admin-code').value,'');
+  listFails=false;f.click('team-provisioning-refresh');
+  await until(()=>!f.id('team-provisioning-password').disabled&&f.id('team-provisioning-message').textContent.includes('已刷新申请 request-a'));
+  assert.deepEqual({...f.calls.findLast(call=>call.name==='listTeamProvisioningRequests').arg},{after:anchor.id});
+  assert.equal(f.id('issued-first-admin-code').value,'');
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+  assert.equal(count(f,'createTeamProvisioningRequest'),0);
+  assert.deepEqual(f.writes,[]);
+});
+
 test('native queued reviewer opening preserves immediately entered password proof',async t=>{
   const f=fixture(t);await login(f);await until(()=>!f.id('team-provisioning-panel').hidden);f.id('team-provisioning-panel').querySelector('summary').click();reviewerProof(f);await until(()=>!f.id('team-provisioning-password').disabled);assert.equal(f.id('team-provisioning-password').value,PASSWORD);
 });

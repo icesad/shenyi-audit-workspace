@@ -88,7 +88,7 @@ function assertProviderWire(call, purpose, normalizedPhone) {
 
 function loopbackClient(server, ca, serverId) {
   assert.equal(server.address.host, '127.0.0.1');
-  return (route, {body, session} = {}) => new Promise((resolve, reject) => {
+  return (route, {body, session, captureLostResponse} = {}) => new Promise((resolve, reject) => {
     const method = body === undefined ? 'GET' : 'POST';
     const content = body === undefined ? undefined : JSON.stringify(body);
     const headers = {host:'localhost', origin:'shenyi://app'};
@@ -115,7 +115,13 @@ function loopbackClient(server, ca, serverId) {
           assert.equal(authorized, true);
           assert.equal(response.headers['x-shenyi-server-id'], serverId);
           const text = Buffer.concat(bodyParts).toString('utf8');
-          resolve({status:response.statusCode, data:JSON.parse(text), text, headers:response.headers});
+          const reply = {status:response.statusCode, data:JSON.parse(text), text, headers:response.headers};
+          if (captureLostResponse) {
+            // The test transport can observe the real server write, then drops it
+            // before the logical caller can receive an approval reply or a code.
+            captureLostResponse(reply);
+            reject(Object.assign(new Error('Synthetic approval response lost'), {code:'ECONNRESET'}));
+          } else resolve(reply);
         } catch (error) { reject(error); }
       });
     });
@@ -346,5 +352,188 @@ test('configured Aliyun onboarding rejects undelivered OTPs and activates each s
       f.phonePepper.toString('base64url'),firstInvite.invitationCode,staffInvite.invitationCode,providerPrivateDetail];
     const persisted = await fs.readFile(f.boot.databasePath);
     assert.ok(literalSecrets.every(secret => !persisted.includes(Buffer.from(secret))), 'Database persisted cleartext SMS or activation secrets');
+  } finally { cold.close(); }
+});
+
+test('first-administrator approval response loss can be reconciled, revoked and replaced over managed HTTPS', async t => {
+  const f = await fixture(t);
+  const {call, db, supplier} = f;
+  const ownerSession = await bind(call, owner);
+  assert.equal(ownerSession.account.id, f.boot.ownerUserId);
+  const body = {teamName:'合成审批恢复首队', adminPhone:admin.phone};
+  const firstAdmin = '/api/auth/first-administrator';
+  const review = (request, decision, extras = {}) => call(operations+'/'+request.id+'/review', {
+    session:ownerSession, body:{decision, revision:request.revision, currentPassword:owner.password}, ...extras,
+  });
+  const requestById = id => db.prepare('SELECT * FROM team_provisioning_requests WHERE request_id=?').get(id);
+  const historyFor = (database, requestId) => database.prepare(
+    'SELECT actor_id,action,revision FROM team_provisioning_events WHERE request_id=? ORDER BY revision').all(requestId)
+    .map(row => [row.actor_id,row.action,row.revision]);
+  const assertNothingActivated = () => {
+    assert.equal(count(db,'team_users'),1);
+    for (const name of ['teams','team_profiles','team_operators','team_subscription_pilots','team_subscription_events',
+      'team_seat_capacity_grants','team_activity']) assert.equal(count(db,name),0, name);
+  };
+  const secretInputs = [owner.password,admin.password,admin.normalized,provider.accessKeySecret,provider.securityToken];
+  const assertNoInvitation = (reply, invites = []) => {
+    assertRedacted(reply,[...secretInputs, ...invites, '"invitationCode"', '"tokenHash"', '"token_hash"']);
+  };
+
+  async function deliveredChallenge(invitationCode) {
+    const before = supplier.calls.length;
+    const control = supplier.expect();
+    const pending = call(firstAdmin+'/challenges', {body:{invitationCode,phone:admin.phone}});
+    let code;
+    try {
+      const wire = await Promise.race([control.observed, pending.then(() => {
+        throw new Error('Expected one delivery to the synthetic first-administrator supplier');
+      })]);
+      code = assertProviderWire(wire,'first-admin',admin.normalized);
+    } finally { control.respond(Response.json({Code:'OK', RequestId:providerPrivateDetail})); }
+    const reply = await pending;
+    assert.equal(supplier.calls.length,before+1);
+    assertNoInvitation(reply,[invitationCode,'"'+code+'"',providerPrivateDetail]);
+    return {...expectStatus(reply,202),code};
+  }
+  const activate = (invitationCode, {challengeId, code}) => call(firstAdmin+'/activate', {body:{
+    invitationCode, phone:admin.phone, challengeId, code, password:admin.password, displayName:'合成首队管理员', accept:true,
+  }});
+  const challengeState = (database, challengeId) => database.prepare(
+    'SELECT request_id,delivery_state,attempts,consumed_at FROM team_first_administrator_challenges WHERE challenge_id=?').get(challengeId);
+
+  const {request:old} = expectStatus(await call(operations,{session:ownerSession,body}),201);
+  assert.equal(old.status,'pending');
+  let discardedCode;
+  await assert.rejects(review(old,'approve',{captureLostResponse(reply) {
+    assert.equal(reply.status,200);
+    assert.ok(typeof reply.data.invitationCode === 'string' && /^[A-Za-z0-9_-]{43}$/.test(reply.data.invitationCode));
+    discardedCode = reply.data.invitationCode;
+  }}), {code:'ECONNRESET', message:'Synthetic approval response lost'});
+
+  const stored = requestById(old.id);
+  assert.deepEqual([stored.status,stored.revision,stored.team_id],['approved',old.revision+1,old.teamId]);
+  assert.ok(stored.token_hash === sha256(discardedCode),'The discarded invitation must belong to the committed approval');
+  assert.deepEqual(historyFor(db,old.id),[[f.boot.ownerUserId,'create',1],[f.boot.ownerUserId,'approve',2]]);
+  const refreshed = await call(operations,{session:ownerSession});
+  assertNoInvitation(refreshed,[discardedCode]);
+  const [approved] = expectStatus(refreshed,200).requests;
+  assert.deepEqual([approved.id,approved.teamId,approved.status,approved.revision],[old.id,old.teamId,'approved',2]);
+  const staleApproval = await review(old,'approve');
+  assertNoInvitation(staleApproval,[discardedCode]);
+  expectStatus(staleApproval,409,'PROVISIONING_CONFLICT');
+  assert.deepEqual(historyFor(db,old.id),[[f.boot.ownerUserId,'create',1],[f.boot.ownerUserId,'approve',2]]);
+  assertNothingActivated();
+  assert.equal(supplier.calls.length,0);
+
+  const oldTicket = {invitationCode:discardedCode, phone:admin.phone};
+  const oldPreview = await call(firstAdmin+'/preview',{body:oldTicket});
+  assertNoInvitation(oldPreview,[discardedCode]);
+  assert.equal(expectStatus(oldPreview,200).teamId,old.teamId);
+  const oldChallenge = await deliveredChallenge(discardedCode);
+  assert.equal(challengeState(db,oldChallenge.challengeId).delivery_state,'sent');
+
+  const revocation = await review(approved,'revoke');
+  assertNoInvitation(revocation,[discardedCode]);
+  const {request:revoked} = expectStatus(revocation,200);
+  assert.deepEqual([revoked.id,revoked.teamId,revoked.status,revoked.revision],[old.id,old.teamId,'revoked',3]);
+  assert.deepEqual({...challengeState(db,oldChallenge.challengeId)},
+    {request_id:old.id,delivery_state:'failed',attempts:0,consumed_at:null});
+  for (const operation of ['preview','challenges']) {
+    const blocked = await call(firstAdmin+'/'+operation,{body:oldTicket});
+    assertNoInvitation(blocked,[discardedCode]);
+    expectStatus(blocked,404,'NOT_FOUND');
+  }
+  const blocked = await activate(discardedCode,oldChallenge);
+  assertNoInvitation(blocked,[discardedCode,'"'+oldChallenge.code+'"']);
+  expectStatus(blocked,404,'NOT_FOUND');
+  assert.equal(supplier.calls.length,1);
+  assertNothingActivated();
+
+  const {request:fresh} = expectStatus(await call(operations,{session:ownerSession,body}),201);
+  assert.notEqual(fresh.id,old.id);
+  assert.notEqual(fresh.teamId,old.teamId);
+  const {invitationCode:newCode} = expectStatus(await review(fresh,'approve'),200);
+  assert.ok(typeof newCode === 'string' && /^[A-Za-z0-9_-]{43}$/.test(newCode) && newCode !== discardedCode,
+    'Fresh approval must issue a distinct invitation');
+  const freshPreview = await call(firstAdmin+'/preview',{body:{invitationCode:newCode,phone:admin.phone}});
+  assertNoInvitation(freshPreview,[discardedCode,newCode]);
+  assert.equal(expectStatus(freshPreview,200).teamId,fresh.teamId);
+  const newChallenge = await deliveredChallenge(newCode);
+  assert.notEqual(newChallenge.challengeId,oldChallenge.challengeId);
+  expectStatus(await activate(newCode,oldChallenge),404,'NOT_FOUND');
+  assert.equal(challengeState(db,oldChallenge.challengeId).attempts,0);
+  assertNothingActivated();
+  const beforeActivationSessions = count(db,'team_sessions');
+  const activation = await activate(newCode,newChallenge);
+  assertNoInvitation(activation,[discardedCode,newCode,'"'+newChallenge.code+'"']);
+  assert.deepEqual(expectStatus(activation,200),{activated:true});
+  expectStatus(await activate(discardedCode,oldChallenge),404,'NOT_FOUND');
+  expectStatus(await activate(newCode,newChallenge),404,'NOT_FOUND');
+  assert.equal(count(db,'team_sessions'),beforeActivationSessions);
+  assert.equal(supplier.calls.length,2);
+
+  const list = await call(operations,{session:ownerSession});
+  assertNoInvitation(list,[discardedCode,newCode]);
+  const listed = expectStatus(list,200).requests;
+  assert.equal(listed.length,2);
+  assert.equal(listed.find(item => item.id===old.id).status,'revoked');
+  const opened = listed.find(item => item.id===fresh.id);
+  assert.deepEqual([opened.teamId,opened.status,opened.revision],[fresh.teamId,'activated',3]);
+  const activeRevocation = await review(opened,'revoke');
+  assertNoInvitation(activeRevocation,[discardedCode,newCode]);
+  expectStatus(activeRevocation,409,'PROVISIONING_CONFLICT');
+  assert.equal(requestById(fresh.id).status,'activated');
+  const adminSession = await bind(call,admin);
+  assert.deepEqual(adminSession.memberships,[]);
+  const administrator = expectStatus(await call('/api/auth/team-administration',{session:adminSession}),200);
+  assert.deepEqual(administrator.teams,[{teamId:fresh.teamId,teamName:body.teamName}]);
+  assert.equal(count(db,'team_subscription_pilots'),0);
+  const endsAt = Date.now()+60*60_000;
+  const {request:pilot} = expectStatus(await call(operations+'/'+opened.id+'/review',{session:ownerSession,
+    body:{decision:'approve-pilot',revision:opened.revision,currentPassword:owner.password,endsAt,seats:4}}),200);
+  assert.deepEqual([pilot.id,pilot.teamId,pilot.status,pilot.revision,pilot.pilot.endsAt,pilot.pilot.seats],
+    [opened.id,fresh.teamId,'activated',opened.revision+1,endsAt,4]);
+  assert.ok(Number.isSafeInteger(pilot.pilot.startsAt) && pilot.pilot.startsAt<endsAt);
+  for (const session of [adminSession,ownerSession]) expectStatus(await call('/api/auth/logout',{session,body:{}}),200);
+  await f.close();
+
+  const cold = new DatabaseSync(path.toNamespacedPath(f.boot.databasePath), {readOnly:true});
+  try {
+    assert.equal(cold.prepare('PRAGMA quick_check').get().quick_check,'ok');
+    assert.deepEqual(cold.prepare('PRAGMA foreign_key_check').all(),[]);
+    assert.equal(count(cold,'team_users'),2);
+    assert.equal(count(cold,'team_memberships'),0);
+    assert.equal(count(cold,'team_provisioning_requests'),2);
+    assert.equal(count(cold,'team_first_administrator_challenges'),2);
+    assert.equal(cold.prepare('SELECT team_id FROM teams').get().team_id,fresh.teamId);
+    assert.equal(count(cold,'teams'),1);
+    const operators = cold.prepare('SELECT user_id,team_id,role,status FROM team_operators').all();
+    assert.deepEqual(operators.map(row => [row.user_id,row.team_id,row.role,row.status]),
+      [[adminSession.account.id,fresh.teamId,'administrator','active']]);
+    assert.deepEqual(historyFor(cold,old.id),[[f.boot.ownerUserId,'create',1],[f.boot.ownerUserId,'approve',2],[f.boot.ownerUserId,'revoke',3]]);
+    assert.deepEqual(historyFor(cold,fresh.id),
+      [[f.boot.ownerUserId,'create',1],[f.boot.ownerUserId,'approve',2],[adminSession.account.id,'activate',3]]);
+    const activations = cold.prepare("SELECT team_id,actor_id FROM team_activity WHERE action='team.activate'").all();
+    assert.deepEqual(activations.map(row => [row.team_id,row.actor_id]),[[fresh.teamId,adminSession.account.id]]);
+    assert.deepEqual({...challengeState(cold,oldChallenge.challengeId)},
+      {request_id:old.id,delivery_state:'failed',attempts:0,consumed_at:null});
+    const consumed = challengeState(cold,newChallenge.challengeId);
+    assert.equal(consumed.request_id,fresh.id);
+    assert.equal(consumed.delivery_state,'sent');
+    assert.equal(consumed.attempts,1);
+    assert.ok(Number.isSafeInteger(consumed.consumed_at));
+    assert.equal(count(cold,'team_subscription_pilots'),1);
+    const entitlement = cold.prepare('SELECT request_id,team_id,approved_by,ends_at,seats FROM team_subscription_pilots').get();
+    assert.deepEqual({...entitlement},{request_id:fresh.id,team_id:fresh.teamId,approved_by:f.boot.ownerUserId,ends_at:endsAt,seats:4});
+    const subscription = cold.prepare('SELECT team_id,revision,ends_at FROM team_subscription_events').all();
+    assert.deepEqual(subscription.map(row => [row.team_id,row.revision,row.ends_at]),[[fresh.teamId,1,endsAt]]);
+    assert.equal(count(cold,'team_subscription_heads'),1);
+    const seats = cold.prepare('SELECT team_id,seats,ends_at FROM team_seat_capacity_grants').all();
+    assert.deepEqual(seats.map(row => [row.team_id,row.seats,row.ends_at]),[[fresh.teamId,4,endsAt]]);
+    assert.equal(cold.prepare('SELECT count(*) AS n FROM team_sessions WHERE revoked_at IS NULL').get().n,0);
+    assert.equal(cold.prepare('SELECT count(*) AS n FROM team_device_leases WHERE revoked_at IS NULL').get().n,0);
+    const persisted = await fs.readFile(f.boot.databasePath);
+    assert.ok([discardedCode,newCode,owner.password,admin.password].every(secret => !persisted.includes(Buffer.from(secret))),
+      'Database persisted a cleartext invitation or password');
   } finally { cold.close(); }
 });
