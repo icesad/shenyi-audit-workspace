@@ -106,6 +106,7 @@
   "server/team/wechat-api.mjs",
   "server/team/wechat-native-billing-schema.sql",
   "server/team/wechat-native-billing.mjs",
+  "server/team/wechat-native-checkout-pricing.mjs",
   "server/team/wechat-native-callback.mjs",
   "server/team/wechat-native-fulfilment-schema.sql",
   "server/team/wechat-native-notification.mjs",

@@ -9,6 +9,7 @@ import { assertManagedDatabaseReady } from '../server/team/managed-database-read
 import { createAliyunSms } from '../server/team/aliyun-sms.mjs';
 import { createWechatOpenPlatform } from '../server/team/wechat-open-platform.mjs';
 import { assertWechatNativeBillingReady } from '../server/team/wechat-native-billing.mjs';
+import { validateWechatNativeCatalog } from '../server/team/wechat-native-checkout-pricing.mjs';
 import { APP_ID, MERCHANT_ID, createWechatSignatureVerifier, isRsa2048Key, matches } from '../server/team/wechat-native-protocol.mjs';
 import { sqliteExistingFileUri } from '../server/team/sqlite-existing-file.mjs';
 
@@ -223,12 +224,12 @@ async function loadWechatNativeWebsite(filename) {
   try {
     if (Object.hasOwn(process.env, 'NODE_TLS_REJECT_UNAUTHORIZED') && process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '1') fail(code);
     bytes = await readLocalFile(filename, 16 * 1024, code);
-    const {schemaVersion, provider, certificateSerial, merchantPrivateKey, ...unknown} = parseProfile(bytes,code);
+    const {schemaVersion, provider, certificateSerial, merchantPrivateKey, catalog, ...unknown} = parseProfile(bytes,code);
     if (schemaVersion !== 1 || provider !== 'wechat-pay-native-v3' || Object.keys(unknown).length !== 0 ||
         !matches(/^[A-Fa-f0-9]{1,64}$/,certificateSerial) || typeof merchantPrivateKey !== 'string') fail(code);
     const key = createPrivateKey(merchantPrivateKey);
     if (!isRsa2048Key(key,'private')) fail(code);
-    return {certificateSerial,merchantPrivateKey:key};
+    return {certificateSerial,merchantPrivateKey:key,catalog:validateWechatNativeCatalog(catalog)};
   } catch {
     fail(code);
   } finally {

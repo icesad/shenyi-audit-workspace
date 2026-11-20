@@ -9,6 +9,7 @@ import {isWechatConfigured} from './wechat-api.mjs';
 import {serviceUnavailable, startLoopbackTeamListener} from './team-http-listener.mjs';
 import {handleWechatNativeCallback, WECHAT_NATIVE_NOTIFY_PATH} from './wechat-native-callback.mjs';
 import {assertWechatNativeBillingReady, createWechatNativeBilling, createWechatNativePaymentReceiver, withWechatNativeCallbackLockBudget} from './wechat-native-billing.mjs';
+import {validateWechatNativeCatalog} from './wechat-native-checkout-pricing.mjs';
 import {createWechatNativeWebsite, isNativeWebsitePath} from './wechat-native-website.mjs';
 import {isWechatNativeNotifyUrl} from './wechat-native-orders.mjs';
 
@@ -93,7 +94,11 @@ function websiteNotifyUrl(origin, website, callback) {
 /** Validate the same provider settings and TLS context without creating a listener. */
 export function checkManagedServiceStartup(options) {
   const {origin} = validateManagedServiceOptions(options);
-  if (options.wechatNativeWebsite !== undefined) websiteNotifyUrl(origin,options.wechatNativeWebsite,options.wechatNativeCallback);
+  if (options.wechatNativeWebsite !== undefined) {
+    websiteNotifyUrl(origin,options.wechatNativeWebsite,options.wechatNativeCallback);
+    try { validateWechatNativeCatalog(options.wechatNativeWebsite.catalog); }
+    catch { fail('MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY'); }
+  }
   try { createSecureContext(checkedTlsOptions(origin, options.key, options.cert)); }
   catch { fail('MANAGED_TLS_INVALID'); }
 }
@@ -115,11 +120,11 @@ export async function startManagedTeamServer({db, apiBase, port = 0, serverId, k
   if (wechatNativeWebsite !== undefined) {
     try {
       if (!receiveWechatNativeNotification) fail('MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY');
-      const {certificateSerial, merchantPrivateKey, fetchImpl} = wechatNativeWebsite;
+      const {certificateSerial, merchantPrivateKey, fetchImpl, catalog} = wechatNativeWebsite;
       const notifyUrl = websiteNotifyUrl(origin,wechatNativeWebsite,wechatNativeCallback);
       const billing = createWechatNativeBilling({...wechatNativeCallback, db,
         certificateSerial, merchantPrivateKey, fetchImpl, notifyUrl});
-      nativeWebsitePayment = await createWechatNativeWebsite({db,origin:origin.origin,billing});
+      nativeWebsitePayment = await createWechatNativeWebsite({db,origin:origin.origin,billing,catalog});
     } catch { fail('MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY'); }
   }
   const pepper = hasSms ? Buffer.from(phonePepper) : undefined;

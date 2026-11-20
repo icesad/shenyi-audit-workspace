@@ -275,40 +275,56 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
     ${RECEIPT_JOINS}
     WHERE o.team_id = ? AND o.order_id = ? AND o.merchant_id = ? AND o.app_id = ?
       AND ${administratorTechnicalEligibilitySql()}`);
+  const readRequestOrder = db.prepare(`SELECT * FROM ${ORDER} WHERE team_id = ? AND request_id = ?`);
+
+  function lockOrderWithinTransaction(input, at = readCurrentTime()) {
+    if (!db.isTransaction) conflict();
+    const {teamId, actorId, requestId, product, offerId, offerRevision, seats, termRevision, amountMinor, expiresAt} = input;
+    if (!matches(ID, teamId) || !matches(ID, actorId) || !matches(UUID, requestId) || !matches(ID, offerId) ||
+        !boundedInteger(offerRevision, 1, Number.MAX_SAFE_INTEGER) || !boundedInteger(amountMinor, 1, MAX_AMOUNT_MINOR) ||
+        !boundedInteger(at, 0, MAX_PAYMENT_TIME) || !boundedInteger(expiresAt, 0, MAX_PAYMENT_TIME) || expiresAt % 1000 !== 0 ||
+        !boundedInteger(seats, product === SEAT_PRODUCT ? 1 : 0, 1000) ||
+        !(product === ANNUAL_PRODUCT ? termRevision === null :
+          product === SEAT_PRODUCT && boundedInteger(termRevision, 1, Number.MAX_SAFE_INTEGER))) invalid();
+    if (!administratorTechnicalEligible(db, actorId, teamId)) deny();
+    const existing = readRequestOrder.get(teamId, requestId);
+    if (existing) {
+      const locked = orderValue(existing);
+      if (locked.actorId !== actorId || locked.appId !== appId || locked.merchantId !== merchantId ||
+          locked.product !== product || locked.offerId !== offerId || locked.offerRevision !== offerRevision ||
+          locked.seats !== seats || locked.termRevision !== termRevision || locked.amountMinor !== amountMinor ||
+          locked.expiresAt !== expiresAt) conflict();
+      return locked;
+    }
+    if (!boundedInteger(expiresAt, at + MIN_PAYMENT_WINDOW_MS, at + MAX_PAYMENT_WINDOW_MS)) invalid();
+    assertActiveSeatTerm({product, teamId, termRevision, expiresAt}, at);
+    if (product === ANNUAL_PRODUCT && readSeatCapacity(db, teamId, at).usedSeats > seats) insufficientSeats();
+    const id = randomUUID();
+    const description = product === ANNUAL_PRODUCT ? '审易团队年订阅' : '审易团队席位增购';
+    return orderValue(db.prepare(`INSERT INTO ${ORDER}
+      (order_id, team_id, actor_id, request_id, app_id, merchant_id, product, description, offer_id, offer_revision,
+        seats, term_revision, amount_minor, currency, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CNY', ?, ?) RETURNING *`)
+      .get(id, teamId, actorId, requestId, appId, merchantId, product, description, offerId, offerRevision,
+        seats, termRevision, amountMinor, at, expiresAt));
+  }
+
+  function readOrderForRequest({teamId, actorId, requestId, product}) {
+    if (!matches(ID, teamId) || !matches(ID, actorId) || !matches(UUID, requestId) ||
+        ![ANNUAL_PRODUCT, SEAT_PRODUCT].includes(product)) invalid();
+    if (!administratorTechnicalEligible(db, actorId, teamId)) deny();
+    const prior = readRequestOrder.get(teamId, requestId);
+    if (!prior) return null;
+    if (prior.actor_id !== actorId || prior.product !== product || prior.app_id !== appId || prior.merchant_id !== merchantId) deny();
+    return readOrder({teamId, actorId, orderId:prior.order_id});
+  }
+
   return Object.freeze({
     lockOrder(input) {
-      const {teamId, actorId, requestId, product, offerId, offerRevision, seats, termRevision, amountMinor, expiresAt} = input;
-      if (!matches(ID, teamId) || !matches(ID, actorId) || !matches(UUID, requestId) || !matches(ID, offerId) ||
-          !boundedInteger(offerRevision, 1, Number.MAX_SAFE_INTEGER) || !boundedInteger(amountMinor, 1, MAX_AMOUNT_MINOR) ||
-          !boundedInteger(expiresAt, 0, MAX_PAYMENT_TIME) || expiresAt % 1000 !== 0 ||
-          !boundedInteger(seats, product === SEAT_PRODUCT ? 1 : 0, 1000) ||
-          !(product === ANNUAL_PRODUCT ? termRevision === null :
-            product === SEAT_PRODUCT && boundedInteger(termRevision, 1, Number.MAX_SAFE_INTEGER))) invalid();
-      return write(db, () => {
-        if (!administratorTechnicalEligible(db, actorId, teamId)) deny();
-        const existing = db.prepare(`SELECT * FROM ${ORDER} WHERE team_id = ? AND request_id = ?`).get(teamId, requestId);
-        if (existing) {
-          const locked = orderValue(existing);
-          if (locked.actorId !== actorId || locked.appId !== appId || locked.merchantId !== merchantId ||
-              locked.product !== product || locked.offerId !== offerId || locked.offerRevision !== offerRevision ||
-              locked.seats !== seats || locked.termRevision !== termRevision || locked.amountMinor !== amountMinor ||
-              locked.expiresAt !== expiresAt) conflict();
-          return locked;
-        }
-        const at = readCurrentTime();
-        if (!boundedInteger(expiresAt, at + MIN_PAYMENT_WINDOW_MS, at + MAX_PAYMENT_WINDOW_MS)) invalid();
-        assertActiveSeatTerm({product, teamId, termRevision, expiresAt}, at);
-        if (product === ANNUAL_PRODUCT && readSeatCapacity(db, teamId, at).usedSeats > seats) insufficientSeats();
-        const id = randomUUID();
-        const description = product === ANNUAL_PRODUCT ? '审易团队年订阅' : '审易团队席位增购';
-        return orderValue(db.prepare(`INSERT INTO ${ORDER}
-          (order_id, team_id, actor_id, request_id, app_id, merchant_id, product, description, offer_id, offer_revision,
-            seats, term_revision, amount_minor, currency, created_at, expires_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CNY', ?, ?) RETURNING *`)
-          .get(id, teamId, actorId, requestId, appId, merchantId, product, description, offerId, offerRevision,
-            seats, termRevision, amountMinor, at, expiresAt));
-      });
+      return write(db, () => lockOrderWithinTransaction(input));
     },
+    lockOrderWithinTransaction,
+    readOrderForRequest,
     readOrder,
     async createPaymentCode(access) {
       const scope = {...access};

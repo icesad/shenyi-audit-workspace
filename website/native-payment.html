@@ -20,8 +20,8 @@
   </header>
 
   <main id="main" class="shell" tabindex="-1">
-    <h1>订单付款</h1>
-    <p class="lead">核对原订单金额后，使用微信扫一扫付款。</p>
+    <h1 id="page-title">订单付款</h1>
+    <p id="page-lead" class="lead">核对原订单金额后，使用微信扫一扫付款。</p>
 
     <section id="payment-status" class="payment-status" aria-labelledby="status-title" aria-busy="true">
       <div role="status" aria-live="polite" aria-atomic="true">
@@ -31,9 +31,44 @@
       <button type="button" class="button secondary" id="retry-order" hidden>重新核对订单</button>
     </section>
 
+    <div id="checkout-content" class="payment-grid" hidden>
+      <section class="panel" aria-labelledby="checkout-title">
+        <h2 id="checkout-title"></h2>
+        <p id="checkout-team" class="team-name"></p>
+        <form id="seat-quote-form">
+          <label for="selected-seats" id="seat-label"></label>
+          <p id="seat-range" class="field-help"></p>
+          <input id="selected-seats" type="number" inputmode="numeric" autocomplete="off" step="1" required aria-describedby="seat-range seat-error">
+          <p id="seat-error" class="field-error" aria-live="polite" hidden></p>
+          <div class="payment-actions">
+            <button type="submit" class="button primary" id="get-quote">获取报价</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel scan-panel" aria-labelledby="quote-title">
+        <h2 id="quote-title">本次报价</h2>
+        <p id="quote-placeholder">输入席位数后获取报价。</p>
+        <div id="quote-preview" hidden>
+          <div class="total">
+            <span>应付金额</span>
+            <strong id="quote-amount"></strong>
+          </div>
+          <dl class="order-details">
+            <div><dt>席位数</dt><dd id="quote-seats"></dd></div>
+            <div id="quote-term-row" hidden><dt>席位有效期至（北京时间）</dt><dd id="quote-term"></dd></div>
+            <div><dt>报价有效期至（北京时间）</dt><dd id="quote-expires"></dd></div>
+          </dl>
+          <div class="payment-actions">
+            <button type="button" class="button primary" id="confirm-quote">确认订单</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
     <div id="payment-content" class="payment-grid" hidden>
       <section class="panel order-panel" aria-labelledby="order-title">
-        <h2 id="order-title"></h2>
+        <h2 id="order-title" tabindex="-1"></h2>
         <p id="team-name" class="team-name"></p>
         <div class="total">
           <span>订单金额</span>

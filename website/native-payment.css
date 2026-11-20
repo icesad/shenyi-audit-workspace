@@ -75,6 +75,25 @@ h2 { font-size: clamp(1.15rem, 2vw, 1.4rem); }
   background: var(--surface);
 }
 .team-name { margin-top: .45rem; color: var(--muted); overflow-wrap: anywhere; }
+#seat-quote-form { margin-top: 1.3rem; }
+#seat-quote-form label { display: block; color: var(--deep); font-weight: 600; }
+.field-help, .field-error { margin-top: .3rem; font-size: .875rem; }
+.field-help { color: var(--muted); }
+.field-error { color: var(--review); }
+#selected-seats {
+  display: block;
+  width: min(100%, 12rem);
+  min-height: 2.75rem;
+  margin-top: .5rem;
+  padding: .45rem .65rem;
+  border: 1px solid var(--green);
+  border-radius: .4rem;
+  font: inherit;
+  color: var(--deep);
+  background: var(--surface);
+}
+#selected-seats[aria-invalid="true"] { border-color: var(--review); }
+#selected-seats:disabled { opacity: .58; }
 .total {
   display: flex;
   flex-direction: column;
