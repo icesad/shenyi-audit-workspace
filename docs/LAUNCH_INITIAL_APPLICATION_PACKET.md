@@ -35,6 +35,8 @@
 
 ## 商户接入与正式上线
 
+参见[首发收款准备](PAYMENT_CHANNEL_PREPARATION.md)，其中列出官网入口、微信支付与支付宝的开通前提，以及商户和产品负责人需要分别签收的证据。
+
 **收款准备。** 官网集中下单付款的入口已确认。确认首发渠道、价格和席位、发票及退款条款。若选择官网 PC 扫码，可评估微信支付 Native。企业按渠道准备营业执照、法定代表人核验材料和对公银行账户，完成账户验证、审核和签约。Native 另需适用的已认证 AppID、产品权限和商户绑定。微信扫码登录的应用审核另行核对。 [微信支付企业材料](https://pay.wechatpay.cn/static/applyment_guide/applyment_detail_website.shtml) · [Native 接入准备](https://pay.wechatpay.cn/doc/v3/merchant/4015614538)
 
 **验收回执。** 商户授权后记录实际测试订单、可信收款通知、查单对账、权益到账和退款结果。双人合成走查按现有评审单，真实试点另记授权范围和结果。正式上线还需记录 Windows 与 macOS 签名安装验收、实际访问地址、运行版本及回滚负责人。 [双人评审单](PILOT_OWNER_REVIEW.md)
