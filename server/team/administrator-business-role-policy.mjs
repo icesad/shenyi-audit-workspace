@@ -15,16 +15,16 @@ const safeText=(value,fallback)=>[...String(value??'').toWellFormed().replace(/[
 const noOwners=noReviewerHistorySql;
 function approvalSql(user,team,technical){
  const matches=technical?`((ab_approval.role IS NULL AND ab_member.status='disabled') OR (ab_approval.role=ab_member.role AND ab_member.status='active'))`:`ab_approval.role=ab_member.role AND ab_member.status='active'`;
- return `EXISTS (SELECT 1 FROM team_administrator_business_roles ab_approval
- JOIN team_memberships ab_member ON ab_member.team_id=ab_approval.team_id AND ab_member.user_id=ab_approval.user_id
- JOIN team_operators ab_operator ON ab_operator.team_id=ab_approval.team_id AND ab_operator.user_id=ab_approval.user_id AND ab_operator.role='administrator' AND ab_operator.status='active'
- JOIN team_users ab_account ON ab_account.user_id=ab_approval.user_id AND ab_account.status='active'
- JOIN teams ab_team ON ab_team.team_id=ab_approval.team_id AND ab_team.status='active'
- JOIN team_credentials ab_credential ON ab_credential.user_id=ab_approval.user_id
+ return `EXISTS (SELECT 1 FROM main.team_administrator_business_roles ab_approval
+ JOIN main.team_memberships ab_member ON ab_member.team_id=ab_approval.team_id AND ab_member.user_id=ab_approval.user_id
+ JOIN main.team_operators ab_operator ON ab_operator.team_id=ab_approval.team_id AND ab_operator.user_id=ab_approval.user_id AND ab_operator.role='administrator' AND ab_operator.status='active'
+ JOIN main.team_users ab_account ON ab_account.user_id=ab_approval.user_id AND ab_account.status='active'
+ JOIN main.teams ab_team ON ab_team.team_id=ab_approval.team_id AND ab_team.status='active'
+ JOIN main.team_credentials ab_credential ON ab_credential.user_id=ab_approval.user_id
  WHERE ab_approval.user_id=${user} AND ab_approval.team_id=${team} AND ab_approval.status='active'
  AND ab_approval.member_role=ab_member.role AND ${matches}
- AND (SELECT COUNT(*) FROM team_memberships WHERE user_id=ab_approval.user_id)=1
- AND (SELECT COUNT(*) FROM team_operators WHERE user_id=ab_approval.user_id)=1
+ AND (SELECT COUNT(*) FROM main.team_memberships WHERE user_id=ab_approval.user_id)=1
+ AND (SELECT COUNT(*) FROM main.team_operators WHERE user_id=ab_approval.user_id)=1
  AND ${noOwners('ab_approval.user_id')})`;
 }
 export function approvedAdministratorBusiness(db,userId,teamId,{technical=false}={}){
@@ -32,18 +32,18 @@ export function approvedAdministratorBusiness(db,userId,teamId,{technical=false}
 }
 export function administratorBusinessEligibilitySql(memberAlias){
  if(!['member','membership'].includes(memberAlias))throw Error('Untrusted business membership SQL alias');
- return `(${noOwners(memberAlias+'.user_id')} AND (NOT EXISTS (SELECT 1 FROM team_operators WHERE user_id=${memberAlias}.user_id) OR ${approvalSql(memberAlias+'.user_id',memberAlias+'.team_id',false)}))`;
+ return `(${noOwners(memberAlias+'.user_id')} AND (NOT EXISTS (SELECT 1 FROM main.team_operators WHERE user_id=${memberAlias}.user_id) OR ${approvalSql(memberAlias+'.user_id',memberAlias+'.team_id',false)}))`;
 }
 export function administratorTechnicalEligibilitySql(operatorAlias='operator'){
  if(!['operator','candidate_operator'].includes(operatorAlias))throw Error('Untrusted technical administrator SQL alias');
  return `(${operatorAlias}.role='administrator' AND ${operatorAlias}.status='active'
- AND EXISTS (SELECT 1 FROM team_users WHERE user_id=${operatorAlias}.user_id AND status='active')
- AND EXISTS (SELECT 1 FROM teams WHERE team_id=${operatorAlias}.team_id AND status='active')
- AND (NOT EXISTS (SELECT 1 FROM team_memberships WHERE user_id=${operatorAlias}.user_id)
+ AND EXISTS (SELECT 1 FROM main.team_users WHERE user_id=${operatorAlias}.user_id AND status='active')
+ AND EXISTS (SELECT 1 FROM main.teams WHERE team_id=${operatorAlias}.team_id AND status='active')
+ AND (NOT EXISTS (SELECT 1 FROM main.team_memberships WHERE user_id=${operatorAlias}.user_id)
  OR ${approvalSql(operatorAlias+'.user_id',operatorAlias+'.team_id',true)}))`;
 }
 export function administratorTechnicalEligible(db,userId,teamId){
- return !!db.prepare(`SELECT 1 FROM team_operators operator WHERE operator.user_id=? AND operator.team_id=? AND ${administratorTechnicalEligibilitySql()}`).get(userId,teamId);
+ return !!db.prepare(`SELECT 1 FROM main.team_operators operator WHERE operator.user_id=? AND operator.team_id=? AND ${administratorTechnicalEligibilitySql()}`).get(userId,teamId);
 }
 
 export function administratorBusinessReviewer(db,userId){

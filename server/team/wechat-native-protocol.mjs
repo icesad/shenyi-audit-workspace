@@ -7,6 +7,11 @@ export const MERCHANT_ID = /^[0-9]{1,32}$/;
 export const MERCHANT_ORDER_ID = /^[A-Za-z0-9_*|-]{6,32}$/;
 export const TRANSACTION_ID = /^[A-Za-z0-9_-]{1,32}$/;
 export const MAX_AMOUNT_MINOR = 2_147_483_647;
+export const REQUEST_TIMEOUT_MS = 5000;
+// WeChat measures its minimum from receipt. Leave room for the request and second-level precision.
+export const MIN_PAYMENT_WINDOW_MS = 60_000 + REQUEST_TIMEOUT_MS + 1000;
+export const MAX_PAYMENT_WINDOW_MS = 7 * 86_400_000;
+export const MAX_PAYMENT_TIME = Date.UTC(9999, 11, 31, 23, 59, 59);
 
 const KEY_ID = /^PUB_KEY_ID_[0-9]{1,64}$/;
 const RFC3339 = /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;

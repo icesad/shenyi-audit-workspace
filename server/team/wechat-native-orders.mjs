@@ -3,17 +3,13 @@ import {isIP} from 'node:net';
 import {ApiError, ID} from './http-utils.mjs';
 import {
   APP_ID, MERCHANT_ID, MERCHANT_ORDER_ID, TRANSACTION_ID, MAX_AMOUNT_MINOR, SIGNATURE_TYPE, SIGNATURE_TOLERANCE_MS,
+  REQUEST_TIMEOUT_MS, MIN_PAYMENT_WINDOW_MS, MAX_PAYMENT_WINDOW_MS, MAX_PAYMENT_TIME,
   boundedInteger, createWechatSignatureVerifier, isRsa2048Key, matches, paidOnOrAfterCreation,
   parsePaymentTime, parseWechatRecord, record,
 } from './wechat-native-protocol.mjs';
 
 const API_ORIGIN = 'https://api.mch.weixin.qq.com';
 const MAX_RESPONSE_BYTES = 256 * 1024;
-const REQUEST_TIMEOUT_MS = 5000;
-// WeChat measures its minimum from receipt. Leave room for the request and second-level precision.
-const MIN_PAYMENT_WINDOW_MS = 60_000 + REQUEST_TIMEOUT_MS + 1000;
-const MAX_PAYMENT_WINDOW_MS = 7 * 86_400_000;
-const MAX_TIME = Date.UTC(9999, 11, 31, 23, 59, 59);
 const NATIVE_STATES = new Set(['NOTPAY', 'CLOSED', 'REFUND', 'SUCCESS']);
 
 const invalidOrder = () => { throw new ApiError(400, 'WECHAT_NATIVE_LOCK_INVALID', '微信支付订单资料或付款期限无效。'); };
@@ -81,7 +77,7 @@ export function createWechatNativeOrders({
   const preferredPublicKeyId = keys[0].id;
 
   function readLockedOrder(order, at) {
-    if (!order || !boundedInteger(at, 0, MAX_TIME)) invalidOrder();
+    if (!order || !boundedInteger(at, 0, MAX_PAYMENT_TIME)) invalidOrder();
     const {id, appId: orderAppId, merchantId: orderMerchantId, merchantOrderId, amountMinor, currency, createdAt} = order;
     if (!matches(ID, id) || orderAppId !== appId || orderMerchantId !== merchantId ||
         !matches(MERCHANT_ORDER_ID, merchantOrderId) || !boundedInteger(amountMinor, 1, MAX_AMOUNT_MINOR) ||
@@ -141,7 +137,7 @@ export function createWechatNativeOrders({
       const at = now();
       const {merchantOrderId, amountMinor, currency} = readLockedOrder(order, at);
       const {expiresAt, description} = order;
-      if (!boundedInteger(expiresAt, at + MIN_PAYMENT_WINDOW_MS, Math.min(at + MAX_PAYMENT_WINDOW_MS, MAX_TIME)) ||
+      if (!boundedInteger(expiresAt, at + MIN_PAYMENT_WINDOW_MS, Math.min(at + MAX_PAYMENT_WINDOW_MS, MAX_PAYMENT_TIME)) ||
           expiresAt % 1000 !== 0 || typeof description !== 'string' || !description.trim() ||
           Array.from(description).length > 127 || /[\x00-\x1f\x7f]/.test(description)) invalidOrder();
       const body = JSON.stringify({

@@ -30,9 +30,9 @@ function eventValue(row){
 }
 function ledger(db,teamId){
  const row=query(db,`SELECT head.team_id AS head_team_id,head.revision AS head_revision,event.*
- FROM teams team LEFT JOIN team_subscription_heads head ON head.team_id=team.team_id
- LEFT JOIN team_subscription_events event ON event.team_id=team.team_id
-  AND event.revision=(SELECT MAX(latest.revision) FROM team_subscription_events latest WHERE latest.team_id=team.team_id)
+ FROM main.teams team LEFT JOIN main.team_subscription_heads head ON head.team_id=team.team_id
+ LEFT JOIN main.team_subscription_events event ON event.team_id=team.team_id
+  AND event.revision=(SELECT MAX(latest.revision) FROM main.team_subscription_events latest WHERE latest.team_id=team.team_id)
  WHERE team.team_id=? AND team.status='active'`,teamId);
  if(!row)deny();
  if(row.head_team_id===null){if(row.operation_id!==null)conflict();return null;}
@@ -43,9 +43,9 @@ function serverNow(now){if(typeof now!=='function')invalid();const at=now();if(!
 
 export function countActiveBusinessSeats(db,teamId){
  teamInput(teamId);
- const row=query(db,`SELECT COUNT(DISTINCT member.user_id) AS seats FROM team_memberships member
- JOIN team_users account ON account.user_id=member.user_id AND account.status='active'
- JOIN teams team ON team.team_id=member.team_id AND team.status='active'
+ const row=query(db,`SELECT COUNT(DISTINCT member.user_id) AS seats FROM main.team_memberships member
+ JOIN main.team_users account ON account.user_id=member.user_id AND account.status='active'
+ JOIN main.teams team ON team.team_id=member.team_id AND team.status='active'
  WHERE member.team_id=? AND member.status='active' AND member.role IN ('intern','assistant','manager','partner')
  AND ${administratorBusinessEligibilitySql('member')}`,teamId);
  return storedInteger(row.seats);
