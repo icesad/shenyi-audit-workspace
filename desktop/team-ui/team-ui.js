@@ -678,14 +678,37 @@
   function provisioningPending(){return !!provisioningMutation&&sameAccountSessionsActor(provisioningMutation.actor);}
   function activeProvisioningRecovery(){return session&&provisioningRecovery?.accountId===session.account.id?provisioningRecovery:null;}
   function provisioningRecoveryTarget(recovery){return '申请 '+recovery.id+'（'+recovery.teamName+' · '+recovery.phoneMasked+'）';}
+  function provisioningPilotSummary(pilot){return '试点已批准，截止 '+provisioningPilotTime(pilot.endsAt)+'，员工席位 '+pilot.seats+' 个。';}
+  function provisioningRecoveryNotice(recovery,text){
+    const confirmed=recovery.confirmedPilot;
+    return (confirmed?provisioningPilotSummary(confirmed):'')+text;
+  }
   function provisioningReviewAccessLost(error){return ['HTTP_401','HTTP_403','HTTP_404'].includes(error?.code);}
   function explainProvisioningRecovery(recovery){
-    const found=provisioningRows.find(item=>item.id===recovery.id&&item.teamId===recovery.teamId&&item.revision>=recovery.revision);
+    const pilot=recovery.decision==='approve-pilot';
+    const found=provisioningRows.find(item=>{
+      if(item.id!==recovery.id||item.teamId!==recovery.teamId||!(item.revision>=recovery.revision))return false;
+      if(!pilot)return true;
+      if(item.status!=='activated')return false;
+      const confirmed=recovery.confirmedPilot;
+      if(!item.pilot)return item.pilot===null&&item.revision===recovery.revision&&!confirmed;
+      return item.revision>recovery.revision&&(!confirmed||(
+        item.pilot.endsAt===confirmed.endsAt&&item.pilot.seats===confirmed.seats
+      ));
+    });
     const target=provisioningRecoveryTarget(recovery);
-    if(!found){message('team-provisioning-message','本页尚未核对到'+target+'的最新状态。请刷新审核记录或翻页查找，核对后才能继续。',true);return;}
+    if(!found){
+      message('team-provisioning-message',provisioningRecoveryNotice(recovery,'本页尚未核对到'+target+'的最新状态。请刷新审核记录或翻页查找，核对后才能继续。'),true);
+      return;
+    }
     provisioningRecovery=null;
     const row=[...byId('team-provisioning-list').children].find(node=>node.dataset.requestId===found.id);
     row?.firstElementChild?.append(el('small','刚核对的申请 · 编号 '+found.id));
+    if(pilot){
+      const summary=found.pilot?provisioningPilotSummary(found.pilot):'本次读取显示试点尚未批准。重新核对期限和席位、填写当前密码后，可明确批准。';
+      message('team-provisioning-message','已刷新审核记录并核对'+target+'。'+summary);
+      return;
+    }
     const guidance={
       pending:'当前仍待审核。核对团队和指定手机号后，重新填写当前密码，可再明确审核一次。',
       approved:'当前已批准、待本人激活。邀请码遗失时，请按该条记录的说明处理。',
@@ -792,7 +815,7 @@
     }
     catch(error){
       if(!currentProvisioningView(at,actor))return;
-      if(recovery&&!provisioningReviewAccessLost(error))message('team-provisioning-message','暂时无法刷新'+provisioningRecoveryTarget(recovery)+'。请稍后刷新核对，再继续录入或审核。',true);
+      if(recovery&&!provisioningReviewAccessLost(error))message('team-provisioning-message',provisioningRecoveryNotice(recovery,'暂时无法刷新'+provisioningRecoveryTarget(recovery)+'。请稍后刷新核对，再继续录入或审核。'),true);
       else{resetProvisioning();message('workspace-message',error.message||'审核权限或记录无法确认，请重新登录核对。',true);}
     }
     finally{if(currentProvisioningView(at,actor)){provisioningWorking=false;updateProvisioningControls();}}
@@ -816,11 +839,16 @@
     const noteFocus=event=>{if(event.target!==button&&event.target!==document.body)focusMoved=true;};
     if(trackFocus)document.addEventListener('focusin',noteFocus,true);
     const at=provisioningEpoch,actor=accountSessionsActor();
-    const recovery=firstAdminReview?{accountId:actor.id,id:item.id,teamId:item.teamId,teamName:item.teamName,phoneMasked:item.phoneMasked,revision:item.revision,cursors:provisioningCursors}:null;
+    const recovery=pilot||firstAdminReview?{accountId:actor.id,id:item.id,teamId:item.teamId,teamName:item.teamName,phoneMasked:item.phoneMasked,revision:item.revision,cursors:provisioningCursors,decision}:null;
     const operation={actor,recovery};provisioningMutation=operation;clearIssuedFirstAdmin();updateProvisioningControls();message('team-provisioning-message','正在验证当前密码并提交审核结果…');let committed=false;
     try{
       const value=await accountSessionsCall('reviewTeamProvisioningRequest',{requestId:item.id,decision,revision:item.revision,currentPassword,...(pilot?pilotFields:{})},actor);
-      if(recovery){
+      if(pilot){
+        const reply=value?.request;
+        if(reply?.id!==item.id||reply.teamId!==item.teamId||reply.status!=='activated'||reply.revision!==item.revision+1||
+          reply.pilot?.endsAt!==pilotFields.endsAt||reply.pilot?.seats!==pilotFields.seats)throw {code:'INVALID_RESPONSE'};
+        recovery.confirmedPilot={endsAt:reply.pilot.endsAt,seats:reply.pilot.seats};
+      }else if(firstAdminReview){
         const reply=value?.request,status=decision==='approve'?'approved':'revoked';
         if(reply?.id!==item.id||reply.teamId!==item.teamId||reply.status!==status||!Number.isSafeInteger(reply.revision)||reply.revision<=item.revision||
           decision==='approve'&&(typeof value.invitationCode!=='string'||!value.invitationCode))throw {code:'INVALID_RESPONSE'};
@@ -829,17 +857,32 @@
       committed=true;
       if(!currentProvisioningView(at,actor)||!byId('team-provisioning-panel').open){if(recovery)provisioningRecovery=recovery;return;}
       if(decision==='approve'){byId('issued-first-admin-description').textContent=value.request.teamName+' · '+value.request.phoneMasked+' · 有效至 '+new Date(value.request.expiresAt).toLocaleString('zh-CN');byId('issued-first-admin-code').value=value.invitationCode;byId('issued-first-admin').hidden=false;}
-      if(pilot){if(value.request?.status!=='activated'||!value.request.pilot)throw {code:'INVALID_RESPONSE'};provisioningRows=provisioningRows.map(row=>row===item?value.request:row);renderProvisioning();}
-      await refreshProvisioning(at,actor);if(currentProvisioningView(at,actor))message('team-provisioning-message',pilot?'试点已批准，截止时间和员工席位已保存。':decision==='approve'?'审核已批准，尚未开通团队。请自行转交本次凭据，首管理员本人激活后才可管理团队。':decision==='reject'?'申请已拒绝，未开通团队。':'未使用的首管理员激活凭据已撤销。');
+      if(pilot){provisioningRows=provisioningRows.map(row=>row===item?value.request:row);renderProvisioning();}
+      await refreshProvisioning(at,actor);
+      if(!currentProvisioningView(at,actor))return;
+      if(pilot){provisioningRecovery=recovery;explainProvisioningRecovery(recovery);}
+      else message('team-provisioning-message',decision==='approve'?'审核已批准，尚未开通团队。请自行转交本次凭据，首管理员本人激活后才可管理团队。':decision==='reject'?'申请已拒绝，未开通团队。':'未使用的首管理员激活凭据已撤销。');
     }catch(error){
       const uncertain=passwordChangeUncertain(error);
       if(recovery&&sameAccountSessionsActor(actor)&&(committed||uncertain||error?.code==='HTTP_409')){
         provisioningRecovery=recovery;
+        if(pilot&&!committed&&uncertain&&currentProvisioningView(at,actor)&&byId('team-provisioning-panel').open){
+          try{
+            await refreshProvisioning(at,actor);
+            if(currentProvisioningView(at,actor))explainProvisioningRecovery(recovery);
+            return;
+          }catch(refreshError){error=refreshError;}
+        }
         if(currentProvisioningView(at,actor)){
-          if(committed&&provisioningReviewAccessLost(error)){
+          if(provisioningReviewAccessLost(error)){
             resetProvisioning();message('workspace-message','当前审核权限无法确认，请重新登录核对。',true);
           }else{
             const target=provisioningRecoveryTarget(recovery);
+            if(pilot){
+              const notice=committed?'记录刷新无法确认。':uncertain?'未能确认试点批准结果，操作可能已完成。':'申请状态已改变。';
+              message('team-provisioning-message',provisioningRecoveryNotice(recovery,notice+'继续录入或审核前，请刷新审核记录核对'+target+'。'),true);
+              return;
+            }
             const hasCode=committed&&!byId('issued-first-admin').hidden;
             const action=decision==='approve'?'批准':'撤销';
             const notice=hasCode?'批准已完成，记录暂时未刷新。请先转交本次仍显示的邀请码。刷新时邀请码将清除。'
@@ -851,10 +894,8 @@
         return;
       }
       if(currentProvisioningView(at,actor)){
-        let refreshed=false;
-        retryPassword=pilot&&!committed&&!uncertain&&error.code==='HTTP_403';
-        if(pilot&&!committed&&uncertain&&byId('team-provisioning-panel').open){try{await refreshProvisioning(at,actor);refreshed=true;}catch{}}
-        if(currentProvisioningView(at,actor))message('team-provisioning-message',committed?(pilot?'试点批准已完成，但记录刷新无法确认，请刷新审核记录核对。':'审核请求已完成，但结果展示或刷新无法确认，请刷新记录核对。一次性凭据不会重新显示。'):uncertain?(pilot?'未能确认试点批准结果；请求可能已完成，'+(refreshed?'已刷新审核记录，请核对显示结果，避免重复操作。':'请刷新审核记录核对，避免重复操作。'):'未能确认审核结果；请求可能已完成，请刷新记录核对，避免重复操作。'):error.message||'审核未通过，请核对当前密码及申请状态。',true);
+        retryPassword=pilot&&error?.code==='HTTP_403';
+        message('team-provisioning-message',committed?'审核请求已完成，但结果展示或刷新无法确认，请刷新记录核对。一次性凭据不会重新显示。':uncertain?'未能确认审核结果；请求可能已完成，请刷新记录核对，避免重复操作。':error?.message||'审核未通过，请核对当前密码及申请状态。',true);
       }
     }
     finally{

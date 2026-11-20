@@ -373,11 +373,162 @@ test('failed pilot verification preserves focus when the user has moved away whi
   assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
 });
 test('uncertain pilot approval refreshes read-only facts without resubmitting or inventing failure',async t=>{
-  let row=pilotRequest();const f=fixture(t,{listTeamProvisioningRequests:async()=>safe({requests:[row]}),reviewTeamProvisioningRequest:async input=>{row=pilotRequest({revision:4,pilot:{startsAt:Date.now(),endsAt:input.endsAt,seats:input.seats}});return fail('SERVICE_UNAVAILABLE','PRIVATE_UPSTREAM_DETAIL');}});await login(f);await openReview(f);reviewerProof(f);fillPilot(f);const before=count(f,'listTeamProvisioningRequests');pilotButton(f).click();await until(()=>f.id('team-provisioning-message').textContent.includes('未能确认试点批准'));assert.equal(count(f,'reviewTeamProvisioningRequest'),1);assert.equal(count(f,'listTeamProvisioningRequests'),before+1);assert.equal(pilotButton(f),null);assert.match(f.id('team-provisioning-list').textContent,/试点已批准/);assert.match(f.id('team-provisioning-message').textContent,/可能已完成.*已刷新/);assert.equal(f.d.body.textContent.includes('PRIVATE_UPSTREAM_DETAIL'),false);assert.equal(f.id('team-provisioning-password').value,'');
+  let row=pilotRequest();const f=fixture(t,{listTeamProvisioningRequests:async()=>safe({requests:[row]}),reviewTeamProvisioningRequest:async input=>{row=pilotRequest({revision:4,pilot:{startsAt:Date.now(),endsAt:input.endsAt,seats:input.seats}});return fail('SERVICE_UNAVAILABLE','PRIVATE_UPSTREAM_DETAIL');}});await login(f);await openReview(f);reviewerProof(f);fillPilot(f);const before=count(f,'listTeamProvisioningRequests');pilotButton(f).click();await until(()=>f.id('team-provisioning-message').textContent.includes('试点已批准'));assert.equal(count(f,'reviewTeamProvisioningRequest'),1);assert.equal(count(f,'listTeamProvisioningRequests'),before+1);assert.equal(pilotButton(f),null);assert.match(f.id('team-provisioning-list').textContent,/试点已批准.*4 个员工席位/);assert.match(f.id('team-provisioning-message').textContent,/试点已批准/);assert.equal(f.d.body.textContent.includes('PRIVATE_UPSTREAM_DETAIL'),false);assert.equal(f.id('team-provisioning-password').value,'');
 });
 test('confirmed pilot result remains displayed when the following list refresh fails',async t=>{
-  let committed=false;const f=fixture(t,{listTeamProvisioningRequests:async()=>committed?fail('SERVICE_UNAVAILABLE','refresh-failed'):safe({requests:[pilotRequest()]}),reviewTeamProvisioningRequest:async input=>{committed=true;return safe({request:pilotRequest({revision:4,pilot:{startsAt:Date.now(),endsAt:input.endsAt,seats:input.seats}})});}});await login(f);await openReview(f);reviewerProof(f);fillPilot(f);pilotButton(f).click();await until(()=>f.id('team-provisioning-message').textContent.includes('试点批准已完成'));assert.equal(pilotButton(f),null);assert.match(f.id('team-provisioning-list').textContent,/试点已批准/);assert.match(f.id('team-provisioning-message').textContent,/刷新无法确认/);assert.equal(f.id('team-provisioning-password').value,'');
+  let committed=false;
+  const f=fixture(t,{
+    listTeamProvisioningRequests:async()=>committed?fail('SERVICE_UNAVAILABLE','refresh-failed'):safe({requests:[pilotRequest()]}),
+    reviewTeamProvisioningRequest:async input=>{
+      committed=true;
+      return safe({request:pilotRequest({revision:4,pilot:{startsAt:Date.now(),endsAt:input.endsAt,seats:input.seats}})});
+    },
+  });
+  await login(f);
+  await openReview(f);
+  reviewerProof(f);
+  fillPilot(f);
+  pilotButton(f).click();
+  await until(()=>f.id('team-provisioning-message').textContent.includes('试点已批准'));
+  assert.equal(pilotButton(f),null);
+  assert.match(f.id('team-provisioning-list').textContent,/试点已批准/);
+  assert.match(f.id('team-provisioning-message').textContent,/刷新无法确认/);
+  assert.equal(f.id('team-provisioning-password').value,'');
 });
+
+test('an empty or stale read cannot hide confirmed pilot terms or unlock review',async t=>{
+  const original=pilotRequest();
+  let approved, rows=[original];
+  const f=fixture(t,{
+    listTeamProvisioningRequests:async()=>safe({requests:rows}),
+    reviewTeamProvisioningRequest:async input=>{
+      approved=pilotRequest({revision:4,pilot:{startsAt:Date.UTC(2035,5,1),endsAt:input.endsAt,seats:input.seats}});
+      rows=[];
+      return safe({request:approved});
+    },
+  });
+  await login(f);
+  await openReview(f);
+  reviewerProof(f);
+  fillPilot(f);
+  const refresh=f.id('team-provisioning-refresh'), password=f.id('team-provisioning-password');
+  const message=f.id('team-provisioning-message');
+  const before=count(f,'listTeamProvisioningRequests');
+  pilotButton(f).click();
+  await until(()=>count(f,'listTeamProvisioningRequests')>before&&!refresh.disabled);
+  assert.equal(password.disabled,true);
+  assert.equal(password.value,'');
+  assert.match(message.textContent,/截止.*2035.*6.*7.*08:09/);
+  assert.match(message.textContent,/员工席位\s*4\s*个|4\s*个员工席位/);
+
+  for(const conflicting of [original,{...approved,pilot:{...approved.pilot,seats:5}},
+    {...approved,pilot:{...approved.pilot,endsAt:PILOT_END_AT+60000}}]){
+    rows=[conflicting];
+    const reads=count(f,'listTeamProvisioningRequests');
+    refresh.click();
+    await until(()=>count(f,'listTeamProvisioningRequests')>reads&&!refresh.disabled);
+    assert.equal(password.disabled,true);
+    assert.match(message.textContent,/截止.*2035.*6.*7.*08:09/);
+    assert.match(message.textContent,/员工席位\s*4\s*个|4\s*个员工席位/);
+    pilotButton(f)?.dispatchEvent(new f.window.MouseEvent('click',{bubbles:true}));
+    assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+  }
+
+  rows=[approved];
+  refresh.click();
+  await until(()=>!password.disabled&&f.id('team-provisioning-list').textContent.includes('试点已批准'));
+  assert.equal(pilotButton(f),null);
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+});
+
+for(const [label,automaticRead] of [['unavailable',fail('HTTP_503','private-read-failure')],['empty',safe({requests:[]})]])
+test(`lost pilot approval with ${label} refresh requires a current read of the exact team`,async t=>{
+  const original=pilotRequest();
+  let approved, readResult=safe({requests:[original]});
+  const f=fixture(t,{
+    listTeamProvisioningRequests:async()=>readResult,
+    reviewTeamProvisioningRequest:async input=>{
+      approved=pilotRequest({revision:4,pilot:{startsAt:Date.UTC(2035,5,1),endsAt:input.endsAt,seats:input.seats}});
+      readResult=automaticRead;
+      return fail('SERVICE_UNAVAILABLE','private-approval-failure');
+    },
+  });
+  await login(f);
+  await openReview(f);
+  reviewerProof(f);
+  fillPilot(f);
+  const refresh=f.id('team-provisioning-refresh'), password=f.id('team-provisioning-password');
+  const before=count(f,'listTeamProvisioningRequests');
+  pilotButton(f).click();
+  await until(()=>count(f,'listTeamProvisioningRequests')>before&&!refresh.disabled);
+  assert.equal(password.value,'');
+  assert.equal(password.disabled,true);
+  assert.equal(pilotButton(f)?.disabled??true,true);
+
+  for(const requests of [[],[pilotRequest({revision:2})],[{...approved,teamId:'another-team'}],[{...approved,id:'another-request'}]]){
+    readResult=safe({requests});
+    const reads=count(f,'listTeamProvisioningRequests');
+    refresh.click();
+    await until(()=>count(f,'listTeamProvisioningRequests')>reads&&!refresh.disabled);
+    assert.equal(password.disabled,true);
+    assert.equal(f.id('team-provisioning-create').disabled,true);
+    pilotButton(f)?.dispatchEvent(new f.window.MouseEvent('click',{bubbles:true}));
+    assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+  }
+
+  readResult=safe({requests:[approved]});
+  refresh.click();
+  await until(()=>!password.disabled&&f.id('team-provisioning-list').textContent.includes('试点已批准'));
+  const text=f.id('team-provisioning-list').textContent;
+  assert.match(text,/试点已批准.*4 个员工席位/);
+  assert.match(text,/截止.*2035.*6.*7.*08:09.*北京时间/);
+  assert.equal(pilotButton(f),null);
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+  assert.doesNotMatch(f.d.body.textContent,/private-(read|approval)-failure/);
+});
+
+test('a fresh read of an unapproved pilot permits only a deliberate new review',async t=>{
+  const original=pilotRequest();
+  let listRow=original, submissions=0;
+  const f=fixture(t,{
+    listTeamProvisioningRequests:async()=>safe({requests:[listRow]}),
+    reviewTeamProvisioningRequest:async input=>{
+      if(++submissions===1){
+        listRow=pilotRequest({revision:2});
+        return fail('SERVICE_UNAVAILABLE','private-approval-failure');
+      }
+      listRow=pilotRequest({revision:4,pilot:{startsAt:Date.UTC(2035,5,1),endsAt:input.endsAt,seats:input.seats}});
+      return safe({request:listRow});
+    },
+  });
+  await login(f);
+  await openReview(f);
+  reviewerProof(f);
+  fillPilot(f);
+  const refresh=f.id('team-provisioning-refresh'), password=f.id('team-provisioning-password');
+  const before=count(f,'listTeamProvisioningRequests');
+  pilotButton(f).click();
+  await until(()=>count(f,'listTeamProvisioningRequests')>before&&!refresh.disabled);
+  assert.equal(password.disabled,true);
+  assert.equal(password.value,'');
+  assert.equal(pilotButton(f)?.disabled,true);
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+
+  listRow=original;
+  refresh.click();
+  await until(()=>!password.disabled);
+  assert.equal(password.value,'');
+  assert.equal(pilotButton(f)?.disabled,true);
+  assert.equal(count(f,'reviewTeamProvisioningRequest'),1);
+  reviewerProof(f);
+  fillPilot(f,{seats:'5'});
+  pilotButton(f).click();
+  await until(()=>f.id('team-provisioning-list').textContent.includes('5 个员工席位'));
+  const reviews=f.calls.filter(call=>call.name==='reviewTeamProvisioningRequest');
+  assert.equal(reviews.length,2);
+  assert.deepEqual({...reviews[1].arg},{requestId:REQUEST.id,decision:'approve-pilot',revision:3,currentPassword:PASSWORD,endsAt:PILOT_END_AT,seats:5});
+});
+
 test('pilot approval remains single-flight across close and reopening and clears discarded fields',async t=>{
   const wait=deferred();let row=pilotRequest();const f=fixture(t,{listTeamProvisioningRequests:async()=>safe({requests:[row]}),reviewTeamProvisioningRequest:()=>wait.promise});await login(f);await openReview(f);reviewerProof(f);fillPilot(f);const button=pilotButton(f);button.click();button.click();assert.equal(count(f,'reviewTeamProvisioningRequest'),1);assert.equal(f.id('team-pilot-ends-'+REQUEST.id).disabled,true);f.id('team-provisioning-panel').querySelector('summary').click();assert.equal(f.id('team-provisioning-list').children.length,0);assert.equal(f.id('team-provisioning-password').value,'');f.id('team-provisioning-panel').querySelector('summary').click();await until(()=>f.id('team-provisioning-message').textContent.includes('仍在处理中'));assert.equal(count(f,'reviewTeamProvisioningRequest'),1);row=pilotRequest({revision:4,pilot:{startsAt:Date.now(),endsAt:PILOT_END_AT,seats:4}});wait.resolve(safe({request:row}));await until(()=>f.id('team-provisioning-list').textContent.includes('试点已批准'));assert.equal(pilotButton(f),null);assert.equal(f.id('team-provisioning-password').value,'');assert.equal(f.id('issued-first-admin-code').value,'');
 });

@@ -487,13 +487,37 @@ test('first-administrator approval response loss can be reconciled, revoked and 
   assert.deepEqual(adminSession.memberships,[]);
   const administrator = expectStatus(await call('/api/auth/team-administration',{session:adminSession}),200);
   assert.deepEqual(administrator.teams,[{teamId:fresh.teamId,teamName:body.teamName}]);
-  assert.equal(count(db,'team_subscription_pilots'),0);
   const endsAt = Date.now()+60*60_000;
-  const {request:pilot} = expectStatus(await call(operations+'/'+opened.id+'/review',{session:ownerSession,
-    body:{decision:'approve-pilot',revision:opened.revision,currentPassword:owner.password,endsAt,seats:4}}),200);
-  assert.deepEqual([pilot.id,pilot.teamId,pilot.status,pilot.revision,pilot.pilot.endsAt,pilot.pilot.seats],
-    [opened.id,fresh.teamId,'activated',opened.revision+1,endsAt,4]);
-  assert.ok(Number.isSafeInteger(pilot.pilot.startsAt) && pilot.pilot.startsAt<endsAt);
+  await t.test('lost pilot approval reply is confirmed by reading the same request without another approval', async () => {
+    const pilotTables = ['team_subscription_pilots','team_subscription_events','team_subscription_heads','team_seat_capacity_grants'];
+    const pilotFacts = () => pilotTables.map(table => db.prepare(`SELECT * FROM main.${table}`).all());
+    assert.equal(opened.pilot,null);
+    assert.deepEqual(pilotFacts(),[[],[],[],[]]);
+    const smsCalls = supplier.calls.length;
+    let committed, savedFacts;
+    await assert.rejects(call(operations+'/'+opened.id+'/review',{session:ownerSession,
+      body:{decision:'approve-pilot',revision:opened.revision,currentPassword:owner.password,endsAt,seats:4},
+      captureLostResponse(reply) {
+        assertNoInvitation(reply,[discardedCode,newCode]);
+        committed = expectStatus(reply,200).request;
+        savedFacts = pilotFacts();
+        assert.deepEqual(savedFacts.map(rows => rows.length),[1,1,1,1]);
+      },
+    }), {code:'ECONNRESET', message:'Synthetic approval response lost'});
+
+    const listing = await call(operations,{session:ownerSession});
+    assertNoInvitation(listing,[discardedCode,newCode]);
+    const recovered = expectStatus(listing,200).requests.filter(row => row.id===opened.id);
+    assert.deepEqual(recovered,[committed]);
+    const [pilot] = recovered;
+    assert.deepEqual([pilot.id,pilot.teamId,pilot.status,pilot.revision,pilot.pilot.endsAt,pilot.pilot.seats],
+      [opened.id,fresh.teamId,'activated',opened.revision+1,endsAt,4]);
+    assert.ok(Number.isSafeInteger(pilot.pilot.startsAt) && pilot.pilot.startsAt<endsAt);
+    const capacity = expectStatus(await call('/api/teams/'+fresh.teamId+'/billing/seats',{session:adminSession}),200);
+    assert.deepEqual(capacity.seats,{purchasedSeats:4,activeBusinessSeats:0,reservedInvitationSeats:0,usedSeats:0,availableSeats:4});
+    assert.deepEqual(pilotFacts(),savedFacts);
+    assert.equal(supplier.calls.length,smsCalls);
+  });
   for (const session of [adminSession,ownerSession]) expectStatus(await call('/api/auth/logout',{session,body:{}}),200);
   await f.close();
 
@@ -523,13 +547,17 @@ test('first-administrator approval response loss can be reconciled, revoked and 
     assert.equal(consumed.attempts,1);
     assert.ok(Number.isSafeInteger(consumed.consumed_at));
     assert.equal(count(cold,'team_subscription_pilots'),1);
-    const entitlement = cold.prepare('SELECT request_id,team_id,approved_by,ends_at,seats FROM team_subscription_pilots').get();
-    assert.deepEqual({...entitlement},{request_id:fresh.id,team_id:fresh.teamId,approved_by:f.boot.ownerUserId,ends_at:endsAt,seats:4});
-    const subscription = cold.prepare('SELECT team_id,revision,ends_at FROM team_subscription_events').all();
-    assert.deepEqual(subscription.map(row => [row.team_id,row.revision,row.ends_at]),[[fresh.teamId,1,endsAt]]);
+    const {operation_id:operationId,starts_at:startsAt,...entitlement} = cold.prepare(
+      'SELECT operation_id,starts_at,request_id,team_id,approved_by,ends_at,seats FROM team_subscription_pilots').get();
+    assert.match(operationId,uuid);
+    assert.deepEqual(entitlement,{request_id:fresh.id,team_id:fresh.teamId,approved_by:f.boot.ownerUserId,ends_at:endsAt,seats:4});
+    const subscription = cold.prepare('SELECT operation_id,team_id,revision,starts_at,ends_at FROM team_subscription_events').all();
+    assert.deepEqual(subscription.map(row => [row.operation_id,row.team_id,row.revision,row.starts_at,row.ends_at]),
+      [[operationId,fresh.teamId,1,startsAt,endsAt]]);
     assert.equal(count(cold,'team_subscription_heads'),1);
-    const seats = cold.prepare('SELECT team_id,seats,ends_at FROM team_seat_capacity_grants').all();
-    assert.deepEqual(seats.map(row => [row.team_id,row.seats,row.ends_at]),[[fresh.teamId,4,endsAt]]);
+    const seats = cold.prepare('SELECT grant_id,team_id,seats,starts_at,ends_at FROM team_seat_capacity_grants').all();
+    assert.deepEqual(seats.map(row => [row.grant_id,row.team_id,row.seats,row.starts_at,row.ends_at]),
+      [[operationId,fresh.teamId,4,startsAt,endsAt]]);
     assert.equal(cold.prepare('SELECT count(*) AS n FROM team_sessions WHERE revoked_at IS NULL').get().n,0);
     assert.equal(cold.prepare('SELECT count(*) AS n FROM team_device_leases WHERE revoked_at IS NULL').get().n,0);
     const persisted = await fs.readFile(f.boot.databasePath);
