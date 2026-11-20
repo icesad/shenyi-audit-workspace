@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "artifacts": [
+    {
+      "id": "windows-704959f-review",
+      "purpose": "windows-review",
+      "name": "Shenyi-Owner-Review-704959f-Win-x64.zip",
+      "sourceCommit": "704959f6284c961ebda48d386f88c1d6e4883a71",
+      "bytes": 203838848,
+      "sha256": "0393ef37f02d9acf29574ac3d8b3488ba41d8b46ad3f2756f81e76338a0ae280"
+    },
+    {
+      "id": "macos-704959f-handoff",
+      "purpose": "macos-presigning",
+      "name": "Shenyi-macOS-Signing-Handoff-0.61.0-704959f.zip",
+      "sourceCommit": "704959f6284c961ebda48d386f88c1d6e4883a71",
+      "bytes": 260213760,
+      "sha256": "c4eeac997046731b0f28b63c33e8f0dbe7619e4dd7bf5271a9fa11b201f81c08"
+    },
+    {
+      "id": "linux-704959f-rehearsal",
+      "purpose": "linux-rehearsal",
+      "name": "Shenyi-Team-Linux-704959f.tar",
+      "sourceCommit": "704959f6284c961ebda48d386f88c1d6e4883a71",
+      "bytes": 45230080,
+      "sha256": "e5b4e9cb9e2452b8aacb0919865d1463293884d4cfa2ea9460cda784a37e2b1d"
+    },
+    {
+      "id": "linux-98a5a38-native-payment",
+      "purpose": "linux-rehearsal",
+      "name": "Shenyi-Team-Linux-98a5a38.tar",
+      "sourceCommit": "98a5a38037872e219107966ee96860a18f455b5d",
+      "bytes": 45230080,
+      "sha256": "f0087920fbee3dcafdcd33d28d3c31ab96d6682cd3dfa4535d855a0fbaab9ab7"
+    }
+  ]
+}

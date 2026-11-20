@@ -53,7 +53,7 @@ export function detachedSignatureFiles(fail) {
       const entry = await fs.lstat(filename, { bigint: true });
       if (!entry.isFile() || entry.nlink !== 1n || entry.size < 1n || entry.size > BigInt(maxBytes)) fail(code);
       if (path.relative(filename, await fs.realpath(filename))) fail(code);
-      handle = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+      handle = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
       const state = await handle.stat({ bigint: true });
       if (!sameState(entry, state)) fail(code);
       bytes = Buffer.alloc(Number(state.size));

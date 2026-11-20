@@ -143,6 +143,25 @@ node --test tests/team-wechat-native-trade-bill-parser.test.cjs tests/team-wecha
 
 团队走查已记录四职级的任务和原件范围、审批与激活顺序、停服核对结果，以及短信的复跑命令。 [四职级走查](PILOT_MANAGED_FIRST_TASK.md#2026-11-21-当前协作提交的-windows-空库四职级验收) · [新员工换机验收](DEVICE_REPLACEMENT.md#2026-11-21-当前-windows-候选的新员工换机闭环) · [短信激活联测](MANAGED_TEAM_SERVICE.md#首管理员和员工激活联测)
 
+## 收到发布构件时
+
+接收方先从产品负责人批准的私有源码提交取用交接清单和校验脚本，并通过获准的交接记录核对预期清单摘要。选定下表对应的编号，再读取收到的原始 ZIP 或 TAR。两份 Linux TAR 的字节长度相同，需按清单编号核对实际摘要。 [当前构件清单](RELEASE_HANDOFF_CATALOG.json)
+
+| 构件编号 | 用途 |
+| --- | --- |
+| `windows-704959f-review` | Windows x64 双人评审 ZIP，适用于合成走查。 |
+| `macos-704959f-handoff` | macOS Apple 芯片及 Intel 两份候选的外层签前交接 ZIP。 |
+| `linux-704959f-rehearsal` | 与两份桌面构件同源的 Ubuntu 暂存、恢复与回滚演练 TAR。 |
+| `linux-98a5a38-native-payment` | 完整 Linux 服务 TAR，含更新后的微信 Native 探针，已用于签名激活和 Nginx 验收。 |
+
+这份清单的 SHA-256 为 `dcf04f62369ad6a9e9a8cdb3164a36ce57f33ec36d01c6b8965b7915a21672b8`。接收时以批准记录中的值为准。在仓库根目录使用 Node.js 24.x 执行下列示例，将两个路径替换为本机的绝对实际路径，按收到的构件选择编号。macOS 可用 `pwd -P` 确认当前目录的实际路径。
+
+```sh
+node scripts/check-release-handoff.mjs --catalog "/absolute/review/docs/RELEASE_HANDOFF_CATALOG.json" --catalog-sha256 dcf04f62369ad6a9e9a8cdb3164a36ce57f33ec36d01c6b8965b7915a21672b8 --artifact macos-704959f-handoff --archive "/absolute/downloads/Shenyi-macOS-Signing-Handoff-0.61.0-704959f.zip"
+```
+
+成功时退出码为 `0`，回执记录构件编号、完整源码提交、字节数和 SHA-256。收到文件改名时可使用实际名称。失败时记录回执中的诊断码，按批准编号重新核对文件和清单。该命令只读归档字节。通过后按各平台接收文档核验内层构件、签名及实机结果。 [Windows 验收](WINDOWS_DESKTOP_CANDIDATE.md#发行验收) · [macOS 签名与接收](MACOS_DESKTOP_CANDIDATE.md#正式-zip-接收与签名核验) · [Linux 签名与暂存](LINUX_TEAM_DEPLOYMENT.md#发布归档签发与部署验签)
+
 生产价格目录、增购折算分母、订单时效和退款后权益处置由产品负责人确认。上线申请以已确认的上海企业同主体收款为基础，先核对域名和阿里云资源，再按属地手续与正式回执推进。 [上线申请与域名服务器步骤](LAUNCH_INITIAL_APPLICATION_PACKET.md) · [商业化路线图](COMMERCIALIZATION_ROADMAP.md)
 
 ## 提交、验收和合并
