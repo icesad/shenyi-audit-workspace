@@ -219,6 +219,7 @@ async function mainStartupFailure(env) {
     } },
     './team-service-config.cjs': { async loadTeamServiceConfiguration() { throw Error('synthetic invalid normal config'); } },
     './team-client.cjs': {}, './bridge.cjs': {}, './device-key-vault.cjs': {}, './device-key-directory.cjs': {},
+    './native-checkout-intents.cjs': require('../desktop/native-checkout-intents.cjs'),
     './material-preview-window.cjs': { PREVIEW_SCHEME: 'shenyi-preview' },
   };
   vm.runInNewContext(syncFs.readFileSync(path.resolve(__dirname, '../desktop/main.cjs'), 'utf8'), {
@@ -301,6 +302,7 @@ async function isolatedMainProfile(switchValue) {
     './device-key-directory.cjs': { resolveDeviceVaultDirectory() {
       seen.events.push('legacy-vault'); throw Error('isolated startup must not resolve the legacy vault');
     } },
+    './native-checkout-intents.cjs': require('../desktop/native-checkout-intents.cjs'),
     './material-preview-window.cjs': { PREVIEW_SCHEME: 'shenyi-preview' },
   };
   vm.runInNewContext(syncFs.readFileSync(path.resolve(__dirname, '../desktop/main.cjs'), 'utf8'), {

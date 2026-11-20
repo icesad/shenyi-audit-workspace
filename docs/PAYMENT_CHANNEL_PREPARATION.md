@@ -66,11 +66,11 @@
 
 此能力默认关闭。启用时，受管启动配置同时指定 `wechatNativeCallbackProfile` 和仓库外独立的 `wechatNativeWebsiteProfile`。后者的字段为 `schemaVersion: 1`、`provider: wechat-pay-native-v3`、商户证书序列号 `certificateSerial` 与 2048 位 RSA PEM 私钥 `merchantPrivateKey`。启动检查核对账本、配置和网页资源。本阶段将付款页、团队接口和支付回调放在同一受管 HTTPS 地址，公开官网展示页继续单独提供静态预览。
 
-原单付款通过本机 HTTPS 验证，使用设备签名、独立 SQLite 和合成商户应答。Chrome 对页面的独立验证使用合成接口。桌面打开对应支付页、真实商户及公网回调、对账和退款复核待验。
+原单付款通过本机 HTTPS 验证，使用设备签名、独立 SQLite 和合成商户应答。Windows 桌面已接通对应支付页。真实商户及公网回调、对账和退款复核待验。 [桌面付款入口](DESKTOP_BILLING_CONTRACT.md#受管服务的微信-native-官网付款)
 
 ## 官网报价和确认
 
-受管服务在独立的 `wechatNativeWebsiteProfile` 中配置 `catalog` 后，已绑定电脑的本团队技术管理员可以为团队年费或席位增购申请 `POST /api/teams/:teamId/billing/native-website-order-handoff`。请求包含商品 `product` 和本次购买的 `requestId`，客户端接入时应在同一次购买的重新打开、查询和重试中复用该 UUID。打开的仍是同一受管 HTTPS 付款页。省略 `catalog` 时，原单付款保留，报价建单入口关闭。
+受管服务在独立的 `wechatNativeWebsiteProfile` 中配置 `catalog` 后，已绑定电脑的本团队技术管理员可以为团队年费或席位增购申请 `POST /api/teams/:teamId/billing/native-website-order-handoff`。请求包含商品 `product` 和本次购买的 `requestId`。桌面在同一次购买的重新打开、查询和重试中复用该 UUID。开始下一笔时同时提交 `previousRequestId`，由服务器复核上一笔已安全终结，并在首次确认时复验。关闭 `catalog` 时，可凭原订单编号申请原单付款页。
 
 报价页按服务端提供的可选席位展示方案。管理员先获取报价，再核对人民币合计和席位并确认。报价有效期和订单付款截止分别显示。报价和确认调用 `POST /api/website-pay/quote` 与 `POST /api/website-pay/confirm`。浏览器提交席位数和报价编号，服务端决定单价、报价版本、期限和应付金额。确认在同一个 SQLite 写事务内复验设备及权限、原订阅与占席并保存原单。确认结果不明或页面已关闭时，从客户端补发同次购买授权，再查原单；已锁订单保持金额和截止。只有点击获取二维码才请求微信。
 
@@ -80,7 +80,9 @@
 | `seat.id`、`seat.revision`、`seat.annualUnitAmountMinor`、`seat.prorationBasis` | 增购方案和版本、每席年价、折算分母。当前可配置 `beijing-calendar-year-from-quote`，按报价时刻至原期结束的精确时长与北京时间一个自然年时长折算，整单向上取整到分。原期版本变化需重新报价。 |
 | `quoteDurationMs`、`paymentDurationMs` | 报价有效毫秒数（1–120 秒）、付款窗口毫秒数（187 秒至 7 天，整秒）。订单截止向下取整，增购不超过原期。新单预留原网页授权剩余时间和微信出码所需的 66 秒，剩余期限不足时暂缓建单。 |
 
-目录应由负责人批准后随受管配置版本管理。当前本机验收使用合成目录。生产价格、折算分母和时效需要正式确认，桌面原单入口与实际商户收款继续待验。
+目录应由负责人批准后随受管配置版本管理。当前本机验收使用合成目录。生产价格、折算分母和时效需要正式确认，实际商户收款继续待验。
+
+付款截止后，微信查单仍可能回报未支付。下一阶段会接入超时原单的主动查单、关单与关单后验签复查。当前桌面按已有可信记录判断能否开启下一笔。关单结果不明或出现迟到付款时，继续保留原单供核对。 [微信 Native 接入易错点](https://pay.wechatpay.cn/doc/v3/merchant/4054257695) · [关闭订单](https://pay.wechatpay.cn/doc/v3/merchant/4012791881)
 
 ## 接入时从现有产品继承的规则
 
