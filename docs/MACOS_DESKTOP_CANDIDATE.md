@@ -4,7 +4,13 @@
 
 ## 2026-11-20 当前签前候选交接
 
-两架构现行 0.61.0 签前原 ZIP 来自提交 `114fa78`。同一外层交接包内有配套清单、候选签验和正式接收工具，以及 Mac 实机签收表，可在没有源码仓库的接收目录使用。归档位于 `D:/codex-temp/shenyi-macos-signing-handoff-20261120/delivery/Shenyi-macOS-Signing-Handoff-0.61.0-114fa78.zip`。
+Apple 芯片和 Intel 的 0.61.0 签前候选来自提交 `e90c663`，包含批量对账中断续接的客户端改动。交接 ZIP 位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/mac-handoff/delivery/Shenyi-macOS-Signing-Handoff-0.61.0-e90c663.zip`，SHA-256 为 `69b8a2c6338ff376461543310ff4177ac8f0772da39fbfbe92f35da7a40143fb`。外层包含两架构原 ZIP、清单、校验工具和实机签收表。通过可信渠道独立获取预期 SHA-256 后核对归档，然后依包内 README 验证各架构。
+
+独立验收从空目录复核两个原 ZIP、清单、架构和应用文件。两架构分别拒绝错架构和未签交付。Apple Developer ID 签名、公证、真实 Mac 安装及升级待验。 [签前交接和验收记录](STATUS.md#2026-11-20-刷新-windows-和-macos-签前候选)
+
+## 2026-11-20 历史签前候选交接
+
+上一批 0.61.0 双架构签前原 ZIP 来自提交 `114fa78`。同一外层交接包内有配套清单、候选签验和正式接收工具，以及 Mac 实机签收表，可在没有源码仓库的接收目录使用。归档位于 `D:/codex-temp/shenyi-macos-signing-handoff-20261120/delivery/Shenyi-macOS-Signing-Handoff-0.61.0-114fa78.zip`。
 
 通过可信渠道独立获取归档 SHA-256，当前本地记录为 `019353e15d86c9babe35fd97d70a46cbeaf2142aef112bac977c8af9fed9f1d7`。核对外层归档后阅读包内 README，按对应架构验证原 ZIP、清单和应用负载。本轮空目录复验了两份候选的字节、架构、一次性 Ed25519 签验和同版本拒绝。验收证据见 `D:/codex-temp/shenyi-macos-signing-handoff-20261120/verification.json`。Apple 正式签名、公证和实机待验。
 

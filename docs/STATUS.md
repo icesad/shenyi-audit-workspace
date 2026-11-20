@@ -1,5 +1,11 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 刷新 Windows 和 macOS 签前候选
+
+将 Windows x64、macOS Apple 芯片与 Intel 三份 0.61.0 签前候选统一刷新至 `e90c663`，包含批量对账续接相关的四个客户端文件。三平台共 1,934 个应用文件逐项一致，83 个应用源码文件匹配同一提交和已原生跑通的 Windows 账务一键评审包。Windows 归档和 macOS 双架构交接包均通过独立复验，144 项相关回归全部通过。两处原预览保持。
+
+交接说明位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/delivery/签名前交接-e90c663.md`，证据位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/verification.json`。正式签名、Mac 公证、实际安装及升级、生产发布和双方签收待验。 [Windows 候选](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-当前-windows-x64-签前候选) · [macOS 候选](MACOS_DESKTOP_CANDIDATE.md#2026-11-20-当前签前候选交接)
+
 ## 2026-11-20 批量对账中断后续接
 
 合成账务批次在服务中断重启后可按原编号恢复。独立进程实测验款后中断，重启零查单并仅到账一次。新版 Windows 账务一键完成三笔批量核对，退出后原包严格复验通过。282 项相关回归通过。证据见 `D:/codex-temp/shenyi-batch-receipts-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-批量对账中断后续接)
