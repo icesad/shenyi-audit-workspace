@@ -123,24 +123,50 @@ function reportFromSnapshot(db, {billDate,merchantId,appId,sha1,rows,summary}, {
 
 const FUNDS_PAYMENTS = new Map([['交易','payment'], ['扣除交易手续费','payment_fee']]);
 
-function reconcileBasicFunds(db, report, {rows,summary,sha1,sha256}) {
+function refundKeyConflicts(currentRows, earlierRows) {
+  const seenIds = new Set(), seenReferences = new Set();
+  const ids = new Set(), references = new Set();
+  // Detect conflicting acceptance dates before filtering to this app or trade type.
+  for (const rows of [currentRows,earlierRows]) {
+    for (const {refundId,merchantRefundId} of rows) {
+      if (refundId===null) continue;
+      if (seenIds.has(refundId)) ids.add(refundId);
+      if (seenReferences.has(merchantRefundId)) references.add(merchantRefundId);
+      seenIds.add(refundId);
+      seenReferences.add(merchantRefundId);
+    }
+  }
+  return {ids,references,seenIds};
+}
+
+function indexFundsRefunds(tradeReports, conflicts) {
+  const byId = new Map(), byReference = new Map();
+  for (const report of tradeReports) {
+    for (const order of report.orders) {
+      if (order.currency!=='CNY' || order.findings.includes('ORDER_SCOPE_MISMATCH')) continue;
+      for (const refund of order.statementRefunds) {
+        if (order.local?.transactionId!==refund.transactionId || refund.currency!=='CNY' ||
+            refund.occurredAt<Math.floor(order.local.paidAt/1000)*1000 || refund.amountMinor>order.local.amountMinor ||
+            conflicts?.ids.has(refund.refundId) || conflicts?.references.has(refund.merchantRefundId)) continue;
+        const candidate = {...refund,merchantOrderId:order.merchantOrderId,tradeBillDate:report.billDate};
+        byId.set(refund.refundId,candidate);
+        byReference.set(refund.merchantRefundId,candidate);
+      }
+    }
+  }
+  return {byId,byReference};
+}
+
+function reconcileBasicFunds(db, report, input, earlierReport) {
+  const {basicFunds:{rows,summary,sha1,sha256},refundTrade} = input;
   const payment = db.prepare(`SELECT o.merchant_order_id AS merchantOrderId, p.paid_at AS paidAt
     FROM main.team_billing_wechat_native_payments p
     JOIN main.team_billing_wechat_native_orders o ON o.order_id=p.order_id AND o.merchant_id=p.merchant_id
     WHERE p.merchant_id=? AND p.transaction_id=? AND o.app_id=?`);
   const {merchantId,appId} = report;
-  const refundsById = new Map(), refundsByReference = new Map();
-  for (const order of report.orders) {
-    if (order.currency!=='CNY' || order.findings.includes('ORDER_SCOPE_MISMATCH')) continue;
-    for (const refund of order.statementRefunds) {
-      if (order.local?.transactionId!==refund.transactionId || refund.currency!=='CNY' ||
-          refund.occurredAt<Math.floor(order.local.paidAt/1000)*1000 ||
-          refund.amountMinor>order.local.amountMinor) continue;
-      const candidate = {...refund,merchantOrderId:order.merchantOrderId};
-      refundsById.set(refund.refundId,candidate);
-      refundsByReference.set(refund.merchantRefundId,candidate);
-    }
-  }
+  const conflicts = earlierReport ? refundKeyConflicts(input.rows,refundTrade.rows) : null;
+  const {byId:refundsById,byReference:refundsByReference} =
+    indexFundsRefunds(earlierReport?[report,earlierReport]:[report],conflicts);
   const entries = [];
   for (const {accountedAt,businessId,flowId,businessName,businessType,direction,amountMinor,merchantReference} of rows) {
     const paymentKind = businessName==='交易' && FUNDS_PAYMENTS.get(businessType);
@@ -156,16 +182,20 @@ function reconcileBasicFunds(db, report, {rows,summary,sha1,sha256}) {
       const byId = refundsById.get(businessId);
       const byReference = refundsByReference.get(merchantReference);
       // A refund posting can carry either the refund ID or the original payment ID.
-      const candidate = byId ?? (byReference?.transactionId===businessId ? byReference : null);
+      const candidate = byId ?? (!conflicts?.seenIds.has(businessId) && byReference?.transactionId===businessId ? byReference : null);
       if (candidate && candidate===byReference && accountedAt>=candidate.occurredAt) {
-        const {merchantOrderId,transactionId,refundId,merchantRefundId} = candidate;
-        entries.push({kind:'refund',accountedAt,flowId,direction,amountMinor,merchantOrderId,
-          transactionId,refundId,merchantRefundId});
+        const {merchantOrderId,transactionId,refundId,merchantRefundId,tradeBillDate} = candidate;
+        const entry = {kind:'refund',accountedAt,flowId,direction,amountMinor,merchantOrderId,transactionId,refundId,merchantRefundId};
+        if (tradeBillDate!==report.billDate) entry.refundTradeBillDate = tradeBillDate;
+        entries.push(entry);
       }
     }
   }
-  return {accountType:'BASIC',statementSha1:sha1,statementSha256:sha256,summary,linkedRows:entries.length,
+  const result = {accountType:'BASIC',statementSha1:sha1,statementSha256:sha256,summary,linkedRows:entries.length,
     unlinkedRows:summary.rowCount-entries.length,entries};
+  if (refundTrade) result.refundTradeStatement = {billDate:refundTrade.billDate,
+    statementSha1:refundTrade.sha1,statementSha256:refundTrade.sha256};
+  return result;
 }
 
 function refundOutsideScope() {
@@ -193,17 +223,27 @@ export function selectWechatNativeRefundQuery(report, rows, merchantRefundId) {
   };
 }
 
+function verifiedTradeDay({billDate,sha1,rows,summary}) {
+  if (!matches(/^[a-f0-9]{40}$/,sha1) || !Array.isArray(rows) || rows.length>MAX_STATEMENT_ROWS ||
+      summary?.rowCount!==rows.length) invalid();
+  return scopeDay(billDate);
+}
+
 /** Builds a private operator report against a single SQLite read snapshot. */
 export function reconcileWechatNativeTradeBill(db, input) {
-  const {billDate,merchantId,appId,sha1,rows,summary} = input;
-  if (!matches(MERCHANT_ID,merchantId) || !matches(APP_ID,appId) || !matches(/^[a-f0-9]{40}$/,sha1) ||
-      !Array.isArray(rows) || rows.length>MAX_STATEMENT_ROWS || summary?.rowCount!==rows.length || db.isTransaction) invalid();
-  const day = scopeDay(billDate);
+  const {merchantId,appId,basicFunds,refundTrade} = input;
+  if (!matches(MERCHANT_ID,merchantId) || !matches(APP_ID,appId) || db.isTransaction) invalid();
+  const day = verifiedTradeDay(input);
+  const earlierDay = refundTrade ? verifiedTradeDay(refundTrade) : null;
+  if (earlierDay && (!basicFunds || earlierDay.startsAt>=day.startsAt || !matches(/^[a-f0-9]{64}$/,refundTrade.sha256))) invalid();
   db.exec('BEGIN');
   try {
     assertWechatNativeBillingReady(db);
     const report = reportFromSnapshot(db,input,day);
-    if (input.basicFunds) report.basicFunds = reconcileBasicFunds(db,report,input.basicFunds);
+    if (basicFunds) {
+      const earlierReport = earlierDay ? reportFromSnapshot(db,{...refundTrade,merchantId,appId},earlierDay) : null;
+      report.basicFunds = reconcileBasicFunds(db,report,input,earlierReport);
+    }
     db.exec('COMMIT');
     return report;
   } catch (error) {

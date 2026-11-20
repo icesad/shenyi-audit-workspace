@@ -24,12 +24,15 @@ const appId = 'wxsynthetic12345';
 const merchantId = '1000000000';
 const providerKeyId = 'PUB_KEY_ID_120';
 const billDate = '2024-02-29';
+const priorBillDate = '2024-02-28';
 const at = Date.parse('2024-03-01T00:00:00+08:00');
 const paidAt = Date.parse('2024-02-29T12:30:01+08:00');
 const applicantUrl = 'https://api.mch.weixin.qq.com/v3/bill/tradebill?bill_date=' + billDate + '&bill_type=ALL';
 const downloadUrl = 'https://api.mch.weixin.qq.com/v3/bill/downloadurl?token=synthetic-proof%2B';
 const fundsApplicant = 'https://api.mch.weixin.qq.com/v3/bill/fundflowbill?bill_date=' + billDate + '&account_type=BASIC';
 const fundsDownload = 'https://api.mch.weixin.qq.com/v3/billdownload/file?token=synthetic-funds%2B';
+const priorApplicant = 'https://api.mch.weixin.qq.com/v3/bill/tradebill?bill_date=' + priorBillDate + '&bill_type=ALL';
+const priorDownload = 'https://api.mch.weixin.qq.com/v3/bill/downloadurl?token=synthetic-earlier-trade%2B';
 const merchantRefundId = 'audit-refund@20240229';
 const refundId = '5000000000202402290000000031';
 const refundUrl = 'https://api.mch.weixin.qq.com/v3/refund/domestic/refunds/audit-refund%4020240229';
@@ -46,13 +49,13 @@ function yuan(cents) {
   return (cents < 0 ? '-' : '') + Math.floor(absolute / 100) + '.' + String(absolute % 100).padStart(2, '0');
 }
 
-function statement(orderId, transactionId, refunds = []) {
+function statement(orderId, transactionId, refunds = [], {date = billDate, paymentAppId = appId} = {}) {
   const header = [
     '交易时间','公众账号ID','商户号','特约商户号','设备号','微信订单号','商户订单号','用户标识','交易类型','交易状态',
     '付款银行','货币种类','应结订单金额','代金券金额','微信退款单号','商户退款单号','退款金额','充值券退款金额',
     '退款类型','退款状态','商品名称','商户数据包','手续费','费率','订单金额','申请退款金额','费率备注',
   ].join(',');
-  const detail = [billDate + ' 12:30:01', appId, merchantId, '0', 'synthetic-device', transactionId, orderId, openId,
+  const detail = [date + ' 12:30:01', paymentAppId, merchantId, '0', 'synthetic-device', transactionId, orderId, openId,
     'NATIVE', 'SUCCESS', 'OTHERS', 'CNY', '1.01', '0.08', '0', '0', '0.00', '0.00', '', '',
     description, 'operator-reference', '0.01', '0.60%', '1.09', '0.00', 'synthetic note'];
   const totalsHeader = '总交易单数,应结订单总金额,退款总金额,充值券退款总金额,手续费总金额,订单总金额,申请退款总金额';
@@ -64,7 +67,7 @@ function statement(orderId, transactionId, refunds = []) {
     const settlement = Math.max(0, amount - 4);
     settled += settlement;
     gross += amount;
-    return marked([spec.time ?? billDate + ' 13:40:05', spec.appId ?? appId, merchantId, '0', 'synthetic-device',
+    return marked([spec.time ?? date + ' 13:40:05', spec.appId ?? appId, merchantId, '0', 'synthetic-device',
       spec.transactionId ?? transactionId, spec.merchantOrderId ?? orderId, openId, spec.tradeType ?? 'NATIVE', 'REFUND',
       'OTHERS', spec.currency ?? 'CNY', '0.00', '0.00', spec.refundId ?? refundId, spec.merchantRefundId ?? merchantRefundId,
       yuan(settlement), '0.00', 'ORIGINAL', spec.status ?? 'PROCESSING', description, 'operator-reference', '-0.01', '0.60%',
@@ -126,7 +129,7 @@ function assertRefundRequest(url, init) {
   assert.ok(verify('RSA-SHA256', payload, merchantKeys.publicKey, Buffer.from(signed.signature, 'base64')));
 }
 
-async function fixture(t, {withReceipt = true, includeOtherApp = false} = {}) {
+async function fixture(t, {withReceipt = true, includeOtherApp = false, paymentTime = paidAt} = {}) {
   const [{initializeTeamDatabase}, {installWechatNativeBillingSchema}, {reconcileConfiguredWechatNativeBill}] = await dependencies;
   const writable = path.resolve(process.env.SHENYI_TEST_TMPDIR ?? tmpdir());
   await mkdir(writable, {recursive:true});
@@ -162,15 +165,15 @@ async function fixture(t, {withReceipt = true, includeOtherApp = false} = {}) {
       VALUES (?,'cli-team','cli-admin',?,?,?,'team-annual-renewal','合成年度订单','synthetic-annual',1,3,NULL,109,'CNY',?,?)`);
     const insertPayment = db.prepare(`INSERT INTO main.team_billing_wechat_native_payments
       (order_id,merchant_id,transaction_id,paid_at,first_verified_at) VALUES (?,?,?,?,?)`);
-    insertOrder.run(orderId, requestId, appId, merchantId, paidAt - 60000, paidAt + 60000);
+    insertOrder.run(orderId, requestId, appId, merchantId, paymentTime - 60000, paymentTime + 60000);
     if (includeOtherApp) {
-      insertOrder.run(otherOrderId,randomUUID(),'wxotherapp12345',merchantId,paidAt-60000,paidAt+60000);
-      insertPayment.run(otherOrderId,merchantId,otherTransactionId,paidAt+120,paidAt+1000);
+      insertOrder.run(otherOrderId,randomUUID(),'wxotherapp12345',merchantId,paymentTime-60000,paymentTime+60000);
+      insertPayment.run(otherOrderId,merchantId,otherTransactionId,paymentTime+120,paymentTime+1000);
     }
     if (withReceipt) {
-      insertPayment.run(orderId, merchantId, transactionId, paidAt + 120, paidAt + 1000);
+      insertPayment.run(orderId, merchantId, transactionId, paymentTime + 120, paymentTime + 1000);
       db.prepare('INSERT INTO main.team_billing_wechat_native_query_confirmations(order_id,verified_at) VALUES (?,?)')
-        .run(orderId, paidAt + 1000);
+        .run(orderId, paymentTime + 1000);
     }
   } finally { db.close(); }
   await generateCertificates(certDirectory);
@@ -209,7 +212,7 @@ async function fixture(t, {withReceipt = true, includeOtherApp = false} = {}) {
     otherMerchantOrderId:otherOrderId.replaceAll('-', ''), otherTransactionId,
     billWithRefunds:(...rows) => statement(merchantOrderId, transactionId, rows),
     run:(output, options = {}) => reconcileConfiguredWechatNativeBill({filename, output, billDate:options.billDate ?? billDate,
-      merchantRefundId:options.merchantRefundId,includeBasicFunds:options.includeBasicFunds},
+      merchantRefundId:options.merchantRefundId,includeBasicFunds:options.includeBasicFunds,refundTradeDate:options.refundTradeDate},
       {fetchImpl:options.fetchImpl ?? mockProvider(), now:() => at}),
     async assertUnchanged() { assert.deepEqual(await readFile(database), originalDb); },
   };
@@ -284,14 +287,17 @@ async function assertRefundReport(f, output, bill, expected) {
   return report;
 }
 
-function runCli(f, output, {bill = f.rawBill, merchantRefundId, refund, funds, fundsSha1} = {}) {
+function runCli(f, output, {bill = f.rawBill, merchantRefundId, refund, funds, fundsSha1,
+  refundTradeDate, priorBill, priorSha1, allowFetch = true} = {}) {
   const now = Date.now();
   const replies = [[applicantUrl, signedDescriptor(bill, now)], [downloadUrl, {raw:bill, headers:{}}]];
   if (refund) replies.push([refundUrl, signedResponse(refund.body, now, refund.key)]);
   if (funds) replies.push([fundsApplicant,signedDescriptor(funds,now,fundsSha1,fundsDownload)],
     [fundsDownload,{raw:funds,headers:{}}]);
+  if (priorBill) replies.push([priorApplicant,signedDescriptor(priorBill,now,priorSha1,priorDownload)],
+    [priorDownload,{raw:priorBill,headers:{}}]);
   // Every URL in the isolated child is handled by this synthetic in-memory table.
-  const fixtures = replies.map(([url, reply]) => [url, {bytes:reply.raw.toString('base64'), headers:reply.headers}]);
+  const fixtures = allowFetch ? replies.map(([url, reply]) => [url, {bytes:reply.raw.toString('base64'), headers:reply.headers}]) : [];
   const guard = `const fixtures=new Map(${JSON.stringify(fixtures)});
     globalThis.fetch=async(url,init)=>{
       const reply=fixtures.get(url);
@@ -301,6 +307,7 @@ function runCli(f, output, {bill = f.rawBill, merchantRefundId, refund, funds, f
   const preload = 'data:text/javascript,' + encodeURIComponent(guard);
   const flags = merchantRefundId === undefined ? [] : ['--verify-refund', merchantRefundId];
   if (funds) flags.push('--verify-basic-funds');
+  if (refundTradeDate !== undefined) flags.push('--refund-trade-date', refundTradeDate);
   return command(process.execPath,
     ['--import', preload, startScript, '--reconcile-native-bill', billDate, '--config', f.filename, '--output', output, ...flags],
     {cwd:f.directory, env:childEnvironment()});
@@ -388,6 +395,7 @@ test('the production BASIC option verifies both bills and projects only corrobor
   assert.equal(report.statementSha256,digest('sha256',bill));
   const {basicFunds} = report;
   assert.equal(basicFunds.accountType,'BASIC');
+  assert.equal(Object.hasOwn(basicFunds,'refundTradeStatement'),false);
   assert.equal(basicFunds.statementSha1,digest('sha1',funds));
   assert.equal(basicFunds.statementSha256,digest('sha256',funds));
   assert.deepEqual(basicFunds.summary,{rowCount:10,creditCount:5,creditAmountMinor:354,debitCount:5,debitAmountMinor:146});
@@ -396,6 +404,7 @@ test('the production BASIC option verifies both bills and projects only corrobor
     ['refund','test-flow-refund',46,refundId],['refund','test-flow-original-refund',46,secondRefundId],
   ]);
   assert.ok(basicFunds.entries.every(row=>row.merchantOrderId===merchantOrderId && row.transactionId===transactionId));
+  assert.ok(basicFunds.entries.every(row=>!Object.hasOwn(row,'refundTradeBillDate')));
   assert.equal(basicFunds.linkedRows,4);
   assert.equal(basicFunds.unlinkedRows,6);
   assert.doesNotMatch(text,/private-|synthetic-funds|balanceMinor/);
@@ -403,6 +412,101 @@ test('the production BASIC option verifies both bills and projects only corrobor
   assert.ok(!text.includes(f.otherTransactionId));
   assert.deepEqual(JSON.parse(result.stdout).basicFunds,{linkedRows:4,unlinkedRows:6});
   assert.ok(!result.stdout.includes(merchantOrderId));
+  await f.assertUnchanged();
+});
+
+test('the prior ALL bill correlates only unambiguous refunds and discloses only their source date', async t => {
+  const f = await fixture(t,{paymentTime:Date.parse(priorBillDate+'T12:30:01+08:00'),includeOtherApp:true});
+  const {transactionId,merchantOrderId} = f;
+  const otherOrder = {appId:'wxotherapp12345',merchantOrderId:f.otherMerchantOrderId,transactionId:f.otherTransactionId};
+  const identity = (name,number,changes={}) => ({merchantRefundId:'audit-refund@'+name,
+    refundId:'50000000002024022800000000'+number,...changes});
+  const settled = identity('earlier-success',11,{status:'SUCCESS',amount:36});
+  const processing = identity('earlier-processing',12,{amount:25});
+  const otherApp = identity('earlier-other-app',13,otherOrder);
+  const wrongTransaction = identity('earlier-wrong-transaction',14,{transactionId:'unverified-original-transaction'});
+  const today = identity('today',15,{amount:31});
+  const conflictBefore = identity('cross-day-conflict',16);
+  const conflictAfter = identity('cross-day-conflict',17);
+  const repeated = identity('repeat-pair',18);
+  const foreignRepeat = identity('foreign-repeat',19);
+  const providerConflictBefore = identity('earlier-reference',20);
+  const providerConflictAfter = identity('today-reference',20);
+  const priorBill = statement(merchantOrderId,transactionId,[settled,processing,otherApp,wrongTransaction,conflictBefore,repeated,
+    foreignRepeat,providerConflictBefore],{date:priorBillDate});
+  const currentRefunds = [today,conflictAfter,{...repeated,status:'SUCCESS'},providerConflictAfter]
+    .map(row=>({...row,merchantOrderId,transactionId}));
+  const bill = statement(f.otherMerchantOrderId,f.otherTransactionId,[...currentRefunds,{...foreignRepeat,...otherOrder}],
+    {paymentAppId:otherOrder.appId});
+  const posting = (flow,refund,businessId=refund.refundId) => [
+    '16:18:01',businessId,flow,'退款','退款','支出',(refund.amount??50)-4,refund.merchantRefundId,
+  ];
+  const funds = basicStatement([
+    posting('prior-provider-id',settled),
+    posting('prior-original-id',processing,transactionId),
+    posting('today-provider-id',today),
+    posting('private-other-app',otherApp),
+    posting('private-unknown-receipt',wrongTransaction),
+    posting('private-wrong-business',settled,f.otherTransactionId),
+    posting('private-cross-day-id',conflictAfter),
+    posting('private-cross-day-pair',repeated),
+    posting('private-foreign-repeat',foreignRepeat),
+    posting('private-earlier-reference',providerConflictBefore),
+    posting('private-today-reference',providerConflictAfter),
+  ]);
+  const output = path.join(f.directory,'cross-day-funds.json');
+  const result = await runCli(f,output,{bill,funds,refundTradeDate:priorBillDate,priorBill});
+  assert.equal(result.code,0,result.stderr);
+  assert.equal(result.stderr,'');
+  const text = await readFile(output,'utf8');
+  const report = JSON.parse(text);
+  assert.equal(report.billDate,billDate);
+  assert.equal(report.statementSha256,digest('sha256',bill));
+  assert.equal(report.counts.statementRows,6);
+  assert.equal(report.orders.length,1);
+  assert.deepEqual(report.orders[0].statementRefunds.map(row=>row.refundId).sort(),
+    [today.refundId,conflictAfter.refundId,repeated.refundId,providerConflictAfter.refundId].sort());
+  const {basicFunds} = report;
+  assert.deepEqual(basicFunds.refundTradeStatement,{billDate:priorBillDate,statementSha1:digest('sha1',priorBill),
+    statementSha256:digest('sha256',priorBill)});
+  assert.deepEqual(basicFunds.summary,{rowCount:11,creditCount:0,creditAmountMinor:0,debitCount:11,debitAmountMinor:434});
+  const expectedRows = [['prior-provider-id',settled,priorBillDate],['prior-original-id',processing,priorBillDate],
+    ['today-provider-id',today]];
+  assert.deepEqual(basicFunds.entries,expectedRows.map(([flowId,refund,refundTradeBillDate]) =>
+    ({kind:'refund',accountedAt:Date.parse(billDate+'T16:18:01+08:00'),flowId,direction:'debit',amountMinor:refund.amount-4,
+      merchantOrderId,transactionId,refundId:refund.refundId,merchantRefundId:refund.merchantRefundId,
+      ...(refundTradeBillDate?{refundTradeBillDate}:{})})));
+  assert.equal(basicFunds.linkedRows,3);
+  assert.equal(basicFunds.unlinkedRows,8);
+  assert.deepEqual(JSON.parse(result.stdout),{event:'native-bill-reconciled',billDate,counts:report.counts,
+    basicFunds:{linkedRows:3,unlinkedRows:8}});
+  for (const privateValue of [otherApp.refundId,wrongTransaction.refundId,conflictBefore.refundId,openId,apiV3Key,
+    'private-', 'synthetic-earlier-trade','unverified-original-transaction']) assert.ok(!text.includes(privateValue));
+  assert.ok(!result.stdout.includes(merchantOrderId));
+  assert.equal((await stat(output)).nlink,1);
+  if (process.platform!=='win32') assert.equal((await stat(output)).mode&0o777,0o600);
+  assert.ok(!(await readdir(f.directory)).some(name=>name.endsWith('.tmp')));
+  await f.assertUnchanged();
+});
+
+test('the earlier ALL bill refuses invalid dates before provider requests and stops on a failed digest', async t => {
+  const f = await fixture(t);
+  const output = path.join(f.directory,'invalid-cross-day-funds.json');
+  const funds = basicStatement([['12:30:02',f.transactionId,'test-flow','交易','交易','收入',101,f.merchantOrderId]]);
+  for (const refundTradeDate of ['2024-02-30',billDate,'2024-03-01',priorBillDate+'&bill_type=REFUND']) {
+    const result = await runCli(f,output,{funds,refundTradeDate,allowFetch:false});
+    assert.equal(result.code,1,result.stderr);
+    assert.equal(JSON.parse(result.stderr).code,'WECHAT_NATIVE_REFUND_BILL_DATE_INVALID');
+    assert.equal(result.stdout,'');
+    await assert.rejects(stat(output),{code:'ENOENT'});
+  }
+  const priorBill = statement(f.merchantOrderId,f.transactionId,[],{date:priorBillDate});
+  const failedDigest = await runCli(f,output,{funds,refundTradeDate:priorBillDate,priorBill,priorSha1:'0'.repeat(40)});
+  assert.equal(failedDigest.code,1,failedDigest.stderr);
+  assert.equal(JSON.parse(failedDigest.stderr).code,'WECHAT_NATIVE_PROVIDER_UNAVAILABLE');
+  assert.equal(failedDigest.stdout,'');
+  await assert.rejects(stat(output),{code:'ENOENT'});
+  assert.ok(!(await readdir(f.directory)).some(name=>name.endsWith('.tmp')));
   await f.assertUnchanged();
 });
 
@@ -445,6 +549,35 @@ test('an identity change during the BASIC download prevents publication against 
   assert.equal(replaced,true);
   await assert.rejects(stat(output),{code:'ENOENT'});
   await f.assertUnchanged();
+});
+
+test('a byte-identical ledger replacement during the earlier ALL download prevents publication', async t => {
+  const f = await fixture(t);
+  const output = path.join(f.directory,'replaced-earlier-all.json');
+  const saved = path.join(f.directory,'held-earlier-all.sqlite');
+  const funds = basicStatement([['12:30:02',f.transactionId,'test-flow','交易','交易','收入',101,f.merchantOrderId]]);
+  const earlier = statement(f.merchantOrderId,f.transactionId,[],{date:priorBillDate});
+  const fundsDescriptor = signedDescriptor(funds,at,undefined,fundsDownload);
+  const earlierDescriptor = signedDescriptor(earlier,at,undefined,priorDownload);
+  const current = f.mockProvider();
+  const requests = [];
+  await assert.rejects(f.run(output,{includeBasicFunds:true,refundTradeDate:priorBillDate,fetchImpl:async (url,init) => {
+    requests.push(url);
+    if (url===fundsApplicant) return new Response(fundsDescriptor.raw,{headers:fundsDescriptor.headers});
+    if (url===fundsDownload) return new Response(funds);
+    if (url===priorApplicant) return new Response(earlierDescriptor.raw,{headers:earlierDescriptor.headers});
+    if (url===priorDownload) {
+      await rename(f.database,saved);
+      await copyFile(saved,f.database);
+      return new Response(earlier);
+    }
+    return current(url,init);
+  }}),{code:'MANAGED_DATABASE_NOT_READY'});
+  assert.deepEqual(requests,[applicantUrl,downloadUrl,fundsApplicant,fundsDownload,priorApplicant,priorDownload]);
+  assert.deepEqual(await readFile(saved),await readFile(f.database));
+  await f.assertUnchanged();
+  await assert.rejects(stat(output),{code:'ENOENT'});
+  assert.ok(!(await readdir(f.directory)).some(name=>name.endsWith('.tmp')));
 });
 
 test('a signed refund result is checked against gross amounts and preserves the bill-time PROCESSING status', async t => {

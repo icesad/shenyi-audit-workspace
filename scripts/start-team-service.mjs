@@ -31,6 +31,7 @@ const messages = {
   MANAGED_WECHAT_NATIVE_CALLBACK_NOT_READY: '微信支付通知配置或账本未就绪。',
   MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY: '微信支付官网订单页配置未就绪。',
   WECHAT_NATIVE_BILL_DATE_INVALID: '请选择已经结束的北京时间账单日。',
+  WECHAT_NATIVE_REFUND_BILL_DATE_INVALID: '补充的退款交易账单日须早于资金记账日。',
   WECHAT_NATIVE_TRADE_BILL_INVALID: '无法核实微信交易账单的格式或范围。',
   WECHAT_NATIVE_FUND_BILL_INVALID: '无法核实微信基本账户资金账单的格式或汇总。',
   WECHAT_NATIVE_REFUND_ID_INVALID: '请核对商户退款单号。',
@@ -329,17 +330,26 @@ async function publishNativeReport({filename,directory,before}, report) {
   }
 }
 
-export async function reconcileConfiguredWechatNativeBill({filename,billDate,output,merchantRefundId,includeBasicFunds=false},
-  {fetchImpl,now=Date.now} = {}) {
-  const day = matches(/^\d{4}-\d{2}-\d{2}$/,billDate) ? parsePaymentTime(billDate+'T00:00:00+08:00') : null;
+function beijingBillDay(date) {
+  return matches(/^\d{4}-\d{2}-\d{2}$/,date) ? parsePaymentTime(date+'T00:00:00+08:00') : null;
+}
+
+export async function reconcileConfiguredWechatNativeBill({
+  filename,billDate,output,merchantRefundId,includeBasicFunds=false,refundTradeDate,
+}, {fetchImpl,now=Date.now} = {}) {
+  const day = beijingBillDay(billDate);
   if (day === null || day+86_400_000>now()) fail('WECHAT_NATIVE_BILL_DATE_INVALID');
   if (typeof includeBasicFunds!=='boolean' || (includeBasicFunds && merchantRefundId!==undefined)) fail(configCode);
+  if (refundTradeDate!==undefined) {
+    const refundDay = beijingBillDay(refundTradeDate);
+    if (!includeBasicFunds || refundDay===null || refundDay>=day) fail('WECHAT_NATIVE_REFUND_BILL_DATE_INVALID');
+  }
   const destination = await reportDestination(output);
   const configuration = await loadManagedServiceConfiguration(filename);
   if (!configuration.wechatNativeCallbackProfile || !configuration.wechatNativeWebsiteProfile) {
     fail('MANAGED_WECHAT_NATIVE_WEBSITE_NOT_READY');
   }
-  let callback, statement, fundsStatement;
+  let callback, statement, fundsStatement, earlierStatement;
   try {
     const [{createWechatNativeOrders},{parseWechatNativeTradeBill,MERCHANT_REFUND_ID},
       {reconcileWechatNativeTradeBill,selectWechatNativeRefundQuery},{WECHAT_NATIVE_NOTIFY_PATH}] = await Promise.all([
@@ -366,9 +376,15 @@ export async function reconcileConfiguredWechatNativeBill({filename,billDate,out
       basicFunds = {...parseWechatNativeFundBill(fundsStatement.bytes,{billDate}),sha1:fundsStatement.sha1,
         sha256:createHash('sha256').update(fundsStatement.bytes).digest('hex')};
     }
+    let refundTrade;
+    if (refundTradeDate!==undefined) {
+      earlierStatement = await provider.downloadTradeBill(refundTradeDate);
+      refundTrade = {...parseWechatNativeTradeBill(earlierStatement.bytes,{billDate:refundTradeDate,merchantId}),
+        billDate:refundTradeDate,sha1:earlierStatement.sha1,sha256:createHash('sha256').update(earlierStatement.bytes).digest('hex')};
+    }
     let report;
     const consulted = await checkManagedDatabase(configuration, db => {
-      report = reconcileWechatNativeTradeBill(db,{billDate,merchantId,appId,sha1:statement.sha1,rows,summary,basicFunds});
+      report = reconcileWechatNativeTradeBill(db,{billDate,merchantId,appId,sha1:statement.sha1,rows,summary,basicFunds,refundTrade});
     });
     if (!sameFile(initial,consulted)) fail('MANAGED_DATABASE_NOT_READY');
     const result = {event:'native-bill-reconciled',billDate,counts:report.counts};
@@ -402,6 +418,7 @@ export async function reconcileConfiguredWechatNativeBill({filename,billDate,out
     callback?.apiV3Key.fill(0);
     statement?.bytes.fill(0);
     fundsStatement?.bytes.fill(0);
+    earlierStatement?.bytes.fill(0);
   }
 }
 
@@ -444,11 +461,13 @@ export function openConfiguredTeamService(filename) {
 
 async function main(args) {
   const hasRefund = args.length === 8 && args[6] === '--verify-refund';
-  const includeBasicFunds = args.length === 7 && args[6] === '--verify-basic-funds';
+  const hasRefundTradeDate = args.length === 9 && args[7] === '--refund-trade-date';
+  const includeBasicFunds = args[6] === '--verify-basic-funds' && (args.length === 7 || hasRefundTradeDate);
   if ((args.length === 6 || hasRefund || includeBasicFunds) && args[0] === '--reconcile-native-bill' &&
       args[2] === '--config' && args[4] === '--output') {
     const result = await reconcileConfiguredWechatNativeBill({
       billDate:args[1],filename:args[3],output:args[5],merchantRefundId:hasRefund?args[7]:undefined,includeBasicFunds,
+      refundTradeDate:hasRefundTradeDate?args[8]:undefined,
     });
     if (result.refundVerification==='unverified') process.exitCode = 2;
     console.log(JSON.stringify(result));
