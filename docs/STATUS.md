@@ -1,5 +1,9 @@
 # 当前状态 · 空库四职级评审
 
+## 2026-11-20 新版 Windows 底稿迁入和历史版本导出
+
+当前 Windows 评审包原生底稿走查完成。合成完整包迁入为版本 1，填写保存为版本 2，再原生另存版本 1。历史填写、原件、公式和冻结已回读核对，当前版本仍为 2。证据见 `D:/codex-temp/shenyi-current-workpaper-native-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-新版-windows-底稿迁入和历史版本导出)
+
 ## 2026-11-20 新版 Windows 四职级与项目撤权
 
 新版 Windows 评审 ZIP 的四职级合成业务、原生文件上传及项目撤权已验证。撤权后合伙人重新登录仍在团队内，原件请求为 404，经理继续读取同一原件。249 项相关回归通过。证据见 `D:/codex-temp/shenyi-owner-current-role-revoke-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-新版-windows-四职级与项目撤权)
