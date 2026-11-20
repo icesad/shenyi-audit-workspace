@@ -8,7 +8,7 @@ const {generateKeyPairSync,sign,createHash}=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const {createTeamClient}=require('../desktop/team-client.cjs');
 const proof=require('../shared/device-proof.cjs');
-const BASE=process.platform==='win32'?'D:/codex-temp/shenyi-m7-pilot-rehearsal-20261118/service-tests':path.join(os.tmpdir(),'shenyi-pilot-service-tests');
+const BASE=path.join(os.tmpdir(),'shenyi-pilot-service-tests');
 const PASSWORD='ShenyiDemo!2026';
 const ORIGINAL=Buffer.from('审易合成验收资料\n银行对账说明\n本文件用于练习采集和核对，全部数据为演练内容。\n');
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');

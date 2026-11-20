@@ -7,7 +7,7 @@ const {execFile}=require('node:child_process'),{X509Certificate,createPrivateKey
 const {DatabaseSync}=require('node:sqlite'),{pathToFileURL}=require('node:url');
 const {OWNER_REVIEW_RUNTIME_MARKER}=require('../desktop/isolated-preview-config.cjs');
 const ROOT=path.resolve(__dirname,'..'),DAY=86400000;
-const BASE=process.platform==='win32'?'D:/codex-temp/shenyi-m5-split-checkout-20261120/test-temp':path.join(os.tmpdir(),'shenyi-owner-website-tests');
+const BASE=path.join(os.tmpdir(),'shenyi-owner-website-tests');
 const WINDOWS={skip:process.platform!=='win32'||process.arch!=='x64'};
 const moduleAt=name=>import(pathToFileURL(path.join(ROOT,'scripts',name)).href);
 const digest=value=>createHash('sha256').update(value).digest('hex');

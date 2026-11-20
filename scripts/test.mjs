@@ -61,7 +61,10 @@ async function main() {
       if (existsSync(browser)) env.QUOTE_LEDGER_CHROMIUM_EXECUTABLE = browser;
     } catch { /* Existing tests report missing browser dependencies explicitly. */ }
   }
-  const child = spawn(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', ...selected], {
+  // The child already runs in ROOT. Repeating an absolute prefix can exceed
+  // the Windows CreateProcess command-line limit for the full test suite.
+  const testPaths = selected.map(file => path.relative(ROOT, file));
+  const child = spawn(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', ...testPaths], {
     cwd: ROOT, env, stdio: ['inherit', 'pipe', 'inherit'], windowsHide: true,
   });
   let pending = '', skipped = false;

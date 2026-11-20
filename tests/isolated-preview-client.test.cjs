@@ -4,7 +4,7 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
 const {pathToFileURL}=require('node:url'),{generateKeyPairSync,sign,randomUUID}=require('node:crypto');
 const {createTeamClient,API_BASE}=require('../desktop/team-client.cjs'),proof=require('../shared/device-proof.cjs');
-const BASE=process.platform==='win32'?'D:/codex-temp/shenyi-isolated-preview-20261118/client-tests':path.join(os.tmpdir(),'shenyi-isolated-client-tests');
+const BASE=path.join(os.tmpdir(),'shenyi-isolated-client-tests');
 const PASSWORD='ShenyiDemo!2026';
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 function identity(){const pair=generateKeyPairSync('ed25519'),publicKey=pair.publicKey.export({format:'der',type:'spki'}).toString('base64url');return {platform:'win32',vault:{async getPublicIdentity(){return {publicKey,fingerprint:proof.parsePublicKey(publicKey).fingerprint};},async signChallenge(v){return sign(null,proof.challengeBytes(v),pair.privateKey).toString('base64url');},async signRequest(v){return sign(null,proof.requestProofBytes(v),pair.privateKey).toString('base64url');}}};}

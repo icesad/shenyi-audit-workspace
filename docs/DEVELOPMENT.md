@@ -34,10 +34,12 @@ npm test
 ```
 
 - `check:repo`：仓库文件范围/常见秘密模式的防误传检查，不是完整安全审计。
-- `test:unit`：按文件排除提到 Playwright 的应用测试，再运行工具专项；这是可移植子集，不等于全套业务验收。
+- `test:unit`：按文件排除提到 Playwright 的应用测试，再以严格模式运行剩余业务测试和工具测试。选中的 Windows 专属用例在 Windows x64 上执行。
 - `npm test`：所有 `*.test.cjs`，并发为1，缺浏览器/本机原件的测试可能跳过；结果必须同时报告跳过数。
 - `npm run test:strict`：所选测试有任何跳过就失败，不能把跳过包装成通过。
 - `npm run test:tools`：只验证新增协作工具，不证明业务软件正确。
+
+GitHub Actions 的 `unit` 任务使用 Windows x64、Node 24.22.1 和 Python 3.12，执行仓库检查和严格单元回归。Ubuntu 的 `tools` 任务执行仓库与跨平台工具检查。两处都按锁文件安装依赖。Windows 本地可将 `TEMP` 和 `TMP` 设置为已存在的 D 盘短路径，合成文件夹具会在临时目录中创建。
 
 浏览器回归前安装项目锁定版本的 Chromium：
 

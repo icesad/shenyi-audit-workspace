@@ -5,7 +5,7 @@ const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:
 const {spawn}=require('node:child_process');
 const configuration=require('../desktop/isolated-preview-config.cjs');
 const {OWNER_REVIEW_RUNTIME_MARKER,loadOwnerReviewRuntime,prepareIsolatedPreviewDirectory,writeIsolatedPreviewConfiguration,loadIsolatedPreviewConfiguration}=configuration;
-const BASE=process.platform==='win32'?'D:/codex-temp/shenyi-m8-portable-owner-review-20261119/runtime-tests':path.join(os.tmpdir(),'shenyi-portable-owner-review-tests');
+const BASE=path.join(os.tmpdir(),'shenyi-portable-owner-review-tests');
 const invalid={code:'ISOLATED_PREVIEW_CONFIGURATION_INVALID'};
 const serverId='11111111-1111-4111-8111-111111111111';
 async function fixture({marker=true,electron=true}={}){

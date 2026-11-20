@@ -28,7 +28,7 @@ test('replacement signatures bind every context field and cannot authorize origi
   assert.throws(()=>base.challengeBytes({...original,approvalRequestId:f.requestId}));
 });
 test('vault signs only a fixed replacement context and persists encrypted synthetic keys without a generic signer',async t=>{
-  const root=path.resolve('D:/codex-temp/shenyi-device-replacement-20261115/vault-tests');await fs.mkdir(root,{recursive:true});const directory=await fs.mkdtemp(path.join(root,'case-'));
+  const root=path.resolve(path.join(require('node:os').tmpdir(),'shenyi-device-replacement-vault-tests'));await fs.mkdir(root,{recursive:true});const directory=await fs.mkdtemp(path.join(root,'case-'));
   t.after(async()=>{const target=path.resolve(directory);assert.ok(target.startsWith(root+path.sep));await fs.rm(target,{recursive:true,force:true});});
   // Synthetic authenticated encryption tests the vault contract, not an OS claim.
   const wrappingKey=randomBytes(32),storage={async isAsyncEncryptionAvailable(){return true;},async encryptStringAsync(value){const nonce=randomBytes(12),cipher=createCipheriv('aes-256-gcm',wrappingKey,nonce),body=Buffer.concat([cipher.update(value,'utf8'),cipher.final()]);return Buffer.concat([nonce,cipher.getAuthTag(),body]);},async decryptStringAsync(value){const decipher=createDecipheriv('aes-256-gcm',wrappingKey,value.subarray(0,12));decipher.setAuthTag(value.subarray(12,28));return {result:Buffer.concat([decipher.update(value.subarray(28)),decipher.final()]).toString('utf8'),shouldReEncrypt:false};}};

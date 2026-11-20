@@ -11,9 +11,7 @@ const {
   loadIsolatedPreviewConfiguration,
 } = require('../desktop/isolated-preview-config.cjs');
 const { validateTrustedTeamService } = require('../desktop/team-service-config.cjs');
-const BASE = process.platform === 'win32'
-  ? path.resolve('D:/codex-temp/shenyi-isolated-preview-20261118/author-tests')
-  : path.join(os.tmpdir(), 'shenyi-isolated-preview-tests');
+const BASE = path.join(os.tmpdir(), 'shenyi-isolated-preview-tests');
 const PROFILE = Object.freeze({ schemaVersion: 1, apiBase: 'http://127.0.0.1:18941',
   serverId: '12345678-abcd-4bcd-8bcd-123456789abc' });
 const invalid = error => error?.code === 'ISOLATED_PREVIEW_CONFIGURATION_INVALID';

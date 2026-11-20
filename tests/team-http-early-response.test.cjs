@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),http=require('node:http');
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),{randomUUID}=require('node:crypto'),{DatabaseSync}=require('node:sqlite'),{pathToFileURL}=require('node:url');
 const ROOT=path.resolve(__dirname,'..'),source=name=>import(pathToFileURL(path.join(ROOT,'server/team',name)).href);
-const BASE=process.env.SHENYI_HTTP_EARLY_RESPONSE_EVIDENCE_DIR||(process.platform==='win32'?'D:/codex-temp/shenyi-team-http-early-response':path.join(os.tmpdir(),'shenyi-team-http-early-response'));
+const BASE=process.env.SHENYI_HTTP_EARLY_RESPONSE_EVIDENCE_DIR||(path.join(os.tmpdir(),'shenyi-team-http-early-response'));
 async function fixture(t,name){
  const directory=path.join(BASE,name+'-'+randomUUID());await fs.mkdir(directory,{recursive:true});
  const db=new DatabaseSync(':memory:'),agent=new http.Agent({keepAlive:true,maxSockets:1,maxFreeSockets:1}),requests=new Set(),events=[];let service,closing;

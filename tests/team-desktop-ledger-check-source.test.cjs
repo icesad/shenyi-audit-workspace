@@ -4,7 +4,7 @@ const {fixture,PASSWORD,savedSnapshot,uuid,sha,deferred,restorePasswordWork}=req
 const {createLedgerCheckSourceManager}=require('../desktop/ledger-check-source.cjs');
 after(restorePasswordWork);
 async function setup(t,{json,grant=true}={}){
- const f=await fixture(t,{grant}),root='D:/codex-temp/shenyi-ledger-check-desktop-20261117/source-files';await fs.mkdir(root,{recursive:true});const directory=await fs.mkdtemp(path.join(root,'case-')),filename=path.join(directory,'synthetic-saved-snapshot.json');json??=await savedSnapshot(f.sourceProjectId);await fs.writeFile(filename,json);
+ const f=await fixture(t,{grant}),root=path.join(require('node:os').tmpdir(),'shenyi-ledger-check-desktop-source-files');await fs.mkdir(root,{recursive:true});const directory=await fs.mkdtemp(path.join(root,'case-')),filename=path.join(directory,'synthetic-saved-snapshot.json');json??=await savedSnapshot(f.sourceProjectId);await fs.writeFile(filename,json);
  const state={pickers:0,opens:0,closes:0,reads:0,picker:null,stat:null,read:null};
  const manager=createLedgerCheckSourceManager({client:f.client,window:{},dialog:{async showOpenDialog(){state.pickers++;return state.picker?state.picker():{canceled:false,filePaths:[filename]};}},fsImpl:{async open(...args){state.opens++;const handle=await fs.open(...args);return{async stat(){return state.stat?state.stat(await handle.stat()):handle.stat();},async read(...args){state.reads++;return state.read?state.read(handle,args):handle.read(...args);},async close(){state.closes++;return handle.close();}};}}});t.after(()=>manager.dispose());
  const a=await f.access(),target={...f.target,projectRevision:a.projectRevision,grantRevision:a.grantRevision,headRevision:a.headRevision??0};

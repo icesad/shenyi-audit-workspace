@@ -12,7 +12,7 @@ function fixture({destination,save,authorize}={}){
  const dispose=registerDesktopBridge({ipcMain:{handle:(name,fn)=>handlers.set(name,fn),removeHandler:name=>handlers.delete(name)},window:{webContents},client,dialog});
  const event={sender:webContents,senderFrame:frame};return {handlers,calls,trace,state,event,dispose,call:(name,arg,other=event)=>handlers.get('shenyi:'+name)(other,arg)};
 }
-async function folder(){const base='D:/codex-temp/shenyi-project-access-20261115/entry-unit';await fs.mkdir(base,{recursive:true});return fs.mkdtemp(path.join(base,'case-'));}
+async function folder(){const base=path.join(require('node:os').tmpdir(),'shenyi-project-access-entry-unit');await fs.mkdir(base,{recursive:true});return fs.mkdtemp(path.join(base,'case-'));}
 async function absent(file){try{await fs.access(file);return false;}catch(error){if(error.code==='ENOENT')return true;throw error;}}
 
 test('nine project RPCs require the current main frame before any client or native dialog',async()=>{

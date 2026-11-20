@@ -18,7 +18,7 @@ const NOW = Date.parse('2026-11-15T10:00:00Z');
 const ORIGIN = 'http://127.0.0.1:8774';
 const TASK = '/api/teams/team-a/collection/tasks/task-a';
 const INPUT = {teamId:'team-a', taskId:'task-a', revision:0};
-const ROOT = 'D:/codex-temp/shenyi-upload-preflight-20261115/security-fixtures';
+const ROOT = path.join(require('node:os').tmpdir(),'shenyi-upload-preflight-security-fixtures');
 const BYTES = Buffer.from([0, 255, 128, 13, 10, 65, 228, 184, 173, 0]);
 const quote = value => '"' + value.replaceAll('"', '""') + '"';
 const json = (value, status=200) => new Response(JSON.stringify(value), {status, headers:{'Content-Type':'application/json'}});

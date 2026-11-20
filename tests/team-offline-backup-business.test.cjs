@@ -9,7 +9,7 @@ const {createTeamMaterialsFixture}=require('./helpers/team-materials-fixture.cjs
 const {createLedgerFixture,savedSnapshot}=require('./helpers/ledger-check-fixture.cjs');
 after(restorePasswordWork);
 const api=import(pathToFileURL(path.resolve(__dirname,'../server/team/offline-backup.mjs')).href);
-const BASE=process.platform==='win32'?'D:/codex-temp/shenyi-team-backup-20261118/business-tests':path.join(require('node:fs').realpathSync(os.tmpdir()),'shenyi-offline-business-tests');
+const BASE=path.join(require('node:fs').realpathSync(os.tmpdir()),'shenyi-offline-business-tests');
 const sha=x=>createHash('sha256').update(x).digest('hex');
 const quote=x=>'"'+x.replaceAll('"','""')+'"';
 function fingerprint(db){

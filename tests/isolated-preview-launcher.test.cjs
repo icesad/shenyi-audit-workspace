@@ -14,9 +14,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { pathToFileURL } = require('node:url');
 const configuration = require('../desktop/isolated-preview-config.cjs');
 const launcher = import(pathToFileURL(path.resolve(__dirname, '../scripts/team-isolated-preview.mjs')).href);
-const BASE = process.platform === 'win32'
-  ? path.resolve('D:/codex-temp/shenyi-isolated-preview-20261118/author-tests')
-  : path.join(os.tmpdir(), 'shenyi-isolated-preview-tests');
+const BASE = path.join(os.tmpdir(), 'shenyi-isolated-preview-tests');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 async function ownedDirectory(t) {
