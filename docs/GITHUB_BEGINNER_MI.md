@@ -6,6 +6,8 @@
 
 已经安装 GitHub Desktop 时，点 **Fetch origin → Current Branch → 协作分支**。如显示 **Pull origin**，先更新，再选 **New Branch**。在新分支上传一项业务修改，开 PR 时将目标分支选为 `codex/team-collaboration-handoff-20261120`。已有业务代码先保留原版本，并附上涉及的文件和验收样例。 [三步接手](COLLABORATION_HANDOFF.md#从同一版本开始) · [第一份业务提交](COLLABORATION_HANDOFF.md#分工和第一份业务提交)
 
+手头已有未上传成果时，先把原版本、文件范围、一份合成样例和预期结果填在同一条 Issue。四来源报告草稿可以先看 PR #2 里的文件差异。选定要采用的内容后，再用协作分支提交一项业务修改。 [首项业务交付和文件地图](COLLABORATION_HANDOFF.md#米老师的第一份业务交付) · [四来源报告草稿](https://github.com/icesad/shenyi-audit-workspace/pull/2)
+
 审易私有仓库存放代码与开发文档。GitHub 可能默认显示 `main`。查看本次交接和最新进度时，先切到协作分支。 [审易协作仓库](https://github.com/icesad/shenyi-audit-workspace)
 
 ## 一、先分清三个东西

@@ -6,11 +6,11 @@
 | --- | --- |
 | 仓库 | 私有的 [icesad/shenyi-audit-workspace](https://github.com/icesad/shenyi-audit-workspace) |
 | 本阶段协作基线 | [`codex/team-collaboration-handoff-20261120`](https://github.com/icesad/shenyi-audit-workspace/tree/codex/team-collaboration-handoff-20261120) |
-| 已验收的构件源码 | [`704959f`](https://github.com/icesad/shenyi-audit-workspace/commit/704959f6284c961ebda48d386f88c1d6e4883a71)，对应 Windows 评审包、macOS 双架构签前包和 Linux 演练构件 |
-| 本轮同步内容 | 三平台验收记录、四职级与新员工换机验收，以及 [`a5b0521`](https://github.com/icesad/shenyi-audit-workspace/commit/a5b0521a31fff97fa39f6195eb6a356ccccfd302) 的受管短信合成集成测试。协作开发以远端分支顶端为准 |
+| 已验收的构件源码 | [`704959f`](https://github.com/icesad/shenyi-audit-workspace/commit/704959f6284c961ebda48d386f88c1d6e4883a71) 对应 Windows 评审包、macOS 双架构签前包和同源 Linux 演练包。新版 Linux 支付探针包对应 [`98a5a38`](https://github.com/icesad/shenyi-audit-workspace/commit/98a5a38037872e219107966ee96860a18f455b5d)。 |
+| 本轮同步内容 | 已验收的源码检查点 `77f2ae8`，包括停用成员后释放席位、微信 Native 双路探针及 Ubuntu/Nginx 验收、四份构件的离线接收校验。各自开任务分支时使用最新远端协作提交，并在 Issue 记下实际起点。 |
 | 当前收款候选 | 官网报价、锁单、扫码付款、查单与超时关单。Windows 客户端可打开或继续官网购买，也可在获准绑定的新电脑上查阅同队微信订单并打开原单。 |
 | 米老师的 GitHub 账号 | `mixue117`，已核对具有本仓库读写权限 |
-| 历史四来源报告 | `work/report-four-sources`，仍在草稿 PR #2，等待业务验收。 [查看草稿](https://github.com/icesad/shenyi-audit-workspace/pull/2) |
+| 主干与历史草稿 | GitHub 默认打开 `main`。历史报告分支 `work/report-four-sources@894078b` 的草稿 PR #2 指向 `main`，等待业务验收。 [查看草稿](https://github.com/icesad/shenyi-audit-workspace/pull/2) |
 
 ## 从同一版本开始
 
@@ -27,6 +27,18 @@
 - 业务跨到权限、存储或界面时，两人先在 Issue 约定改动的文件、接口和验收人。底稿的专业复核、新冻结和重开规则由米老师确认。现有底稿查阅、填写、导出权限和版本保存按已有合同与验收记录执行。 [底稿三权与业务边界](WORKPAPER_ACCESS_CONTRACT.md) · [模块入口和文件](ARCHITECTURE.md)
 
 四来源报告的历史草稿位于 `work/report-four-sources@894078b`。米老师可在 PR #2 复核四类来源、底稿填写、草稿保存和 Word 导出。选定要保留的提交、专业规则和验收样例后，从当前协作基线开独立集成分支并发起新 PR。米老师确认业务结果，产品负责人复核立项、账表、权限及底稿入口。 [历史草稿 PR #2](https://github.com/icesad/shenyi-audit-workspace/pull/2) · [报告合并预演记录](STATUS.md#2026-11-20-历史报告草稿隔离合并预演)
+
+### 米老师的第一份业务交付
+
+1. 如果成果目前只在本机，保留原目录，在同一条 Issue 记录原版本或提交号、准备交接的文件、业务规则和一份合成样例。若已有 Git 提交，附提交号和要采用的改动。若只是反馈规则或预期结果，可以先在 Issue 写清，供产品负责人据此实现。
+2. 从最新协作基线建自己的分支，一次带入一项约定的业务改动。已存在一个业务分支时可先推送到同一私有仓库供双方对照；提交前用 `git status --short` 查清新增或修改的文件。合入候选使用单独的 PR，目标选择协作分支。
+3. 以同一个合成项目复现这项改动，再分别签收。米老师确认数据来源、计算或填报规则、预期输出。产品负责人确认项目权限、存量数据兼容、桌面入口和回归。验收成功后，产品负责人合入共享候选，并记录测试使用的提交号。
+
+| 改动范围 | 从这些源码和说明入手 |
+| --- | --- |
+| 审计业务、旧版报表和底稿 | `dist/` 内的平铺应用源码。按模块定位入口和模板，保留项目 UUID、原件、公式与历史存储语义。 [文件地图](ARCHITECTURE.md#文件地图) |
+| 桌面账号、设备、任务及项目授权 | `desktop/team-ui/`、`desktop/preload.cjs`、`server/team/`。由产品负责人复核服务端授权、撤权与端到端结果。 [团队产品需求](TEAM_PRODUCT_REQUIREMENTS.md) |
+| 官网、订阅和席位 | `website/`、`server/team/` 的账务和微信支付模块。使用合成报价、订单及查单应答复验。 [官网开发](../website/README.md) · [支付接入](PAYMENT_CHANNEL_PREPARATION.md) |
 
 ## 把代码取到自己的电脑
 
@@ -85,7 +97,7 @@ npm --prefix desktop run setup
 
 Windows 可双击 `Start-Team-Candidate-Preview.cmd` 打开独立合成桌面。该入口需要可写的 D 盘。缺少 D 盘时可先用浏览器工作台。macOS 可在根目录运行 `node scripts/team-isolated-preview.mjs`，实机仍待验收。官网合成订单一键演练使用完整解压的 Windows 双人评审包中的 `Start-Team-Website-Checkout-Candidate.cmd`，需要包内的 Node 运行时。微信 Native 付款流程需要独立的受管 HTTPS 配置。共享库保全备份和隔离升级预演已有记录，实际共享库切换仍待验。 [桌面依赖](../desktop/README.md#本机运行) · [开发环境](DEVELOPMENT.md) · [独立团队桌面预览](ISOLATED_CANDIDATE_PREVIEW.md) · [官网预览及下单演练](../website/README.md)
 
-两位负责人可按同一个合成案例走查采集、权限和原件预览。Windows 使用 `Start-Team-Pilot-Candidate.cmd`，源码入口也可运行 `node scripts/team-isolated-preview.mjs --pilot-demo`。各自启动时会得到独立合成库，可把观察结果记在同一份双人评审单。 [共同走查步骤](TEAM_PILOT_REHEARSAL.md) · [双人评审单](PILOT_OWNER_REVIEW.md)
+两位负责人可按同一个合成案例走查采集、权限和原件预览。源码目录用 Windows 的 `Start-Team-Pilot-Candidate.cmd`，或运行 `node scripts/team-isolated-preview.mjs --pilot-demo`。各自启动时会得到独立合成库，可把观察结果记在同一份双人评审单。若要从空团队走查首管理员开通、邀请和四职级，先完整解压 Windows 双人评审 ZIP，再运行包内的 `Start-Team-Managed-Pilot-Candidate.cmd`。 [源码采集走查](TEAM_PILOT_REHEARSAL.md) · [空团队开通走查](PILOT_MANAGED_FIRST_TASK.md) · [双人评审单](PILOT_OWNER_REVIEW.md)
 
 开发者可从仓库根目录复跑项目检查和直接相关回归。
 
@@ -102,6 +114,7 @@ npm run test:tools
 | 首管理员与受邀员工激活、员工换机 | `node --test tests/team-managed-onboarding-sms.test.cjs tests/team-device-replacement.test.cjs tests/team-device-replacement-proof.test.cjs tests/team-desktop-device-replacement-client.test.cjs` |
 | 官网扫码付款、桌面账务、换机找回原单 | `node --test tests/team-wechat-native-website.test.cjs tests/team-desktop-billing-client.test.cjs tests/team-desktop-website-checkout.test.cjs tests/team-desktop-billing-ui.test.cjs tests/team-managed-service-config.test.cjs` |
 | 微信账单和 Linux 监控 | `node --test tests/team-wechat-native-fund-bill-parser.test.cjs tests/team-wechat-native-reconciliation-cli.test.cjs tests/team-service-release-check.test.cjs` |
+| 收到构件前复跑接收校验 | `node --test tests/check-release-handoff.test.cjs tests/team-service-release-check.test.cjs` |
 
 ## 官网与微信支付进度
 
@@ -135,8 +148,8 @@ node --test tests/team-wechat-native-trade-bill-parser.test.cjs tests/team-wecha
 | --- | --- | --- |
 | Windows `704959f` | 一键评审包实测合成订单恢复。独立打包客户端实测新设备首次绑定后找回同队原单、空库四职级采集与撤权，以及新受邀员工由同队管理员审批换机。换机使用同一台 Windows 的三套独立配置。 | 正式签名 MSI 安装、升级和回退，以及两台电脑之间实际换机。 |
 | macOS `704959f` | Apple 芯片和 Intel 两份候选均完成离线签前与接收检查。独立接收核对架构、交接签名和版本限制。 | Developer ID 签名、公证、Mac 实机安装、绑定和升级。 |
-| Linux `704959f` | Ubuntu 24.04 隔离环境实测签名激活、账本加密恢复和回滚。 | 国内云生产配置、外部告警送达、正式证书、真实商户及回调。 |
-| 首队试点 | 空库实测首管理员开通、首队四席、邀请预留及四职级任务。受管短信配置覆盖管理员和员工两条激活链路，使用合成供应商。 | 产品负责人批准首家试点并填写到期时间与席位上限，随后验收真实短信送达及获准团队样例。 |
+| Linux `704959f`、`98a5a38` | Ubuntu 24.04 隔离环境实测签名激活、账本加密恢复和回滚。新版支付探针以真实 Nginx 验证后端与公共入口三种启用状态。 [双路验收](LINUX_TEAM_DEPLOYMENT.md#2026-11-21-隔离-ubuntu-与-nginx-的微信-native-上线验收) | 国内云生产配置、外部告警送达、正式证书、真实商户及回调。 |
+| 首队试点 | 空库实测首管理员开通、首队四席、邀请预留、四职级任务和停用在线员工后重新使用席位。受管短信配置以合成供应商覆盖管理员和员工激活。 [席位复用验收](MEMBER_DEACTIVATION.md#2026-11-21-有效试点停用员工与席位再使用) | 产品负责人批准首家试点并填写到期时间与席位上限，随后验收真实短信送达及获准团队样例。 |
 | 审计业务 | 已有历史报告预演和合成结果可复跑。 | 米老师确认采用的专业规则及合并范围，双方签收。实际共享库升级和获准资料试点单独安排。 |
 
 协作者从 GitHub 拉取源码、文档和合成测试，在各自电脑复跑。安装评审包、受管演练日志和原有预览由原开发机保管。 [Windows 评审包](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-21-当前协作版本的-windows-评审-zip-与独立客户端) · [macOS 接收](MACOS_DESKTOP_CANDIDATE.md#2026-11-21-当前协作提交的-macos-双架构签前交接) · [Ubuntu 发布恢复](LINUX_TEAM_DEPLOYMENT.md#2026-11-21-当前协作提交的-ubuntu-发布恢复与回滚)
