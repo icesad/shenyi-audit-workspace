@@ -21,6 +21,7 @@ sys.dont_write_bytecode = True
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/activate-linux-release.py'
 REVISION = 'a' * 40
 ARCHIVE_SHA = 'b' * 64
+CHANGE_ID = 'rollback-' + 'a' * 23
 BASELINE_INVOCATION = '1' * 32
 OTHER_INVOCATION = '2' * 32
 RESTORED_INVOCATION = '3' * 32
@@ -53,7 +54,7 @@ def fixture_tree(root, _owner_uid, receipt_name):
 
 
 class Deployment:
-    def __init__(self, directory, phase, mounted, retention, state):
+    def __init__(self, directory, phase, mounted, retention, state, *, change_id=None):
         spec = importlib.util.spec_from_file_location('activation', SCRIPT)
         self.release = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.release)
@@ -74,10 +75,11 @@ class Deployment:
         write_json(release.CONFIG, {'database': str(self.database)})
         self.current = release.CURRENT
         self.journal = release.JOURNAL
-        self.history = release.ROOT / f'activation-{REVISION}.json'
+        suffix = REVISION if change_id is None else f'{REVISION}-{change_id}'
+        self.history = release.ROOT / f'activation-{suffix}.json'
         self.staged = release.ROOT / f'staged-{REVISION}'
-        self.previous = release.ROOT / f'previous-{REVISION}'
-        self.failed = release.ROOT / f'failed-{REVISION}'
+        self.previous = release.ROOT / f'previous-{suffix}'
+        self.failed = release.ROOT / f'failed-{suffix}'
         retained = getattr(self, retention)
         self.old = self.current if mounted == 'old' else retained
         self.new = self.current if mounted == 'new' else retained
@@ -130,6 +132,8 @@ class Deployment:
             'baselineWarningChecks': [], 'candidateDatabasePreflight': 'passed',
             **release.configuration_stamp(), 'status': phase,
         }
+        if change_id is not None:
+            self.report['changeId'] = change_id
         if phase in ('activated', 'rolled-back', 'recovered'):
             self.report.update(currentPid=self.pid, currentInvocation=self.invocation,
                                retainedDirectory=str(retained), health=self.health_report())
@@ -231,8 +235,10 @@ class Deployment:
         else:
             raise AssertionError(f'Unexpected rename flags {flags}')
 
-    def recover(self, revision=REVISION, archive_sha=ARCHIVE_SHA):
+    def recover(self, revision=REVISION, archive_sha=ARCHIVE_SHA, *, change_id=None):
         args = SimpleNamespace(revision=revision, archive_sha256=archive_sha, recover=True, same_schema=True)
+        if change_id is not None:
+            args.change_id = change_id
         # Windows cannot open a directory FD. A close-by file gives the real volume
         # ID and accepts fsync while native tests exercise actual directory fsync.
         with self.fd_path.open('w+b') as fixture_fd:
@@ -250,17 +256,19 @@ class Deployment:
             write_json(self.journal, self.report)
         return seal
 
-    def activate(self):
+    def activate(self, *, change_id=None):
         args = SimpleNamespace(revision=REVISION, archive_sha256=ARCHIVE_SHA, recover=False, same_schema=True)
+        if change_id is not None:
+            args.change_id = change_id
         with self.fd_path.open('w+b') as fixture_fd:
             return self.release.activate(args, fixture_fd.fileno(), {})
 
 
 class RecoveryTests(unittest.TestCase):
-    def deployment(self, phase, mounted, retention, state):
+    def deployment(self, phase, mounted, retention, state, *, change_id=None):
         directory = tempfile.TemporaryDirectory(prefix='shenyi-release-test-')
         self.addCleanup(directory.cleanup)
-        return Deployment(Path(directory.name).resolve(), phase, mounted, retention, state)
+        return Deployment(Path(directory.name).resolve(), phase, mounted, retention, state, change_id=change_id)
 
     def verify_finish(self, deployment, result, status, live, retained):
         self.assertEqual(result['status'], status)
@@ -377,8 +385,8 @@ class RecoveryTests(unittest.TestCase):
         f.live_directory = f.old_id
         self.assert_refused(f)
 
-    def fresh_deployment(self, *, sealed=True):
-        f = self.deployment('stopping-current', 'old', 'staged', 'active')
+    def fresh_deployment(self, *, sealed=True, change_id=None):
+        f = self.deployment('stopping-current', 'old', 'staged', 'active', change_id=change_id)
         f.journal.unlink()
         seal = f.seal_candidate(journal=False) if sealed else None
         return f, seal
@@ -408,6 +416,7 @@ class RecoveryTests(unittest.TestCase):
     def test_activation_binds_the_sealed_tree_in_the_durable_receipt(self):
         f, seal = self.fresh_deployment()
         result = f.activate()
+        self.assertNotIn('changeId', result)
         self.verify_finish(f, result, 'activated', f.new_id, f.previous)
         self.assertEqual(result['stagedTree'], seal)
         self.assertEqual(fixture_tree(f.current, 0, f.receipt_path.name), seal)
@@ -541,6 +550,145 @@ class RecoveryTests(unittest.TestCase):
                     write_json(f.journal, f.report)
                 self.assert_refused(f)
                 self.assertEqual(f.probes, [])
+
+
+    def test_change_id_allows_existing_history_without_changing_the_signed_stage(self):
+        f, seal = self.fresh_deployment(change_id=CHANGE_ID)
+        earlier_histories = {
+            f.release.ROOT / f'activation-{REVISION}.json': b'{"status":"activated","priorReceipt":true}\n',
+            f.release.ROOT / f'activation-{REVISION}-older-change.json': b'{"changeId":"older-change"}\n',
+        }
+        for path, data in earlier_histories.items():
+            path.write_bytes(data)
+        legacy_previous = f.release.ROOT / f'previous-{REVISION}'
+        legacy_previous.mkdir()
+        legacy_identity = f.identity(legacy_previous)
+        stage_receipt = f.receipt_path.read_bytes()
+
+        def verify_pending_change(args, env, timeout):
+            pending = json.loads(f.journal.read_bytes())
+            self.assertEqual(pending['changeId'], CHANGE_ID)
+            self.assertEqual(pending['status'], 'starting-candidate')
+            f.service(args, env, timeout)
+
+        f.release.service = verify_pending_change
+        result = f.activate(change_id=CHANGE_ID)
+        self.verify_finish(f, result, 'activated', f.new_id, f.previous)
+        self.assertEqual(result['changeId'], CHANGE_ID)
+        self.assertEqual(result['stagedTree'], seal)
+        self.assertEqual(result['retainedDirectory'], str(f.previous))
+        self.assertFalse(f.failed.exists())
+        self.assertFalse(f.staged.exists())
+        self.assertEqual((f.current / f.receipt_path.name).read_bytes(), stage_receipt)
+        for path, data in earlier_histories.items():
+            self.assertEqual(path.read_bytes(), data)
+        self.assertEqual(f.identity(legacy_previous), legacy_identity)
+
+    def test_same_change_id_conflicts_before_preflight_or_stop(self):
+        for existing in ('history', 'previous', 'failed'):
+            with self.subTest(existing=existing):
+                f, _ = self.fresh_deployment(change_id=CHANGE_ID)
+                conflict = getattr(f, existing)
+                if existing == 'history':
+                    conflict.write_bytes(b'prior change receipt\n')
+                else:
+                    conflict.mkdir()
+                original_identity = f.identity(conflict)
+                with self.assertRaises(ValueError):
+                    f.activate(change_id=CHANGE_ID)
+                self.assertEqual(f.actions, [])
+                self.assertEqual(f.probes, [])
+                self.assertEqual(f.candidate_preflights, [])
+                self.assertEqual(f.identity(conflict), original_identity)
+                if existing == 'history':
+                    self.assertEqual(conflict.read_bytes(), b'prior change receipt\n')
+                self.assertEqual(f.identity(f.current), f.old_id)
+                self.assertEqual(f.identity(f.staged), f.new_id)
+                self.assertFalse(f.journal.exists())
+                self.assertEqual(f.database.read_bytes(), f.database_bytes)
+
+    def test_change_id_rollback_retains_candidate_in_the_scoped_failed_path(self):
+        change_id = '7'
+        f, _ = self.fresh_deployment(change_id=change_id)
+
+        def startup_failure(args, env, timeout):
+            raise ValueError('Synthetic candidate startup refusal')
+
+        f.release.service = startup_failure
+        result = f.activate(change_id=change_id)
+        self.verify_finish(f, result, 'rolled-back', f.old_id, f.failed)
+        self.assertEqual(result['changeId'], change_id)
+        self.assertEqual(result['retainedDirectory'], str(f.failed))
+        self.assertIn('Synthetic candidate startup refusal', result['candidateFailure'])
+        self.assertFalse(f.previous.exists())
+        self.assertFalse((f.release.ROOT / f'failed-{REVISION}').exists())
+
+    def test_change_id_rejects_invalid_identifiers_without_mutating_state(self):
+        for invalid in ('', 'a' * 33, '-a', 'a-', 'A', 'a_b', 'a/b', '../a', 'a\n', 'a b'):
+            with self.subTest(change_id=invalid):
+                f, _ = self.fresh_deployment()
+                paths = set(f.release.ROOT.iterdir())
+                with self.assertRaises(ValueError):
+                    f.activate(change_id=invalid)
+                self.assertEqual(set(f.release.ROOT.iterdir()), paths)
+                self.assertEqual(f.actions, [])
+                self.assertEqual(f.candidate_preflights, [])
+                self.assertEqual(f.probes, [])
+                self.assertEqual(f.identity(f.current), f.old_id)
+                self.assertEqual(f.identity(f.staged), f.new_id)
+
+    def test_change_id_recovery_refuses_missing_or_different_id_then_recovers(self):
+        f = self.deployment('starting-candidate', 'new', 'previous', 'active', change_id=CHANGE_ID)
+        f.report['candidateStartupPreflight'] = 'passed'
+        seal = f.seal_candidate(journal=True)
+        old_history = f.release.ROOT / f'activation-{REVISION}.json'
+        old_history.write_bytes(b'previous completed activation\n')
+        before = set(f.release.ROOT.iterdir())
+        self.assert_refused(f)
+        self.assert_refused(f, change_id='other-change')
+        self.assertEqual(set(f.release.ROOT.iterdir()), before)
+        self.assertEqual(f.probes, [])
+        self.assertEqual(f.process_status({}), (202, OTHER_INVOCATION))
+
+        result = f.recover(change_id=CHANGE_ID)
+        self.verify_finish(f, result, 'recovered', f.old_id, f.failed)
+        self.assertEqual(result['changeId'], CHANGE_ID)
+        self.assertEqual(result['stagedTree'], seal)
+        self.assertEqual(result['retainedDirectory'], str(f.failed))
+        self.assertEqual(f.actions, ['stop', 'exchange', 'start', 'retain', 'record'])
+        self.assertEqual(old_history.read_bytes(), b'previous completed activation\n')
+
+    def test_change_id_terminal_receipt_is_archived_byte_for_byte(self):
+        for status, mounted, retention in (('activated', 'new', 'previous'), ('rolled-back', 'old', 'failed')):
+            with self.subTest(status=status):
+                f = self.deployment(status, mounted, retention, 'active', change_id=CHANGE_ID)
+                seal = f.seal_candidate(journal=True)
+                original = b'  ' + f.journal.read_bytes() + b'\n'
+                f.journal.write_bytes(original)
+                previous_invocation = f.invocation
+                live = f.identity(f.current)
+                result = f.recover(change_id=CHANGE_ID)
+                self.verify_finish(f, result, status, live, getattr(f, retention))
+                self.assertEqual(result['changeId'], CHANGE_ID)
+                self.assertEqual(result['stagedTree'], seal)
+                self.assertEqual(f.history.read_bytes(), original)
+                self.assertEqual(f.actions, ['record'])
+                self.assertEqual(f.invocation, previous_invocation)
+
+    def test_legacy_journal_rejects_a_requested_change_id_and_stays_legacy(self):
+        f = self.deployment('stopping-current', 'old', 'staged', 'active')
+        self.assert_refused(f, change_id=CHANGE_ID)
+        result = f.recover()
+        self.verify_finish(f, result, 'recovered', f.old_id, f.failed)
+        self.assertNotIn('changeId', result)
+        self.assertEqual(f.history.name, f'activation-{REVISION}.json')
+
+    def test_recovery_rejects_an_explicit_null_change_id_in_a_journal(self):
+        f = self.deployment('stopping-current', 'old', 'staged', 'active')
+        f.report['changeId'] = None
+        write_json(f.journal, f.report)
+        self.assert_refused(f)
+        self.assertEqual(f.probes, [])
 
 
 if __name__ == '__main__':
