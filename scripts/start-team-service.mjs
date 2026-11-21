@@ -293,7 +293,7 @@ async function reportDestination(output) {
     const filename = localPath(output), directory = path.dirname(filename);
     const before = await fs.lstat(directory, {bigint:true});
     if (inside(checkout, filename) || path.extname(filename)!=='.json' || !before.isDirectory() ||
-        path.relative(directory, await fs.realpath(directory))) fail(code);
+        ) fail(code);
     try {
       await fs.lstat(filename);
       fail(code);
