@@ -21,7 +21,7 @@ async function noLinks(directory,allowMissing=false){
  const full=absolute(directory),parsed=path.parse(full);let at=parsed.root;
  for(const part of full.slice(parsed.root.length).split(path.sep).filter(Boolean)){
   at=path.join(at,part);let entry;try{entry=await fs.lstat(at);}catch(e){if(e.code==='ENOENT'&&allowMissing)return;throw invalid();}
-  if(!entry.isDirectory()||entry.isSymbolicLink()||!samePath(await fs.realpath(at),at))throw invalid();
+  if(!entry.isDirectory()||entry.isSymbolicLink())throw invalid();
  }
 }
 async function readRegular(filename,{singleLink=false}={}){
