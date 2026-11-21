@@ -71,7 +71,7 @@ function sameState(left, right) {
 
 async function existingFile(filename, code) {
   const stat = await fs.lstat(filename, { bigint: true });
-  if (!stat.isFile() || stat.nlink !== 1n || stat.size < 1n || path.relative(filename, await fs.realpath(filename))) fail(code);
+  if (!stat.isFile() || stat.nlink !== 1n || stat.size < 1n) fail(code);
   return stat;
 }
 
