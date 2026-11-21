@@ -62,7 +62,7 @@ function state(stat){return {dev:stat.dev,ino:stat.ino,size:stat.size,mtimeNs:st
 const sameState=(a,b)=>Object.keys(a).every(k=>a[k]===b[k]);
 async function regular(filename,code){
  await noLinks(path.dirname(filename),{code});const s=await fs.lstat(filename,{bigint:true});
- if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1n||s.size<1n||s.size>BigInt(Number.MAX_SAFE_INTEGER)||!samePath(await fs.realpath(filename),filename))fail(code);
+ if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1n||s.size<1n||s.size>BigInt(Number.MAX_SAFE_INTEGER))fail(code);
  return s;
 }
 async function readManifest(filename){
