@@ -144,7 +144,9 @@ function parseProfile(bytes, code) {
 export async function loadManagedServiceConfiguration(filename) {
   try {
     const configPath = localPath(filename), repository = await fs.realpath(checkout);
-    if (inside(repository, configPath)) fail(configCode);
+    await assertNoLinkedAncestors(path.dirname(configPath), configCode);
+    const canonicalConfigPath = path.join(await fs.realpath(path.dirname(configPath)), path.basename(configPath));
+    if (inside(repository, canonicalConfigPath)) fail(configCode);
     const bytes = await readLocalFile(configPath, 16 * 1024, configCode);
     const value = parseProfile(bytes, configCode);
     if (Object.keys(value).some(name => !fields.includes(name) && !optionalFields.includes(name)) ||
@@ -167,7 +169,14 @@ export async function loadManagedServiceConfiguration(filename) {
       if (!wechatNativeCallbackProfile) fail(configCode);
       filenames.push(wechatNativeWebsiteProfile);
     }
-    if (filenames.some((name, index) => inside(repository, name) || filenames.slice(0, index).some(previous => !path.relative(previous, name)))) fail(configCode);
+    const canonicalFiles = [];
+    for (const name of filenames) {
+      const directory = path.dirname(name);
+      await assertNoLinkedAncestors(directory, configCode);
+      const canonicalName = path.join(await fs.realpath(directory), path.basename(name));
+      if (inside(repository, canonicalName) || canonicalFiles.some(previous => !path.relative(previous, canonicalName))) fail(configCode);
+      canonicalFiles.push(canonicalName);
+    }
     return Object.freeze({ ...value, database, tlsCertificate, tlsKey, ...(smsProfile ? { smsProfile } : {}),
       ...(wechatProfile ? { wechatProfile } : {}), ...(wechatNativeCallbackProfile ? { wechatNativeCallbackProfile } : {}),
       ...(wechatNativeWebsiteProfile ? { wechatNativeWebsiteProfile } : {}) });
