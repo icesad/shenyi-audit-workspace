@@ -6,11 +6,18 @@
 | --- | --- |
 | 仓库 | 私有的 [icesad/shenyi-audit-workspace](https://github.com/icesad/shenyi-audit-workspace) |
 | 本阶段协作基线 | [`codex/team-collaboration-handoff-20261120`](https://github.com/icesad/shenyi-audit-workspace/tree/codex/team-collaboration-handoff-20261120) |
-| 本轮同步内容 | 源码和验收记录包含 [`c08d07e`](https://github.com/icesad/shenyi-audit-workspace/commit/c08d07e79a3978d62a80d78bddf13c32db005a6b)。新增首管理员审批应答中断后的核对、员工邀请按原请求编号恢复和防止重复预留席位，以及 Windows 四职级验收。开任务分支时在 Issue 记录实际拉取到的协作提交。 |
+| 本轮同步内容 | 协作分支纳入已验收的四职级合成库离线恢复 `63c37bb` 和试点批准回执 `767b39b`。开任务分支前先拉取更新，把实际起点记到 Issue。 |
 | 已验收的构件源码 | 最新 Windows 双人评审 ZIP 来自 [`6ef38ba`](https://github.com/icesad/shenyi-audit-workspace/commit/6ef38ba9492240dd5eeac1b328ea0124acc2c0d4)。macOS 双架构签前包和同源 Linux 演练包来自 [`704959f`](https://github.com/icesad/shenyi-audit-workspace/commit/704959f6284c961ebda48d386f88c1d6e4883a71)。新版 Linux 支付探针包来自 [`98a5a38`](https://github.com/icesad/shenyi-audit-workspace/commit/98a5a38037872e219107966ee96860a18f455b5d)。 |
 | 当前收款候选 | 官网报价、锁单、扫码付款、查单与超时关单。Windows 客户端可打开或继续官网购买，也可在获准绑定的新电脑上查阅同队微信订单并打开原单。 |
 | 米老师的 GitHub 账号 | `mixue117`，已核对具有本仓库读写权限 |
 | 主干与历史草稿 | GitHub 默认打开 `main`。历史报告分支 `work/report-four-sources@894078b` 的草稿 PR #2 指向 `main`，等待业务验收。 [查看草稿](https://github.com/icesad/shenyi-audit-workspace/pull/2) |
+
+## 本次同步的两个已验收改动
+
+- **加密备份与离线恢复**。Windows 合成团队库恢复后，100 张表的 372 条原有记录、两份原件、席位和撤权历史保持一致。带离线标记的原副本及改名副本均被服务拒绝启动。51 项相关回归通过。 [恢复手册](TEAM_OFFLINE_BACKUP.md#windows-四职级采集库恢复演练)
+- **试点批准回执**。产品负责人批准试点后遇到断线，可重新连接，在人工审核面板刷新原申请，核对北京时间截止和实际席位。已收到的回执在列表延迟时仍会显示。Windows 源码客户端实测找回四席，全程一笔批准。167 项相关回归和 44 项独立界面检查通过。 [操作说明](MANUAL_TEAM_ONBOARDING.md#试点批准结果待核对)
+
+新版团队申请录入及其编号核对仍在开发机验收。当前一键评审包对应 `6ef38ba`。试点批准修复以同步后的源码复跑；安装包、合成库和原始日志保留在开发机。
 
 ## 从同一版本开始
 
