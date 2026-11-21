@@ -519,8 +519,13 @@ export async function createManagedSealedBackup(options) {
  const mode=managedMode(serverId);
  if(onProgress!==undefined&&typeof onProgress!=='function')fail('INVALID_INPUT');
  const source=absolute(sourceDatabase),root=absolute(outputRoot),keyPath=absolute(keyFile,'INVALID_BACKUP_KEY');
- if(inside(source,REPOSITORY)||inside(root,REPOSITORY))fail('INVALID_INPUT');
- if(inside(keyPath,REPOSITORY)||samePath(source,keyPath))fail('INVALID_BACKUP_KEY');
+ await noLinks(path.dirname(source),{code:'SOURCE_INVALID'});
+ await noLinks(path.dirname(keyPath),{code:'INVALID_BACKUP_KEY'});
+ const [canonicalSource,canonicalRoot,canonicalKey,repository]=await Promise.all([
+  canonicalPath(source,{code:'SOURCE_INVALID'}),canonicalPath(root,{allowMissing:true}),
+  canonicalPath(keyPath,{code:'INVALID_BACKUP_KEY'}),fs.realpath(REPOSITORY)]);
+ if(inside(canonicalSource,repository)||inside(canonicalRoot,repository))fail('INVALID_INPUT');
+ if(inside(canonicalKey,repository)||samePath(canonicalSource,canonicalKey))fail('INVALID_BACKUP_KEY');
  let key,sourceDb,directory,staged,open,owned,published;
  try{
   const before=await managedSourceState(source);
