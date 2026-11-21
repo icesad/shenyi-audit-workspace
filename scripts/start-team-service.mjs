@@ -51,6 +51,17 @@ function inside(parent, filename) {
   return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith('..' + path.sep));
 }
 
+async function assertNoLinkedAncestors(directory, code) {
+  const full = path.resolve(directory);
+  const root = path.parse(full).root;
+  let current = root;
+  for (const part of full.slice(root.length).split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
+    const stat = await fs.lstat(current, { bigint: true });
+    if (!stat.isDirectory() || stat.isSymbolicLink()) fail(code);
+  }
+}
+
 function localPath(value) {
   if (typeof value !== 'string' || !value.isWellFormed() || !path.isAbsolute(value) || /^[\\/]{2}|[\x00-\x1f\x7f]/.test(value)) fail(configCode);
   const root = path.parse(value).root;
@@ -70,6 +81,7 @@ function sameState(left, right) {
 }
 
 async function existingFile(filename, code) {
+  await assertNoLinkedAncestors(path.dirname(filename), code);
   const stat = await fs.lstat(filename, { bigint: true });
   if (!stat.isFile() || stat.nlink !== 1n || stat.size < 1n) fail(code);
   return stat;
@@ -291,8 +303,12 @@ async function reportDestination(output) {
   const code = 'WECHAT_NATIVE_REPORT_UNAVAILABLE';
   try {
     const filename = localPath(output), directory = path.dirname(filename);
+    await assertNoLinkedAncestors(directory, code);
     const before = await fs.lstat(directory, {bigint:true});
-    if (inside(checkout, filename) || path.extname(filename)!=='.json' || !before.isDirectory() || before.isSymbolicLink()) fail(code);
+    const canonicalDirectory = await fs.realpath(directory);
+    const canonicalFilename = path.join(canonicalDirectory, path.basename(filename));
+    const repository = await fs.realpath(checkout);
+    if (inside(repository, canonicalFilename) || path.extname(filename)!=='.json' || !before.isDirectory() || before.isSymbolicLink()) fail(code);
     try {
       await fs.lstat(filename);
       fail(code);
