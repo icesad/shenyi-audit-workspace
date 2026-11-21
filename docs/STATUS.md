@@ -1,5 +1,18 @@
 # 当前状态 · 双人协作交接
 
+## 2026-11-21 Public 仓库与主整合验收状态
+
+仓库已由负责人改为 Public：<https://github.com/icesad/shenyi-audit-workspace>。源码、分支、提交历史、PR、Issue 与附件均可能被公众查看和复制。不得在仓库中存放客户账套、真实底稿、证照、个人信息、生产凭据或备份。公开状态不代表已完成完整 Git 历史隐私／凭据审计。
+
+- 主整合 PR #3：`codex/team-collaboration-handoff-20261120` → `main`，目前仍为 Draft，未合并；最新已知 PR 头为 `3a11967fc20cd9e5ffb11ceb4d337a4f016de374`。原 CI 在 6,306 项单元测试中有 69 项失败。
+- 修复 PR #4：`fix/windows-canonical-path-ci-20261121` → 协作分支，尚未合并；最新已知提交为 `2c73f955b6a3b12624af4e7015d63455e0559e2c`。已处理 Windows 路径规范化误判及自动审查提出的上级目录链接、8.3 路径别名边界问题；对应 GitHub Actions 运行仍处于 queued，尚无新一轮通过结论。
+- `main` 当前未启用分支保护（GitHub API 返回 `protected=false`）。须在 GitHub 仓库设置中配置并验证必需检查后，才可合并主整合 PR。
+- Public 仓库的文件类型初筛未发现常见客户文档、数据库、证书／私钥文件；这不等于完整历史审计，也不代替人工检查源码、提交历史、Issue、PR 评论和附件。
+- PR #3 合并、真实客户试点、生产部署、域名备案及网站正式上线均未完成。GitHub 合并不等于部署。
+
+当前执行顺序：先完成 PR #4 的安全复审与 CI；再复跑 PR #3 完整 CI；同步完成公开历史审查和 `main` 分支保护；最后进行业务签收及独立发布验收。
+
+
 ## 2026-11-21 双人交接补充
 
 私有协作分支 `codex/team-collaboration-handoff-20261120` 纳入两个已验收提交 `63c37bb` 与 `767b39b`，分别覆盖 Windows 合成库离线恢复和试点批准回执。新版团队申请录入仍保留在开发机。当前 Windows 一键评审包对应 `6ef38ba`，新增试点批准流程以 Windows 源码客户端验收。正式试点、合入 `main` 和生产发布待验。 [双人交接](COLLABORATION_HANDOFF.md#本次同步的两个已验收改动)
