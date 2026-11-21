@@ -318,20 +318,25 @@ export async function rehearseOfflineRestore(options){
  }catch(error){await failure(directory,error instanceof OfflineBackupError?error.code:'RESTORE_FAILED');if(error instanceof OfflineBackupError)throw error;fail('RESTORE_FAILED');}
 }
 
-function sealedInputPaths(bundleDirectory,keyFile,sealedInput) {
+async function sealedInputPaths(bundleDirectory,keyFile,sealedInput) {
  const code=sealedInput?'SEALED_BUNDLE_INVALID':'BUNDLE_INVALID';
- const bundle=absolute(bundleDirectory,code);
- if(inside(bundle,REPOSITORY))fail(code);
- const keyPath=absolute(keyFile,'INVALID_BACKUP_KEY');
- if(inside(keyPath,REPOSITORY)||inside(keyPath,bundle))fail('INVALID_BACKUP_KEY');
- return {bundle,keyPath};
+ const bundle=absolute(bundleDirectory,code),keyPath=absolute(keyFile,'INVALID_BACKUP_KEY');
+ await noLinks(bundle,{code});await noLinks(path.dirname(keyPath),{code:'INVALID_BACKUP_KEY'});
+ const canonicalBundle=await canonicalPath(bundle,{code});
+ const canonicalKey=await canonicalPath(keyPath,{code:'INVALID_BACKUP_KEY'});
+ const repository=await fs.realpath(REPOSITORY);
+ if(inside(canonicalBundle,repository))fail(code);
+ if(inside(canonicalKey,repository)||inside(canonicalKey,canonicalBundle))fail('INVALID_BACKUP_KEY');
+ return {bundle,keyPath,canonicalBundle,canonicalKey};
 }
 
-function sealedPaths(bundleDirectory,keyFile,outputRoot,sealedInput) {
- const {bundle,keyPath}=sealedInputPaths(bundleDirectory,keyFile,sealedInput);
- const root=absolute(outputRoot??defaultOfflineBackupRoot());
- if(inside(root,REPOSITORY)||inside(root,bundle))fail('INVALID_INPUT');
- return {bundle,keyPath,root};
+async function sealedPaths(bundleDirectory,keyFile,outputRoot,sealedInput) {
+ const {bundle,keyPath,canonicalBundle}=await sealedInputPaths(bundleDirectory,keyFile,sealedInput);
+ const requestedRoot=absolute(outputRoot??defaultOfflineBackupRoot());
+ const root=await canonicalPath(requestedRoot,{allowMissing:true});
+ const repository=await fs.realpath(REPOSITORY);
+ if(inside(root,repository)||inside(root,canonicalBundle))fail('INVALID_INPUT');
+ return {bundle,keyPath,root:requestedRoot};
 }
 
 async function openCheckedFile(filename,code) {
@@ -457,7 +462,7 @@ async function writeSealedSnapshot(owned,open,manifest,value,key) {
 export async function sealOfflineBackup(options) {
  assertOfflineBackupRuntime();
  const {bundleDirectory,keyFile,outputRoot}=input(options,['bundleDirectory','keyFile'],['outputRoot']);
- const locations=sealedPaths(bundleDirectory,keyFile,outputRoot,false);
+ const locations=await sealedPaths(bundleDirectory,keyFile,outputRoot,false);
  let key,open,owned,directory,published;
  try{
   key=await readKeyFile(locations.keyPath);
@@ -598,7 +603,7 @@ async function markManagedRehearsal(owned,original,mode){
 }
 
 async function rehearseSealedRestore({bundleDirectory,keyFile,outputRoot},mode) {
- const locations=sealedPaths(bundleDirectory,keyFile,outputRoot,true);
+ const locations=await sealedPaths(bundleDirectory,keyFile,outputRoot,true);
  let key,open,first,second,owned,directory,published;
  try{
   key=await readKeyFile(locations.keyPath);
@@ -690,8 +695,8 @@ function compareSnapshotInventories(current,manifest) {
 export async function compareManagedSealedBackup(options) {
  assertOfflineBackupRuntime();
  const {sourceDatabase,bundleDirectory,keyFile,serverId}=input(options,['sourceDatabase','bundleDirectory','keyFile','serverId']);
- const mode=managedMode(serverId),source=absolute(sourceDatabase),{bundle,keyPath}=sealedInputPaths(bundleDirectory,keyFile,true);
- if(inside(source,REPOSITORY)||inside(source,bundle))fail('INVALID_INPUT');
+ const mode=managedMode(serverId),source=absolute(sourceDatabase),{bundle,keyPath,canonicalBundle}=await sealedInputPaths(bundleDirectory,keyFile,true);
+ await noLinks(path.dirname(source),{code:'SOURCE_INVALID'});const canonicalSource=await canonicalPath(source,{code:'SOURCE_INVALID'});if(inside(canonicalSource,await fs.realpath(REPOSITORY))||inside(canonicalSource,canonicalBundle))fail('INVALID_INPUT');
  if(samePath(source,keyPath))fail('INVALID_BACKUP_KEY');
  const sourceBefore=await managedSourceState(source);
  let key,open,authenticated;
