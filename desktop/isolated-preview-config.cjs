@@ -35,7 +35,7 @@ async function loadOwnerReviewRuntime({appRoot=APP_ROOT,platform=process.platfor
   await noLinks(root);if(await readRegular(marker,{singleLink:true})!==OWNER_REVIEW_RUNTIME_MARKER)throw invalid();
   const electronExecutable=path.join(root,'runtime','electron','electron.exe');await noLinks(path.dirname(electronExecutable));
   const executable=await fs.lstat(electronExecutable,{bigint:true});
-  if(!executable.isFile()||executable.isSymbolicLink()||executable.nlink!==1n||!samePath(await fs.realpath(electronExecutable),electronExecutable))throw invalid();
+  if(!executable.isFile()||executable.isSymbolicLink()||executable.nlink!==1n)throw invalid();
   return Object.freeze({appRoot:root,rootDirectory:path.join(root,'review-runs'),electronExecutable});
  }catch{throw invalid();}
 }
