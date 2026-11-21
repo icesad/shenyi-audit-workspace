@@ -55,7 +55,7 @@ async function noLinks(directory,{allowMissing=false,code='INVALID_INPUT'}={}){
  for(const part of full.slice(root.length).split(path.sep).filter(Boolean)){
   current=path.join(current,part);let s;
   try{s=await fs.lstat(current);}catch(error){if(error.code==='ENOENT'&&allowMissing)return;fail(code);}
-  if(!s.isDirectory()||s.isSymbolicLink()||!samePath(await fs.realpath(current),current))fail(code);
+  if(!s.isDirectory()||s.isSymbolicLink())fail(code);
  }
 }
 function state(stat){return {dev:stat.dev,ino:stat.ino,size:stat.size,mtimeNs:stat.mtimeNs,ctimeNs:stat.ctimeNs};}
