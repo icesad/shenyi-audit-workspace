@@ -58,6 +58,22 @@ async function noLinks(directory,{allowMissing=false,code='INVALID_INPUT'}={}){
   if(!s.isDirectory()||s.isSymbolicLink())fail(code);
  }
 }
+async function canonicalPath(value,{allowMissing=false,code='INVALID_INPUT'}={}) {
+ const full=absolute(value,code);
+ try {
+  const stat=await fs.lstat(full);
+  if(stat.isSymbolicLink())fail(code);
+  if(stat.isDirectory())await noLinks(full,{code});
+  else await noLinks(path.dirname(full),{code});
+  return await fs.realpath(full);
+ } catch(error) {
+  if(error.code!=='ENOENT'||!allowMissing)fail(code);
+  const parent=path.dirname(full);
+  if(parent===full)fail(code);
+  const canonicalParent=await canonicalPath(parent,{allowMissing:true,code});
+  return path.join(canonicalParent,path.basename(full));
+ }
+}
 function state(stat){return {dev:stat.dev,ino:stat.ino,size:stat.size,mtimeNs:stat.mtimeNs,ctimeNs:stat.ctimeNs};}
 const sameState=(a,b)=>Object.keys(a).every(k=>a[k]===b[k]);
 async function regular(filename,code){
@@ -201,9 +217,14 @@ export function defaultOfflineBackupRoot({platform=process.platform,home=os.home
  return path.join(home,'.local','share','shenyi-team-offline-backups');
 }
 async function freshDirectory(outputRoot,prefix){
- const root=absolute(outputRoot??defaultOfflineBackupRoot());if(inside(root,REPOSITORY))fail('INVALID_INPUT');
- await noLinks(root,{allowMissing:true});await fs.mkdir(root,{recursive:true,mode:0o700});await noLinks(root);
- const id=randomUUID(),directory=path.join(root,prefix+'-'+id);await fs.mkdir(directory,{mode:0o700});await noLinks(directory);
+ const requestedRoot=absolute(outputRoot??defaultOfflineBackupRoot());
+ const root=await canonicalPath(requestedRoot,{allowMissing:true});
+ const repository=await fs.realpath(REPOSITORY);
+ if(inside(root,repository))fail('INVALID_INPUT');
+ await noLinks(requestedRoot,{allowMissing:true});await fs.mkdir(requestedRoot,{recursive:true,mode:0o700});await noLinks(requestedRoot);
+ const canonicalRoot=await canonicalPath(requestedRoot);
+ if(inside(canonicalRoot,repository))fail('INVALID_INPUT');
+ const id=randomUUID(),directory=path.join(requestedRoot,prefix+'-'+id);await fs.mkdir(directory,{mode:0o700});await noLinks(directory);
  return {id,directory};
 }
 async function publish(directory,name,value,assertReady){
@@ -236,6 +257,8 @@ function matches(value,manifest){return value.databaseBytes===manifest.database.
 function summary(kind,directory,snapshotId,value){return Object.freeze({kind,directory,databasePath:path.join(directory,'snapshot.sqlite'),snapshotId,serverId:value.identity.serverId,databaseSha256:value.databaseSha256,databaseBytes:value.databaseBytes,schemaSha256:value.schemaSha256,tableCount:value.tables.length,totalRows:value.totalRows,offlineOnly:true,onlineCutoverSupported:false,containsCredentials:true});}
 async function verifyBundle(bundleDirectory){
  const directory=absolute(bundleDirectory,'BUNDLE_INVALID');await noLinks(directory,{code:'BUNDLE_INVALID'});
+ const canonicalDirectory=await canonicalPath(directory,{code:'BUNDLE_INVALID'});
+ if(inside(canonicalDirectory,await fs.realpath(REPOSITORY)))fail('BUNDLE_INVALID');
  try{await fs.lstat(path.join(directory,'failure.json'));fail('BUNDLE_INVALID');}catch(error){if(error.code!=='ENOENT')throw error;}
  const manifest=validateManifest(await readManifest(path.join(directory,'manifest.json')));
  if(path.basename(directory)!=='backup-'+manifest.snapshotId)fail('BUNDLE_INVALID');
@@ -266,7 +289,7 @@ async function copySnapshot(sourceDb,target,onProgress){
 export async function createOfflineBackup(options){
  assertOfflineBackupRuntime();const {sourceDatabase,outputRoot,onProgress}=input(options,['sourceDatabase'],['outputRoot','onProgress']);if(onProgress!==undefined&&typeof onProgress!=='function')fail('INVALID_INPUT');let directory,sourceDb;
  try{
-  const source=absolute(sourceDatabase);if(inside(source,REPOSITORY))fail('INVALID_INPUT');const before=await regular(source,'SOURCE_INVALID');
+  const source=absolute(sourceDatabase);await noLinks(path.dirname(source),{code:'SOURCE_INVALID'});const canonicalSource=await canonicalPath(source,{code:'SOURCE_INVALID'});if(inside(canonicalSource,await fs.realpath(REPOSITORY)))fail('INVALID_INPUT');const before=await regular(source,'SOURCE_INVALID');
   sourceDb=readDatabase(source);const sourceIdentity=identity(sourceDb);const created=await freshDirectory(outputRoot,'backup');directory=created.directory;
   const target=path.join(directory,'snapshot.sqlite');let reservation;try{reservation=await fs.open(target,'wx',0o600);await reservation.sync();}finally{await reservation?.close();}
   const reserved=await fs.lstat(target,{bigint:true});
