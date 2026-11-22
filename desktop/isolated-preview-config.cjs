@@ -21,7 +21,7 @@ async function noLinks(directory,allowMissing=false){
  const full=absolute(directory),parsed=path.parse(full);let at=parsed.root;
  for(const part of full.slice(parsed.root.length).split(path.sep).filter(Boolean)){
   at=path.join(at,part);let entry;try{entry=await fs.lstat(at);}catch(e){if(e.code==='ENOENT'&&allowMissing)return;throw invalid();}
-  if(!entry.isDirectory()||entry.isSymbolicLink()||!samePath(await fs.realpath(at),at))throw invalid();
+  if(!entry.isDirectory()||entry.isSymbolicLink())throw invalid();
  }
 }
 async function readRegular(filename,{singleLink=false}={}){
@@ -35,7 +35,7 @@ async function loadOwnerReviewRuntime({appRoot=APP_ROOT,platform=process.platfor
   await noLinks(root);if(await readRegular(marker,{singleLink:true})!==OWNER_REVIEW_RUNTIME_MARKER)throw invalid();
   const electronExecutable=path.join(root,'runtime','electron','electron.exe');await noLinks(path.dirname(electronExecutable));
   const executable=await fs.lstat(electronExecutable,{bigint:true});
-  if(!executable.isFile()||executable.isSymbolicLink()||executable.nlink!==1n||!samePath(await fs.realpath(electronExecutable),electronExecutable))throw invalid();
+  if(!executable.isFile()||executable.isSymbolicLink()||executable.nlink!==1n)throw invalid();
   return Object.freeze({appRoot:root,rootDirectory:path.join(root,'review-runs'),electronExecutable});
  }catch{throw invalid();}
 }

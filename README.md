@@ -1,6 +1,6 @@
 # 审易 · 审计工作台
 
-私有协作开发仓库：<https://github.com/icesad/shenyi-audit-workspace>。
+公开协作开发仓库：<https://github.com/icesad/shenyi-audit-workspace>。仓库只用于源码、合成测试和开发文档，不得存放客户业务资料或任何生产凭据。
 
 **协作开发从 `codex/team-collaboration-handoff-20261120` 开始。** 米老师用 `mixue117` 和产品负责人各从同一版本开任务分支。交接页包含 GitHub Desktop 和终端步骤、本机启动、首份业务 PR 以及验收口径。GitHub 默认打开 `main` 时，可用下方链接直达共享分支。 [GitHub 双人开发交接](https://github.com/icesad/shenyi-audit-workspace/blob/codex/team-collaboration-handoff-20261120/docs/COLLABORATION_HANDOFF.md) · [本地交接文档](docs/COLLABORATION_HANDOFF.md) · [米老师 GitHub 教程](docs/GITHUB_BEGINNER_MI.md)
 
@@ -42,9 +42,10 @@ npm run dev
 
 ## 分支和发布
 
-- `main`：以原线上 v61 为应用基线，新增协作工具和文档；不是重新设计软件。
+- `main`：当前正式基线；合并候选仍须完成 CI、安全与业务验收。
 - `codex/team-collaboration-handoff-20261120` 是本阶段两人开任务分支的起点，包含团队应用、官网和微信 Native 付款候选。当前版本的验收和复跑命令见交接文档。 [接手步骤](docs/COLLABORATION_HANDOFF.md)
 - `work/report-four-sources`：保留此前已实现、尚未在原站点发布的成本导航和四来源报告页修改，待业务验收；不作为已经完成的正式报告功能。
+- 仓库目前为 Public，所有源码、提交历史、分支和 PR 内容均可能被任何人查看、克隆和保存。公开前必须审查完整 Git 历史；`.gitignore` 和 `check:repo` 均不能替代历史凭据及客户信息审计。
 - GitHub 提交/合并 **不会自动发布原网站**。发布由负责人独立执行并记录结果。
 - 现有布局和业务规则只按明确需求修改；没有说到的地方不自行扩展。
 
