@@ -40,3 +40,8 @@
 **收款准备。** 官网集中下单付款的入口已确认。确认首发渠道、价格和席位、发票及退款条款。若选择官网 PC 扫码，可评估微信支付 Native。企业按渠道准备营业执照、法定代表人核验材料和对公银行账户，完成账户验证、审核和签约。Native 另需适用的已认证 AppID、产品权限和商户绑定。微信扫码登录的应用审核另行核对。 [微信支付企业材料](https://pay.wechatpay.cn/static/applyment_guide/applyment_detail_website.shtml) · [Native 接入准备](https://pay.wechatpay.cn/doc/v3/merchant/4015614538)
 
 **验收回执。** 商户授权后记录实际测试订单、可信收款通知、查单对账、权益到账和退款结果。双人合成走查按现有评审单，真实试点另记授权范围和结果。正式上线还需记录 Windows 与 macOS 签名安装验收、实际访问地址、运行版本及回滚负责人。 [双人评审单](PILOT_OWNER_REVIEW.md)
+
+
+## 2026-11-22 备案与业务分类补充
+
+新增[上海官网业务分类、域名与备案前置核对](SHANGHAI_LAUNCH_CLASSIFICATION_20261122.md)，明确当前域名和云资源均未购买、ICP备案未提交，并列出向上海市通信管理局确认自营SaaS业务许可分类的问题。
