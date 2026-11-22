@@ -37,8 +37,8 @@ async function fixture(t) {
   f.providers={phonePepper:randomBytes(32),sms:{async send(message){sent.push({...message});}},recovery:{async authorize({recoveryProof}){if(!approved.has(recoveryProof))return false;approved.delete(recoveryProof);return true;}}};
   return f;
 }
-function request(route,{token,body,method='POST'}={}) {
-  return new Request(ORIGIN+route,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});
+function request(route,{token,body,method='POST',clientIp}={}) {
+  return new Request(ORIGIN+route,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...(clientIp?{'X-Shenyi-Client-IP':clientIp}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});
 }
 async function call(f,route,options={},providers=f.providers) {
   const req=request(route,options), helpers=await load('http-utils.mjs');
