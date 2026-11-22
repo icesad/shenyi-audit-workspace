@@ -127,6 +127,67 @@ test('transaction creation validates S256 challenge and persists only state/poll
   const status = await poll(f, transaction); assert.equal(status.response.status, 200); assert.equal(status.json.status, 'pending'); privacy(status);
 });
 
+test('invalid WeChat transaction requests do not consume the address budget', async t => {
+  const f = await fixture(t), headers = {'X-Shenyi-Client-IP': '203.0.113.10'};
+  const body = {codeChallenge: challenge('v'.repeat(43))};
+  const invalidBodies = [{}, {codeChallenge: 'short'}, {...body, role: 'partner'}, {codeChallenge: ' '.repeat(43)}];
+  for (let n = 0; n < 61; n++) {
+    const result = await call(f, '/api/auth/wechat/transactions', {headers, body: invalidBodies[n % invalidBodies.length]});
+    assert.equal(result.response.status, 400, result.raw); privacy(result);
+  }
+  assert.equal(f.authorizedStates.length, 0);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM team_wechat_transactions').get().n, 0);
+  for (let n = 0; n < 60; n++) {
+    const result = await call(f, '/api/auth/wechat/transactions', {headers, body});
+    assert.equal(result.response.status, 201, result.raw);
+  }
+  const limited = await call(f, '/api/auth/wechat/transactions', {headers, body});
+  assert.equal(limited.response.status, 429, limited.raw); privacy(limited);
+  assert.equal(f.authorizedStates.length, 60);
+});
+
+test('WeChat transaction limits isolate edge addresses and reset after their server window', async t => {
+  const f = await fixture(t), body = {codeChallenge: challenge('v'.repeat(43))};
+  const create = address => call(f, '/api/auth/wechat/transactions', {body, headers: {'X-Shenyi-Client-IP': address}});
+  for (let n = 0; n < 60; n++) {
+    const result = await create(n % 2 ? '2001:DB8::A' : '2001:db8::a');
+    assert.equal(result.response.status, 201, result.raw);
+  }
+  const limited = await create('2001:db8::a');
+  assert.equal(limited.response.status, 429, limited.raw);
+  assert.equal(limited.json.error.code, 'TOO_MANY_ATTEMPTS'); privacy(limited);
+  assert.equal(f.authorizedStates.length, 60);
+  const independent = await create('198.51.100.21');
+  assert.equal(independent.response.status, 201, independent.raw);
+  f.now += 59_999;
+  assert.equal((await create('2001:DB8::A')).response.status, 429);
+  f.now++;
+  const renewed = await create('2001:db8::a');
+  assert.equal(renewed.response.status, 201, renewed.raw);
+  assert.equal(f.authorizedStates.length, 62);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM team_wechat_transactions').get().n, 62);
+});
+
+test('untrusted WeChat source headers share the local fallback and cannot evade its limit', async t => {
+  const f = await fixture(t), body = {codeChallenge: challenge('v'.repeat(43))};
+  const create = headers => call(f, '/api/auth/wechat/transactions', {body, headers});
+  const invalidAddresses = [undefined, 'not-an-ip', '203.0.113.1, 198.51.100.1', '203.0.113.1:1234'];
+  for (let n = 0; n < 60; n++) {
+    const address = invalidAddresses[n % invalidAddresses.length];
+    const headers = {'X-Forwarded-For': '198.51.100.' + (n + 1), Forwarded: 'for=198.51.100.' + (n + 1)};
+    if (address !== undefined) headers['X-Shenyi-Client-IP'] = address;
+    const result = await create(headers);
+    assert.equal(result.response.status, 201, result.raw);
+  }
+  for (const headers of [{}, {'X-Shenyi-Client-IP': 'another-invalid-ip'}, {'X-Forwarded-For': '203.0.113.99'}]) {
+    const limited = await create(headers);
+    assert.equal(limited.response.status, 429, limited.raw); privacy(limited);
+  }
+  assert.equal(f.authorizedStates.length, 60);
+  const independent = await create({'X-Shenyi-Client-IP': '203.0.113.20'});
+  assert.equal(independent.response.status, 201, independent.raw);
+});
+
 test('wrong poll token and unknown transaction use private 404 without disclosing identity', async t => {
   const f = await fixture(t), transaction = await begin(f);
   const wrong = await poll(f, transaction, randomBytes(32).toString('base64url'));

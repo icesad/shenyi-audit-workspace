@@ -3,6 +3,7 @@
  * S256 here protects Shenyi's desktop exchange, not a claim of WeChat PKCE support.
  */
 import {randomBytes,randomUUID,createHash,timingSafeEqual} from 'node:crypto';
+import {isIP} from 'node:net';
 import {authenticated,consume,limitedPasswordWork,issueSession} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
 import {currentDeviceLease,deviceServerId,deviceRequired} from './device-policy.mjs';
@@ -99,8 +100,12 @@ export async function handleWechatRequest(request,{db,now=Date.now,identityProvi
   if(url.search)invalid();
   if(request.method!=='POST')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'POST'});
   if(path==='/api/auth/wechat/transactions'){
-    consume(db,'wechat:start:global',now(),60000,60);
     const body=await readJson(request,['codeChallenge']);if(!opaque(body.codeChallenge))invalid();
+    // The trusted edge proxy overwrites this header with its observed client IP.
+    // Spend only this source's budget, after validating the request.
+    const suppliedAddress=request.headers.get('x-shenyi-client-ip')||'local';
+    const clientAddress=isIP(suppliedAddress)?suppliedAddress.toLowerCase():'local';
+    consume(db,'wechat:start:ip:'+hash(clientAddress),now(),60000,60);
     const id=randomUUID(),pollToken=randomBytes(32).toString('base64url'),state=randomBytes(32).toString('base64url'),expiresAt=now()+5*60000;
     let authorizationUrl;
     try{authorizationUrl=await provider.createAuthorizationUrl({state,redirectUri:provider.redirectUri});}catch{unavailable();}
