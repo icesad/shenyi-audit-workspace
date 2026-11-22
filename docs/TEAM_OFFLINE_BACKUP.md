@@ -32,7 +32,7 @@ Windows 源库、加密归档及输出目录可使用较长的本机路径，命
 | 原演练副本和改名的逐字节副本 | 预检及实际启动均退出 `1`，返回 `MANAGED_DATABASE_NOT_READY`，未开启监听。以演练副本作比较源返回 `SOURCE_INVALID`。 |
 | 未标记的原库副本 | 同类配置预检和启动通过，回环 HTTPS 就绪页返回 `200`，匿名读原件返回 `401`，停服后监听关闭。 |
 
-51 项相关回归通过，零失败或跳过。合成库和演练文件存放在本机受控目录，回执为 `C:/Users/icesa/AppData/Local/Temp/shenyi-four-role-sealed-restore-20261121/verification.json`。正式恢复及切换需要核对快照之后的撤权、账号、支付和业务变更，并依批准流程验收。
+51 项相关回归通过，零失败或跳过。合成库和演练文件存放在本机受控目录，回执保存在受控临时目录下的 `shenyi-four-role-sealed-restore-20261121/verification.json`。正式恢复及切换需要核对快照之后的撤权、账号、支付和业务变更，并依批准流程验收。
 
 ### Linux 跨虚拟机恢复演练
 

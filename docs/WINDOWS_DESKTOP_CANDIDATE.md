@@ -8,7 +8,7 @@
 
 在全新 Windows 合成配置从解包目录运行 `Start-Team-Managed-Pilot-Candidate.cmd`，使用真实桌面完成产品负责人登录、首次绑机、打开团队开通审核、退出和关窗。启动器返回 0，本轮专用 HTTPS 监听关闭。停服后 SQLite 可只读核对，只有一个合成账号和一条设备绑定，团队、活动会话和活动租约均为零。运行前后载荷清单一致。 [随包试点走查](PILOT_MANAGED_FIRST_TASK.md#断线后继续开通)
 
-评审 ZIP 暂存于 `C:/Users/icesa/AppData/Local/Temp/shenyi-win-onboarding-6ef38ba/Shenyi-Owner-Review-6ef38ba-Win-x64.zip`，回执见 `D:/codex-temp/shenyi-windows-onboarding-review-20261121/verification.json`。打包及开通回归 118 项通过，独立复核核对了邀请恢复的运行文件和离线文档链接。邀请应答中断恢复已有源码客户端和隔离受管 HTTPS 实测。正式 MSI 签名安装、Mac 真机和真实试点另行验收。
+评审 ZIP 暂存于受控临时目录下的 `shenyi-win-onboarding-6ef38ba/Shenyi-Owner-Review-6ef38ba-Win-x64.zip`，回执见 `D:/codex-temp/shenyi-windows-onboarding-review-20261121/verification.json`。打包及开通回归 118 项通过，独立复核核对了邀请恢复的运行文件和离线文档链接。邀请应答中断恢复已有源码客户端和隔离受管 HTTPS 实测。正式 MSI 签名安装、Mac 真机和真实试点另行验收。
 
 同一份 ZIP 后续完成了从空库开始的四职级合成试点验收。测试驱动直接启动已核验的包内 Electron，在独立 Windows 环境中验证四席邀请、两份原件的原生提交、经理预览和合伙人撤权后的拒绝。完整流程的证据与包内一键实启记录分别留存。 [四职级验收](PILOT_MANAGED_FIRST_TASK.md#2026-11-21-含开通恢复功能的评审包四职级验收)
 
