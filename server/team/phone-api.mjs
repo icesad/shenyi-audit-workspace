@@ -3,6 +3,7 @@
  * No signup, role elevation, phone replacement or automatic account merging.
  */
 import {createHash, createHmac, randomInt, randomUUID, timingSafeEqual} from 'node:crypto';
+import {isIP} from 'node:net';
 import {
   authenticated, consume, limitedPasswordWork, issueSession,
 } from './auth-api.mjs';
@@ -114,10 +115,14 @@ export async function handlePhoneRequest(request, {db, now = Date.now, identityP
   if (request.method !== 'POST') return json({error: {code: 'METHOD_NOT_ALLOWED', message: '不支持此操作。'}}, 405, {Allow: 'POST'});
 
   if (pathname === '/api/auth/phone/login') {
-    consume(db, 'login:global', now(), 60_000, 60);
+    // Validate the request before spending any authentication budget. The
+    // trusted edge proxy overwrites this header with its observed client IP.
     const body = await readJson(request, ['phone', 'password']);
     const phone = normalizePhone(body.phone);
     if (typeof body.password !== 'string' || Buffer.byteLength(body.password) > 512) invalid();
+    const suppliedAddress = request.headers.get('x-shenyi-client-ip') || 'local';
+    const clientAddress = isIP(suppliedAddress) ? suppliedAddress.toLowerCase() : 'local';
+    consume(db, 'phone-login-ip:' + digest(clientAddress), now(), 60_000, 60);
     consume(db, 'phone-login:' + digest(phone), now(), 15 * 60_000, 10);
     return limitedPasswordWork(db, async () => {
       const mapping = db.prepare('SELECT user_id,revision FROM team_phone_credentials WHERE phone=?').get(phone);
