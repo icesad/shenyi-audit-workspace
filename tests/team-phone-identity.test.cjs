@@ -207,6 +207,17 @@ test('phone login limits failures and never accepts client-supplied role or user
   assert.equal((await call(f,'/api/auth/phone/login',{body:{phone:OTHER_PHONE,password:PASSWORD,role:'partner'}})).status,400);
   assert.equal(sessions(f).length,0);
 });
+test('invalid phone login requests do not consume the address budget',async t=>{
+  const f=await fixture(t),user=await login(f);await bind(f,user.token);
+  const ip='203.0.113.10',bucket='phone-login-ip:'+hash(ip);
+  for(let n=0;n<60;n++){
+    const malformed=await call(f,'/api/auth/phone/login',{body:{},clientIp:ip});
+    assert.equal(malformed.status,400);
+  }
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limits WHERE bucket=?').get(bucket).n,0);
+  const accepted=await call(f,'/api/auth/phone/login',{body:{phone:PHONE,password:PASSWORD},clientIp:ip});
+  assert.equal(accepted.status,200,accepted.raw);
+});
 
 test('pure SMS cannot reset without an explicit independent recovery approval strategy',async t=>{
   const f=await fixture(t), user=await login(f);await bind(f,user.token);
