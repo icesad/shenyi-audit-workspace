@@ -4,55 +4,55 @@
 
 ## 当前状态
 
-GitHub API 最近一次读取显示 `main.protected=false`。当前连接可读取仓库和 PR，但没有可用的分支保护写入操作；本文件给出仓库管理员在 GitHub 网页端的配置步骤。配置完成后必须重新读取规则并验证，不以“点过保存”作为完成证据。
+已在 GitHub 网页创建并通过规则页面与 API 读回核验主分支保护。规则为 [`protect-main`（27842740）](https://github.com/icesad/shenyi-audit-workspace/rules/27842740)，状态 **Active**，精确匹配 `refs/heads/main`；API 确认 `main.protected=true`。
+
+规则的 `bypass_actors=[]`，当前用户的 `current_user_can_bypass=never`。已核实协作者 `mixue117` 具有仓库 **Write** 权限；该权限不等于已批准 PR，实际批准仍须由非 PR 作者提交。
 
 仓库：<https://github.com/icesad/shenyi-audit-workspace>
 
-## 配置入口
+## 今后复核或重建的配置入口
+
+已有上述规则时直接打开并复核，无需重复新建。以下步骤供今后复核或必要时重建参考，规则参数以本文件的已核验配置为准。
 
 1. 打开仓库 **Settings**。
 2. 进入 **Rules → Rulesets**。
-3. 选择 **New ruleset → New branch ruleset**。
-4. 名称建议：`protect-main`。
+3. 打开现有 **protect-main**；仅重建时选择 **New ruleset → New branch ruleset**。
+4. 名称：`protect-main`。
 5. Enforcement status 设为 **Active**。
-6. Target branches 选择 **Include default branch** 或明确选择 `main`。
-7. Bypass list 保持为空；除非组织另有明确的紧急运维策略，不给个人或团队绕过权限。
+6. Target branches 精确选择 `refs/heads/main`。
+7. Bypass list 保持为空。
 
-如果当前仓库界面仍提供经典 Branch protection rules，也可创建针对 `main` 的规则；不要同时建立相互冲突的规则。
+维护现有规则即可；不要重复建立相互冲突的规则，也不要通过临时放宽目标或 bypass 完成验收。
 
-## 建议启用的规则
+## 已启用并读回核验的规则
 
 - **Require a pull request before merging**：启用。
-- **Required approvals**：1。要求至少一位非 PR 作者的协作者审核；若当前没有第二位具备写权限的审核人，先邀请/确认协作者，再启用该项，避免把主分支锁死。
-- **Dismiss stale pull request approvals when new commits are pushed**：启用。
-- **Require conversation resolution before merging**：启用。
-- **Require status checks to pass**：启用，并添加准确的必需检查名称：
-  - `unit`
-  - `tools`
-- **Require branches to be up to date before merging**：启用。若 GitHub 当前界面不提供该选项，则以最新合并基线上的完整 CI 结果作为人工验收要求。
-- **Block force pushes**：启用。
-- **Restrict deletions**：启用。
-- 不启用允许管理员绕过规则的例外；紧急绕过必须另行记录原因、审批人和回滚方案。
+- **Required approvals**：1（`required_approving_review_count=1`）。要求至少一位非 PR 作者的审核人批准。
+- **Dismiss stale pull request approvals when new commits are pushed**：启用（`dismiss_stale_reviews_on_push=true`）。
+- **Require conversation resolution before merging**：启用（`required_review_thread_resolution=true`）。
+- **Require status checks to pass**：启用，必需检查名称为 `unit`、`tools`；两项均绑定 GitHub Actions（`integration_id=15368`）。
+- **Require branches to be up to date before merging**：启用，严格模式为 `true`。
+- **Block force pushes**：启用（`non_fast_forward`）。
+- **Restrict deletions**：启用（`deletion`）。
+- 无管理员、个人或团队 bypass 例外。
 
 ## PR #3 的特殊验收
 
-PR #3 是大型整合（约875个变更文件），不能只凭一个旧 SHA 的绿色状态合并。必须确保：
+PR #3 是大型整合，验收以最终实际 head 为准，不能只凭一个旧 SHA 的绿色状态合并。必须确保：
 
-1. PR #8 安全修复已合并进其 head 分支。
+1. PR #8 安全修复已合并进其 head 分支；PR #10 微信限流修复、PR #11 路径修复仍待完成各自检查与审查后合入协作分支。
 2. PR #3 最新 head SHA 的 `unit` 和 `tools` 两项检查均成功。
 3. 最新 Codex Review 针对 PR #3 当前 head 完成，未解决 P1/P2 事项为零。
 4. 公开仓库敏感信息检查覆盖当前文件、提交历史和 PR 讨论/附件；当前文件搜索无命中不等于历史审计完成。
 5. 所有审查线程已解决，至少一位非作者审核人批准。
 6. 业务负责人确认版本范围和回滚方式。
 
-## 配置后的验收
+## 配置核验与真实合并验收
 
-- 在 Settings → Rules → Rulesets 中确认规则为 Active，目标包含 `main`，无非预期 bypass。
-- 通过 GitHub API/仓库页面确认 `main` 已受保护。
-- 建立一个临时测试 PR，确认缺少必需检查或审核时不能合并。
-- 确认正常 PR 在 `unit`、`tools` 和审批通过后可合并。
-- 不要通过直接推送、强制推送或管理员绕过来验证。
+- **配置核验已完成**：网页规则页面显示 Active；API 读回确认精确目标、空 bypass、必需审批与检查等上述参数，并确认 `main.protected=true`。这是本次保护配置完成的证据。
+- **真实合并工作流仍待验收**：后续正常 PR 须在最终 head 的 `unit`、`tools`、非作者批准及线程解决要求均满足后按规则合并，并记录结果。
+- 本次未创建临时违规测试 PR，也未进行直接推送、强制推送或管理员绕过测试；配置读回不作为这些行为已经实测的证据。
 
 ## 当前阻塞
 
-本文件仅为配置说明，不代表分支保护已经启用。主分支保护需要有仓库 Settings 管理权限的人员在网页端执行，并提供配置后的规则页面/状态供复核。
+主分支保护已启用。PR #3 仍需完成 PR #10、PR #11 的修复集成，针对最终 head 的 CI 与审查、所有线程解决、非作者批准和业务验收。公开仓库当前文件、可达历史及 PR 讨论/附件的敏感信息验收边界保持不变；当前文件匿名化和单项 Code Review 通过不能替代这些工作。
