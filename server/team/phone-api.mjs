@@ -3,6 +3,7 @@
  * No signup, role elevation, phone replacement or automatic account merging.
  */
 import {createHash, createHmac, randomInt, randomUUID, timingSafeEqual} from 'node:crypto';
+import {isIP} from 'node:net';
 import {
   authenticated, consume, limitedPasswordWork, issueSession,
 } from './auth-api.mjs';
@@ -120,7 +121,7 @@ export async function handlePhoneRequest(request, {db, now = Date.now, identityP
     const phone = normalizePhone(body.phone);
     if (typeof body.password !== 'string' || Buffer.byteLength(body.password) > 512) invalid();
     const suppliedAddress = request.headers.get('x-shenyi-client-ip') || 'local';
-    const clientAddress = /^(?:[0-9a-f:.]+)$/i.test(suppliedAddress) ? suppliedAddress.toLowerCase() : 'local';
+    const clientAddress = isIP(suppliedAddress) ? suppliedAddress.toLowerCase() : 'local';
     consume(db, 'phone-login-ip:' + digest(clientAddress), now(), 60_000, 60);
     consume(db, 'phone-login:' + digest(phone), now(), 15 * 60_000, 10);
     return limitedPasswordWork(db, async () => {
