@@ -85,7 +85,7 @@ Windows 源码 Electron 通过受信回环 HTTPS 实测持钥提交、应答中�
 
 客体只收匿名 GET 和 HEAD。停服复核 SQLite 文件及 105 张表、2 KiB 合成原件均保持，试验前的 Nginx 配置也已恢复。虚拟机正常关机，14 个父盘摘要一致。 首轮核实历史 Nginx 模板与当前签包存在一处主机名守卫差异。第二轮停在旧后端就绪等待，停机只读提取连接拒绝和启动日志后延长等待，第三轮旧后端在 25 秒时报告就绪。
 
-Node.js 53 项、Python 27 项通过，零失败或跳过。两条既有团队预览返回 HTTP 200，Windows 一键入口沿用已有实启记录。候选本轮待推送、合入 main 及正式部署。 真实商户、国内云与两位负责人签收仍待验。回执 `D:/codex-temp/shenyi-linux-native-payment-surface-20261121/verification.json`。 [部署验收](LINUX_TEAM_DEPLOYMENT.md#2026-11-21-隔离-ubuntu-与-nginx-的微信-native-上线验收)
+Node.js 53 项、Python 27 项通过，零失败或跳过。两条既有团队预览返回 HTTP 200，Windows 一键入口沿用已有实启记录。候选本轮待推送、合入 main 及正式部署。 真实商户、国内云与两位负责人签收仍待验。回执 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-linux-native-payment-surface-20261121/verification.json`。 [部署验收](LINUX_TEAM_DEPLOYMENT.md#2026-11-21-隔离-ubuntu-与-nginx-的微信-native-上线验收)
 
 ## 2026-11-21 微信 Native 双路上线检查
 
@@ -97,7 +97,7 @@ Node.js 53 项、Python 27 项通过，零失败或跳过。两条既有团队�
 
 席位依次显示 4 启用／0 预留／0 可用、3／0／1、3／1／0、4／0／0。新助理的任务列表为空，读取原员工、其他员工或未指派任务均返回 404，读取原员工的历史原件也返回 404。经理用既有授权重读两份不同的 2 KiB 原件，摘要一致。 独立停服复核确认只新增一份有效邀请和一名助理，原批准期限和四席容量保持，原实习生的有效分工撤销且对应任务版本递增一次。旧登录会话和租约在停用时同时撤销，原设备绑定历史仍保留，另一员工的分工及两份原件不变。
 
-Node.js 24.22.1 的停用、席位、试点和邀请激活回归 139 项通过，零失败、零跳过。前两轮分别修正测试使用的原件任务版本和 SQLite 行对象比较，第三轮从空库完整通过。客户端及评审包运行前后的清单一致。Windows 一键入口沿用同提交的实启记录，两条已有团队预览返回 HTTP 200。 本轮使用同一台 Windows 的三套独立配置。仅为额外手机号扩展本次演练的内存短信名单，服务端业务模块和打包客户端均沿用原候选。没有实际发送短信或启用真实团队试点。 本轮记录留在本地，候选待合入 `main` 和上线。原始回执 `D:/codex-temp/shenyi-pilot-seat-reuse-704959f-20261121/verification.json`。 [成员停用验收](MEMBER_DEACTIVATION.md#2026-11-21-有效试点停用员工与席位再使用)
+Node.js 24.22.1 的停用、席位、试点和邀请激活回归 139 项通过，零失败、零跳过。前两轮分别修正测试使用的原件任务版本和 SQLite 行对象比较，第三轮从空库完整通过。客户端及评审包运行前后的清单一致。Windows 一键入口沿用同提交的实启记录，两条已有团队预览返回 HTTP 200。 本轮使用同一台 Windows 的三套独立配置。仅为额外手机号扩展本次演练的内存短信名单，服务端业务模块和打包客户端均沿用原候选。没有实际发送短信或启用真实团队试点。 本轮记录留在本地，候选待合入 `main` 和上线。原始回执 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-pilot-seat-reuse-704959f-20261121/verification.json`。 [成员停用验收](MEMBER_DEACTIVATION.md#2026-11-21-有效试点停用员工与席位再使用)
 
 ## 2026-11-21 双人协作同步
 
@@ -253,59 +253,59 @@ Apple 芯片和 Intel 候选及工具均取自协作提交 `e28ae2a`。两架构
 
 ## 2026-11-20 私有协作分支与报告交互评审
 
-候选 `ab6f1a9` 已获授权推送，只创建私有分支 `codex/team-owner-review-20261120`。Git 和 GitHub API 回读一致。报告交互 ZIP 出自隔离树 `8c1368b`。全新解压后 Windows 实测一键、合成报告操作、Word 导出、同轮刷新保全和另开一轮隔离。原官网和 Windows 评审入口可用。提供通过语法检查的 macOS 启动脚本，Mac 实机、专业签收与团队报告权限待验。与 `main` 尚未合并，尚未发布。证据见 `D:/codex-temp/shenyi-report-interactive-owner-review-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-私有协作分支与报告交互评审)
+候选 `ab6f1a9` 已获授权推送，只创建私有分支 `codex/team-owner-review-20261120`。Git 和 GitHub API 回读一致。报告交互 ZIP 出自隔离树 `8c1368b`。全新解压后 Windows 实测一键、合成报告操作、Word 导出、同轮刷新保全和另开一轮隔离。原官网和 Windows 评审入口可用。提供通过语法检查的 macOS 启动脚本，Mac 实机、专业签收与团队报告权限待验。与 `main` 尚未合并，尚未发布。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-report-interactive-owner-review-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-私有协作分支与报告交互评审)
 
 ## 2026-11-20 协作候选复验与历史报告全量单测完成
 
-在只有 `main@060a98e` 的空接收仓库重建候选 `ab6f1a9` 的 270 个提交。树摘要一致，恢复目录验证 84 项通过。新增 9 提交的独立历史检查通过。候选拟放入私有协作分支，等待推送授权。历史报告的独立树 `fd9072e` 全量单测退出码 0，共 6,111 项通过，零失败和跳过。当前隔离报告树 `8c1368b` 的 Chrome、Word 与 29 项专项另有记录。官网和 Windows 评审一键可用，尚未进入 main 或发布。证据见 `D:/codex-temp/shenyi-collaboration-candidate-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-协作候选复验与历史报告全量单测完成)
+在只有 `main@060a98e` 的空接收仓库重建候选 `ab6f1a9` 的 270 个提交。树摘要一致，恢复目录验证 84 项通过。新增 9 提交的独立历史检查通过。候选拟放入私有协作分支，等待推送授权。历史报告的独立树 `fd9072e` 全量单测退出码 0，共 6,111 项通过，零失败和跳过。当前隔离报告树 `8c1368b` 的 Chrome、Word 与 29 项专项另有记录。官网和 Windows 评审一键可用，尚未进入 main 或发布。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-collaboration-candidate-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-协作候选复验与历史报告全量单测完成)
 
 ## 2026-11-20 当前候选四来源报告双人评审件
 
-历史报告补丁重新应用于 `5423ca3` 的无远端隔离目录，暂存树 `8c1368b`。13 项报告改动与原预演同字节。29 项专项检查通过。离线 Chrome 实测四来源草稿生成、保存、重开和 Word 导出，Windows Word 16.0 实际编辑、另存并重开四页草稿。原导出件摘要一致，保留未签发标记。双人评审 ZIP 由合成草稿、截图、核对说明和摘要组成。米老师的 GitHub 写权限已生效，收到业务 PR 后再核对合并范围。现有原一键预览可访问，未进入 main 或发布。记录见 `D:/codex-temp/shenyi-current-report-owner-review-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-当前候选四来源报告双人评审件)
+历史报告补丁重新应用于 `5423ca3` 的无远端隔离目录，暂存树 `8c1368b`。13 项报告改动与原预演同字节。29 项专项检查通过。离线 Chrome 实测四来源草稿生成、保存、重开和 Word 导出，Windows Word 16.0 实际编辑、另存并重开四页草稿。原导出件摘要一致，保留未签发标记。双人评审 ZIP 由合成草稿、截图、核对说明和摘要组成。米老师的 GitHub 写权限已生效，收到业务 PR 后再核对合并范围。现有原一键预览可访问，未进入 main 或发布。记录见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-current-report-owner-review-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-当前候选四来源报告双人评审件)
 
 ## 2026-11-20 Windows 试点到期停用在线成员
 
-两个独立 Windows 客户端连接隔离受管 HTTPS。试点到期后，首管理员从正常界面验证密码并停用仍在线的合成实习生，签名请求返回 200。旧会话及设备租约在停用事务撤销，实习生回到登录页，启用成员计数从 1 降到 0。独立冷库校验确认职级及历史邀请保留，原试点期限和合同席位保持，退出后活动会话及租约均为零。154 项相关测试无失败或跳过。源码 `cf9b91f` 实测，沿用 Windows 评审包运行时。原官网一键可访问，本地验收未进入 main 或发布。证据见 `D:/codex-temp/shenyi-pilot-expired-member-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-试点到期停用在线成员)
+两个独立 Windows 客户端连接隔离受管 HTTPS。试点到期后，首管理员从正常界面验证密码并停用仍在线的合成实习生，签名请求返回 200。旧会话及设备租约在停用事务撤销，实习生回到登录页，启用成员计数从 1 降到 0。独立冷库校验确认职级及历史邀请保留，原试点期限和合同席位保持，退出后活动会话及租约均为零。154 项相关测试无失败或跳过。源码 `cf9b91f` 实测，沿用 Windows 评审包运行时。原官网一键可访问，本地验收未进入 main 或发布。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-pilot-expired-member-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-试点到期停用在线成员)
 
 ## 2026-11-20 Windows 试点到期撤销员工邀请
 
-Windows 客户端保持原管理员设备会话跨越一席合成试点截止。两笔操作各一次，新增邀请返回 402，撤销原邀请返回 200。原邀请自身尚在有效期内，预留从 1 降到 0。独立冷库复算席位，保留原试点期限和容量记录，两条设备绑定保持，活动会话及租约清零。97 项相关测试无失败或跳过。源码 `4f6e7af` 实测，沿用已验 Windows 评审包运行时，原官网一键可访问。本阶段仅记录本地验收，尚未进入 main 或发布。证据见 `D:/codex-temp/shenyi-pilot-expired-invitation-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-试点到期撤销员工邀请)
+Windows 客户端保持原管理员设备会话跨越一席合成试点截止。两笔操作各一次，新增邀请返回 402，撤销原邀请返回 200。原邀请自身尚在有效期内，预留从 1 降到 0。独立冷库复算席位，保留原试点期限和容量记录，两条设备绑定保持，活动会话及租约清零。97 项相关测试无失败或跳过。源码 `4f6e7af` 实测，沿用已验 Windows 评审包运行时，原官网一键可访问。本阶段仅记录本地验收，尚未进入 main 或发布。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-pilot-expired-invitation-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-试点到期撤销员工邀请)
 
 ## 2026-11-20 Windows 评审包一键核对年付期限
 
-`4b7ea89` 的 Windows 双人评审 ZIP 独立核对全部 2,484 项载荷。全新解压后从一键开始真实 Windows 登录绑机、官网下单和桌面核对。年费与增购同号，八席年费 ¥2,880.00，桌面显示建单加 15 分钟的北京时间期限，与原单账本一致。84 项相关测试无失败或跳过。冷库完整、登出撤销会话、两个演练端口停止。原官网一键可访问，功能保存在本地分支，未进入 main 或发布。正式商户接入待验。评审 ZIP 及证据路径见 `D:/codex-temp/shenyi-website-annual-owner-review-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-评审包一键核对年付期限)
+`4b7ea89` 的 Windows 双人评审 ZIP 独立核对全部 2,484 项载荷。全新解压后从一键开始真实 Windows 登录绑机、官网下单和桌面核对。年费与增购同号，八席年费 ¥2,880.00，桌面显示建单加 15 分钟的北京时间期限，与原单账本一致。84 项相关测试无失败或跳过。冷库完整、登出撤销会话、两个演练端口停止。原官网一键可访问，功能保存在本地分支，未进入 main 或发布。正式商户接入待验。评审 ZIP 及证据路径见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-website-annual-owner-review-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-评审包一键核对年付期限)
 
 ## 2026-11-20 官网年费订单锁定模拟关单期限
 
-官网建单沿用桌面的可选模拟超时配置，在创建事务内锁定截止时间。调整配置后同单重试沿用原值。可信模拟网关确认关单后，官网可查询原编号和金额，状态为已关闭。修复前新增回归复现期限缺失，修复后相关用例 51 项及独立复核 7 项通过。分设证书的两个回环 HTTPS 入口实测通过，模拟关单通知入口在两端均返回 404。官网预览可达，Windows 一键评审包沿用上一版。源码提交 `05df7aa` 在本地功能分支，未进入 main 或发布。正式商户仍待接入。证据见 `D:/codex-temp/shenyi-website-annual-deadline-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-官网年费订单锁定模拟关单期限)
+官网建单沿用桌面的可选模拟超时配置，在创建事务内锁定截止时间。调整配置后同单重试沿用原值。可信模拟网关确认关单后，官网可查询原编号和金额，状态为已关闭。修复前新增回归复现期限缺失，修复后相关用例 51 项及独立复核 7 项通过。分设证书的两个回环 HTTPS 入口实测通过，模拟关单通知入口在两端均返回 404。官网预览可达，Windows 一键评审包沿用上一版。源码提交 `05df7aa` 在本地功能分支，未进入 main 或发布。正式商户仍待接入。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-website-annual-deadline-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-官网年费订单锁定模拟关单期限)
 
 ## 2026-11-20 私有源码离线交接与报告合并复现
 
-从远端已核对的 main `060a98e` 到产品分支 `c84a03c` 打包 261 个待交接提交。新增 4,139 个 Git 文件对象的路径、类型和凭证特征检查无命中。空接收库从同一 main 导入，分支及文件树摘要一致。 接收库独立应用历史 PR #2 的预演补丁，重现隔离树 `fd9072e`。产品候选和历史报告预演分别保留，业务合并待确认。原全量单测进程继续，交接记录含现场进度。 本机生成交接件，尚未上传、合入 main 或发布。官网一键预览沿用，Windows 评审包沿用。 见 `D:/codex-temp/shenyi-report-merge-rehearsal-20261120/source-handoff/checkout-checkpoint.json`。 [持续开发检查点](../进度.md#2026-11-20-私有源码离线交接与报告合并复现)
+从远端已核对的 main `060a98e` 到产品分支 `c84a03c` 打包 261 个待交接提交。新增 4,139 个 Git 文件对象的路径、类型和凭证特征检查无命中。空接收库从同一 main 导入，分支及文件树摘要一致。 接收库独立应用历史 PR #2 的预演补丁，重现隔离树 `fd9072e`。产品候选和历史报告预演分别保留，业务合并待确认。原全量单测进程继续，交接记录含现场进度。 本机生成交接件，尚未上传、合入 main 或发布。官网一键预览沿用，Windows 评审包沿用。 见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-report-merge-rehearsal-20261120/source-handoff/checkout-checkpoint.json`。 [持续开发检查点](../进度.md#2026-11-20-私有源码离线交接与报告合并复现)
 
 ## 2026-11-20 历史报告草稿隔离合并预演
 
-按产品基线 `f2f895c` 与历史草稿 PR #2 `894078b` 生成隔离合并树 `fd9072e`，解决两处前端冲突。13 项受影响路径限于原 PR 范围，保留现有立项、账表、底稿入口及测试的原字节摘要约束。 相关检查 184 通过，原结论底稿 ZIP 不在可用范围，跳过 1 项。离线 Chrome 导航 3 项通过。真实 IndexedDB 用四类合成来源生成未签发可编辑 Word，保存到修订版 2 并重开。跨项目读写与旧版本写入拒绝，来源摘要一致。全量便携单测在检查点仍运行。 产品工作区只记验收，合并内容保存在隔离副本。官网原一键仍可访问，Windows 评审包沿用上版。业务审签、获准资料和团队报告权限待验，PR #2 保留草稿。 见 `D:/codex-temp/shenyi-report-merge-rehearsal-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-历史报告草稿隔离合并预演)
+按产品基线 `f2f895c` 与历史草稿 PR #2 `894078b` 生成隔离合并树 `fd9072e`，解决两处前端冲突。13 项受影响路径限于原 PR 范围，保留现有立项、账表、底稿入口及测试的原字节摘要约束。 相关检查 184 通过，原结论底稿 ZIP 不在可用范围，跳过 1 项。离线 Chrome 导航 3 项通过。真实 IndexedDB 用四类合成来源生成未签发可编辑 Word，保存到修订版 2 并重开。跨项目读写与旧版本写入拒绝，来源摘要一致。全量便携单测在检查点仍运行。 产品工作区只记验收，合并内容保存在隔离副本。官网原一键仍可访问，Windows 评审包沿用上版。业务审签、获准资料和团队报告权限待验，PR #2 保留草稿。 见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-report-merge-rehearsal-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-历史报告草稿隔离合并预演)
 
 ## 2026-11-20 macOS 解包负载核验与签前交接
 
-接收工具 `f231992` 在 Apple 签名核验前后重新计算实际解包文件的获准应用负载摘要，同时核对文件数。两份候选原件沿用源码 `e90c663`，各 1,934 个应用文件和摘要均一致，新的签前交接只更新接收工具及说明。 90 项相关回归通过。空接收目录复验交接包，两架构拒绝错架构与将签前件当成正式发行。Windows 上正式签验入口继续拒绝生成 Mac 回执。 本地功能分支，Windows 一键候选沿用上一轮，官网预览可达。Apple 签名、公证、Mac 实机和正式上线待验。 验收见 `D:/codex-temp/shenyi-macos-native-payload-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-macos-解包负载核验与签前交接)
+接收工具 `f231992` 在 Apple 签名核验前后重新计算实际解包文件的获准应用负载摘要，同时核对文件数。两份候选原件沿用源码 `e90c663`，各 1,934 个应用文件和摘要均一致，新的签前交接只更新接收工具及说明。 90 项相关回归通过。空接收目录复验交接包，两架构拒绝错架构与将签前件当成正式发行。Windows 上正式签验入口继续拒绝生成 Mac 回执。 本地功能分支，Windows 一键候选沿用上一轮，官网预览可达。Apple 签名、公证、Mac 实机和正式上线待验。 验收见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-macos-native-payload-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-macos-解包负载核验与签前交接)
 
 ## 2026-11-20 官网订单窗关闭时交还桌面焦点
 
-仅在当前前台的演练订单窗口正常关闭，且原桌面窗口可见可操作时，显式交还桌面焦点。后台、不可用父窗和强制清理不触发交还。 全新解压的旧包和新包都从 Windows 前台正常关闭年费和增购窗，并在无人工聚焦时返回桌面。旧包年费流程有一次采样经过其他窗口后返回，新包两条流程直接观测到返回。上轮自动化未能操作桌面的现象在这条正常关闭路径未复现。124 项相关回归通过，评审 ZIP 的 2,484 项载荷独立核验并在实测退出后复验通过。 本地功能分支，包内桌面一键可达，官网预览仍可访问。GitHub、main 和正式上线待验。 验收见 `D:/codex-temp/shenyi-checkout-focus-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-官网订单窗关闭时交还桌面焦点)
+仅在当前前台的演练订单窗口正常关闭，且原桌面窗口可见可操作时，显式交还桌面焦点。后台、不可用父窗和强制清理不触发交还。 全新解压的旧包和新包都从 Windows 前台正常关闭年费和增购窗，并在无人工聚焦时返回桌面。旧包年费流程有一次采样经过其他窗口后返回，新包两条流程直接观测到返回。上轮自动化未能操作桌面的现象在这条正常关闭路径未复现。124 项相关回归通过，评审 ZIP 的 2,484 项载荷独立核验并在实测退出后复验通过。 本地功能分支，包内桌面一键可达，官网预览仍可访问。GitHub、main 和正式上线待验。 验收见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-checkout-focus-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-官网订单窗关闭时交还桌面焦点)
 
 ## 2026-11-20 新版官网与受管隔离的 Windows 双人评审包
 
-从提交 `ff26c49` 离线构建 Windows x64 便携评审包，收录新版官网与受管支付演练隔离。独立复验 2,484 项载荷及与前一版的差异。 包内官网一键在桌面和手机宽度实测。受管 HTTPS 的 24 次演练请求均被拒绝。原生桌面从同一 ZIP 的全新解压目录完成绑机、年费和增购模拟建单，核对两笔订单的编号、金额及无收款和权益变更，退出后重新校验全部载荷。前两次自动化未能将输入送回桌面控件，保留失败记录。第三份新解压恢复目标窗口焦点后，以原生键盘分别刷新两类订单，均显示官网原编号。39 项相关回归通过。 本地功能分支，已有官网和桌面预览仍可访问。两位负责人签收、合入 main、Mac 实机、正式收款及上线待验。 验收见 `D:/codex-temp/shenyi-integrated-owner-review-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-新版官网与受管隔离的-windows-双人评审包)
+从提交 `ff26c49` 离线构建 Windows x64 便携评审包，收录新版官网与受管支付演练隔离。独立复验 2,484 项载荷及与前一版的差异。 包内官网一键在桌面和手机宽度实测。受管 HTTPS 的 24 次演练请求均被拒绝。原生桌面从同一 ZIP 的全新解压目录完成绑机、年费和增购模拟建单，核对两笔订单的编号、金额及无收款和权益变更，退出后重新校验全部载荷。前两次自动化未能将输入送回桌面控件，保留失败记录。第三份新解压恢复目标窗口焦点后，以原生键盘分别刷新两类订单，均显示官网原编号。39 项相关回归通过。 本地功能分支，已有官网和桌面预览仍可访问。两位负责人签收、合入 main、Mac 实机、正式收款及上线待验。 验收见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-integrated-owner-review-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-新版官网与受管隔离的-windows-双人评审包)
 
 ## 2026-11-20 受管服务关闭支付演练接口
 
-受管服务在方法分派前关闭三条模拟支付事件和五条官网演练接口。合法的团队订阅及席位查询沿用设备证明和团队授权。官网、公共团队 API 和后端的发布检查均验证八条路径返回 404。 Windows 实际回环 HTTPS 的 GET、HEAD、POST 共 24 次均返回 404，11 张账务及权益表及 SQLite 文件字节一致。旧版实测为 16 次 405、3 次 503、5 次 404。180 项常规回归通过。本地功能分支，官网一键预览仍可访问，桌面评审包沿用上一轮。待 GitHub、main、正式部署及商户验收。 见 `D:/codex-temp/shenyi-managed-payment-isolation-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-受管服务关闭支付演练接口)
+受管服务在方法分派前关闭三条模拟支付事件和五条官网演练接口。合法的团队订阅及席位查询沿用设备证明和团队授权。官网、公共团队 API 和后端的发布检查均验证八条路径返回 404。 Windows 实际回环 HTTPS 的 GET、HEAD、POST 共 24 次均返回 404，11 张账务及权益表及 SQLite 文件字节一致。旧版实测为 16 次 405、3 次 503、5 次 404。180 项常规回归通过。本地功能分支，官网一键预览仍可访问，桌面评审包沿用上一轮。待 GitHub、main、正式部署及商户验收。 见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-managed-payment-isolation-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-受管服务关闭支付演练接口)
 
 ## 2026-11-20 官网首屏留白与移动排版
 
-官网首屏沿用审易墨绿、米白和原标识，集中展示产品定位与流程、版本入口。合成工作台示意放在产品段落。订阅说明和工作台在放大字号及窄屏下自适应。 Chrome 覆盖六种窗口尺寸、42 种窗口宽度与字号组合、键盘、高对比度和离线访问。官网、发布和订单 113 项回归通过。年费和增购页在双 HTTPS 合成环境完成八组改版前后截图比对，像素一致。官网一键入口实启通过。本地功能分支，尚未推送、合入 main 或发布。旧预览仍可访问。 见 `D:/codex-temp/shenyi-website-poise-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-官网首屏留白与移动排版)
+官网首屏沿用审易墨绿、米白和原标识，集中展示产品定位与流程、版本入口。合成工作台示意放在产品段落。订阅说明和工作台在放大字号及窄屏下自适应。 Chrome 覆盖六种窗口尺寸、42 种窗口宽度与字号组合、键盘、高对比度和离线访问。官网、发布和订单 113 项回归通过。年费和增购页在双 HTTPS 合成环境完成八组改版前后截图比对，像素一致。官网一键入口实启通过。本地功能分支，尚未推送、合入 main 或发布。旧预览仍可访问。 见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-website-poise-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-官网首屏留白与移动排版)
 
 ## 2026-11-20 官网年费确认绑定页面合计
 
@@ -317,7 +317,7 @@ Windows 客户端保持原管理员设备会话跨越一席合成试点截止。
 
 ## 2026-11-20 桌面正式接收绑定获准应用负载
 
-macOS ZIP 与 Windows MSI 正式接收必须同时提供发行文件 SHA-256 和签前批准的应用负载 SHA-256。缺少或格式错误时在暂存前停止。签验、结构和负载摘要均通过后，回执记录匹配的负载摘要。 Mac 相关 78 项和 Windows 相关 68 项通过，后者包含真实 Windows CLI 和 MSI 管理提取。独立工具包从空目录解压，64 项接收检查通过，与前两组部分重叠。现有 Mac 双架构候选重验实际归档及 83 个应用源文件。正式 Developer ID、公证和两平台终端安装升级待验。 证据见 `D:/codex-temp/shenyi-desktop-release-payload-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-桌面正式接收绑定获准应用负载)
+macOS ZIP 与 Windows MSI 正式接收必须同时提供发行文件 SHA-256 和签前批准的应用负载 SHA-256。缺少或格式错误时在暂存前停止。签验、结构和负载摘要均通过后，回执记录匹配的负载摘要。 Mac 相关 78 项和 Windows 相关 68 项通过，后者包含真实 Windows CLI 和 MSI 管理提取。独立工具包从空目录解压，64 项接收检查通过，与前两组部分重叠。现有 Mac 双架构候选重验实际归档及 83 个应用源文件。正式 Developer ID、公证和两平台终端安装升级待验。 证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-desktop-release-payload-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-桌面正式接收绑定获准应用负载)
 
 ## 2026-11-20 含新版官网评审包的 Windows 底稿实测
 
@@ -325,31 +325,31 @@ macOS ZIP 与 Windows MSI 正式接收必须同时提供发行文件 SHA-256 和
 
 ## 2026-11-20 新版官网纳入 Windows 双人评审包
 
-新版官网已纳入 Windows x64 双人评审 ZIP。新旧包各 2,484 项载荷逐项比对，四项变化为官网 HTML、CSS 和新生成的两份配套合成底稿。合成底稿包已核对配对、原件摘要、填写和冻结状态。 全新解压后，实际官网下单一键在 Windows Electron 打开并使用两路独立回环 HTTPS。已验新首页桌面与手机显示，分别建立一笔合成年费单和增购单。两份授权自然到期后，从桌面重开同号回执，12 张账务表摘要一致。正常退出后无活动会话与设备租约，两路监听均关闭，包前后校验通过。119 项关联回归通过。 本地候选已可供双人评审。提交 `a149282`、ZIP 摘要及验收明细见 `D:/codex-temp/shenyi-current-owner-packet-20261120/verification.json`。 [双人走查](PILOT_OWNER_REVIEW.md)
+新版官网已纳入 Windows x64 双人评审 ZIP。新旧包各 2,484 项载荷逐项比对，四项变化为官网 HTML、CSS 和新生成的两份配套合成底稿。合成底稿包已核对配对、原件摘要、填写和冻结状态。 全新解压后，实际官网下单一键在 Windows Electron 打开并使用两路独立回环 HTTPS。已验新首页桌面与手机显示，分别建立一笔合成年费单和增购单。两份授权自然到期后，从桌面重开同号回执，12 张账务表摘要一致。正常退出后无活动会话与设备租约，两路监听均关闭，包前后校验通过。119 项关联回归通过。 本地候选已可供双人评审。提交 `a149282`、ZIP 摘要及验收明细见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-current-owner-packet-20261120/verification.json`。 [双人走查](PILOT_OWNER_REVIEW.md)
 
 ## 2026-11-20 审易官网首屏与窄屏导航
 
-官网首页采用居中标题、两项主要入口和下方的资料采集工作台示意。保留审易已有墨绿和米白。窄屏导航分为四列，字体放大时允许换行。官网继续由三个本地静态文件提供，订单相关回归通过。 Windows Chrome 检查五种窗口宽度、关闭 JavaScript、键盘导航、常见问题、高对比度及放大字号。独立复核 42 种宽度与字号组合。实际官网一键及离线静态包通过，官网、发布与订单 99 项回归通过。本地功能分支，尚未推送、合入 main、重打双人评审 ZIP 或上线。 见 `D:/codex-temp/shenyi-website-polish-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-审易官网首屏与窄屏导航)
+官网首页采用居中标题、两项主要入口和下方的资料采集工作台示意。保留审易已有墨绿和米白。窄屏导航分为四列，字体放大时允许换行。官网继续由三个本地静态文件提供，订单相关回归通过。 Windows Chrome 检查五种窗口宽度、关闭 JavaScript、键盘导航、常见问题、高对比度及放大字号。独立复核 42 种宽度与字号组合。实际官网一键及离线静态包通过，官网、发布与订单 99 项回归通过。本地功能分支，尚未推送、合入 main、重打双人评审 ZIP 或上线。 见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-website-polish-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-审易官网首屏与窄屏导航)
 
 ## 2026-11-20 GitHub 严格单元验证分流
 
-`a1757b8` 将 GitHub `unit` 放在 Windows x64 执行，Ubuntu 执行仓库与工具检查。Windows runner 改用相对文件路径，并将 29 个合成测试的夹具放在系统临时目录。真实 Windows 长命令回归中旧方式报 `ENAMETOOLONG`，新方式 226 项通过。35 个相关文件共 476 项通过。未推送，托管任务待实跑。证据见 `D:/codex-temp/shenyi-ci-portability-20261120/verification.json`。
+`a1757b8` 将 GitHub `unit` 放在 Windows x64 执行，Ubuntu 执行仓库与工具检查。Windows runner 改用相对文件路径，并将 29 个合成测试的夹具放在系统临时目录。真实 Windows 长命令回归中旧方式报 `ENAMETOOLONG`，新方式 226 项通过。35 个相关文件共 476 项通过。未推送，托管任务待实跑。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-ci-portability-20261120/verification.json`。
 
 ## 2026-11-20 严格回归定位并修复 Windows 预览端口
 
-仓库严格诊断跑完 417 个文件（6406 项，6404 通过、1 失败、1 跳过）。实际 Windows 试点曾绑定 `1719`，Fetch 在请求发出前拒绝，现已在共享回环端口分配中避开。修复提交 `784768f` 的 42 项关联测试、Windows 普通和受管一键，以及包内官网浏览器验收均通过。本轮缺原结论底稿 ZIP，固定源码的全量严格门待验。证据见 `D:/codex-temp/shenyi-strict-integration-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-严格回归定位并修复-windows-预览端口)
+仓库严格诊断跑完 417 个文件（6406 项，6404 通过、1 失败、1 跳过）。实际 Windows 试点曾绑定 `1719`，Fetch 在请求发出前拒绝，现已在共享回环端口分配中避开。修复提交 `784768f` 的 42 项关联测试、Windows 普通和受管一键，以及包内官网浏览器验收均通过。本轮缺原结论底稿 ZIP，固定源码的全量严格门待验。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-strict-integration-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-严格回归定位并修复-windows-预览端口)
 
 ## 2026-11-20 整合评审包的原生底稿迁入与历史导出
 
-同一 `652bcff` Windows 整合评审 ZIP 已实测自带合成底稿。真实系统对话框选择立项来源和完整包，迁入版本 1，新填写生成版本 2，再从历史版本 1 原生另存。独立核对历史填写、公式、原件和既有冻结，当前版本仍为 2。原包采集一键暴露 Windows 退出暂存锁，修复后重打包，以真实共享锁验证等待与正常关停。底稿相关 100 项与清理相关 36 项通过。证据见 `D:/codex-temp/shenyi-integrated-workpaper-20261120/verification.json`。 [底稿走查指南](PILOT_WORKPAPER_REHEARSAL.md)
+同一 `652bcff` Windows 整合评审 ZIP 已实测自带合成底稿。真实系统对话框选择立项来源和完整包，迁入版本 1，新填写生成版本 2，再从历史版本 1 原生另存。独立核对历史填写、公式、原件和既有冻结，当前版本仍为 2。原包采集一键暴露 Windows 退出暂存锁，修复后重打包，以真实共享锁验证等待与正常关停。底稿相关 100 项与清理相关 36 项通过。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-integrated-workpaper-20261120/verification.json`。 [底稿走查指南](PILOT_WORKPAPER_REHEARSAL.md)
 
 ## 2026-11-20 含新版官网的 Windows 双人评审包
 
-使用已提交源码 `652bcff` 离线构建新 Windows x64 便携评审 ZIP，包含新版官网。新旧包的 2,484 项载荷独立逐个核对，变化为官网 HTML、CSS 和构建时重生成的两份合成底稿。全新解压后官网桌面与手机预览正常，实际订阅一键在同包生成两笔模拟订单并在授权到期后重开原回执。独立冷验、包前后校验及 71 项相关回归通过。ZIP 与 SHA-256 见 `D:/codex-temp/shenyi-integrated-review-20261120/verification.json`。 [双人走查](PILOT_OWNER_REVIEW.md)
+使用已提交源码 `652bcff` 离线构建新 Windows x64 便携评审 ZIP，包含新版官网。新旧包的 2,484 项载荷独立逐个核对，变化为官网 HTML、CSS 和构建时重生成的两份合成底稿。全新解压后官网桌面与手机预览正常，实际订阅一键在同包生成两笔模拟订单并在授权到期后重开原回执。独立冷验、包前后校验及 71 项相关回归通过。ZIP 与 SHA-256 见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-integrated-review-20261120/verification.json`。 [双人走查](PILOT_OWNER_REVIEW.md)
 
 ## 2026-11-20 同一评审包的官网原单回查
 
-同一份 `e90c663` Windows 评审 ZIP 现已实测官网一键。实际创建一张年费单和一张增购单，两份授权自然到期后从桌面重开同号只读回执，金额与原单一致，12 张账务表保持。两个回环 HTTPS 通过独立 TLS 核验，退出后监听关闭，2,484 个包内文件通过严格复验。94 项相关回归通过。证据见 `D:/codex-temp/shenyi-e90-website-receipts-1120/verification.json`。 [双人走查](PILOT_OWNER_REVIEW.md)
+同一份 `e90c663` Windows 评审 ZIP 现已实测官网一键。实际创建一张年费单和一张增购单，两份授权自然到期后从桌面重开同号只读回执，金额与原单一致，12 张账务表保持。两个回环 HTTPS 通过独立 TLS 核验，退出后监听关闭，2,484 个包内文件通过严格复验。94 项相关回归通过。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-e90-website-receipts-1120/verification.json`。 [双人走查](PILOT_OWNER_REVIEW.md)
 
 ## 2026-11-20 审易官网视觉更新
 
@@ -357,576 +357,576 @@ macOS ZIP 与 Windows MSI 正式接收必须同时提供发行文件 SHA-256 和
 
 ## 2026-11-20 同一评审包的四职级与受管一键
 
-已用跑通批量账务的同一份 `e90c663` Windows 评审 ZIP，复验空库负责人一键登录绑机，以及另一次四职级原生演练。实习生用系统选档提交原件，助理只见各自获指派的任务，经理与合伙人按项目授权访问。合伙人撤权后同一原件返回 404，经理仍可读取。两次独立冷验通过，2,484 个载荷在各次运行后严格复验。162 项相关回归通过。证据见 `D:/codex-temp/shenyi-e90-role-review-1120/verification.json`。 [双人走查](PILOT_OWNER_REVIEW.md)
+已用跑通批量账务的同一份 `e90c663` Windows 评审 ZIP，复验空库负责人一键登录绑机，以及另一次四职级原生演练。实习生用系统选档提交原件，助理只见各自获指派的任务，经理与合伙人按项目授权访问。合伙人撤权后同一原件返回 404，经理仍可读取。两次独立冷验通过，2,484 个载荷在各次运行后严格复验。162 项相关回归通过。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-e90-role-review-1120/verification.json`。 [双人走查](PILOT_OWNER_REVIEW.md)
 
 ## 2026-11-20 合成账务跨版本回退与续接
 
-用固定服务源码在独立合成库实测年订阅和增购回退。新版验款提交后中断，旧版通过原单把权益发放一次，返新版使用同一批次编号补齐回执。原验款时间以及已发期限、席位保持，目标订单零次再次查单，重试返回同一回执。68 项回归通过，正式商户和生产回退单列验收。证据见 `D:/codex-temp/shenyi-billing-revision-rollback-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-合成账务跨版本回退与续接)
+用固定服务源码在独立合成库实测年订阅和增购回退。新版验款提交后中断，旧版通过原单把权益发放一次，返新版使用同一批次编号补齐回执。原验款时间以及已发期限、席位保持，目标订单零次再次查单，重试返回同一回执。68 项回归通过，正式商户和生产回退单列验收。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-billing-revision-rollback-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-合成账务跨版本回退与续接)
 
 ## 2026-11-20 当前 Windows 测试 MSI 管理提取
 
-用 `e90c663` 的 0.61.0 Windows x64 签前归档生成隔离测试 MSI。Windows Installer 原生结构检查和 `msiexec /a` 管理提取通过。原候选 2,007 个文件与一次性测试签名逐项核对，应用负载摘要及产品注册保持。正式接收器以不同原因拒绝错误摘要和原样未签测试包。67 项相关回归通过，两处原预览保持。正式证书、系统安装及升级待验。证据见 `D:/codex-temp/shenyi-windows-e90-msi-admin-20261120/verification.json`。 [Windows 发行候选](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-较早-windows-x64-签前候选)
+用 `e90c663` 的 0.61.0 Windows x64 签前归档生成隔离测试 MSI。Windows Installer 原生结构检查和 `msiexec /a` 管理提取通过。原候选 2,007 个文件与一次性测试签名逐项核对，应用负载摘要及产品注册保持。正式接收器以不同原因拒绝错误摘要和原样未签测试包。67 项相关回归通过，两处原预览保持。正式证书、系统安装及升级待验。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-windows-e90-msi-admin-20261120/verification.json`。 [Windows 发行候选](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-较早-windows-x64-签前候选)
 
 ## 2026-11-20 当前 Linux 受管候选切换与回退
 
 将 Linux 服务归档更新到与三份桌面签前候选同源的 `e90c663`。从 Git 核对 591 个文件，独立复验一次性签名。在隔离 Ubuntu 以已有数据的 `0c02ec1` 为基线，真实 systemd 切换到新候选，再以受控的原子目录交换回退。两次切换前后 SQLite 文件摘要一致，21 张业务表及 14 张账务相关表快照保持。原设备三次通过双路 HTTPS 服务签名读取同一 2,048 字节附件。
 
-三个运行阶段各拒绝三类模拟支付通知和演示登录，两张模拟批次表始终未创建。88 项 Node 回归和 24 项 Python 测试通过。两处 Windows 旧预览保持，桌面一键沿用同源实测。正式商户、生产发布及双方签收待验。证据见 `D:/codex-temp/shenyi-linux-e90-managed-cutover-20261120/verification.json`。 [部署说明](LINUX_TEAM_DEPLOYMENT.md)
+三个运行阶段各拒绝三类模拟支付通知和演示登录，两张模拟批次表始终未创建。88 项 Node 回归和 24 项 Python 测试通过。两处 Windows 旧预览保持，桌面一键沿用同源实测。正式商户、生产发布及双方签收待验。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-linux-e90-managed-cutover-20261120/verification.json`。 [部署说明](LINUX_TEAM_DEPLOYMENT.md)
 
 ## 2026-11-20 刷新 Windows 和 macOS 签前候选
 
 将 Windows x64、macOS Apple 芯片与 Intel 三份 0.61.0 签前候选统一刷新至 `e90c663`，包含批量对账续接相关的四个客户端文件。三平台共 1,934 个应用文件逐项一致，83 个应用源码文件匹配同一提交和已原生跑通的 Windows 账务一键评审包。Windows 归档和 macOS 双架构交接包均通过独立复验，144 项相关回归全部通过。两处原预览保持。
 
-交接说明位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/delivery/签名前交接-e90c663.md`，证据位于 `D:/codex-temp/shenyi-desktop-current-signing-20261120/verification.json`。正式签名、Mac 公证、实际安装及升级、生产发布和双方签收待验。 [Windows 候选](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-较早-windows-x64-签前候选) · [macOS 候选](MACOS_DESKTOP_CANDIDATE.md#2026-11-20-上一份签前候选交接)
+交接说明位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-desktop-current-signing-20261120/delivery/签名前交接-e90c663.md`，证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-desktop-current-signing-20261120/verification.json`。正式签名、Mac 公证、实际安装及升级、生产发布和双方签收待验。 [Windows 候选](WINDOWS_DESKTOP_CANDIDATE.md#2026-11-20-较早-windows-x64-签前候选) · [macOS 候选](MACOS_DESKTOP_CANDIDATE.md#2026-11-20-上一份签前候选交接)
 
 ## 2026-11-20 批量对账中断后续接
 
-合成账务批次在服务中断重启后可按原编号恢复。独立进程实测验款后中断，重启零查单并仅到账一次。新版 Windows 账务一键完成三笔批量核对，退出后原包严格复验通过。282 项相关回归通过。证据见 `D:/codex-temp/shenyi-batch-receipts-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-批量对账中断后续接)
+合成账务批次在服务中断重启后可按原编号恢复。独立进程实测验款后中断，重启零查单并仅到账一次。新版 Windows 账务一键完成三笔批量核对，退出后原包严格复验通过。282 项相关回归通过。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-batch-receipts-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-批量对账中断后续接)
 
 ## 2026-11-20 官网下单与桌面对账同时启用
 
-官网合成模式允许本团队技术管理员核对已创建的订单并恢复已验款权益，建单仍在官网。两路 Windows HTTPS 及 151 项相关回归通过，重复兑现不增加席位。证据见 `D:/codex-temp/shenyi-website-billing-recovery-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-官网下单与桌面对账同时启用)
+官网合成模式允许本团队技术管理员核对已创建的订单并恢复已验款权益，建单仍在官网。两路 Windows HTTPS 及 151 项相关回归通过，重复兑现不增加席位。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-website-billing-recovery-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-官网下单与桌面对账同时启用)
 
 ## 2026-11-20 静态官网受限路径发布核验
 
-静态官网发布核验现在检查 3 个静态资源和 11 个应返回 404 的固定路径。隔离 Ubuntu 实测误开放团队接口路径时旧版通过、新版拒绝，恢复配置后再次通过，团队 API 在全过程保持健康。证据见 `D:/codex-temp/shenyi-website-route-verification-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-静态官网受限路径发布核验)
+静态官网发布核验现在检查 3 个静态资源和 11 个应返回 404 的固定路径。隔离 Ubuntu 实测误开放团队接口路径时旧版通过、新版拒绝，恢复配置后再次通过，团队 API 在全过程保持健康。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-website-route-verification-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-静态官网受限路径发布核验)
 
 ## 2026-11-20 macOS 签前交接包
 
-Apple 芯片与 Intel 的现行签前原 ZIP、清单、接收工具和实机验收表已合为一份可独立移交的归档。两架构原件、应用负载摘要和离线签验均在干净接收目录复验，84 项相关回归通过。正式签名、公证和实机待验。证据见 `D:/codex-temp/shenyi-macos-signing-handoff-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-macos-签前交接包)
+Apple 芯片与 Intel 的现行签前原 ZIP、清单、接收工具和实机验收表已合为一份可独立移交的归档。两架构原件、应用负载摘要和离线签验均在干净接收目录复验，84 项相关回归通过。正式签名、公证和实机待验。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-macos-signing-handoff-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-macos-签前交接包)
 
 ## 2026-11-20 Windows 评审包运行目录隔离
 
-Windows 评审包已把 Electron 工作副本及原生选档日志限在本轮目录。新版一键登录和四职级原生选档后，同一解压目录原样通过严格复验。141 项相关测试通过。证据见 `D:/codex-temp/shenyi-owner-review-runtime-log-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-评审包运行目录隔离)
+Windows 评审包已把 Electron 工作副本及原生选档日志限在本轮目录。新版一键登录和四职级原生选档后，同一解压目录原样通过严格复验。141 项相关测试通过。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-owner-review-runtime-log-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-评审包运行目录隔离)
 
 ## 2026-11-20 Linux 备份后改密与恢复检查
 
-当前签名 Linux 候选已实测停服备份、真实合成改密、旧密码拒绝和同设备续用。改密后与旧备份比对返回 2，恢复副本被受管启动拒绝。109 项关联测试通过。证据见 `D:/codex-temp/shenyi-linux-post-backup-security-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-linux-备份后改密与恢复检查)
+当前签名 Linux 候选已实测停服备份、真实合成改密、旧密码拒绝和同设备续用。改密后与旧备份比对返回 2，恢复副本被受管启动拒绝。109 项关联测试通过。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-linux-post-backup-security-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-linux-备份后改密与恢复检查)
 
 ## 2026-11-20 Windows 首管理员开通后换机
 
-Windows 首管理员从空库开通的换机链路已完成同机多配置实测。独立负责人批准后仍须本人明确激活，激活后旧端签名请求为 401，新端可读同队邀请且仍无资料查阅权限。360 项关联测试通过。证据见 `D:/codex-temp/shenyi-owner-admin-change-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-首管理员开通后换机)
+Windows 首管理员从空库开通的换机链路已完成同机多配置实测。独立负责人批准后仍须本人明确激活，激活后旧端签名请求为 401，新端可读同队邀请且仍无资料查阅权限。360 项关联测试通过。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-owner-admin-change-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-首管理员开通后换机)
 
 ## 2026-11-20 Linux 已签版本重新启用
 
-发布工具可用独立变更编号重新启用已签版本，并按同一编号恢复中断。在隔离 Ubuntu 实测两次切换，已有回执保全，重复编号拒绝，三个阶段原件均能由原设备读取。67 项关联测试通过。证据见 `D:/codex-temp/shenyi-linux-change-id-20261120/run-1/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-linux-已签版本重新启用)
+发布工具可用独立变更编号重新启用已签版本，并按同一编号恢复中断。在隔离 Ubuntu 实测两次切换，已有回执保全，重复编号拒绝，三个阶段原件均能由原设备读取。67 项关联测试通过。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-linux-change-id-20261120/run-1/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-linux-已签版本重新启用)
 
 ## 2026-11-20 当前 Linux 候选带数据升级与回退
 
-当前 Linux 签名候选已在隔离 Ubuntu 用原合成库走完整升级和操作员回退。同一已绑设备三阶段签名读取原件均返回 200，原件、21 张业务表、SQLite 结构和绑定一致。59 项定向回归通过。生产库及正式发布仍待验。证据见 `D:/codex-temp/shenyi-linux-current-upgrade-rollback-20261120/run-1/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-当前-linux-候选带数据升级与回退)
+当前 Linux 签名候选已在隔离 Ubuntu 用原合成库走完整升级和操作员回退。同一已绑设备三阶段签名读取原件均返回 200，原件、21 张业务表、SQLite 结构和绑定一致。59 项定向回归通过。生产库及正式发布仍待验。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-linux-current-upgrade-rollback-20261120/run-1/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-当前-linux-候选带数据升级与回退)
 
 ## 2026-11-20 同一测试 MSI 的管理提取复验
 
-原测试 MSI 已用 Windows Installer 完成管理提取，2,007 个文件逐字节匹配原签前 ZIP，系统目标产品仍未注册。正式签名和实机安装升级待验。证据见 `D:/codex-temp/shenyi-exact-msi-admin-rerun-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-同一测试-msi-的管理提取复验)
+原测试 MSI 已用 Windows Installer 完成管理提取，2,007 个文件逐字节匹配原签前 ZIP，系统目标产品仍未注册。正式签名和实机安装升级待验。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-exact-msi-admin-rerun-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-同一测试-msi-的管理提取复验)
 
 ## 2026-11-20 当前 Linux 候选首次部署
 
-当前 Git Linux 归档已在隔离 Ubuntu 完成实验签名、离线暂存、新库初始化及服务重启。两路 HTTPS 和合成负责人的原密钥重登录通过。证据见 `D:/codex-temp/shenyi-linux-current-first-deploy-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-当前-linux-候选首次部署)
+当前 Git Linux 归档已在隔离 Ubuntu 完成实验签名、离线暂存、新库初始化及服务重启。两路 HTTPS 和合成负责人的原密钥重登录通过。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-linux-current-first-deploy-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-当前-linux-候选首次部署)
 
 ## 2026-11-20 Windows 签前候选的 MSI 载荷核验
 
-当前 Windows 签前 ZIP 可装配为测试 MSI。2,007 个候选文件已从内嵌 CAB 逐项读回核对。系统盘空间不足使 Windows Installer 管理提取停在 1603，正式签名和安装升级待验。证据见 `D:/codex-temp/shenyi-exact-msi-admin-image-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-签前候选的-msi-载荷核验)
+当前 Windows 签前 ZIP 可装配为测试 MSI。2,007 个候选文件已从内嵌 CAB 逐项读回核对。系统盘空间不足使 Windows Installer 管理提取停在 1603，正式签名和安装升级待验。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-exact-msi-admin-image-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-windows-签前候选的-msi-载荷核验)
 
 ## 2026-11-20 新版 Windows 底稿迁入和历史版本导出
 
-当前 Windows 评审包原生底稿走查完成。合成完整包迁入为版本 1，填写保存为版本 2，再原生另存版本 1。历史填写、原件、公式和冻结已回读核对，当前版本仍为 2。证据见 `D:/codex-temp/shenyi-current-workpaper-native-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-新版-windows-底稿迁入和历史版本导出)
+当前 Windows 评审包原生底稿走查完成。合成完整包迁入为版本 1，填写保存为版本 2，再原生另存版本 1。历史填写、原件、公式和冻结已回读核对，当前版本仍为 2。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-current-workpaper-native-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-新版-windows-底稿迁入和历史版本导出)
 
 ## 2026-11-20 新版 Windows 四职级与项目撤权
 
-新版 Windows 评审 ZIP 的四职级合成业务、原生文件上传及项目撤权已验证。撤权后合伙人重新登录仍在团队内，原件请求为 404，经理继续读取同一原件。249 项相关回归通过。证据见 `D:/codex-temp/shenyi-owner-current-role-revoke-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-新版-windows-四职级与项目撤权)
+新版 Windows 评审 ZIP 的四职级合成业务、原生文件上传及项目撤权已验证。撤权后合伙人重新登录仍在团队内，原件请求为 404，经理继续读取同一原件。249 项相关回归通过。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-owner-current-role-revoke-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-新版-windows-四职级与项目撤权)
 
 ## 2026-11-20 隔离 Linux 官网发布回读
 
-当前官网及发布核验脚本在隔离 Ubuntu 的实际 Nginx 上通过原版、内容不符及回退验证。预置合成团队 API 在三阶段均健康。验收记录位于 `D:/codex-temp/shenyi-website-release-live-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-隔离-linux-官网发布回读)
+当前官网及发布核验脚本在隔离 Ubuntu 的实际 Nginx 上通过原版、内容不符及回退验证。预置合成团队 API 在三阶段均健康。验收记录位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-website-release-live-20261120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-隔离-linux-官网发布回读)
 
 ## 2026-11-20 双平台签名前候选
 
-完成 Windows x64、Apple 芯片 Mac 和 Intel Mac 的完整签前候选。三份构件的应用内容和源提交已经核对，正式签名、公证和实机安装升级待验。签前交接位于 `D:/codex-temp/shenyi-release-inputs-20261120/release-delivery/签名前交接.md`。 [持续开发检查点](../进度.md#2026-11-20-双平台签名前候选)
+完成 Windows x64、Apple 芯片 Mac 和 Intel Mac 的完整签前候选。三份构件的应用内容和源提交已经核对，正式签名、公证和实机安装升级待验。签前交接位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-release-inputs-20261120/release-delivery/签名前交接.md`。 [持续开发检查点](../进度.md#2026-11-20-双平台签名前候选)
 
 ## 2026-11-20 发布核验导入与 Windows 评审包实测
 
-本地功能分支已导入 `eaa28c3` 的发布核验提交。实际工作区 145 项定向回归通过。Windows 评审包已包含包外签收说明并通过解压后的一键登录、首次绑机和正常退出。候选包和待填签收表见 `D:/codex-temp/shenyi-release-bundle-import-20261120/review-delivery`。真实试点、双方签收和正式发行各自待验。 [持续开发检查点](../进度.md#2026-11-20-发布核验导入与-windows-评审包实测)
+本地功能分支已导入 `eaa28c3` 的发布核验提交。实际工作区 145 项定向回归通过。Windows 评审包已包含包外签收说明并通过解压后的一键登录、首次绑机和正常退出。候选包和待填签收表见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-release-bundle-import-20261120/review-delivery`。真实试点、双方签收和正式发行各自待验。 [持续开发检查点](../进度.md#2026-11-20-发布核验导入与-windows-评审包实测)
 
 ## 2026-11-20 发布核验与双人评审交接
 
-官网、包外签收和双平台发行核验候选已在同一源码 `3a1b271` 通过 145 项定向回归。候选待导入当前功能分支，双方签收及真实试点待验。证据位于 `C:/Users/icesa/Documents/ShenyiReleaseBundle1120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-发布核验与双人评审交接)
+官网、包外签收和双平台发行核验候选已在同一源码 `3a1b271` 通过 145 项定向回归。候选待导入当前功能分支，双方签收及真实试点待验。证据位于 `$SHENYI_LOCAL_USER_HOME/Documents/ShenyiReleaseBundle1120/verification.json`。 [持续开发检查点](../进度.md#2026-11-20-发布核验与双人评审交接)
 
 ## 2026-11-20 M8X 空库四职级评审
 
-Windows 受管试点评审包增加两名固定的合成员工候选，可在同一干净演练中从只有一名负责人开通团队，经四份邀请完成四名员工激活与各自电脑绑定。两席首件路线继续可用。四席实机分别核对实习生、助理、经理和合伙人的任务与资料权限。评审 ZIP 位于 `C:/Users/icesa/Documents/ShenyiM8FourRoles1120/release-accepted/Shenyi-Owner-Review-Win-x64.zip`。证据见 `C:/Users/icesa/Documents/ShenyiM8FourRoles1120/verification.json`。
+Windows 受管试点评审包增加两名固定的合成员工候选，可在同一干净演练中从只有一名负责人开通团队，经四份邀请完成四名员工激活与各自电脑绑定。两席首件路线继续可用。四席实机分别核对实习生、助理、经理和合伙人的任务与资料权限。评审 ZIP 位于 `$SHENYI_LOCAL_USER_HOME/Documents/ShenyiM8FourRoles1120/release-accepted/Shenyi-Owner-Review-Win-x64.zip`。证据见 `$SHENYI_LOCAL_USER_HOME/Documents/ShenyiM8FourRoles1120/verification.json`。
 
 ## 2026-11-20 M8W 受管预检与首件采集贯通
 
-从只有一名负责人、没有团队的新合成库开始，以实际受管服务入口执行 --check-pilot-readiness。预检只读并保持文件摘要，随后用同一配置和同一库启动 HTTPS。最新版评审包的 Windows 桌面文件经摘要核对后以正常入口连接，走完开通、首管理员激活、试点两席、员工调职、指派和原生文件选择。经理只读预览的 2,048 字节原件与数据库、源文件一致，实习生直接读取未指派任务返回 404。212 项回归通过。证据见 `C:/Users/icesa/Documents/ShenyiM8PilotJoined1120/verification.json`。
+从只有一名负责人、没有团队的新合成库开始，以实际受管服务入口执行 --check-pilot-readiness。预检只读并保持文件摘要，随后用同一配置和同一库启动 HTTPS。最新版评审包的 Windows 桌面文件经摘要核对后以正常入口连接，走完开通、首管理员激活、试点两席、员工调职、指派和原生文件选择。经理只读预览的 2,048 字节原件与数据库、源文件一致，实习生直接读取未指派任务返回 404。212 项回归通过。证据见 `$SHENYI_LOCAL_USER_HOME/Documents/ShenyiM8PilotJoined1120/verification.json`。
 
 ## 2026-11-20 M5X Windows 官网一键评审包
 
-按现有构建流程生成 Windows x64 合成评审包，解压校验 2,481 个载荷、246 个当前源码文件和 29 条本地链接。实际从全新解压目录运行官网一键，绑定设备并创建合成年费和增购订单。两份旧授权自然到期后从桌面打开同号官网回执，金额一致、建单控件隐藏。十二张账务相关表保持一致，退出后两路 HTTPS 关闭。此版可供双方审阅，58 项包装相关回归及 125 项功能回归通过。评审 ZIP 位于 `C:/Users/icesa/Documents/ShenyiM5ReceiptNative1120/release-accepted/Shenyi-Owner-Review-Win-x64.zip`。证据见 `C:/Users/icesa/Documents/ShenyiM5ReceiptNative1120/verification-packaged.json`。
+按现有构建流程生成 Windows x64 合成评审包，解压校验 2,481 个载荷、246 个当前源码文件和 29 条本地链接。实际从全新解压目录运行官网一键，绑定设备并创建合成年费和增购订单。两份旧授权自然到期后从桌面打开同号官网回执，金额一致、建单控件隐藏。十二张账务相关表保持一致，退出后两路 HTTPS 关闭。此版可供双方审阅，58 项包装相关回归及 125 项功能回归通过。评审 ZIP 位于 `$SHENYI_LOCAL_USER_HOME/Documents/ShenyiM5ReceiptNative1120/release-accepted/Shenyi-Owner-Review-Win-x64.zip`。证据见 `$SHENYI_LOCAL_USER_HOME/Documents/ShenyiM5ReceiptNative1120/verification-packaged.json`。
 
 ## 2026-11-20 M5W Windows 桌面原单走查
 
-在 Windows Electron 运行 5f3401c 正常桌面入口，使用独立账户和合成库首次绑机，并在双路 HTTPS 官网各创建一张年费单和增购单。关闭网页并等两份旧授权实际到期，从桌面订单列表重开年费回执，从订单编号查询重开增购回执。两笔原单的编号、金额、状态与席位相符，查阅只调用两个回执接口，十二张订单、支付及权益相关表保持一致。125 项回归通过。引导测试器使用隔离 Electron 窗口打开官网。当前提交的一键评审包待重建复验。证据见 `C:/Users/icesa/Documents/ShenyiM5ReceiptNative1120/verification.json`。
+在 Windows Electron 运行 5f3401c 正常桌面入口，使用独立账户和合成库首次绑机，并在双路 HTTPS 官网各创建一张年费单和增购单。关闭网页并等两份旧授权实际到期，从桌面订单列表重开年费回执，从订单编号查询重开增购回执。两笔原单的编号、金额、状态与席位相符，查阅只调用两个回执接口，十二张订单、支付及权益相关表保持一致。125 项回归通过。引导测试器使用隔离 Electron 窗口打开官网。当前提交的一键评审包待重建复验。证据见 `$SHENYI_LOCAL_USER_HOME/Documents/ShenyiM5ReceiptNative1120/verification.json`。
 
 ## 2026-11-20 M5V 官网原单重新查阅
 
-团队技术管理员可在桌面订单记录点击“在官网核对原单”，重新查阅本团队的合成年费或增购回执。旧授权到期后仍可从桌面发起新查阅，团队到期后仍可核对历史增购。Windows 双路 HTTPS 实测找回两笔原编号，只读入口拒绝报价和建单，订单、支付及权益相关十二张表保持一致。212 项相关回归通过，独立复核其中 125 项。桌面一键沿用既有验收。本提交留在本地功能分支，正式上线待验。证据见 `D:/codex-temp/shenyi-m5-receipt-reopen-20261120/verification.json`。
+团队技术管理员可在桌面订单记录点击“在官网核对原单”，重新查阅本团队的合成年费或增购回执。旧授权到期后仍可从桌面发起新查阅，团队到期后仍可核对历史增购。Windows 双路 HTTPS 实测找回两笔原编号，只读入口拒绝报价和建单，订单、支付及权益相关十二张表保持一致。212 项相关回归通过，独立复核其中 125 项。桌面一键沿用既有验收。本提交留在本地功能分支，正式上线待验。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m5-receipt-reopen-20261120/verification.json`。
 
 ## 2026-11-20 M5U 官网订单重启恢复
 
-合成官网服务恢复原 HTTPS 地址及原库后，尚有效的授权可继续核对原年费、增购订单和未确认报价。Windows 双路 HTTPS 实测故意丢弃两次确认回执并重启，找回原编号，每类只留一笔订单，退出后原授权被拒。155 项相关回归通过。桌面一键沿用既有记录，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m5-checkout-restart-20261120/verification.json`。
+合成官网服务恢复原 HTTPS 地址及原库后，尚有效的授权可继续核对原年费、增购订单和未确认报价。Windows 双路 HTTPS 实测故意丢弃两次确认回执并重启，找回原编号，每类只留一笔订单，退出后原授权被拒。155 项相关回归通过。桌面一键沿用既有记录，未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m5-checkout-restart-20261120/verification.json`。
 
 ## 2026-11-20 M8V 首队试点就绪检查
 
-新增首队试点只读验收命令。发放首管理员凭据前，核对 TLS、短信配置、开通与激活结构、试点审批及审核账号资格。Windows 和隔离 Ubuntu 均用合成受管库实测，普通启动仍兼容旧库。129 项相关回归通过。真实短信送达、实际试点和双方签收仍待相应环境验收。本轮桌面一键沿用既有记录。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m8-first-pilot-readiness-20261120/verification.json`。
+新增首队试点只读验收命令。发放首管理员凭据前，核对 TLS、短信配置、开通与激活结构、试点审批及审核账号资格。Windows 和隔离 Ubuntu 均用合成受管库实测，普通启动仍兼容旧库。129 项相关回归通过。真实短信送达、实际试点和双方签收仍待相应环境验收。本轮桌面一键沿用既有记录。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-first-pilot-readiness-20261120/verification.json`。
 
 ## 2026-11-20 M7BL Windows 受管库长路径
 
-Windows 受管服务及离线加密工具支持较长的本机数据库路径。实际服务在 268 字符路径完成两项预检、HTTPS 登录、退出和正常停机。离线加密备份、比对及恢复三条命令通过，300 字符恢复库完整并保留隔离标记。隔离 Ubuntu 同样通过启动预检和离线命令。51 项服务、38 项备份回归通过。Windows 桌面一键沿用上一轮记录。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-windows-managed-db-20261120/verification.json`。
+Windows 受管服务及离线加密工具支持较长的本机数据库路径。实际服务在 268 字符路径完成两项预检、HTTPS 登录、退出和正常停机。离线加密备份、比对及恢复三条命令通过，300 字符恢复库完整并保留隔离标记。隔离 Ubuntu 同样通过启动预检和离线命令。51 项服务、38 项备份回归通过。Windows 桌面一键沿用上一轮记录。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-windows-managed-db-20261120/verification.json`。
 
 ## 2026-11-20 M7BK Linux 停服前启动预检
 
-Linux 切换在停服前使用候选代码检查 SQLite、TLS 证书和私钥，以及已配置的短信和微信。隔离 Ubuntu 实测两种错误输入均保留现有服务和两路 HTTPS。恢复合成配置后，原签名候选通过真实 systemd 切换，旧版本及合成原件保留。76 项 Node 回归和 16 项 Python 测试通过。本轮验收 Linux，Windows 一键沿用前轮实测。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-linux-startup-preflight-20261120/verification.json`。
+Linux 切换在停服前使用候选代码检查 SQLite、TLS 证书和私钥，以及已配置的短信和微信。隔离 Ubuntu 实测两种错误输入均保留现有服务和两路 HTTPS。恢复合成配置后，原签名候选通过真实 systemd 切换，旧版本及合成原件保留。76 项 Node 回归和 16 项 Python 测试通过。本轮验收 Linux，Windows 一键沿用前轮实测。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-startup-preflight-20261120/verification.json`。
 
 ## 2026-11-20 M8U Windows 受管试点评审长路径
 
-修复 Windows 新团队评审在较长用户数据目录下无法创建合成负责人的问题。旧包在 263 字符数据库路径启动失败，新包用同一用户数据目录，从含空格的解包目录实际启动，完成负责人登录、首次绑机和退出。解压后的接收校验通过，活动会话和租约均清零。同组 578 项回归在较长测试目录通过。真实试点及负责人签收仍待验。未合入 main、未推送、未发布。证据见 `D:/codex-temp/shenyi-m8-managed-pilot-path-20261120/verification.json`。
+修复 Windows 新团队评审在较长用户数据目录下无法创建合成负责人的问题。旧包在 263 字符数据库路径启动失败，新包用同一用户数据目录，从含空格的解包目录实际启动，完成负责人登录、首次绑机和退出。解压后的接收校验通过，活动会话和租约均清零。同组 578 项回归在较长测试目录通过。真实试点及负责人签收仍待验。未合入 main、未推送、未发布。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-managed-pilot-path-20261120/verification.json`。
 
 ## 2026-11-20 M7BJ 微信与官网订单共用受管配置
 
-受管配置版本 4 支持微信扫码和独立官网订单，团队 API 和官网使用不同的标准 HTTPS 域名。Windows 普通客户端在同一窗口走通合成微信授权，以及年费和增购后凭原编号查阅。最终评审包实测旧版官网一键通过。578 项相关回归通过。微信、正式商户和 Mac 实机仍待验，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-combined-team-profile-20261120/verification.json`。
+受管配置版本 4 支持微信扫码和独立官网订单，团队 API 和官网使用不同的标准 HTTPS 域名。Windows 普通客户端在同一窗口走通合成微信授权，以及年费和增购后凭原编号查阅。最终评审包实测旧版官网一键通过。578 项相关回归通过。微信、正式商户和 Mac 实机仍待验，未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-combined-team-profile-20261120/verification.json`。
 
 ## 2026-11-20 M7BI Windows 正式 MSI 接收核验
 
-新增 Windows 正式 MSI 接收入口，核对同一临时副本的可信摘要、安装器签名、时间戳、审易发行结构及管理提取后的内层双签名。Windows 实测拒绝未签名、签名有效但结构不符和过宽目录权限三种输入。合成外签通过时实际提取并核对 2,005 个内层发行文件，产品注册保持。85 项相关回归通过。正式已签审易 MSI、系统安装升级和卸载仍待验。Windows 一键沿用既有实测，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-windows-msi-receipt-20261120/verification.json`。
+新增 Windows 正式 MSI 接收入口，核对同一临时副本的可信摘要、安装器签名、时间戳、审易发行结构及管理提取后的内层双签名。Windows 实测拒绝未签名、签名有效但结构不符和过宽目录权限三种输入。合成外签通过时实际提取并核对 2,005 个内层发行文件，产品注册保持。85 项相关回归通过。正式已签审易 MSI、系统安装升级和卸载仍待验。Windows 一键沿用既有实测，未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-windows-msi-receipt-20261120/verification.json`。
 
 ## 2026-11-20 M7BH macOS 正式 ZIP 接收核验
 
-新增 macOS 正式 ZIP 接收入口。跨平台核对可信 SHA-256、正式标识、版本和 Mach-O 架构。Mac 核验入口对同一私有副本展开后的应用调用 Apple 签名和公证检查。独立工具包从实际解包目录复验两种架构的完整合成 ZIP，通过 79 项相关回归。真实 Mac 的解包、Apple 签名、公证、Finder 和升级仍待验。Windows 一键沿用既有实测，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-macos-release-receipt-20261120/verification.json`。
+新增 macOS 正式 ZIP 接收入口。跨平台核对可信 SHA-256、正式标识、版本和 Mach-O 架构。Mac 核验入口对同一私有副本展开后的应用调用 Apple 签名和公证检查。独立工具包从实际解包目录复验两种架构的完整合成 ZIP，通过 79 项相关回归。真实 Mac 的解包、Apple 签名、公证、Finder 和升级仍待验。Windows 一键沿用既有实测，未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-macos-release-receipt-20261120/verification.json`。
 
 ## 2026-11-20 M7BG Linux 发布目录完整性复核
 
-Linux 签名暂存现在记录服务代码、生产依赖、目录和只读权限的摘要。激活在运行候选前和停服前分别复核，恢复时也比对已记录的摘要。隔离 Ubuntu 验证四种文件变动在停服前被拒，原样候选通过实际 systemd 切换和双路 HTTPS，SQLite 与合成原件保持。12 组 Python 验证和 49 项相关回归通过。Windows 一键沿用上轮实测，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-staging-integrity-20261120/verification.json`。
+Linux 签名暂存现在记录服务代码、生产依赖、目录和只读权限的摘要。激活在运行候选前和停服前分别复核，恢复时也比对已记录的摘要。隔离 Ubuntu 验证四种文件变动在停服前被拒，原样候选通过实际 systemd 切换和双路 HTTPS，SQLite 与合成原件保持。12 组 Python 验证和 49 项相关回归通过。Windows 一键沿用上轮实测，未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-staging-integrity-20261120/verification.json`。
 
 ## 2026-11-20 M5T 官网与团队 API 分开验收
 
-Windows 评审包一键启动独立的官网和团队 API 两个 HTTPS 地址，各用自己的证书链。官网年费和增购分别生成一笔合成待支付订单，返回桌面后可按原编号核对。20 项实际请求检查和 359 项相关回归通过，冷库核对收款、订阅期限和席位权益无变动，退出后两个监听器均关闭。正式官网和商户、Mac 实机、真实试点、双方签收及国内上线仍待验收。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m5-split-checkout-20261120/verification.json`。
+Windows 评审包一键启动独立的官网和团队 API 两个 HTTPS 地址，各用自己的证书链。官网年费和增购分别生成一笔合成待支付订单，返回桌面后可按原编号核对。20 项实际请求检查和 359 项相关回归通过，冷库核对收款、订阅期限和席位权益无变动，退出后两个监听器均关闭。正式官网和商户、Mac 实机、真实试点、双方签收及国内上线仍待验收。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m5-split-checkout-20261120/verification.json`。
 
 ## 2026-11-20 M8T Windows 评审包接收校验
 
-新版双人评审包在核对原 ZIP 的交付摘要后，可双击运行 `Verify-Owner-Review.cmd`。校验核对解压清单及 2,480 个文件，排除本机演练目录内容。从另一工作目录实际调用成功，并在受管试点一键启动、绑定和正常关闭后复验，评审文件保持。隔离副本验证同字节数改动、缺件和额外文件均拒绝。71 项相关回归通过。两处旧预览观察一致。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m8-owner-review-receiver-20261120/verification.json`。 [接收说明](../README-Owner-Review.md#接收校验)
+新版双人评审包在核对原 ZIP 的交付摘要后，可双击运行 `Verify-Owner-Review.cmd`。校验核对解压清单及 2,480 个文件，排除本机演练目录内容。从另一工作目录实际调用成功，并在受管试点一键启动、绑定和正常关闭后复验，评审文件保持。隔离副本验证同字节数改动、缺件和额外文件均拒绝。71 项相关回归通过。两处旧预览观察一致。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-owner-review-receiver-20261120/verification.json`。 [接收说明](../README-Owner-Review.md#接收校验)
 
 ## 2026-11-20 M5S 官网原订单回执恢复
 
-官网只读核对可在原授权有效时找回已从待处理状态转出的年费或增购订单。编号、锁定金额和席位取自原单，异常款项归入待复核。浏览器离开时清除当前回执，迟到响应不重显。新版 Windows 评审 ZIP 的实际解压副本中，两笔创建响应分别在真实落库后截断，独立签名合成收款先确认，再由用户手动核对。两张回执同号同金额，SQLite 冷库每类一单一笔收款，2 KiB 原件保持。335 项相关回归、67 项独立复核及新版常规官网一键通过。两处旧预览观察一致。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m5-website-receipt-recovery-20261120/verification.json`。 [官网下单演练](../website/README.md#官网下单演练)
+官网只读核对可在原授权有效时找回已从待处理状态转出的年费或增购订单。编号、锁定金额和席位取自原单，异常款项归入待复核。浏览器离开时清除当前回执，迟到响应不重显。新版 Windows 评审 ZIP 的实际解压副本中，两笔创建响应分别在真实落库后截断，独立签名合成收款先确认，再由用户手动核对。两张回执同号同金额，SQLite 冷库每类一单一笔收款，2 KiB 原件保持。335 项相关回归、67 项独立复核及新版常规官网一键通过。两处旧预览观察一致。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m5-website-receipt-recovery-20261120/verification.json`。 [官网下单演练](../website/README.md#官网下单演练)
 
 ## 2026-11-20 M7BF Linux 发布中断恢复
 
-恢复命令结合实际目录身份和发布日志，处理原子交换前后中断及恢复再次中断。在隔离 Ubuntu 对本轮进程实际发出两次 SIGKILL，重启后的旧版均通过受管内外 HTTPS 检查。错误批准摘要被拒绝且状态保持，停服 SQLite 文件和合成原件的 SHA-256 匹配。原有磁盘余量提醒保持。6 组专项、12 项独立复核和 49 项相关回归通过。Windows 一键沿用上轮证据，两处旧预览观察保持。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-release-interruption-20261120/verification.json`。 [发布恢复操作](LINUX_TEAM_DEPLOYMENT.md#变更与回滚)
+恢复命令结合实际目录身份和发布日志，处理原子交换前后中断及恢复再次中断。在隔离 Ubuntu 对本轮进程实际发出两次 SIGKILL，重启后的旧版均通过受管内外 HTTPS 检查。错误批准摘要被拒绝且状态保持，停服 SQLite 文件和合成原件的 SHA-256 匹配。原有磁盘余量提醒保持。6 组专项、12 项独立复核和 49 项相关回归通过。Windows 一键沿用上轮证据，两处旧预览观察保持。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-release-interruption-20261120/verification.json`。 [发布恢复操作](LINUX_TEAM_DEPLOYMENT.md#变更与回滚)
 
 ## 2026-11-20 M7BE 桌面接口兼容与双平台评审包
 
-修复桌面接口兼容清单遗漏官网下单入口的两项断言。原 135 项的方法和通道顺序及精确映射均保留；166 项当前接口每项只调用一个已注册通道。独立负向验证拒绝历史通道交换、官网入口遗漏及未注册通道。1,867 项扩展回归及 66 项归档相关测试均通过。Windows 评审包经实际解压一键走通合成年费和席位增购。Apple 芯片和 Intel macOS 签名前归档各验证 2,762 个条目，1,934 个共用文件逐字节匹配当前 Windows 载荷。双架构交接包已从独立接收目录复验，Mac 实机、正式签名、公证和升级待验。两处旧预览保持。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-desktop-contract-20261120/verification.json`。
+修复桌面接口兼容清单遗漏官网下单入口的两项断言。原 135 项的方法和通道顺序及精确映射均保留；166 项当前接口每项只调用一个已注册通道。独立负向验证拒绝历史通道交换、官网入口遗漏及未注册通道。1,867 项扩展回归及 66 项归档相关测试均通过。Windows 评审包经实际解压一键走通合成年费和席位增购。Apple 芯片和 Intel macOS 签名前归档各验证 2,762 个条目，1,934 个共用文件逐字节匹配当前 Windows 载荷。双架构交接包已从独立接收目录复验，Mac 实机、正式签名、公证和升级待验。两处旧预览保持。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-desktop-contract-20261120/verification.json`。
 
 ## 2026-11-20 M4R 底稿并发草稿核对
 
-旧版底稿保存遇到新版后，仍获授权的编辑者可保留草稿，逐项比较和选择要带入的内容。再次保存须明确点击，并使用当前保存版本和新操作编号。两个实际 Windows 客户端分别走通发送前冲突及服务端 HTTP 409。两轮均只有两份新保存回执，来源、原件及既有冻结保持。扩展回归 291 项通过，2 项旧接口清单断言在起点同样失败，零跳过。独立复核及新版受管试点一键通过。旧预览观察一致，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m4-workpaper-draft-conflict-20261119/verification.json`。 [底稿桌面合同](WORKPAPER_UI_CONTRACT.md#用户流程与权限)
+旧版底稿保存遇到新版后，仍获授权的编辑者可保留草稿，逐项比较和选择要带入的内容。再次保存须明确点击，并使用当前保存版本和新操作编号。两个实际 Windows 客户端分别走通发送前冲突及服务端 HTTP 409。两轮均只有两份新保存回执，来源、原件及既有冻结保持。扩展回归 291 项通过，2 项旧接口清单断言在起点同样失败，零跳过。独立复核及新版受管试点一键通过。旧预览观察一致，未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m4-workpaper-draft-conflict-20261119/verification.json`。 [底稿桌面合同](WORKPAPER_UI_CONTRACT.md#用户流程与权限)
 
 ## 2026-11-19 M3F 换机审核分页和持钥替换
 
-换机审核按权限分页，排序以录入时间和申请编号为准。新的 Windows 客户端兼容旧服务首页，后续页审核仍在该页核对。三份独立 Windows 配置连接隔离受管 HTTPS，以 50／6 条分页定位较早的申请。跨团队与未知游标返回相同 404。技术管理员只批准一次，旧设备保持任务读取。员工在新设备明确激活后，旧会话被拒绝；新设备只读取获授权任务，预览原件 2,048 字节与原摘要一致。独立冷库检查确认原绑定已撤销、新绑定唯一、16 张业务表和 56 条其他申请保持。235 项关联回归和独立复核通过。Windows 评审 ZIP 从解压目录验证新版本受管试点一键。两处旧预览观察一致。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m3-replacement-pages-20261119/verification.json`。 [换机审核](DEVICE_REPLACEMENT.md#审核人与激活边界)
+换机审核按权限分页，排序以录入时间和申请编号为准。新的 Windows 客户端兼容旧服务首页，后续页审核仍在该页核对。三份独立 Windows 配置连接隔离受管 HTTPS，以 50／6 条分页定位较早的申请。跨团队与未知游标返回相同 404。技术管理员只批准一次，旧设备保持任务读取。员工在新设备明确激活后，旧会话被拒绝；新设备只读取获授权任务，预览原件 2,048 字节与原摘要一致。独立冷库检查确认原绑定已撤销、新绑定唯一、16 张业务表和 56 条其他申请保持。235 项关联回归和独立复核通过。Windows 评审 ZIP 从解压目录验证新版本受管试点一键。两处旧预览观察一致。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m3-replacement-pages-20261119/verification.json`。 [换机审核](DEVICE_REPLACEMENT.md#审核人与激活边界)
 
 ## 2026-11-19 M8S 团队开通审核分页
 
-按创建时间和申请编号倒序，每页最多 50 条。包括同一时刻创建的申请在内，服务端使用上一页末条申请作为读取边界，每次重查审核身份。Windows 桌面通过隔离受管 HTTPS 查看 50／6 条，发现首页未显示的较早团队。翻页清除密码，后续页按当前申请验证密码并明确批准两席。持钥审批 POST 只出现一次，上一页与刷新只读取记录。冷库仅有该团队的一个试点、一段期限及一份席位授权，其他 55 条申请摘要保持，正常退出后无有效会话或租约。311 项关联测试和独立复核通过。新版 Windows 评审 ZIP 从解压目录验证受管试点一键，旧预览前后观察一致。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m8-provisioning-pages-20261119/verification.json`。 [人工审核与分页](MANUAL_TEAM_ONBOARDING.md#受管服务首个试点)
+按创建时间和申请编号倒序，每页最多 50 条。包括同一时刻创建的申请在内，服务端使用上一页末条申请作为读取边界，每次重查审核身份。Windows 桌面通过隔离受管 HTTPS 查看 50／6 条，发现首页未显示的较早团队。翻页清除密码，后续页按当前申请验证密码并明确批准两席。持钥审批 POST 只出现一次，上一页与刷新只读取记录。冷库仅有该团队的一个试点、一段期限及一份席位授权，其他 55 条申请摘要保持，正常退出后无有效会话或租约。311 项关联测试和独立复核通过。新版 Windows 评审 ZIP 从解压目录验证受管试点一键，旧预览前后观察一致。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-provisioning-pages-20261119/verification.json`。 [人工审核与分页](MANUAL_TEAM_ONBOARDING.md#受管服务首个试点)
 
 ## 2026-11-19 M7BD 官网 HTTPS 和内容回退
 
-官网与团队 API 通过两个 HTTPS 虚拟主机独立提供。隔离 Ubuntu 实测 GET、HEAD、MIME 类型、响应摘要、原始路径白名单、跨域名 Host 拒绝和日志样例。两轮虚拟机正常关闭，原 10 层 backing image 摘要一致。最终轮以随包说明的命令拒绝错摘要候选、启用同长度的合成新首页并恢复原摘要。卸下官网配置后，团队 API 持续返回同一受管实例。最终通过 47 项 HTTP、4 次 Nginx 配置检查及不同证书的 TLS 校验。71 项关联回归和独立复核通过。交接 ZIP 中两份模板、三项静态载荷与实际输入一致。两处旧预览观察一致。本轮未复验 Windows 一键，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-website-https-20261119/verification.json`。 [部署与回退](LINUX_TEAM_DEPLOYMENT.md#官网静态站与团队-api-并行部署)
+官网与团队 API 通过两个 HTTPS 虚拟主机独立提供。隔离 Ubuntu 实测 GET、HEAD、MIME 类型、响应摘要、原始路径白名单、跨域名 Host 拒绝和日志样例。两轮虚拟机正常关闭，原 10 层 backing image 摘要一致。最终轮以随包说明的命令拒绝错摘要候选、启用同长度的合成新首页并恢复原摘要。卸下官网配置后，团队 API 持续返回同一受管实例。最终通过 47 项 HTTP、4 次 Nginx 配置检查及不同证书的 TLS 校验。71 项关联回归和独立复核通过。交接 ZIP 中两份模板、三项静态载荷与实际输入一致。两处旧预览观察一致。本轮未复验 Windows 一键，未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-website-https-20261119/verification.json`。 [部署与回退](LINUX_TEAM_DEPLOYMENT.md#官网静态站与团队-api-并行部署)
 
 ## 2026-11-19 M8R Windows 邀请回执恢复
 
-真实 Windows 客户端在隔离受管 HTTPS 服务上收到一次持钥创建 201、一次权限 200。演练中继只替换随后的邀请列表响应，分别返回 429 和 503。两轮均保留唯一邀请码，旧列表和写操作保持锁定。手动刷新只发两笔读取，清除邀请码并找回同一待激活邀请。合成员工用原邀请码和测试短信完成激活，同一席由预留转为启用。两份数据库只读检查均通过，退出后没有有效会话或设备租约。268 项测试和 13 项独立检查通过。Windows 评审 ZIP 核对 2,478 个载荷和 29 条随包链接，从实际解压包验证受管试点一键、正常登录绑机和退出。两处旧预览观察一致。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m8-invitation-receipt-20261119/verification.json`。 [新团队演练](PILOT_MANAGED_FIRST_TASK.md)
+真实 Windows 客户端在隔离受管 HTTPS 服务上收到一次持钥创建 201、一次权限 200。演练中继只替换随后的邀请列表响应，分别返回 429 和 503。两轮均保留唯一邀请码，旧列表和写操作保持锁定。手动刷新只发两笔读取，清除邀请码并找回同一待激活邀请。合成员工用原邀请码和测试短信完成激活，同一席由预留转为启用。两份数据库只读检查均通过，退出后没有有效会话或设备租约。268 项测试和 13 项独立检查通过。Windows 评审 ZIP 核对 2,478 个载荷和 29 条随包链接，从实际解压包验证受管试点一键、正常登录绑机和退出。两处旧预览观察一致。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-invitation-receipt-20261119/verification.json`。 [新团队演练](PILOT_MANAGED_FIRST_TASK.md)
 
 ## 2026-11-19 M7BC macOS 双架构当前评审候选
 
-按 418250f 重建 macOS arm64 与 x64，包含本轮 Windows 评审使用的到期指引和试点审批焦点修复。83 个客户端源码与 Windows 评审包和仓库匹配，三份构件共有的 1,934 个应用文件逐字节一致。两包各核对 2,762 个归档成员和 14 个符号链接。交接 ZIP 含两份原候选、校验清单及五个核验工具。在脱离仓库的接收目录，用一次性 Ed25519 密钥实测两次签署与验签，错架构、错公钥、签名混用、同版本、降版及签名变更六项均拒绝。测试私钥已清除。92 项相关测试和独立审查通过。两处旧预览观察一致。本轮未复验 Windows 一键。Apple 签名、公证、Gatekeeper、Finder、Keychain 和升级仍待实机。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-macos-parity-20261119/verification.json`。 [候选交接说明](MACOS_DESKTOP_CANDIDATE.md#2026-11-19-历史候选交接)
+按 418250f 重建 macOS arm64 与 x64，包含本轮 Windows 评审使用的到期指引和试点审批焦点修复。83 个客户端源码与 Windows 评审包和仓库匹配，三份构件共有的 1,934 个应用文件逐字节一致。两包各核对 2,762 个归档成员和 14 个符号链接。交接 ZIP 含两份原候选、校验清单及五个核验工具。在脱离仓库的接收目录，用一次性 Ed25519 密钥实测两次签署与验签，错架构、错公钥、签名混用、同版本、降版及签名变更六项均拒绝。测试私钥已清除。92 项相关测试和独立审查通过。两处旧预览观察一致。本轮未复验 Windows 一键。Apple 签名、公证、Gatekeeper、Finder、Keychain 和升级仍待实机。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-macos-parity-20261119/verification.json`。 [候选交接说明](MACOS_DESKTOP_CANDIDATE.md#2026-11-19-历史候选交接)
 
 ## 2026-11-19 M8Q Windows 试点审批键盘与缩放
 
-Windows 受管合成团队审批在 100% 和 200% 测得无横向裁切。最终轮在 200% 用键盘填全部日期分段、席位和密码，再以 Space 和 Enter 各明确提交一次。错误密码返回 403，焦点回到清空的密码框，日期和席位草稿保留。用户先移开焦点时仍停在该操作路径。正确审批返回 200，独立 SQLite 核对唯一试点、期限和两席记录。191 项相关测试通过，修改文件的复跑 32 项含于总数。新版 ZIP 核对 2,478 个载荷和 29 条说明链接，修复账务说明的离线断链。从解压包实启受管试点一键通过，两处旧预览前后观察一致。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m8-pilot-keyboard-20261119/verification.json`。 [键盘操作](MANUAL_TEAM_ONBOARDING.md#试点审批的键盘操作)
+Windows 受管合成团队审批在 100% 和 200% 测得无横向裁切。最终轮在 200% 用键盘填全部日期分段、席位和密码，再以 Space 和 Enter 各明确提交一次。错误密码返回 403，焦点回到清空的密码框，日期和席位草稿保留。用户先移开焦点时仍停在该操作路径。正确审批返回 200，独立 SQLite 核对唯一试点、期限和两席记录。191 项相关测试通过，修改文件的复跑 32 项含于总数。新版 ZIP 核对 2,478 个载荷和 29 条说明链接，修复账务说明的离线断链。从解压包实启受管试点一键通过，两处旧预览前后观察一致。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-pilot-keyboard-20261119/verification.json`。 [键盘操作](MANUAL_TEAM_ONBOARDING.md#试点审批的键盘操作)
 
 ## 2026-11-19 M8P Windows 官网续费恢复业务
 
-用已有 Windows 双人评审载荷的新副本和已到期合成账库，技术管理员在官网下单三席，回桌面按同号查到待支付。建单时期限和席位未生效。官网继续拒收款通知。独立本机模拟收款入口在同库接收同一签名回执两次，只写一笔已验收款、一个期限和一份席位记录。桌面刷新后看到同号已到账、三席中两席已用。经理在同一持钥会话的新建任务请求从 402 变为 201，既有 2,048 字节原件前后两次真实预览一致。172 项相关测试、独立冷库核对和 2,478 个评审载荷前后校验通过。两处旧预览观察一致。本轮未复验一键入口，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m8-website-renewal-20261119/verification.json`。 [官网续费走查](M5_LOCAL_ACCEPTANCE.md#官网续费和恢复业务走查)
+用已有 Windows 双人评审载荷的新副本和已到期合成账库，技术管理员在官网下单三席，回桌面按同号查到待支付。建单时期限和席位未生效。官网继续拒收款通知。独立本机模拟收款入口在同库接收同一签名回执两次，只写一笔已验收款、一个期限和一份席位记录。桌面刷新后看到同号已到账、三席中两席已用。经理在同一持钥会话的新建任务请求从 402 变为 201，既有 2,048 字节原件前后两次真实预览一致。172 项相关测试、独立冷库核对和 2,478 个评审载荷前后校验通过。两处旧预览观察一致。本轮未复验一键入口，未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-website-renewal-20261119/verification.json`。 [官网续费走查](M5_LOCAL_ACCEPTANCE.md#官网续费和恢复业务走查)
 
 ## 2026-11-19 M8O Windows 受管试点自然到期
 
-从只有产品负责人的新受管库开始，实际开通两席试点、激活两位员工、建任务和提交 Windows 原件。经理保持同一持钥会话跨过服务器实际截止时刻。有效期内两份任务创建成功，截止后新建任务和管理员邀请各提交一次，均返回签名请求对应的 402。经理仍可按既有授权预览和导出同一份 2,048 字节原件。独立只读核验确认 37 张业务及权益表摘要保持。修复经理收到泛化服务错误的问题，现提示联系团队管理员核对试点或订阅状态。导出由真实应用写出，验收脚本代选另存路径。471 项相关测试通过。新 Windows ZIP 的 2,478 个文件在实际使用后仍与清单一致，已从解压包实启受管试点一键入口。两处旧预览前后观察一致。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m8-trial-expiry-20261119/verification.json`。 [到期走查](MANUAL_TEAM_ONBOARDING.md#试点到期时)
+从只有产品负责人的新受管库开始，实际开通两席试点、激活两位员工、建任务和提交 Windows 原件。经理保持同一持钥会话跨过服务器实际截止时刻。有效期内两份任务创建成功，截止后新建任务和管理员邀请各提交一次，均返回签名请求对应的 402。经理仍可按既有授权预览和导出同一份 2,048 字节原件。独立只读核验确认 37 张业务及权益表摘要保持。修复经理收到泛化服务错误的问题，现提示联系团队管理员核对试点或订阅状态。导出由真实应用写出，验收脚本代选另存路径。471 项相关测试通过。新 Windows ZIP 的 2,478 个文件在实际使用后仍与清单一致，已从解压包实启受管试点一键入口。两处旧预览前后观察一致。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-trial-expiry-20261119/verification.json`。 [到期走查](MANUAL_TEAM_ONBOARDING.md#试点到期时)
 
 ## 2026-11-19 M8N Windows 同一受管服务双团队采集验收
 
-三位合成账号分别用独立 Windows Electron 配置登录并首次绑机，两队共享同一受管 HTTPS 服务。项目搜索各只见本队，按对方项目名称检索均无结果。两队跨团队直接读取和纯技术管理员读取本队原件共拒绝 11 次，均返回 404。A 队技术管理员在客户端验证密码并停用 A 队经理，经理的原件预览关闭、工作区和会话清除。B 队合伙人的原件预览持续可用，重新打开产生新的签名文件读取并返回 200。独立只读 SQLite 核验两份 2,048 字节原件和 B 队授权保持，记录唯一停用事件。全部窗口关闭后服务停止，6 个会话和 3 个租约均已撤销。435 项相关测试通过，失败和跳过均为 0。两处既有预览前后观察一致。 团队、项目、权限和原件以合成夹具预置。本轮以工作区代码和既有 Electron 验收，未执行真实团队开通、文件上传或正式安装。首轮验收驱动误将纯技术管理员当作业务成员，修正驱动后通过。本轮未复验一键入口，未合入 main、未推送、未上线。真实试点、双方签收、Windows 签名安装和 macOS 实机、正式收款及国内上线仍待验。 证据见 `D:/codex-temp/shenyi-m8-native-two-teams-20261119/verification.json`。 [停用流程及实证](MEMBER_DEACTIVATION.md#同一受管服务双团队验收)
+三位合成账号分别用独立 Windows Electron 配置登录并首次绑机，两队共享同一受管 HTTPS 服务。项目搜索各只见本队，按对方项目名称检索均无结果。两队跨团队直接读取和纯技术管理员读取本队原件共拒绝 11 次，均返回 404。A 队技术管理员在客户端验证密码并停用 A 队经理，经理的原件预览关闭、工作区和会话清除。B 队合伙人的原件预览持续可用，重新打开产生新的签名文件读取并返回 200。独立只读 SQLite 核验两份 2,048 字节原件和 B 队授权保持，记录唯一停用事件。全部窗口关闭后服务停止，6 个会话和 3 个租约均已撤销。435 项相关测试通过，失败和跳过均为 0。两处既有预览前后观察一致。 团队、项目、权限和原件以合成夹具预置。本轮以工作区代码和既有 Electron 验收，未执行真实团队开通、文件上传或正式安装。首轮验收驱动误将纯技术管理员当作业务成员，修正驱动后通过。本轮未复验一键入口，未合入 main、未推送、未上线。真实试点、双方签收、Windows 签名安装和 macOS 实机、正式收款及国内上线仍待验。 证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-native-two-teams-20261119/verification.json`。 [停用流程及实证](MEMBER_DEACTIVATION.md#同一受管服务双团队验收)
 
 ## 2026-11-19 M8M Windows 受管试点双人评审包
 
 新增 `Start-Team-Managed-Pilot-Candidate.cmd` 和两位负责人可按步骤操作的说明。每轮用受管初始化器创建一名合成负责人，在包外建独立配置、数据和设备目录。验证码仅交给本轮启动窗口。专用加载器核对便携包身份、本轮配置、回执、目录和短期 CA；服务端仍执行正常受管身份、持钥、权限及席位规则。首版归档实跑被原便携入口保护拒绝，已保留失败记录并接入专用校验。
 
-最终 ZIP 包含 2,478 个清单文件、5 个一键入口，核对了 29 个包内链接和 244 个当前源码文件。从解压包真实启动新 CMD，负责人正常登录、首次绑定、进入团队审核、退出并关闭，服务随之停止。在同一份解压包另用随包 Node、Electron 和受管工厂完成两席审批、员工激活、经理指派、Windows 原生选文件上传及经理只读核对。同项目未指派任务仍返回 404，本轮合成原件、库中原件及预览的 2,048 字节和 SHA-256 一致，退出后 24 个会话和 12 个租约均撤销。164 项相关测试、独立归档和冷库核对通过。两处旧预览观察一致。新受管试点一键可达，旧一键未逐一复验。真实试点、双方签收和正式发行待对应环境验收。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m8-managed-owner-package-20261119/verification.json`。 [评审步骤](PILOT_MANAGED_FIRST_TASK.md)
+最终 ZIP 包含 2,478 个清单文件、5 个一键入口，核对了 29 个包内链接和 244 个当前源码文件。从解压包真实启动新 CMD，负责人正常登录、首次绑定、进入团队审核、退出并关闭，服务随之停止。在同一份解压包另用随包 Node、Electron 和受管工厂完成两席审批、员工激活、经理指派、Windows 原生选文件上传及经理只读核对。同项目未指派任务仍返回 404，本轮合成原件、库中原件及预览的 2,048 字节和 SHA-256 一致，退出后 24 个会话和 12 个租约均撤销。164 项相关测试、独立归档和冷库核对通过。两处旧预览观察一致。新受管试点一键可达，旧一键未逐一复验。真实试点、双方签收和正式发行待对应环境验收。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-managed-owner-package-20261119/verification.json`。 [评审步骤](PILOT_MANAGED_FIRST_TASK.md)
 
 ## 2026-11-19 M8L Windows 新团队首份采集
 
 修复采集任务创建后自己的项目写锁拦住后续只读刷新，导致界面误报列表未确认的问题。只有经成功回执校验的同一次写入可以刷新，其他操作仍受原锁约束。回归先复现任务已入列表但缺少后续读取，修复后确认该读取成功、写入仍锁定、重复提交无第二笔请求。
 
-正常 Windows 客户端从空团队的受管流程开始。负责人批准两席，技术管理员邀请两人、第三份邀请被拒，随后将已激活助理调岗为项目经理。经理创建采集工作区和两项任务，仅将一项指派给实习生。实习生调用未指派任务返回 404，经真实 Windows 文件选择器提交一份 2,048 字节的合成原件。经理使用独立核对权打开正文，源文件、数据库原件与预览正文的长度及 SHA-256 一致。任务状态保持已提交，退出后 24 个会话与 12 个租约均已撤销。修后 690 项关联测试和独立冷库核验通过，两处旧预览观察一致。本轮沿用已有 Electron 运行时从工作区验证，桌面一键未复验。真实试点、供应商和双方签收仍待验收。未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m8-managed-first-task-20261119/verification.json`。 [首份采集步骤](MANUAL_TEAM_ONBOARDING.md#新团队的首份采集)
+正常 Windows 客户端从空团队的受管流程开始。负责人批准两席，技术管理员邀请两人、第三份邀请被拒，随后将已激活助理调岗为项目经理。经理创建采集工作区和两项任务，仅将一项指派给实习生。实习生调用未指派任务返回 404，经真实 Windows 文件选择器提交一份 2,048 字节的合成原件。经理使用独立核对权打开正文，源文件、数据库原件与预览正文的长度及 SHA-256 一致。任务状态保持已提交，退出后 24 个会话与 12 个租约均已撤销。修后 690 项关联测试和独立冷库核验通过，两处旧预览观察一致。本轮沿用已有 Electron 运行时从工作区验证，桌面一键未复验。真实试点、供应商和双方签收仍待验收。未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-managed-first-task-20261119/verification.json`。 [首份采集步骤](MANUAL_TEAM_ONBOARDING.md#新团队的首份采集)
 
 ## 2026-11-19 M7BB Linux 对外证书续期与回退
 
-隔离 Ubuntu 中，Nginx 拒绝一对错配证书和私钥，运行中的旧证书继续服务。续期、回退、重新启用新证书经过三次重载，五阶段均核对实际送出的叶证书与对外告警。63 次新建 TLS 连接与 10 次签名任务请求通过。合成实习生使用同一已绑定设备、业务会话和租约，始终只看到指派任务，直接读取另一任务均返回 404。退出后 SQLite 确认会话和租约已撤销。Nginx 主进程、后端进程及调用标识保持，虚拟机正常关机。104 项关联测试通过，独立复核和两处旧预览核对通过。前两次演练停在初始接口断言和客户端打包缺少依赖，均已保留。受管后端沿用已准备的演练实例，当前源码提供客户端协议、Nginx 模板与探针。正式证书、生产主机和桌面一键本轮待验，未合入 main、未推送、未上线。证据见 `D:/codex-temp/shenyi-m7-linux-edge-tls-20261119/verification.json`。 [续期与回退流程](LINUX_TEAM_DEPLOYMENT.md#续期-nginx-对外证书)
+隔离 Ubuntu 中，Nginx 拒绝一对错配证书和私钥，运行中的旧证书继续服务。续期、回退、重新启用新证书经过三次重载，五阶段均核对实际送出的叶证书与对外告警。63 次新建 TLS 连接与 10 次签名任务请求通过。合成实习生使用同一已绑定设备、业务会话和租约，始终只看到指派任务，直接读取另一任务均返回 404。退出后 SQLite 确认会话和租约已撤销。Nginx 主进程、后端进程及调用标识保持，虚拟机正常关机。104 项关联测试通过，独立复核和两处旧预览核对通过。前两次演练停在初始接口断言和客户端打包缺少依赖，均已保留。受管后端沿用已准备的演练实例，当前源码提供客户端协议、Nginx 模板与探针。正式证书、生产主机和桌面一键本轮待验，未合入 main、未推送、未上线。证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-edge-tls-20261119/verification.json`。 [续期与回退流程](LINUX_TEAM_DEPLOYMENT.md#续期-nginx-对外证书)
 
 ## 2026-11-19 M8K Windows 受管首个试点完整走查
 
-从只有产品负责人的新受管库，以正常 Windows 客户端经本机 HTTPS 执行真实界面操作。负责人录入并审核申请，首管理员经合成验证码激活和首次绑机，随后由负责人批准明确截止日期和 1 席。三次签名邀请分别为试点前拒绝、首份邀请成功及满席拒绝。客户端保留签名邀请的两种预期错误，清除号码和旧码，重新核权后显示原因和原邀请。实习生本人激活、登录和绑机后只有已授权的采集范围，尚无任务及管理入口。实际刷新账务确认预留 1 转已启用 1，可用均为 0。三人退出后无未撤销会话或租约，端口关闭，11 项库状态通过。313 项回归、独立复核和两处旧预览观察通过。本轮未重新构建评审 ZIP 或复验既有一键入口，未合入 main、未推送、未上线。真实组织和本人核验、短信供应商、授权试点及双方签收仍待验。证据位于 `D:/codex-temp/shenyi-m8-managed-onboarding-native-20261119/verification.json`。 [首个试点](MANUAL_TEAM_ONBOARDING.md#受管服务首个试点)
+从只有产品负责人的新受管库，以正常 Windows 客户端经本机 HTTPS 执行真实界面操作。负责人录入并审核申请，首管理员经合成验证码激活和首次绑机，随后由负责人批准明确截止日期和 1 席。三次签名邀请分别为试点前拒绝、首份邀请成功及满席拒绝。客户端保留签名邀请的两种预期错误，清除号码和旧码，重新核权后显示原因和原邀请。实习生本人激活、登录和绑机后只有已授权的采集范围，尚无任务及管理入口。实际刷新账务确认预留 1 转已启用 1，可用均为 0。三人退出后无未撤销会话或租约，端口关闭，11 项库状态通过。313 项回归、独立复核和两处旧预览观察通过。本轮未重新构建评审 ZIP 或复验既有一键入口，未合入 main、未推送、未上线。真实组织和本人核验、短信供应商、授权试点及双方签收仍待验。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-managed-onboarding-native-20261119/verification.json`。 [首个试点](MANUAL_TEAM_ONBOARDING.md#受管服务首个试点)
 
 ## 2026-11-19 M8J Windows 双人评审包官网下单
 
-Windows 双人评审包新增「官网年费与增购下单」一键入口。每次新建合成账库、设备资料目录和短期回环证书。客户端用专用窗口打开受信官网。Electron 进程只额外信任本轮 CA，官网窗口另外核对本轮服务证书。实际从已核验 ZIP 解压后启动，完成原生登录绑机、年费与期中增购，桌面刷新核对两个订单编号。已存订单均待处理，订阅、席位和收款记录未变。退出后监听已关闭。ZIP 的 2470 个载荷、24 条随包链接及 139 项相关测试通过，独立复核和两处旧预览观察通过。评审 ZIP 因 D 盘空间不足保存在 C 盘专用目录，验收记录在 D 盘。早期走查记录了长路径缓存、Electron 不接受非 CA 自签叶以及无障碍控件更新延迟，最终轮改用短目录、独立 CA 和有界控件等待。本轮新官网一键已验，旧 Windows 一键沿用此前记录。双方签收、真实试点、正式收款及发行仍待验。未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m8-website-owner-review-20261119/verification.json`。 [评审包说明](../README-Owner-Review.md)
+Windows 双人评审包新增「官网年费与增购下单」一键入口。每次新建合成账库、设备资料目录和短期回环证书。客户端用专用窗口打开受信官网。Electron 进程只额外信任本轮 CA，官网窗口另外核对本轮服务证书。实际从已核验 ZIP 解压后启动，完成原生登录绑机、年费与期中增购，桌面刷新核对两个订单编号。已存订单均待处理，订阅、席位和收款记录未变。退出后监听已关闭。ZIP 的 2470 个载荷、24 条随包链接及 139 项相关测试通过，独立复核和两处旧预览观察通过。评审 ZIP 因 D 盘空间不足保存在 C 盘专用目录，验收记录在 D 盘。早期走查记录了长路径缓存、Electron 不接受非 CA 自签叶以及无障碍控件更新延迟，最终轮改用短目录、独立 CA 和有界控件等待。本轮新官网一键已验，旧 Windows 一键沿用此前记录。双方签收、真实试点、正式收款及发行仍待验。未合入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-website-owner-review-20261119/verification.json`。 [评审包说明](../README-Owner-Review.md)
 
 ## 2026-11-19 M5R 官网有效期内席位增购
 
-已绑定的本团队技术管理员可打开官网增购页。服务端按当前团队订阅剩余精确时间计算合计，整单向上取整到分。改数量、确认时金额或期限变更、预览报价过期均须重新核对。原订单的编号、金额和到期日由既有账本保存。Windows Electron 捕获实际主进程外链，Chrome 在隔离 HTTPS 下核对三席合成报价。服务端过期报价返回 409，账本无新单。重新报价后故意丢弃成功响应，只读恢复查到唯一原单，桌面刷新显示同号。账库未收款、未发席位、未延长订阅。293 项相关测试、15 项页面检查及独立复核通过，两处旧预览观察一致。正式渠道、商户收款和对账退款、macOS 实机及真实试点仍待验收。本轮未复验既有 Windows 一键入口，未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m5-website-seat-20261119/verification.json`。 [官网演练说明](../website/README.md#官网下单演练)
+已绑定的本团队技术管理员可打开官网增购页。服务端按当前团队订阅剩余精确时间计算合计，整单向上取整到分。改数量、确认时金额或期限变更、预览报价过期均须重新核对。原订单的编号、金额和到期日由既有账本保存。Windows Electron 捕获实际主进程外链，Chrome 在隔离 HTTPS 下核对三席合成报价。服务端过期报价返回 409，账本无新单。重新报价后故意丢弃成功响应，只读恢复查到唯一原单，桌面刷新显示同号。账库未收款、未发席位、未延长订阅。293 项相关测试、15 项页面检查及独立复核通过，两处旧预览观察一致。正式渠道、商户收款和对账退款、macOS 实机及真实试点仍待验收。本轮未复验既有 Windows 一键入口，未合入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m5-website-seat-20261119/verification.json`。 [官网演练说明](../website/README.md#官网下单演练)
 
 ## 2026-11-19 M5Q 官网年订阅合成下单
 
-本团队技术管理员绑定设备后从客户端打开受信官网，在官网选择下一年度席位并创建合成年费订单。短时凭据绑定原会话和设备，仅用于一笔订单意图。同值重试返回原单，客户端注销后拒绝继续使用。Windows Electron 捕获实际主进程的外链调用，独立启动 Chrome 访问该回环 HTTPS 地址。三席订单与客户端刷新后的订单编号相同，金额为服务端合成报价，账库无收款或权益变更。271 项相关测试、12 项页面契约检查和独立复核通过。两处旧预览的进程与访问观察一致。单独增购、正式商户、macOS 实机和真实试点仍待验收。本轮未复验既有 Windows 一键入口，未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m5-website-checkout-20261119/verification.json`。 [官网演练说明](../website/README.md#官网下单演练)
+本团队技术管理员绑定设备后从客户端打开受信官网，在官网选择下一年度席位并创建合成年费订单。短时凭据绑定原会话和设备，仅用于一笔订单意图。同值重试返回原单，客户端注销后拒绝继续使用。Windows Electron 捕获实际主进程的外链调用，独立启动 Chrome 访问该回环 HTTPS 地址。三席订单与客户端刷新后的订单编号相同，金额为服务端合成报价，账库无收款或权益变更。271 项相关测试、12 项页面契约检查和独立复核通过。两处旧预览的进程与访问观察一致。单独增购、正式商户、macOS 实机和真实试点仍待验收。本轮未复验既有 Windows 一键入口，未合入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m5-website-checkout-20261119/verification.json`。 [官网演练说明](../website/README.md#官网下单演练)
 
 ## 2026-11-19 M8I 受管团队首次试点审批
 
-用户确认试点由产品负责人逐队批准结束时刻和席位上限，正式下单付款集中在官网，客户端打开订单页。现有团队审核行新增试点申请，已绑定设备且同时具备开通与试点审核权的负责人验证当前密码后，一次事务登记首期、席位及审批回执，保护已有期限或容量。同值重试返回原审批。新初始化的受管负责人获得独立授权，旧库沿用原部署流程。管理员账务显示试点期限和席位。211 项关联测试及独立复核通过，覆盖首份邀请、席位、到期、并发和故障回滚。当前源码在 Windows Electron 与真实回环 HTTPS 上通过负责人审批及团队管理员账务展示。原生走查从已激活的合成团队开始，完整激活到首份邀请采用独立的签名请求回归。两处旧预览观察一致。真实试点及官网支付尚待推进。未合入 main、未推送、未上线，本轮未复验既有一键入口。证据位于 `D:/codex-temp/shenyi-m8-pilot-approval-20261119/verification.json`。 [受管服务首个试点](MANUAL_TEAM_ONBOARDING.md#受管服务首个试点)
+用户确认试点由产品负责人逐队批准结束时刻和席位上限，正式下单付款集中在官网，客户端打开订单页。现有团队审核行新增试点申请，已绑定设备且同时具备开通与试点审核权的负责人验证当前密码后，一次事务登记首期、席位及审批回执，保护已有期限或容量。同值重试返回原审批。新初始化的受管负责人获得独立授权，旧库沿用原部署流程。管理员账务显示试点期限和席位。211 项关联测试及独立复核通过，覆盖首份邀请、席位、到期、并发和故障回滚。当前源码在 Windows Electron 与真实回环 HTTPS 上通过负责人审批及团队管理员账务展示。原生走查从已激活的合成团队开始，完整激活到首份邀请采用独立的签名请求回归。两处旧预览观察一致。真实试点及官网支付尚待推进。未合入 main、未推送、未上线，本轮未复验既有一键入口。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-pilot-approval-20261119/verification.json`。 [受管服务首个试点](MANUAL_TEAM_ONBOARDING.md#受管服务首个试点)
 
 ## 2026-11-19 M7BA Linux 首次部署文件权限检查
 
-新增独立的 Linux 运维命令。它读取主服务配置定位 SQLite、后端证书、私钥和可选的短信／微信配置，再按随包的 systemd 布局核对归属、权限位、路径链接及 POSIX ACL。SQLite 已有附属文件一并核对。独立复核纠正了组权限的判定，服务账号命中证书文件的属组时按组权限判读。隔离 Ubuntu 用实际文件模式、链接和 ACL 验证了拒绝与恢复，文件内容及旧预览观察一致。现有启动和运行时监控流程继续使用原入口。正式主机验收仍待进行。本轮未复验桌面一键，未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-linux-file-permissions-20261119/verification.json`。 [启动前权限检查](LINUX_TEAM_DEPLOYMENT.md#启动前检查文件权限)
+新增独立的 Linux 运维命令。它读取主服务配置定位 SQLite、后端证书、私钥和可选的短信／微信配置，再按随包的 systemd 布局核对归属、权限位、路径链接及 POSIX ACL。SQLite 已有附属文件一并核对。独立复核纠正了组权限的判定，服务账号命中证书文件的属组时按组权限判读。隔离 Ubuntu 用实际文件模式、链接和 ACL 验证了拒绝与恢复，文件内容及旧预览观察一致。现有启动和运行时监控流程继续使用原入口。正式主机验收仍待进行。本轮未复验桌面一键，未合入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-file-permissions-20261119/verification.json`。 [启动前权限检查](LINUX_TEAM_DEPLOYMENT.md#启动前检查文件权限)
 
 ## 2026-11-19 M7AZ Linux 切换前数据库预检
 
-受管 Linux 激活命令在停服前，以服务账号运行候选自身的 SQLite 只读启动检查。隔离 Ubuntu 中，要求新表的候选和故意挂起的候选均在停服前拒绝，原 systemd PID、调用标识、目录及 SQLite 字节保持一致，挂起进程已清理。兼容候选完成预检并切换，两路 HTTPS 检查通过，原数据库及上一版目录保留。早期演练发现只读入口加载完整服务时超过发布命令时限。只读入口改为直接加载库结构规则，最终轮复验缺表拒绝和正常切换，挂起证据沿用未改动的 Python 命令。隔离候选由已验发布目录构造，沿用此前的签名暂存证据。本轮 76 项关联测试和独立代码复核通过，两处旧预览观察一致。预检范围为候选启动所需的库结构。跨版本迁移、正式主机和真实试点仍待验。本轮未复验桌面一键，未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-db-preflight-20261119/verification.json`。 [发布与回滚说明](LINUX_TEAM_DEPLOYMENT.md#变更与回滚)
+受管 Linux 激活命令在停服前，以服务账号运行候选自身的 SQLite 只读启动检查。隔离 Ubuntu 中，要求新表的候选和故意挂起的候选均在停服前拒绝，原 systemd PID、调用标识、目录及 SQLite 字节保持一致，挂起进程已清理。兼容候选完成预检并切换，两路 HTTPS 检查通过，原数据库及上一版目录保留。早期演练发现只读入口加载完整服务时超过发布命令时限。只读入口改为直接加载库结构规则，最终轮复验缺表拒绝和正常切换，挂起证据沿用未改动的 Python 命令。隔离候选由已验发布目录构造，沿用此前的签名暂存证据。本轮 76 项关联测试和独立代码复核通过，两处旧预览观察一致。预检范围为候选启动所需的库结构。跨版本迁移、正式主机和真实试点仍待验。本轮未复验桌面一键，未合入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-db-preflight-20261119/verification.json`。 [发布与回滚说明](LINUX_TEAM_DEPLOYMENT.md#变更与回滚)
 
 ## 2026-11-19 M8H Windows 经理退回与实习生补交走查
 
-用当前 2,458 个载荷的 Windows 评审包实际打开采集一键。项目经理正常登录并退回一项合成任务。实习生打开原任务，看到退回状态和原件，通过真正的 Windows 选件窗口提交本轮预置补充件。回到已提交后入口锁定，项目经理重新打开该任务看到两条历史及其 SHA-256，助理只看到自己的任务且搜索不到该项。SQLite 四次只读检查记录版本 1→2→3→3，提交数 1→1→2→2，旧原件与新补充件的长度、字节及摘要皆通过。正常注销和关窗后，持钥会话已撤销，服务退出及离线库完整性通过。前两轮因界面观察脚本停止，第三、四轮退回已落库但脚本未进入补交。第五轮从新候选跑完，前四轮保留证据。实际操作从构建目录启动。独立核对该目录与评审 ZIP 的 2,458 个载荷字节一致，22 个包内说明链接可达。两处旧预览观察一致。119 项相关测试和独立复核通过。实际脱敏试点与双方签收仍待确认。本轮评审包采集一键已验，未复验旧业务一键，未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m8-native-return-revision-20261119/verification.json`。 [采集合成演练](TEAM_PILOT_REHEARSAL.md)
+用当前 2,458 个载荷的 Windows 评审包实际打开采集一键。项目经理正常登录并退回一项合成任务。实习生打开原任务，看到退回状态和原件，通过真正的 Windows 选件窗口提交本轮预置补充件。回到已提交后入口锁定，项目经理重新打开该任务看到两条历史及其 SHA-256，助理只看到自己的任务且搜索不到该项。SQLite 四次只读检查记录版本 1→2→3→3，提交数 1→1→2→2，旧原件与新补充件的长度、字节及摘要皆通过。正常注销和关窗后，持钥会话已撤销，服务退出及离线库完整性通过。前两轮因界面观察脚本停止，第三、四轮退回已落库但脚本未进入补交。第五轮从新候选跑完，前四轮保留证据。实际操作从构建目录启动。独立核对该目录与评审 ZIP 的 2,458 个载荷字节一致，22 个包内说明链接可达。两处旧预览观察一致。119 项相关测试和独立复核通过。实际脱敏试点与双方签收仍待确认。本轮评审包采集一键已验，未复验旧业务一键，未合入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-native-return-revision-20261119/verification.json`。 [采集合成演练](TEAM_PILOT_REHEARSAL.md)
 
 ## 2026-11-19 M7AY Windows 候选构建保全输出目录
 
-Windows 桌面候选和双人评审包改用系统目录移动，在目标已存在时拒绝覆盖。完成暂存后遇到占用错误可有限重试，每次复核源目录及父目录身份和目标空缺。基线复现原构建 EPERM，进程的 2,007 个读取流当时均已关闭，持锁者尚未确认。仅加重试的中间方案仍曾覆盖检查后刚出现的同名合成文件，该失败保留。最终 8 组 Windows 原生场景通过，覆盖锁释放、持续占用、目标文件及空目录或非空目录竞争、等待中新目标或源目录替换，以及两路同时发布。两个常规命令直接产出 2,005 和 2,458 个载荷。桌面载荷与中间版逐项一致，评审包只有两份重新生成的合成走查资料不同，配对和原件核验通过。评审包采集、账务和官网三条一键均启动，演练监听全部关闭。42 项相关测试和独立复核通过，两处旧预览前后观察一致。旧业务一键本轮未复验。正式签名 MSI 实机验收仍待进行，未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-win-build-publication-20261119/verification.json`。 [构建说明](WINDOWS_DESKTOP_CANDIDATE.md#构建)
+Windows 桌面候选和双人评审包改用系统目录移动，在目标已存在时拒绝覆盖。完成暂存后遇到占用错误可有限重试，每次复核源目录及父目录身份和目标空缺。基线复现原构建 EPERM，进程的 2,007 个读取流当时均已关闭，持锁者尚未确认。仅加重试的中间方案仍曾覆盖检查后刚出现的同名合成文件，该失败保留。最终 8 组 Windows 原生场景通过，覆盖锁释放、持续占用、目标文件及空目录或非空目录竞争、等待中新目标或源目录替换，以及两路同时发布。两个常规命令直接产出 2,005 和 2,458 个载荷。桌面载荷与中间版逐项一致，评审包只有两份重新生成的合成走查资料不同，配对和原件核验通过。评审包采集、账务和官网三条一键均启动，演练监听全部关闭。42 项相关测试和独立复核通过，两处旧预览前后观察一致。旧业务一键本轮未复验。正式签名 MSI 实机验收仍待进行，未合入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-win-build-publication-20261119/verification.json`。 [构建说明](WINDOWS_DESKTOP_CANDIDATE.md#构建)
 
 ## 2026-11-19 M7AX Windows 采集提交丢失回执后的核对
 
-Windows 便携候选经回环 HTTPS 连接隔离 Ubuntu 的 Nginx 和 systemd 受管服务。隔离网关只截断一笔采集提交，在收到真实 201 和原件摘要后关闭客户端连接。Windows 未收到响应头，业务暂停并提示联网后手动核对。持原设备密钥恢复后，手动刷新和打开原任务，显示唯一提交且等待负责人核对。两个独立 Windows 进程从同一历史下载的 2 KiB 副本均与原件逐字节相同。服务重启再停机后，提交号、原件、绑机记录、SQLite 完整性和外键均通过，采集 POST 全程只有一笔。构建目录首次重命名遇到 EPERM，核对 2,005 个文件后将原暂存目录移到目标并再次核验。首轮 Windows 核对通过，Linux 重启后的单次就绪探测返回连接拒绝。增加有界就绪检查后从头重跑。两处旧预览前后观察一致，113 项关联检查和独立复核通过。文件选择与另存路径由演练驱动提供。实际办公网络、正式签名发行及生产试点仍待验收。本轮未复验旧桌面一键，未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-submit-response-loss-20261119/verification.json`。 [部署验收](LINUX_TEAM_DEPLOYMENT.md#采集提交响应丢失后的核对)
+Windows 便携候选经回环 HTTPS 连接隔离 Ubuntu 的 Nginx 和 systemd 受管服务。隔离网关只截断一笔采集提交，在收到真实 201 和原件摘要后关闭客户端连接。Windows 未收到响应头，业务暂停并提示联网后手动核对。持原设备密钥恢复后，手动刷新和打开原任务，显示唯一提交且等待负责人核对。两个独立 Windows 进程从同一历史下载的 2 KiB 副本均与原件逐字节相同。服务重启再停机后，提交号、原件、绑机记录、SQLite 完整性和外键均通过，采集 POST 全程只有一笔。构建目录首次重命名遇到 EPERM，核对 2,005 个文件后将原暂存目录移到目标并再次核验。首轮 Windows 核对通过，Linux 重启后的单次就绪探测返回连接拒绝。增加有界就绪检查后从头重跑。两处旧预览前后观察一致，113 项关联检查和独立复核通过。文件选择与另存路径由演练驱动提供。实际办公网络、正式签名发行及生产试点仍待验收。本轮未复验旧桌面一键，未合入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-submit-response-loss-20261119/verification.json`。 [部署验收](LINUX_TEAM_DEPLOYMENT.md#采集提交响应丢失后的核对)
 
 ## 2026-11-19 M7AW Linux 小团队并发容量实测
 
-用临时签名归档在隔离虚拟机暂存并激活当前提交。四个合成账号分别登录和绑机，原采集期限维持 15 秒。隔离 Ubuntu 使用 4 vCPU 和 3,072 MiB 客机内存。四笔各 2 MiB 的持钥上传共同在途 0.82 秒，从发送请求到收到响应头为 0.93 至 2.79 秒。200 毫秒采样的 Node 峰值 RSS 为 240.2 MiB，正常重启和关闭后 SQLite 文件净增长 8.04 MiB。四件下载与原件字节一致，八次读取他人任务及原件均被拒绝。重启后停服检查四条提交及原件、四条独立设备绑定、SQLite 完整性和外键，既有业务范围摘要相同。前两轮分别遇到继承的演练目录和公钥位置校验。第三轮四份原件和持久记录均通过，汇总误用 Nginx 传输字节数判定文件大小。修正采样统计后从头重跑。两处旧预览前后观察一致，62 项相关检查和独立复核通过。结果用于试点资源估算，目标云主机和办公网络仍待实测。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-linux-capacity-20261119/verification.json`。 [实测说明](LINUX_TEAM_DEPLOYMENT.md#小团队并发实测基线)
+用临时签名归档在隔离虚拟机暂存并激活当前提交。四个合成账号分别登录和绑机，原采集期限维持 15 秒。隔离 Ubuntu 使用 4 vCPU 和 3,072 MiB 客机内存。四笔各 2 MiB 的持钥上传共同在途 0.82 秒，从发送请求到收到响应头为 0.93 至 2.79 秒。200 毫秒采样的 Node 峰值 RSS 为 240.2 MiB，正常重启和关闭后 SQLite 文件净增长 8.04 MiB。四件下载与原件字节一致，八次读取他人任务及原件均被拒绝。重启后停服检查四条提交及原件、四条独立设备绑定、SQLite 完整性和外键，既有业务范围摘要相同。前两轮分别遇到继承的演练目录和公钥位置校验。第三轮四份原件和持久记录均通过，汇总误用 Nginx 传输字节数判定文件大小。修正采样统计后从头重跑。两处旧预览前后观察一致，62 项相关检查和独立复核通过。结果用于试点资源估算，目标云主机和办公网络仍待实测。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-capacity-20261119/verification.json`。 [实测说明](LINUX_TEAM_DEPLOYMENT.md#小团队并发实测基线)
 
 ## 2026-11-19 M7AV macOS 双架构当前源码候选与签前交接
 
-从当前提交重建 Apple 芯片与 Intel 的 0.61.0 候选。逐项核对 82 个客户端源码文件、36 个生产依赖及锁文件，两架构的 1,933 个应用文件字节一致。旧两包的归档结构仍能通过，但各有 9 个源码文件与当前批准版本不符。新包分别通过 2,761 个归档成员、14 个 Mach-O 和 14 个包内符号链接的独立核验。Windows 上用一次性 Ed25519 密钥签署并验签两包，错架构、错公钥、两架构签名混用、同版本和变更签名按预期拒绝。测试私钥已清除。65 项相关检查通过，两处旧预览前后观察一致。当前构件保留候选包标识，Developer ID、Apple 公证、Gatekeeper、Finder 与 Keychain 以及正式升级仍待 Mac 实机验收。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-macos-current-candidates-20261119/verification.json`。 [macOS 交接说明](MACOS_DESKTOP_CANDIDATE.md)
+从当前提交重建 Apple 芯片与 Intel 的 0.61.0 候选。逐项核对 82 个客户端源码文件、36 个生产依赖及锁文件，两架构的 1,933 个应用文件字节一致。旧两包的归档结构仍能通过，但各有 9 个源码文件与当前批准版本不符。新包分别通过 2,761 个归档成员、14 个 Mach-O 和 14 个包内符号链接的独立核验。Windows 上用一次性 Ed25519 密钥签署并验签两包，错架构、错公钥、两架构签名混用、同版本和变更签名按预期拒绝。测试私钥已清除。65 项相关检查通过，两处旧预览前后观察一致。当前构件保留候选包标识，Developer ID、Apple 公证、Gatekeeper、Finder 与 Keychain 以及正式升级仍待 Mac 实机验收。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-macos-current-candidates-20261119/verification.json`。 [macOS 交接说明](MACOS_DESKTOP_CANDIDATE.md)
 
 ## 2026-11-19 M8G Windows 双人评审包恢复兑现走查
 
-从包含 M5P 的工作分支重建 Windows 评审 ZIP，账务一键新增一席已验款待兑现样例。实际解压后从账务入口登录绑定，在增购列表执行普通查单，席位仍为 8。点击「恢复兑现」后增加到 9，原到期日和确认时间保持一致。重读和退出后，SQLite 仍只有一条新增容量记录及同一验款事实，租约均已撤销。同一 ZIP 的采集及官网一键实际启动并关闭监听。2,458 个载荷和 22 个离线说明链接全部通过独立检查。本轮新生成的合成立项和底稿包通过配对、原件、既有填写及冻结校验。77 项相关检查通过，两处旧预览前后观察一致。双方签收、获准试点、正式发行及生产上线仍待验收。本轮未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m8-owner-payment-recovery-20261119/verification.json`。 [双人评审单](PILOT_OWNER_REVIEW.md)
+从包含 M5P 的工作分支重建 Windows 评审 ZIP，账务一键新增一席已验款待兑现样例。实际解压后从账务入口登录绑定，在增购列表执行普通查单，席位仍为 8。点击「恢复兑现」后增加到 9，原到期日和确认时间保持一致。重读和退出后，SQLite 仍只有一条新增容量记录及同一验款事实，租约均已撤销。同一 ZIP 的采集及官网一键实际启动并关闭监听。2,458 个载荷和 22 个离线说明链接全部通过独立检查。本轮新生成的合成立项和底稿包通过配对、原件、既有填写及冻结校验。77 项相关检查通过，两处旧预览前后观察一致。双方签收、获准试点、正式发行及生产上线仍待验收。本轮未合入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-owner-payment-recovery-20261119/verification.json`。 [双人评审单](PILOT_OWNER_REVIEW.md)
 
 ## 2026-11-19 M5P 从已核验收款恢复年费与席位兑现
 
-为本团队持钥技术管理员增加「恢复兑现」。单笔请求只按订单号读取已有验款事实，使用原确认时间和原订单条件。年单顺序、席位承诺、关单、退款和拒付限制沿用原事务规则，提交前重查权限。在合成 SQLite 中注入兑现失败并重开数据库，年费和增购均从原记录恢复，重复请求未多授期限或席位。真实 Windows Electron 界面在模拟网关停用时恢复一笔增购，网关查询为零，恢复与重复请求都通过持钥校验。189 项相关检查和独立服务端复核通过，两处旧预览前后观察一致。本轮未复验旧桌面一键，未进入 main、未推送、未上线。正式商户和真实收退款仍待验收。证据位于 `D:/codex-temp/shenyi-m5-payment-recovery-20261119/verification.json`。 [桌面账务说明](DESKTOP_BILLING_CONTRACT.md)
+为本团队持钥技术管理员增加「恢复兑现」。单笔请求只按订单号读取已有验款事实，使用原确认时间和原订单条件。年单顺序、席位承诺、关单、退款和拒付限制沿用原事务规则，提交前重查权限。在合成 SQLite 中注入兑现失败并重开数据库，年费和增购均从原记录恢复，重复请求未多授期限或席位。真实 Windows Electron 界面在模拟网关停用时恢复一笔增购，网关查询为零，恢复与重复请求都通过持钥校验。189 项相关检查和独立服务端复核通过，两处旧预览前后观察一致。本轮未复验旧桌面一键，未进入 main、未推送、未上线。正式商户和真实收退款仍待验收。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m5-payment-recovery-20261119/verification.json`。 [桌面账务说明](DESKTOP_BILLING_CONTRACT.md)
 
 ## 2026-11-19 M7AU Windows 客户端断链与持钥恢复
 
-用包含 M7AT 客户端的 Windows x64 包连接隔离 Ubuntu 的 Nginx 与 systemd。唯一合成提交确认后切断专用回环中继，实际只读探针报连接错误，客户端心跳切换到暂停，工作区隐藏，查阅因设备状态被拒绝。恢复链路后，客户端自动完成持钥验证，设备、绑定版本、本地密钥和提交回执均保持一致。两个 Windows 进程下载的 2 KiB 副本与原件字节一致。本次断链约 3.9 秒后显示暂停，恢复网络约 6.0 秒后恢复业务。 Linux 停服核对仅一条绑定、一次提交、两条引导会话与三条业务租约均已撤销，SQLite 完整性和外键通过。两次注销、进程退出与客机关机正常，六层父盘和两处旧预览观察一致。构建输出目录首次重命名返回 EPERM。核对 2,005 个文件后完成原暂存目录移动，并于验收后复核清单。75 项相关检查和独立复核通过。文件选择与保存路径由驱动提供，实际办公网络及上轮连接拒绝原因仍待核实。本轮未复验旧桌面一键，未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-windows-link-recovery-20261119/verification.json`。 [部署验收说明](LINUX_TEAM_DEPLOYMENT.md#windows-客户端连接-linux-的验收)
+用包含 M7AT 客户端的 Windows x64 包连接隔离 Ubuntu 的 Nginx 与 systemd。唯一合成提交确认后切断专用回环中继，实际只读探针报连接错误，客户端心跳切换到暂停，工作区隐藏，查阅因设备状态被拒绝。恢复链路后，客户端自动完成持钥验证，设备、绑定版本、本地密钥和提交回执均保持一致。两个 Windows 进程下载的 2 KiB 副本与原件字节一致。本次断链约 3.9 秒后显示暂停，恢复网络约 6.0 秒后恢复业务。 Linux 停服核对仅一条绑定、一次提交、两条引导会话与三条业务租约均已撤销，SQLite 完整性和外键通过。两次注销、进程退出与客机关机正常，六层父盘和两处旧预览观察一致。构建输出目录首次重命名返回 EPERM。核对 2,005 个文件后完成原暂存目录移动，并于验收后复核清单。75 项相关检查和独立复核通过。文件选择与保存路径由驱动提供，实际办公网络及上轮连接拒绝原因仍待核实。本轮未复验旧桌面一键，未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-windows-link-recovery-20261119/verification.json`。 [部署验收说明](LINUX_TEAM_DEPLOYMENT.md#windows-客户端连接-linux-的验收)
 
 ## 2026-11-19 M7AT Windows 团队客户端合并在途 HTTPS 探针
 
-同一客户端内，普通持钥业务请求只共享同一账号代次和设备 epoch 上尚未完成的公开身份探针。每笔请求仍独立签名和派发，取消单个等待不会中断其他调用，旧探针结束不影响新会话。无效身份核验实测阻止两笔等待写入及其派发回调。真实 HTTPS 合成夹具并发四笔持钥读取只发出一个公开探针，四笔业务各发一次，下一笔顺序读取重新核验。136 项关联检查通过，独立复核通过，两处旧预览前后观察一致。该结果覆盖真实 TLS 并发，M7AS 上轮连接拒绝原因及实际办公网络仍待确认。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-team-https-probe-20261119/verification.json`。 [受信服务合同](TRUSTED_TEAM_HTTPS_CONTRACT.md#可信连接与服务身份)
+同一客户端内，普通持钥业务请求只共享同一账号代次和设备 epoch 上尚未完成的公开身份探针。每笔请求仍独立签名和派发，取消单个等待不会中断其他调用，旧探针结束不影响新会话。无效身份核验实测阻止两笔等待写入及其派发回调。真实 HTTPS 合成夹具并发四笔持钥读取只发出一个公开探针，四笔业务各发一次，下一笔顺序读取重新核验。136 项关联检查通过，独立复核通过，两处旧预览前后观察一致。该结果覆盖真实 TLS 并发，M7AS 上轮连接拒绝原因及实际办公网络仍待确认。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-team-https-probe-20261119/verification.json`。 [受信服务合同](TRUSTED_TEAM_HTTPS_CONTRACT.md#可信连接与服务身份)
 
 ## 2026-11-19 M7AS Windows 客户端与 Linux 受管服务验收
 
-从当前代码构建 Windows x64 包，逐一核对 2,005 个文件。真实 Windows Electron 客户端经本机回环转发到隔离 Ubuntu 的 Nginx 与 systemd 受管服务，校验测试 CA 与实例标识。合成实习生首次绑机，只见获指派任务，提交并下载 2 KiB 原件。退出进程后再次启动，复用同一设备与公钥读取同一原件，两次正常注销并退出。Linux 停服后只读验证原件摘要、同一设备、关联撤销状态及 SQLite 完整性。文件选取和另存路径由驱动代入。首次登录轮次中的能力探针记录 8 次响应头前的连接拒绝，四次额外持钥续接成功，全部租约已撤销。前几轮验收脚本的 Electron 观测兼容与会话计数问题已修正；保留失败证据及只读诊断。113 项关联检查及独立复核通过，两处旧预览前后观察一致。本轮未复验旧桌面一键，未进入 main、未推送、未上线。实际办公网络、正式签名、Mac 实机及获准试点仍待验收。证据位于 `D:/codex-temp/shenyi-m7-windows-linux-acceptance-20261119/verification.json`。 [部署验收说明](LINUX_TEAM_DEPLOYMENT.md#linux-虚拟机演练)
+从当前代码构建 Windows x64 包，逐一核对 2,005 个文件。真实 Windows Electron 客户端经本机回环转发到隔离 Ubuntu 的 Nginx 与 systemd 受管服务，校验测试 CA 与实例标识。合成实习生首次绑机，只见获指派任务，提交并下载 2 KiB 原件。退出进程后再次启动，复用同一设备与公钥读取同一原件，两次正常注销并退出。Linux 停服后只读验证原件摘要、同一设备、关联撤销状态及 SQLite 完整性。文件选取和另存路径由驱动代入。首次登录轮次中的能力探针记录 8 次响应头前的连接拒绝，四次额外持钥续接成功，全部租约已撤销。前几轮验收脚本的 Electron 观测兼容与会话计数问题已修正；保留失败证据及只读诊断。113 项关联检查及独立复核通过，两处旧预览前后观察一致。本轮未复验旧桌面一键，未进入 main、未推送、未上线。实际办公网络、正式签名、Mac 实机及获准试点仍待验收。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-windows-linux-acceptance-20261119/verification.json`。 [部署验收说明](LINUX_TEAM_DEPLOYMENT.md#linux-虚拟机演练)
 
 ## 2026-11-19 M7AR Linux 发布激活与启动失败回滚
 
-新增同库结构的 Linux 版本切换命令，按审批归档摘要核对只读候选，记录目录身份并用原子目录交换切换。用上一版的探针检查新进程双路 HTTPS，候选失败时确认停服后恢复旧版。隔离 Ubuntu 实测错误审批摘要在停服前拒绝；systemd 候选专属启动前检查故障触发回滚，恢复原目录和同一实例，故障候选保留。另一份签名包经暂存后成功启用，原目录作为上一版保留。三次双路 HTTPS 检查通过，SQLite 字节、文件身份和配置保持，三个 systemd 调用标识不同。81 项关联检查及独立复核通过，虚拟机正常关机，两处旧预览前后观察一致。正式密钥、生产主机及涉及库结构变更的切换仍待对应验收。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-linux-release-activation-20261119/verification.json`。 [Linux 部署说明](LINUX_TEAM_DEPLOYMENT.md#变更与回滚)
+新增同库结构的 Linux 版本切换命令，按审批归档摘要核对只读候选，记录目录身份并用原子目录交换切换。用上一版的探针检查新进程双路 HTTPS，候选失败时确认停服后恢复旧版。隔离 Ubuntu 实测错误审批摘要在停服前拒绝；systemd 候选专属启动前检查故障触发回滚，恢复原目录和同一实例，故障候选保留。另一份签名包经暂存后成功启用，原目录作为上一版保留。三次双路 HTTPS 检查通过，SQLite 字节、文件身份和配置保持，三个 systemd 调用标识不同。81 项关联检查及独立复核通过，虚拟机正常关机，两处旧预览前后观察一致。正式密钥、生产主机及涉及库结构变更的切换仍待对应验收。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-release-activation-20261119/verification.json`。 [Linux 部署说明](LINUX_TEAM_DEPLOYMENT.md#变更与回滚)
 
 ## 2026-11-19 M7AQ Linux 签名发布暂存工具
 
-新增发布人员可复用的 Linux 暂存命令。验签和解包读取同一私有归档副本，使用私有 npm 缓存按锁文件离线安装，成功后发布同文件系统上的新只读目录和回执。隔离 Ubuntu 演练中，改动包、缺少缓存及已有同版本目录均拒绝，前两种失败不产生候选目录，补齐缓存后可重试。逐一核对 581 个源文件、36 个生产依赖及 72 个原缓存文件。原 systemd 服务、Nginx、数据库和 `current` 保持，五次双路 HTTPS 检查通过。81 项关联检查和独立代码审查通过，虚拟机正常关闭，两处旧预览前后观察一致。正式密钥和生产主机验收仍待完成。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-linux-release-staging-20261119/verification.json`。 [Linux 部署说明](LINUX_TEAM_DEPLOYMENT.md#发布归档签发与部署验签)
+新增发布人员可复用的 Linux 暂存命令。验签和解包读取同一私有归档副本，使用私有 npm 缓存按锁文件离线安装，成功后发布同文件系统上的新只读目录和回执。隔离 Ubuntu 演练中，改动包、缺少缓存及已有同版本目录均拒绝，前两种失败不产生候选目录，补齐缓存后可重试。逐一核对 581 个源文件、36 个生产依赖及 72 个原缓存文件。原 systemd 服务、Nginx、数据库和 `current` 保持，五次双路 HTTPS 检查通过。81 项关联检查和独立代码审查通过，虚拟机正常关闭，两处旧预览前后观察一致。正式密钥和生产主机验收仍待完成。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-release-staging-20261119/verification.json`。 [Linux 部署说明](LINUX_TEAM_DEPLOYMENT.md#发布归档签发与部署验签)
 
 ## 2026-11-19 M7AP Linux 签名包部署演练
 
-隔离 Ubuntu 已验证签名包暂存、离线依赖安装及切换。改动包在创建暂存目录前被拒绝，原服务继续运行。有效包的 581 个文件逐一核对，36 个生产依赖与锁文件一致。新 systemd 进程通过后端与 Nginx 边缘 HTTPS 检查。原设备绑定、SQLite 文件、2 KiB 原件及 21 张业务表摘要保持。81 项关联检查和独立复核通过，虚拟机正常关闭，两处旧预览前后观察一致。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-linux-signed-deploy-20261119/verification.json`。 [Linux 部署说明](LINUX_TEAM_DEPLOYMENT.md#发布归档签发与部署验签)
+隔离 Ubuntu 已验证签名包暂存、离线依赖安装及切换。改动包在创建暂存目录前被拒绝，原服务继续运行。有效包的 581 个文件逐一核对，36 个生产依赖与锁文件一致。新 systemd 进程通过后端与 Nginx 边缘 HTTPS 检查。原设备绑定、SQLite 文件、2 KiB 原件及 21 张业务表摘要保持。81 项关联检查和独立复核通过，虚拟机正常关闭，两处旧预览前后观察一致。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-signed-deploy-20261119/verification.json`。 [Linux 部署说明](LINUX_TEAM_DEPLOYMENT.md#发布归档签发与部署验签)
 
 ## 2026-11-19 M7AO Linux 发布归档独立验签
 
-为 Linux 服务的 Git TAR 增加 Ed25519 签发和验签入口，绑定发行类型、完整 Git 提交、归档字节数和 SHA-256。归档与配套签名分开，公钥由独立路径提供。签发前后核对源状态，目标已存在时保留原文件。在 Windows 用临时密钥签发实际含 581 个文件的服务归档，在隔离 Ubuntu 中用不含 Git 的 PATH 验签。归档字节变更、错误公钥、错误提交和截断签名均拒绝。25 项相关测试及独立复核通过。虚拟机正常关闭，两处旧预览前后观察一致。正式密钥、授权发行和正式主机验收仍待完成。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-linux-release-signature-20261119/verification.json`。
+为 Linux 服务的 Git TAR 增加 Ed25519 签发和验签入口，绑定发行类型、完整 Git 提交、归档字节数和 SHA-256。归档与配套签名分开，公钥由独立路径提供。签发前后核对源状态，目标已存在时保留原文件。在 Windows 用临时密钥签发实际含 581 个文件的服务归档，在隔离 Ubuntu 中用不含 Git 的 PATH 验签。归档字节变更、错误公钥、错误提交和截断签名均拒绝。25 项相关测试及独立复核通过。虚拟机正常关闭，两处旧预览前后观察一致。正式密钥、授权发行和正式主机验收仍待完成。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-release-signature-20261119/verification.json`。
 
 ## 2026-11-19 M7AN Linux 跨虚拟机加密恢复
 
-用两台独立 Ubuntu 虚拟机验证受管合成库加密备份。源机停服后封存，目标机只读接入分开的密文和密钥介质，恢复到空目录。独立检查核对全部 98 张表的分类型摘要、SQLite 架构、两条设备绑定和 2 KiB 原件。恢复库只增加离线演练标记。当前库一致比较返回 0，停用账号的独立副本返回 2；错误密钥、以演练库作权威库、原文件及改名后启动均拒绝。37 项关联测试和独立复核通过，虚拟机均正常关机，两处旧预览前后观察一致。实际异地备份托管、恢复授权和正式切换仍待验。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-linux-sealed-recovery-20261119/verification.json`。
+用两台独立 Ubuntu 虚拟机验证受管合成库加密备份。源机停服后封存，目标机只读接入分开的密文和密钥介质，恢复到空目录。独立检查核对全部 98 张表的分类型摘要、SQLite 架构、两条设备绑定和 2 KiB 原件。恢复库只增加离线演练标记。当前库一致比较返回 0，停用账号的独立副本返回 2；错误密钥、以演练库作权威库、原文件及改名后启动均拒绝。37 项关联测试和独立复核通过，虚拟机均正常关机，两处旧预览前后观察一致。实际异地备份托管、恢复授权和正式切换仍待验。本轮未复验桌面一键，未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-sealed-recovery-20261119/verification.json`。
 
 ## 2026-11-19 M7AM Linux 应用版本回滚演练
 
-在隔离 Ubuntu 上用真实发布目录和原 systemd／Nginx 配置完成 `705b159 → 0b7e1c8 → 705b159`。先在旧版建立合成采集记录，再用带设备签名的实际 HTTPS 请求检查新版和回滚版。订阅提醒依次为无、7 天、无。两个账号沿用各自原设备绑定，2 KiB 原件和 21 张业务表摘要一致，SQLite 同文件标识及架构保持。三个阶段均通过后端及边缘 HTTPS 自检，停服阶段边缘返回 502，虚拟机正常关机且父盘哈希一致。108 项关联检查通过，独立复核通过，两处旧预览前后观察一致。此次覆盖同 SQLite 架构的应用版本切换。正式主机、涉及架构变更的回滚和正式上线仍待对应验收。本轮未复验桌面一键。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-linux-release-switch-20261119/verification.json`。
+在隔离 Ubuntu 上用真实发布目录和原 systemd／Nginx 配置完成 `705b159 → 0b7e1c8 → 705b159`。先在旧版建立合成采集记录，再用带设备签名的实际 HTTPS 请求检查新版和回滚版。订阅提醒依次为无、7 天、无。两个账号沿用各自原设备绑定，2 KiB 原件和 21 张业务表摘要一致，SQLite 同文件标识及架构保持。三个阶段均通过后端及边缘 HTTPS 自检，停服阶段边缘返回 502，虚拟机正常关机且父盘哈希一致。108 项关联检查通过，独立复核通过，两处旧预览前后观察一致。此次覆盖同 SQLite 架构的应用版本切换。正式主机、涉及架构变更的回滚和正式上线仍待对应验收。本轮未复验桌面一键。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-release-switch-20261119/verification.json`。
 
 ## 2026-11-19 M7AL Windows MSI 发行结构核验
 
-Windows MSI 构建在提取管理映像前增加只读结构核验，核对版本、x64 机器级安装、默认目录、文件组件、内嵌 CAB 和两套标准执行序列。全量合成样包核对 2,007 个载荷文件，新构建随后完成管理映像验签。原有全量及新构建两份包均通过，错误版本、错误摘要、机器范围篡改、额外执行动作、目录改归属五项均拒绝；实际 ProductState 保持未注册。25 项关联检查通过，独立复核通过，两处旧预览前后观察一致。正式 MSI 签名、实机安装注册和升级仍待验，本轮未重跑桌面一键入口，未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-msi-source-policy-20261119/verification.json`。
+Windows MSI 构建在提取管理映像前增加只读结构核验，核对版本、x64 机器级安装、默认目录、文件组件、内嵌 CAB 和两套标准执行序列。全量合成样包核对 2,007 个载荷文件，新构建随后完成管理映像验签。原有全量及新构建两份包均通过，错误版本、错误摘要、机器范围篡改、额外执行动作、目录改归属五项均拒绝；实际 ProductState 保持未注册。25 项关联检查通过，独立复核通过，两处旧预览前后观察一致。正式 MSI 签名、实机安装注册和升级仍待验，本轮未重跑桌面一键入口，未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-msi-source-policy-20261119/verification.json`。
 
 ## 2026-11-19 M7AK Windows 受管启动快捷方式
 
-新增部署人员生成 `.lnk` 的入口。系统 PowerShell 在启用 Node 前清理继承配置，按既有 Ed25519 与 Authenticode 门禁验证活动版本。保存时读回快捷方式的真实目标与参数，保留已有文件。微信扫码使用受信服务的版本 2 配置。以第三方内嵌签名程序和合成 Ed25519 包作隔离夹具，真实 Windows Shell 三次打开同一 `.lnk`；独立命令回读启动版本分别为 0.61.0、0.61.1、0.61.0，最高版保持 0.61.1。错指纹和改清单均拒绝。27 项关联检查全通过，两处旧预览前后观察一致。正式产品一键、MSI 注册及正式签名版升级仍待验。未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-windows-managed-shortcut-20261119/verification.json`。
+新增部署人员生成 `.lnk` 的入口。系统 PowerShell 在启用 Node 前清理继承配置，按既有 Ed25519 与 Authenticode 门禁验证活动版本。保存时读回快捷方式的真实目标与参数，保留已有文件。微信扫码使用受信服务的版本 2 配置。以第三方内嵌签名程序和合成 Ed25519 包作隔离夹具，真实 Windows Shell 三次打开同一 `.lnk`；独立命令回读启动版本分别为 0.61.0、0.61.1、0.61.0，最高版保持 0.61.1。错指纹和改清单均拒绝。27 项关联检查全通过，两处旧预览前后观察一致。正式产品一键、MSI 注册及正式签名版升级仍待验。未合入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-windows-managed-shortcut-20261119/verification.json`。
 
 ## 2026-11-19 M7AJ macOS 正式应用只读核验
 
-新增 Mac 原生只读命令，核对解包应用的正式 Bundle ID、两个版本字段、主程序 Mach-O、应用内链接、Developer ID 签名、Hardened Runtime、安全时间戳、Gatekeeper 和装订票据。Windows 文件夹具和模拟 Mac 命令的 38 项关联检查全通过，独立复核补齐了包内链接检查。实读两个归档的主程序架构及各 14 条链接记录。两份归档均为占位身份候选，正式签名、公证、Finder 启动、Keychain 和升级须在实机留证。两处旧预览前后观察一致，桌面一键入口本轮未复验。未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-macos-native-release-check-20261119/verification.json`。
+新增 Mac 原生只读命令，核对解包应用的正式 Bundle ID、两个版本字段、主程序 Mach-O、应用内链接、Developer ID 签名、Hardened Runtime、安全时间戳、Gatekeeper 和装订票据。Windows 文件夹具和模拟 Mac 命令的 38 项关联检查全通过，独立复核补齐了包内链接检查。实读两个归档的主程序架构及各 14 条链接记录。两份归档均为占位身份候选，正式签名、公证、Finder 启动、Keychain 和升级须在实机留证。两处旧预览前后观察一致，桌面一键入口本轮未复验。未合入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-macos-native-release-check-20261119/verification.json`。
 
 ## 2026-11-19 M8F 随包底稿双人走查
 
-Windows 便携包新增 `review-inputs` 中同一来源的合成立项 JSON 与完整底稿 ZIP，附底稿走查指南和双方回执项。构建只生成样本文件，运行版本、权限规则和启动脚本保持。从最终 ZIP 改名解压目录实际使用 Windows 选件，完成工作区确认、显式三权、迁入和版本 1 的另存，界面实证既有填写和冻结只读。独立核对 ZIP 内容、输入哈希、数据库与导出，593 项持久化断言通过。22 个包内说明链接可达，97 项关联检查通过。采集及账务一键均启动并退出，两处旧预览前后观察一致。双方签收、获准试点、正式发行和生产验收仍待完成。未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m8-workpaper-review-inputs-20261119/verification.json`。
+Windows 便携包新增 `review-inputs` 中同一来源的合成立项 JSON 与完整底稿 ZIP，附底稿走查指南和双方回执项。构建只生成样本文件，运行版本、权限规则和启动脚本保持。从最终 ZIP 改名解压目录实际使用 Windows 选件，完成工作区确认、显式三权、迁入和版本 1 的另存，界面实证既有填写和冻结只读。独立核对 ZIP 内容、输入哈希、数据库与导出，593 项持久化断言通过。22 个包内说明链接可达，97 项关联检查通过。采集及账务一键均启动并退出，两处旧预览前后观察一致。双方签收、获准试点、正式发行和生产验收仍待完成。未合入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-workpaper-review-inputs-20261119/verification.json`。
 
 ## 2026-11-19 M4 Windows 底稿原生打开与另存
 
-从新版便携 ZIP 的改名解压目录启动正常 Windows Electron。按所拥有的进程和对话框句柄定位文件名与确认按钮，程序化操作三次真实 Windows 对话框并回读路径。实际打开正式立项来源 JSON、打开完整合成底稿 ZIP、迁入后读取既有填写，再另存已保存版本。此前包内原表请求返回 422，查明便携包漏带 Office 运行资源。构建补入 299 个精确资产，2,156 个共同清单文件逐字节一致。原件、版本记录和 1 份既有冻结在导出中逐字节保持，只有一次发布、一次导出，独立复核 593 项通过。相关检查 146 项通过，另验三种合成 Office 格式。采集和账务一键入口均可达，两处旧预览前后观察一致。Mac、原固定 SHA 底稿包、真实脱敏试点及共享库仍待对应验收。未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m4-native-workpaper-os-20261119/verification.json`。
+从新版便携 ZIP 的改名解压目录启动正常 Windows Electron。按所拥有的进程和对话框句柄定位文件名与确认按钮，程序化操作三次真实 Windows 对话框并回读路径。实际打开正式立项来源 JSON、打开完整合成底稿 ZIP、迁入后读取既有填写，再另存已保存版本。此前包内原表请求返回 422，查明便携包漏带 Office 运行资源。构建补入 299 个精确资产，2,156 个共同清单文件逐字节一致。原件、版本记录和 1 份既有冻结在导出中逐字节保持，只有一次发布、一次导出，独立复核 593 项通过。相关检查 146 项通过，另验三种合成 Office 格式。采集和账务一键入口均可达，两处旧预览前后观察一致。Mac、原固定 SHA 底稿包、真实脱敏试点及共享库仍待对应验收。未合入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m4-native-workpaper-os-20261119/verification.json`。
 
 ## 2026-11-19 M8E Windows 评审包离线指南
 
-修正 M8D 发现的 4 处断链，将评审包入口说明移至仓库顶层，旧说明保留跳转。重新构建 Windows x64 ZIP。新旧包 2,156 个清单文件中，只有四份评审 Markdown 内容变化，应用、运行时、启动脚本及其余清单文件逐字节一致。独立检查 ZIP 内五份说明的 19 处链接全部可达，仓库说明也全部可达。17 项关联检查通过，零失败、零跳过。从新 ZIP 实启采集、账务及官网一键入口，三处本轮监听均已停止，两处旧预览前后观察一致。本轮未合入 main、未推送、未上线。双方签收、获准试点、正式发行和生产验证仍待完成。证据位于 `D:/codex-temp/shenyi-m8e-offline-review-20261119/verification.json`。
+修正 M8D 发现的 4 处断链，将评审包入口说明移至仓库顶层，旧说明保留跳转。重新构建 Windows x64 ZIP。新旧包 2,156 个清单文件中，只有四份评审 Markdown 内容变化，应用、运行时、启动脚本及其余清单文件逐字节一致。独立检查 ZIP 内五份说明的 19 处链接全部可达，仓库说明也全部可达。17 项关联检查通过，零失败、零跳过。从新 ZIP 实启采集、账务及官网一键入口，三处本轮监听均已停止，两处旧预览前后观察一致。本轮未合入 main、未推送、未上线。双方签收、获准试点、正式发行和生产验证仍待完成。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8e-offline-review-20261119/verification.json`。
 
 ## 2026-11-19 M8D Windows 便携包实操走查
 
-从提交 `8e537de` 的原交付 ZIP 解压，实操三条一键入口。Windows 本机四角色分别登录并完成首次绑机。实习生和经理从各自入口查阅同一份合成原件，助理看不到实习生的任务与附件。经理验证密码后单独授予、再撤回合伙人的资料核对权，两次重新登录可见范围随授权变化，合成库保留两条变更，原件 SHA-256 和提交状态保持。独立账务走查实测增购单查阅、模拟核对到账和单独报价建单，已购席位从 8 增至 10，新订单待支付时不发权益，实习生无账务及退款入口。Chrome 实查官网三条问答和版本区。包内五份说明有 4 处指向缺失的仓库文档，留待修正。143 项关联检查通过，采集及账务入口正常退出，官网停止监听，两处旧预览前后观察一致。双方签收、第二台 Windows、获准试点、正式签名发行、Mac 实机、真实支付及上线仍待验。本轮未合入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m8d-portable-rehearsal-20261119/verification.json`。
+从提交 `8e537de` 的原交付 ZIP 解压，实操三条一键入口。Windows 本机四角色分别登录并完成首次绑机。实习生和经理从各自入口查阅同一份合成原件，助理看不到实习生的任务与附件。经理验证密码后单独授予、再撤回合伙人的资料核对权，两次重新登录可见范围随授权变化，合成库保留两条变更，原件 SHA-256 和提交状态保持。独立账务走查实测增购单查阅、模拟核对到账和单独报价建单，已购席位从 8 增至 10，新订单待支付时不发权益，实习生无账务及退款入口。Chrome 实查官网三条问答和版本区。包内五份说明有 4 处指向缺失的仓库文档，留待修正。143 项关联检查通过，采集及账务入口正常退出，官网停止监听，两处旧预览前后观察一致。双方签收、第二台 Windows、获准试点、正式签名发行、Mac 实机、真实支付及上线仍待验。本轮未合入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8d-portable-rehearsal-20261119/verification.json`。
 
 ## 2026-11-19 M8C Windows 双人评审便携包
 
-为双人评审产出 Windows x64 ZIP，包含固定 Node.js 24.22.1、Electron 45.3.2、三条合成走查入口和评审单。便携模式由包内固定标记启用，演练状态写入解压目录的 `review-runs`。保留按路径和资料身份的原有检查。首次并发初始化发现目录标记的合法硬链接退休可能跨越稳定读取窗口。修复后仍使用同一严格检查标准，独立复验 640 次零失败。52 项关联测试通过。ZIP 共 206,826,767 字节，2,156 个清单文件逐一核对大小、CRC 与 SHA-256，另核对 132 个服务端文件及 75 个官方运行时文件原字节。在含空格和单引号的改名解压目录实际启动采集与账务窗口及官网回环入口，确认使用随包运行时并停止本轮监听。两处旧预览前后观察一致。第二台 Windows、双人签收、授权试点、Mac 实机和正式发布仍待验。本轮未合入 main、未推送、未发布。 证据位于 `D:/codex-temp/shenyi-m8-portable-review-20261119/verification.json`。 [便携评审说明](PORTABLE_OWNER_REVIEW.md)
+为双人评审产出 Windows x64 ZIP，包含固定 Node.js 24.22.1、Electron 45.3.2、三条合成走查入口和评审单。便携模式由包内固定标记启用，演练状态写入解压目录的 `review-runs`。保留按路径和资料身份的原有检查。首次并发初始化发现目录标记的合法硬链接退休可能跨越稳定读取窗口。修复后仍使用同一严格检查标准，独立复验 640 次零失败。52 项关联测试通过。ZIP 共 206,826,767 字节，2,156 个清单文件逐一核对大小、CRC 与 SHA-256，另核对 132 个服务端文件及 75 个官方运行时文件原字节。在含空格和单引号的改名解压目录实际启动采集与账务窗口及官网回环入口，确认使用随包运行时并停止本轮监听。两处旧预览前后观察一致。第二台 Windows、双人签收、授权试点、Mac 实机和正式发布仍待验。本轮未合入 main、未推送、未发布。 证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-portable-review-20261119/verification.json`。 [便携评审说明](PORTABLE_OWNER_REVIEW.md)
 
 ## 2026-11-19 M7AI Windows 安装中断恢复
 
-便携安装工具新增 `recover`。Windows 独占打开既有锁；安装和恢复仍在运行时拒绝。持有独占句柄期间核对公钥、发布者策略和已提交版本，清理未发布的状态临时文件并按同一句柄清除锁。状态、版本目录与最高已接受版本保持。独立 Windows 演练使用双签名夹具，在真实状态替换前后各中止一次安装进程，分别保留 0.61.0 与 0.61.1。18 条独立命令中 12 条成功、6 条按预期拒绝。另实查首次安装可重试、没有可验签版本时保留现场、当前版损坏可另行回滚，原最高版本保持 0.61.1。25 项关联测试及 13 项原生锁助手检查通过，两处旧预览前后观察一致。本轮验证便携安装目录和进程中断。正式 MSI 系统安装、实际断电、Mac 实机与生产发布仍待验，桌面一键入口本轮未重跑。未合入 main、未推送、未上线。 证据位于 `D:/codex-temp/shenyi-m7-install-recovery-20261119/verification.json`。 [恢复说明](WINDOWS_DESKTOP_CANDIDATE.md#恢复中断的-windows-安装)
+便携安装工具新增 `recover`。Windows 独占打开既有锁；安装和恢复仍在运行时拒绝。持有独占句柄期间核对公钥、发布者策略和已提交版本，清理未发布的状态临时文件并按同一句柄清除锁。状态、版本目录与最高已接受版本保持。独立 Windows 演练使用双签名夹具，在真实状态替换前后各中止一次安装进程，分别保留 0.61.0 与 0.61.1。18 条独立命令中 12 条成功、6 条按预期拒绝。另实查首次安装可重试、没有可验签版本时保留现场、当前版损坏可另行回滚，原最高版本保持 0.61.1。25 项关联测试及 13 项原生锁助手检查通过，两处旧预览前后观察一致。本轮验证便携安装目录和进程中断。正式 MSI 系统安装、实际断电、Mac 实机与生产发布仍待验，桌面一键入口本轮未重跑。未合入 main、未推送、未上线。 证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-install-recovery-20261119/verification.json`。 [恢复说明](WINDOWS_DESKTOP_CANDIDATE.md#恢复中断的-windows-安装)
 
 ## 2026-11-19 M7AH 外签后的 Windows MSI 核验
 
-发行工具新增 `verify-msi`。输入经确认的最终 MSI 摘要及发布者证书指纹，使用 Windows 核对 Authenticode 签名、时间戳及只读 MSI 数据库，输出核验回执。真实签名正例使用 Node.js 官方 MSI。独立实测 2 个通过、4 个按预期拒绝，涵盖路径含空格和单引号、错误摘要、错误发布者、未签名审易 MSI，以及改扩展名的已签名 EXE。产品注册状态保持，原便携双签名核验仍通过。24 项关联测试通过。最新 Windows x64 待签名候选已重建，首次发布目录重命名返回 EPERM，核对暂存文件后完成原目录移动，2005 个包文件及 8 个客户端源文件核对通过。本轮未重跑桌面一键。审易正式签名 MSI、目标 Windows 安装注册／升级／卸载、Mac 实机及生产上线仍待验。未合入 main、未推送、未上线。 证据位于 `D:/codex-temp/shenyi-m7-final-msi-verification-20261119/verification.json`。 [Windows 发行说明](WINDOWS_DESKTOP_CANDIDATE.md#外签后核验最终-msi)
+发行工具新增 `verify-msi`。输入经确认的最终 MSI 摘要及发布者证书指纹，使用 Windows 核对 Authenticode 签名、时间戳及只读 MSI 数据库，输出核验回执。真实签名正例使用 Node.js 官方 MSI。独立实测 2 个通过、4 个按预期拒绝，涵盖路径含空格和单引号、错误摘要、错误发布者、未签名审易 MSI，以及改扩展名的已签名 EXE。产品注册状态保持，原便携双签名核验仍通过。24 项关联测试通过。最新 Windows x64 待签名候选已重建，首次发布目录重命名返回 EPERM，核对暂存文件后完成原目录移动，2005 个包文件及 8 个客户端源文件核对通过。本轮未重跑桌面一键。审易正式签名 MSI、目标 Windows 安装注册／升级／卸载、Mac 实机及生产上线仍待验。未合入 main、未推送、未上线。 证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-final-msi-verification-20261119/verification.json`。 [Windows 发行说明](WINDOWS_DESKTOP_CANDIDATE.md#外签后核验最终-msi)
 
 ## 2026-11-19 M5O 桌面按订单号查阅
 
-合成账务增加单笔订单查阅。技术管理员在当前账务团队和订单类型下，输入完整订单号查看已保存金额、状态和权益记录。结果与原列表分页独立，切换团队或类型、关闭或退出时清除。IPC 复用现有按权 GET 和订单字段投影。Windows Electron 用新建合成服务实查年费和增购，兼测错类型、无对应订单和普通员工拒绝。正常关闭后服务停止，14 张账务表摘要保持一致。独立复核在实际回环 HTTP 覆盖 20 个情景，并单独核对受管模式关闭订单入口。10 个关联文件共 109 项通过，零失败、零跳过。账务独立一键入口已复验，两处旧预览前后观察一致。正式支付、退款联调及 Mac 实机仍待验。未合入 main、未推送、未上线。 证据位于 `D:/codex-temp/shenyi-m5-order-lookup-20261119/verification.json`。 [桌面账务说明](DESKTOP_BILLING_CONTRACT.md)
+合成账务增加单笔订单查阅。技术管理员在当前账务团队和订单类型下，输入完整订单号查看已保存金额、状态和权益记录。结果与原列表分页独立，切换团队或类型、关闭或退出时清除。IPC 复用现有按权 GET 和订单字段投影。Windows Electron 用新建合成服务实查年费和增购，兼测错类型、无对应订单和普通员工拒绝。正常关闭后服务停止，14 张账务表摘要保持一致。独立复核在实际回环 HTTP 覆盖 20 个情景，并单独核对受管模式关闭订单入口。10 个关联文件共 109 项通过，零失败、零跳过。账务独立一键入口已复验，两处旧预览前后观察一致。正式支付、退款联调及 Mac 实机仍待验。未合入 main、未推送、未上线。 证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m5-order-lookup-20261119/verification.json`。 [桌面账务说明](DESKTOP_BILLING_CONTRACT.md)
 
 ## 2026-11-19 M7AG 受管客户端微信配置
 
-受信团队配置新增版本 2，在原 HTTPS 源地址和实例 UUID 之外接收公开微信 AppID。客户端从同一源生成固定回调，继续核对服务端微信能力及授权 URL。版本 1 兼容原环境变量，版本 2 以文件为准。配置验证沿用 macOS 系统目录保护和 TLS 检查。205 项关联测试和额外 7 项独立合成检查通过。Windows Electron 对隔离受管 HTTPS 服务实测四种配置情况，记录两次正确的合成浏览器调用，实际微信平台未连接。重建 Apple 芯片与 Intel 候选，两包的三个相关运行文件逐字节匹配，使用临时 Ed25519 密钥完成交接验签。两条 Windows 独立团队一键入口均已复验，旧预览前后观察一致。Mac 实机、Apple 正式签名公证、官方微信应用授权与联调、生产上线仍待验。未加入 main、未推送、未上线。 [受信配置说明](TRUSTED_TEAM_HTTPS_CONTRACT.md#微信扫码的版本-2-配置) 证据位于 `D:/codex-temp/shenyi-m7-managed-wechat-profile-20261119/verification.json`。
+受信团队配置新增版本 2，在原 HTTPS 源地址和实例 UUID 之外接收公开微信 AppID。客户端从同一源生成固定回调，继续核对服务端微信能力及授权 URL。版本 1 兼容原环境变量，版本 2 以文件为准。配置验证沿用 macOS 系统目录保护和 TLS 检查。205 项关联测试和额外 7 项独立合成检查通过。Windows Electron 对隔离受管 HTTPS 服务实测四种配置情况，记录两次正确的合成浏览器调用，实际微信平台未连接。重建 Apple 芯片与 Intel 候选，两包的三个相关运行文件逐字节匹配，使用临时 Ed25519 密钥完成交接验签。两条 Windows 独立团队一键入口均已复验，旧预览前后观察一致。Mac 实机、Apple 正式签名公证、官方微信应用授权与联调、生产上线仍待验。未加入 main、未推送、未上线。 [受信配置说明](TRUSTED_TEAM_HTTPS_CONTRACT.md#微信扫码的版本-2-配置) 证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-managed-wechat-profile-20261119/verification.json`。
 
 ## 2026-11-19 M8B Windows 双人走查入口复验
 
-从 `9fb02bb` 在 Windows 依次实启采集与账务一键入口。两个 Electron 窗口对应独立演练编号、合成资料目录和回环服务，正常关闭后入口退出码为 0，监听停止。官网一键入口正常提供首页、样式和标志，并请求默认浏览器打开。验收结束后停止该次本地监听。6 个关联测试文件共 57 项通过，零失败和跳过。本轮复验入口和隔离，沿用已记录的业务演练。两处旧预览的窗口、进程和只读服务响应一致。双方签收、经授权的脱敏试点、Win/Mac 正式发行验收、生产收款及国内上线仍待对应条件。证据位于 `D:/codex-temp/shenyi-m8-owner-review-refresh-20261119/verification.json`。 [双人评审单](PILOT_OWNER_REVIEW.md)
+从 `9fb02bb` 在 Windows 依次实启采集与账务一键入口。两个 Electron 窗口对应独立演练编号、合成资料目录和回环服务，正常关闭后入口退出码为 0，监听停止。官网一键入口正常提供首页、样式和标志，并请求默认浏览器打开。验收结束后停止该次本地监听。6 个关联测试文件共 57 项通过，零失败和跳过。本轮复验入口和隔离，沿用已记录的业务演练。两处旧预览的窗口、进程和只读服务响应一致。双方签收、经授权的脱敏试点、Win/Mac 正式发行验收、生产收款及国内上线仍待对应条件。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-owner-review-refresh-20261119/verification.json`。 [双人评审单](PILOT_OWNER_REVIEW.md)
 
 
 ## 2026-11-19 M7AF Linux 定时健康检查
 
-新增独立 systemd 定时器和单次检查单元，复用现有双路 HTTPS 探针。探针以临时系统用户运行，读取隔离配置副本和公开后端 CA。数据库路径保留卷元数据检查，原文件权限仍拒绝读取正文。默认每五分钟检查，结果写入 journal。隔离 Ubuntu 用 15 秒周期、合成告警阈值及仅验收使用的退出观察，核对健康、低空间告警、后端停服和恢复。实测记录 6 次不同的定时调用，业务服务由独立操作控制。检查过程中未自动启动业务服务。56 个相关测试全通过。虚拟机正常关机，父盘和旧预览保持。产品负责人已确认由上海注册企业运营并由同一企业收取年费，备案和商户准备材料已同步。生产主机、外部告警接收与桌面一键仍待相应环境验收。证据位于 `D:/codex-temp/shenyi-m7-linux-monitor-20261119`。 [定时健康检查](LINUX_TEAM_DEPLOYMENT.md#定时健康检查) · [上海企业上线准备](LAUNCH_INITIAL_APPLICATION_PACKET.md)
+新增独立 systemd 定时器和单次检查单元，复用现有双路 HTTPS 探针。探针以临时系统用户运行，读取隔离配置副本和公开后端 CA。数据库路径保留卷元数据检查，原文件权限仍拒绝读取正文。默认每五分钟检查，结果写入 journal。隔离 Ubuntu 用 15 秒周期、合成告警阈值及仅验收使用的退出观察，核对健康、低空间告警、后端停服和恢复。实测记录 6 次不同的定时调用，业务服务由独立操作控制。检查过程中未自动启动业务服务。56 个相关测试全通过。虚拟机正常关机，父盘和旧预览保持。产品负责人已确认由上海注册企业运营并由同一企业收取年费，备案和商户准备材料已同步。生产主机、外部告警接收与桌面一键仍待相应环境验收。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-monitor-20261119`。 [定时健康检查](LINUX_TEAM_DEPLOYMENT.md#定时健康检查) · [上海企业上线准备](LAUNCH_INITIAL_APPLICATION_PACKET.md)
 
 ## 2026-11-19 M7AE Linux 自动恢复与冷启动
 
-在独立 Ubuntu 副本沿用原 systemd 和 Nginx 配置。合成账号正常登录、绑机并提交一件 2 KiB 原件。在首次开机的已就绪实例中，核实服务主进程身份后仅向其发送一次 SIGKILL。systemd 日志记录异常退出和计划自动重启，重启计数增加一次，主进程和调用 ID 更换。从同一磁盘正常关机后冷启动，得到不同的开机 ID，受管服务和 Nginx 由开机流程启动。故障前后及冷启动后的双路 HTTPS 自检均通过。两次恢复后使用原已绑定密钥重新登录并读取提交和原件，服务实例、设备绑定、21 张业务表和原件摘要保持。共 189/189 项相关测试通过，零失败和跳过。首测发现旧微信测试使用异域回调，已把合成夹具改为本服务域名，原断言和异域拒绝用例均通过。两次虚拟机正常关机，父盘和旧预览观察一致。目标云主机、持续监控和桌面一键仍待相应环境复核。证据位于 `D:/codex-temp/shenyi-m7-linux-recovery-20261119`。 [Linux 虚拟机演练](LINUX_TEAM_DEPLOYMENT.md#linux-虚拟机演练)
+在独立 Ubuntu 副本沿用原 systemd 和 Nginx 配置。合成账号正常登录、绑机并提交一件 2 KiB 原件。在首次开机的已就绪实例中，核实服务主进程身份后仅向其发送一次 SIGKILL。systemd 日志记录异常退出和计划自动重启，重启计数增加一次，主进程和调用 ID 更换。从同一磁盘正常关机后冷启动，得到不同的开机 ID，受管服务和 Nginx 由开机流程启动。故障前后及冷启动后的双路 HTTPS 自检均通过。两次恢复后使用原已绑定密钥重新登录并读取提交和原件，服务实例、设备绑定、21 张业务表和原件摘要保持。共 189/189 项相关测试通过，零失败和跳过。首测发现旧微信测试使用异域回调，已把合成夹具改为本服务域名，原断言和异域拒绝用例均通过。两次虚拟机正常关机，父盘和旧预览观察一致。目标云主机、持续监控和桌面一键仍待相应环境复核。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-recovery-20261119`。 [Linux 虚拟机演练](LINUX_TEAM_DEPLOYMENT.md#linux-虚拟机演练)
 
 ## 2026-11-19 M7AD Linux 大型底稿流式导出
 
-在独立 Ubuntu 副本沿用原 systemd 和 Nginx 配置。用原包校验器审核合成完整包，并在该副本的 SQLite 内准备已保存底稿版本。项目负责人经 HTTPS 持钥验证密码，获得明确查阅和导出权。首次导出在临时文件写入 8,398,028 字节后取消，代理侧也记录到不完整响应。取消未产生最终文件或遗留临时文件。同账号随后正常导出，保存 50,364,569 字节的 ZIP，含 7 件原件。完整请求在该虚拟机约 73.4 秒收到响应头。正常客户端和独立 ZIP 读取器分别核对最终文件大小、SHA-256、成员 CRC 及原件摘要。重启后只读核对底稿业务表保持一致。七个关联文件 99/99 项通过，零失败和跳过。虚拟机正常关机，父盘摘要和两处旧预览观察一致。本轮用固定合成保存位置走正常客户端导出逻辑，桌面一键和系统保存对话框未复验。目标云主机容量、实际办公网络和正式发行仍待验收。证据位于 `D:/codex-temp/shenyi-m7-linux-workpaper-20261119`。 [Linux 虚拟机演练](LINUX_TEAM_DEPLOYMENT.md#linux-虚拟机演练)
+在独立 Ubuntu 副本沿用原 systemd 和 Nginx 配置。用原包校验器审核合成完整包，并在该副本的 SQLite 内准备已保存底稿版本。项目负责人经 HTTPS 持钥验证密码，获得明确查阅和导出权。首次导出在临时文件写入 8,398,028 字节后取消，代理侧也记录到不完整响应。取消未产生最终文件或遗留临时文件。同账号随后正常导出，保存 50,364,569 字节的 ZIP，含 7 件原件。完整请求在该虚拟机约 73.4 秒收到响应头。正常客户端和独立 ZIP 读取器分别核对最终文件大小、SHA-256、成员 CRC 及原件摘要。重启后只读核对底稿业务表保持一致。七个关联文件 99/99 项通过，零失败和跳过。虚拟机正常关机，父盘摘要和两处旧预览观察一致。本轮用固定合成保存位置走正常客户端导出逻辑，桌面一键和系统保存对话框未复验。目标云主机容量、实际办公网络和正式发行仍待验收。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-workpaper-20261119`。 [Linux 虚拟机演练](LINUX_TEAM_DEPLOYMENT.md#linux-虚拟机演练)
 
 ## 2026-11-19 M7AC Linux 账表快照大件传输
 
-原桌面客户端使用 15 秒全程期限时，Linux 合成大件演练在收到导入响应前结束连接。Nginx 记为 499，关机后只读检查确认该操作未入库。候选客户端为已验证的账表导入及快照下载使用 90 秒，身份探针、授权、分页和回执等仍用 15 秒。在独立 Ubuntu 副本使用原 systemd 与 Nginx 配置复验，合成账表包含 20,000 行序时账，达到该表行数上限，原文 30,973,981 字节，请求 JSON 32,976,190 字节。两次显式导入均返回 201，其中大件在 Nginx 记录 30.834 秒。分页、原始下载字节、回执和重启后 SQLite 摘要核对一致。六个关联文件 74/74 项通过，零失败和跳过。使用合成持钥身份，虚拟机正常关机，父盘摘要和两处旧预览观察一致。大型底稿流式导出、目标云主机容量和实际办公网络仍待验收。本轮沿用源码传输入口，桌面一键及旧安装包尚待在新版本重验。当前提交保留在本地工作分支。证据位于 `D:/codex-temp/shenyi-m7-linux-ledger-20261119`。 [Linux 虚拟机演练](LINUX_TEAM_DEPLOYMENT.md#linux-虚拟机演练)
+原桌面客户端使用 15 秒全程期限时，Linux 合成大件演练在收到导入响应前结束连接。Nginx 记为 499，关机后只读检查确认该操作未入库。候选客户端为已验证的账表导入及快照下载使用 90 秒，身份探针、授权、分页和回执等仍用 15 秒。在独立 Ubuntu 副本使用原 systemd 与 Nginx 配置复验，合成账表包含 20,000 行序时账，达到该表行数上限，原文 30,973,981 字节，请求 JSON 32,976,190 字节。两次显式导入均返回 201，其中大件在 Nginx 记录 30.834 秒。分页、原始下载字节、回执和重启后 SQLite 摘要核对一致。六个关联文件 74/74 项通过，零失败和跳过。使用合成持钥身份，虚拟机正常关机，父盘摘要和两处旧预览观察一致。大型底稿流式导出、目标云主机容量和实际办公网络仍待验收。本轮沿用源码传输入口，桌面一键及旧安装包尚待在新版本重验。当前提交保留在本地工作分支。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-ledger-20261119`。 [Linux 虚拟机演练](LINUX_TEAM_DEPLOYMENT.md#linux-虚拟机演练)
 
 ## 2026-11-19 M7AB Linux 持钥原件传输演练
 
-沿用上轮 Ubuntu 演练部署的独立磁盘副本及原 systemd/Nginx 配置。当前客户端传输代码保持正常签名请求、正文格式和 15 秒预算。合成账号先完成一件恰好 12 MiB 的采集上传，再由两个账号各提交 2 MiB。两次并发上传实际重叠，三次上传均返回 201，Nginx 记录三次相应量级的下载。原件下载字节、提交回执和重启后 SQLite BLOB 的 SHA-256 一致；三个任务各一条提交、授权和审计活动。四个相关测试文件 90/90 通过，零跳过。Linux Node 传输验收用合成 Ed25519 密钥和 win32 协议身份。虚拟机正常关机，父盘哈希一致，旧预览保持。64 MiB 账表入口、大型底稿流式导出、生产容量和实际办公网络仍待验收。本轮未复验一键入口。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-linux-transfer-20261119`。 [Linux 虚拟机演练](LINUX_TEAM_DEPLOYMENT.md#linux-虚拟机演练)
+沿用上轮 Ubuntu 演练部署的独立磁盘副本及原 systemd/Nginx 配置。当前客户端传输代码保持正常签名请求、正文格式和 15 秒预算。合成账号先完成一件恰好 12 MiB 的采集上传，再由两个账号各提交 2 MiB。两次并发上传实际重叠，三次上传均返回 201，Nginx 记录三次相应量级的下载。原件下载字节、提交回执和重启后 SQLite BLOB 的 SHA-256 一致；三个任务各一条提交、授权和审计活动。四个相关测试文件 90/90 通过，零跳过。Linux Node 传输验收用合成 Ed25519 密钥和 win32 协议身份。虚拟机正常关机，父盘哈希一致，旧预览保持。64 MiB 账表入口、大型底稿流式导出、生产容量和实际办公网络仍待验收。本轮未复验一键入口。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-transfer-20261119`。 [Linux 虚拟机演练](LINUX_TEAM_DEPLOYMENT.md#linux-虚拟机演练)
 
 ## 2026-11-19 M7AA Linux 虚拟机部署演练
 
-用经校验的便携 QEMU 和 Ubuntu 24.04.5 LTS 基盘，启动当前提交的部署归档。Linux Node 24.22.1 安装锁定依赖，原 systemd 单元和 Nginx 配置通过实测。16 项部署检查通过，包括专用账号、文件权限、TLS 实例、两处公开健康路由 404、部署自检和受管服务启动、手动重启、下线及复启。独审指出首轮 UID 日志记录真实 UID，随后从已关闭演练盘的副本 直接验证真实、有效、保存及文件系统 UID，确认零有效能力及 NoNewPrivileges。两次虚拟机均正常退出，母盘哈希一致。目标云主机、公网证书与 DNS、实际办公访问、Linux 大文件并发、自动重启和定时监控仍待验收。本轮未复验本机一键入口。两处旧预览观察一致，未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-native-linux-20261119`。 [Linux 虚拟机演练](LINUX_TEAM_DEPLOYMENT.md#linux-虚拟机演练)
+用经校验的便携 QEMU 和 Ubuntu 24.04.5 LTS 基盘，启动当前提交的部署归档。Linux Node 24.22.1 安装锁定依赖，原 systemd 单元和 Nginx 配置通过实测。16 项部署检查通过，包括专用账号、文件权限、TLS 实例、两处公开健康路由 404、部署自检和受管服务启动、手动重启、下线及复启。独审指出首轮 UID 日志记录真实 UID，随后从已关闭演练盘的副本 直接验证真实、有效、保存及文件系统 UID，确认零有效能力及 NoNewPrivileges。两次虚拟机均正常退出，母盘哈希一致。目标云主机、公网证书与 DNS、实际办公访问、Linux 大文件并发、自动重启和定时监控仍待验收。本轮未复验本机一键入口。两处旧预览观察一致，未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-native-linux-20261119`。 [Linux 虚拟机演练](LINUX_TEAM_DEPLOYMENT.md#linux-虚拟机演练)
 
 ## 2026-11-19 国内上线首轮申请准备
 
-整理运营及收款主体、注册省份、云预算和首发范围等待决信息。形成可供属地咨询的业务说明，列出域名实名、阿里云备案资源资格、适用备案或许可路径、商户和实际验收的准备条件及回执。核对五个仓库链接、七个官方引用和 Goal 合同，并同步已确认的计席和续费事项。当前主体与省份仍待确认。Windows 只读检查确认 WSL2 已有组件，当前无注册发行版，Linux 原生部署未验。本轮只更新上线材料，旧预览前后观察一致，未启动一键入口。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-launch-application-20261119`。 [国内上线申请准备](LAUNCH_INITIAL_APPLICATION_PACKET.md)
+整理运营及收款主体、注册省份、云预算和首发范围等待决信息。形成可供属地咨询的业务说明，列出域名实名、阿里云备案资源资格、适用备案或许可路径、商户和实际验收的准备条件及回执。核对五个仓库链接、七个官方引用和 Goal 合同，并同步已确认的计席和续费事项。当前主体与省份仍待确认。Windows 只读检查确认 WSL2 已有组件，当前无注册发行版，Linux 原生部署未验。本轮只更新上线材料，旧预览前后观察一致，未启动一键入口。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-launch-application-20261119`。 [国内上线申请准备](LAUNCH_INITIAL_APPLICATION_PACKET.md)
 
 ## 2026-11-19 M5N 账务页订阅到期提醒
 
-技术管理员打开或刷新账务概览时，服务端用同次订阅读取时间计算 30 天内的剩余期限，按 24 小时向上取整。到期后沿既有订阅状态解释新增和修改暂停，历史按原授权继续查阅或导出。提醒走现有受管及模拟账务只读接口。桌面用固定请求头选择新字段，旧客户端响应保持兼容，受管页没有新增付款操作。独立 Windows Electron 经真实主进程连接隔离受管 HTTPS，7 项通过。将渲染界面日期改到 2039 年仍按服务端显示 8 天。分别登录三队技术管理员实查临近、长期和到期，登出清空提醒，已绑机实习生直查账务被拒绝。合成账务业务表哈希不变，客户端和服务正常退出。9 个关联测试文件 145/145 项通过，零跳过，1445 个候选文件前后哈希一致。两处旧预览前后只读观察一致，本轮未复验一键入口。未进入 main、未推送、未上线。站外提醒、正式在线续费、生产交易与 Mac 实机仍待完成。证据位于 `D:/codex-temp/shenyi-m5-expiry-reminder-20261119`。 [桌面订阅与席位](DESKTOP_BILLING_CONTRACT.md)
+技术管理员打开或刷新账务概览时，服务端用同次订阅读取时间计算 30 天内的剩余期限，按 24 小时向上取整。到期后沿既有订阅状态解释新增和修改暂停，历史按原授权继续查阅或导出。提醒走现有受管及模拟账务只读接口。桌面用固定请求头选择新字段，旧客户端响应保持兼容，受管页没有新增付款操作。独立 Windows Electron 经真实主进程连接隔离受管 HTTPS，7 项通过。将渲染界面日期改到 2039 年仍按服务端显示 8 天。分别登录三队技术管理员实查临近、长期和到期，登出清空提醒，已绑机实习生直查账务被拒绝。合成账务业务表哈希不变，客户端和服务正常退出。9 个关联测试文件 145/145 项通过，零跳过，1445 个候选文件前后哈希一致。两处旧预览前后只读观察一致，本轮未复验一键入口。未进入 main、未推送、未上线。站外提醒、正式在线续费、生产交易与 Mac 实机仍待完成。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m5-expiry-reminder-20261119`。 [桌面订阅与席位](DESKTOP_BILLING_CONTRACT.md)
 
 ## 2026-11-19 M8A 双人评审准备
 
-发布前提供同一份评审单，串起 Windows 合成采集、账务和官网，分别记录产品负责人及米老师的结果与留证。项目采集任务提示跟随当项实际分工和核对授权，仅读取时不指向操作按钮，搜索换词和无结果时清除旧提示。独立实机经 Windows 采集演练一键入口启动，经理和合伙人各自登录及首次绑定。经理能看两项提示并核对合成原件。合伙人只见分工提示和按钮，核对与原件不可见。关闭新候选后服务退出，合成原件和项目授权保持一致。6 个相关文件 219/219 项通过，零跳过，1444 个候选文件测试前后哈希一致。新评审单核对了所有文档链接和三条入口参数。两处旧预览前后只读观察一致，原业务一键未复验。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m8-owner-review-20261119`。双方评审签收、获准脱敏业务试点、实际 Mac 与正式双平台签名、生产交易和国内上线仍待对应验收。 [双人评审单](PILOT_OWNER_REVIEW.md)
+发布前提供同一份评审单，串起 Windows 合成采集、账务和官网，分别记录产品负责人及米老师的结果与留证。项目采集任务提示跟随当项实际分工和核对授权，仅读取时不指向操作按钮，搜索换词和无结果时清除旧提示。独立实机经 Windows 采集演练一键入口启动，经理和合伙人各自登录及首次绑定。经理能看两项提示并核对合成原件。合伙人只见分工提示和按钮，核对与原件不可见。关闭新候选后服务退出，合成原件和项目授权保持一致。6 个相关文件 219/219 项通过，零跳过，1444 个候选文件测试前后哈希一致。新评审单核对了所有文档链接和三条入口参数。两处旧预览前后只读观察一致，原业务一键未复验。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m8-owner-review-20261119`。双方评审签收、获准脱敏业务试点、实际 Mac 与正式双平台签名、生产交易和国内上线仍待对应验收。 [双人评审单](PILOT_OWNER_REVIEW.md)
 
 ## 2026-11-18 M7Z 国内部署候选检查
 
-新增一次性只读上线检查。命令分别验证后端 HTTPS 就绪、后端与边缘实例及设备绑定声明、边缘健康路由的 404、两侧叶证书的有效期与独立公钥、数据库所在卷可用空间。用 JSON 和退出码区分正常、容量或证书告警、必需检查失败。独立以真实受管服务和 Windows Nginx 在隔离回环实测 10 项，1 项正常、2 项告警、7 项按预期拒绝。独立读取拦截未发现探针读取私钥或数据库正文，合成数据库前后 SHA-256 一致。4 个关联文件 56/56 项通过，零跳过，1443 个候选文件前后哈希一致。实际 Linux、生产域名、办公网络可达性和定时监控仍待验收。两处旧预览前后只读观察一致。本轮未启动一键入口。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-service-release-probe-20261118`。 [上线检查](LINUX_TEAM_DEPLOYMENT.md#一次性上线检查)
+新增一次性只读上线检查。命令分别验证后端 HTTPS 就绪、后端与边缘实例及设备绑定声明、边缘健康路由的 404、两侧叶证书的有效期与独立公钥、数据库所在卷可用空间。用 JSON 和退出码区分正常、容量或证书告警、必需检查失败。独立以真实受管服务和 Windows Nginx 在隔离回环实测 10 项，1 项正常、2 项告警、7 项按预期拒绝。独立读取拦截未发现探针读取私钥或数据库正文，合成数据库前后 SHA-256 一致。4 个关联文件 56/56 项通过，零跳过，1443 个候选文件前后哈希一致。实际 Linux、生产域名、办公网络可达性和定时监控仍待验收。两处旧预览前后只读观察一致。本轮未启动一键入口。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-service-release-probe-20261118`。 [上线检查](LINUX_TEAM_DEPLOYMENT.md#一次性上线检查)
 
 ## 2026-11-18 M7Y macOS Finder 托管服务配置
 
-打包的 Mac 客户端从系统级受保护目录读取 HTTPS 团队服务配置。程序校验归属、写权限和文件身份，已部署时优先使用系统配置。拒绝无效或竞争变化的配置，受管模式拒绝信任链环境覆盖。配置错误在创建业务客户端前提示并退出。独立完成 55 项场景，包括真实临时文件读取时内容或路径被替换、环境变量覆盖、系统目录可写、部署与试用读取竞争以及主进程在联网前拒绝。Apple 芯片和 Intel 候选均已重建并通过临时 Ed25519 交接验签，两包的启动与配置代码逐字节匹配当前源码，包内未包含团队服务配置。9 个关联文件 99/99 项通过，零跳过，1441 个候选文件前后哈希一致。运行时在 Windows 上用 Darwin 文件属性模型验收。实际 Mac 的权限与 ACL、Finder、Gatekeeper、Keychain、Developer ID 与公证尚待实机验证。两处旧预览保留，本轮未启动一键入口。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-macos-finder-config-20261118`。 [macOS 托管配置](MACOS_DESKTOP_CANDIDATE.md#从-finder-启动已配置客户端)
+打包的 Mac 客户端从系统级受保护目录读取 HTTPS 团队服务配置。程序校验归属、写权限和文件身份，已部署时优先使用系统配置。拒绝无效或竞争变化的配置，受管模式拒绝信任链环境覆盖。配置错误在创建业务客户端前提示并退出。独立完成 55 项场景，包括真实临时文件读取时内容或路径被替换、环境变量覆盖、系统目录可写、部署与试用读取竞争以及主进程在联网前拒绝。Apple 芯片和 Intel 候选均已重建并通过临时 Ed25519 交接验签，两包的启动与配置代码逐字节匹配当前源码，包内未包含团队服务配置。9 个关联文件 99/99 项通过，零跳过，1441 个候选文件前后哈希一致。运行时在 Windows 上用 Darwin 文件属性模型验收。实际 Mac 的权限与 ACL、Finder、Gatekeeper、Keychain、Developer ID 与公证尚待实机验证。两处旧预览保留，本轮未启动一键入口。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-macos-finder-config-20261118`。 [macOS 托管配置](MACOS_DESKTOP_CANDIDATE.md#从-finder-启动已配置客户端)
 
 ## 2026-11-18 M7X macOS 双架构候选签名交接
 
-新增 macOS 候选离线 Ed25519 签发与只读复验。接收方使用独立公钥、目标架构和可信已安装版本，核对归档摘要、目录、符号链接、归档成员 CRC、包标识和 Mach-O。签名绑定归档及清单，不使用 Windows 签名域，核验不解包或运行候选。从当前候选源码重建 arm64 和 x64 归档，均完成签发和接收方验签，每包 2,761 个条目、14 条链接。两份实际归档均验证主程序、Helper、Electron Framework 及动态库架构。独立运行 18 条命令，5 次成功、13 次按预期拒绝，原包保持不变；错误架构即使用有效 Ed25519 重签且 SHA-256 匹配仍拒绝，并发签名仅一个成功。另有 18 项 ZIP 结构场景通过。5 个关联文件 29/29 项通过，零跳过，1440 个候选文件前后哈希一致。在 Windows 本地用合成 Ed25519 私钥进行交接演练，Apple Developer ID、公证、Gatekeeper、Keychain 和 Mac 实机升级尚待验收。两处旧预览保留，本轮未启动一键入口。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-macos-handoff-20261118`。 [macOS 候选交接](MACOS_DESKTOP_CANDIDATE.md#离线签名与交接)
+新增 macOS 候选离线 Ed25519 签发与只读复验。接收方使用独立公钥、目标架构和可信已安装版本，核对归档摘要、目录、符号链接、归档成员 CRC、包标识和 Mach-O。签名绑定归档及清单，不使用 Windows 签名域，核验不解包或运行候选。从当前候选源码重建 arm64 和 x64 归档，均完成签发和接收方验签，每包 2,761 个条目、14 条链接。两份实际归档均验证主程序、Helper、Electron Framework 及动态库架构。独立运行 18 条命令，5 次成功、13 次按预期拒绝，原包保持不变；错误架构即使用有效 Ed25519 重签且 SHA-256 匹配仍拒绝，并发签名仅一个成功。另有 18 项 ZIP 结构场景通过。5 个关联文件 29/29 项通过，零跳过，1440 个候选文件前后哈希一致。在 Windows 本地用合成 Ed25519 私钥进行交接演练，Apple Developer ID、公证、Gatekeeper、Keychain 和 Mac 实机升级尚待验收。两处旧预览保留，本轮未启动一键入口。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-macos-handoff-20261118`。 [macOS 候选交接](MACOS_DESKTOP_CANDIDATE.md#离线签名与交接)
 
 ## 2026-11-18 M7W Windows MSI 发布来源
 
-新增原生 x64 每机 MSI 发布来源。构建前后验证 Ed25519 整包清单和 Windows 发布者签名，使用 Windows Installer 管理提取复验归档内的完整文件。MSI 只交付独立的版本化发布源。管理员使用既有双签名工具激活，保持原有升级和回滚机制。含空格路径的完整文件树实测生成 55,742,464 字节 MSI，精确解包复验 2,005 个清单文件，并用现有工具安装到隔离目录和只读定位。独立 Windows 执行 13 条命令，7 次成功、6 次按预期拒绝。管理提取前后无系统产品注册或卸载项，同输出并发只有一个成功。修复 PowerShell 5.1 读取 MakeCab 退出码和 MSI 带空格参数两个实际问题。4 个关联文件 27/27 项通过，零跳过，1437 个候选文件前后哈希一致。本轮使用第三方已签名程序的合成包，MSI 未签名。正式签发 MSI 和审易主程序、以实际 Windows 管理员与用户验收 /i 安装注册及卸载、Mac 实机和国内上线仍待完成。两处旧预览保留，本轮未启动一键入口。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-msi-release-source-20261118`。 [MSI 发布来源](WINDOWS_DESKTOP_CANDIDATE.md#windows-msi-发布来源)
+新增原生 x64 每机 MSI 发布来源。构建前后验证 Ed25519 整包清单和 Windows 发布者签名，使用 Windows Installer 管理提取复验归档内的完整文件。MSI 只交付独立的版本化发布源。管理员使用既有双签名工具激活，保持原有升级和回滚机制。含空格路径的完整文件树实测生成 55,742,464 字节 MSI，精确解包复验 2,005 个清单文件，并用现有工具安装到隔离目录和只读定位。独立 Windows 执行 13 条命令，7 次成功、6 次按预期拒绝。管理提取前后无系统产品注册或卸载项，同输出并发只有一个成功。修复 PowerShell 5.1 读取 MakeCab 退出码和 MSI 带空格参数两个实际问题。4 个关联文件 27/27 项通过，零跳过，1437 个候选文件前后哈希一致。本轮使用第三方已签名程序的合成包，MSI 未签名。正式签发 MSI 和审易主程序、以实际 Windows 管理员与用户验收 /i 安装注册及卸载、Mac 实机和国内上线仍待完成。两处旧预览保留，本轮未启动一键入口。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-msi-release-source-20261118`。 [MSI 发布来源](WINDOWS_DESKTOP_CANDIDATE.md#windows-msi-发布来源)
 
 ## 2026-11-18 M7V Windows 双签名安装与回滚
 
-Windows 双签名候选首次安装绑定独立配置的 Ed25519 公钥和发布者叶证书 SHA-256。源候选、复制后的文件和将要启用的版本均按绑定策略核验。更新、检查、只读定位、启动与回滚须提供相同指纹。旧便携目录继续按原清单规则。独立 Windows 执行 29 条命令，10 次成功、19 次按预期拒绝。被改动的 EXE 即使用可信 Ed25519 整包重签仍被 Windows 验签拒绝，验签程序从系统路径取得。正向启动在最终进程调用处用替身核对。另用 6 条 Windows 命令核验当前版损坏后回滚至完好的签名版，只改安装状态，最高已接受版本仍为 0.61.1。3 个关联文件 26/26 项通过，零跳过，1434 个候选文件前后哈希一致。本轮使用第三方已签名文件与合成包，正式审易签名、系统安装器、Mac 实机和生产试点仍待完成。两处旧预览保留，本轮未启动一键入口。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-pinned-windows-install-20261118`。 [双签名便携安装](WINDOWS_DESKTOP_CANDIDATE.md#双签名便携安装)
+Windows 双签名候选首次安装绑定独立配置的 Ed25519 公钥和发布者叶证书 SHA-256。源候选、复制后的文件和将要启用的版本均按绑定策略核验。更新、检查、只读定位、启动与回滚须提供相同指纹。旧便携目录继续按原清单规则。独立 Windows 执行 29 条命令，10 次成功、19 次按预期拒绝。被改动的 EXE 即使用可信 Ed25519 整包重签仍被 Windows 验签拒绝，验签程序从系统路径取得。正向启动在最终进程调用处用替身核对。另用 6 条 Windows 命令核验当前版损坏后回滚至完好的签名版，只改安装状态，最高已接受版本仍为 0.61.1。3 个关联文件 26/26 项通过，零跳过，1434 个候选文件前后哈希一致。本轮使用第三方已签名文件与合成包，正式审易签名、系统安装器、Mac 实机和生产试点仍待完成。两处旧预览保留，本轮未启动一键入口。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-pinned-windows-install-20261118`。 [双签名便携安装](WINDOWS_DESKTOP_CANDIDATE.md#双签名便携安装)
 
 ## 2026-11-18 M7U Windows Authenticode 发行核验
 
-新增外签收包与双签名验收。外签 EXE 的程序内容须与原候选逐字节一致，Windows 内嵌签名须有效、识别到时间戳并匹配预先确认的发布者证书 SHA-256。新包经 Ed25519 加签后再次验签可同时校验完整清单与 Windows 签名。独立 Windows 执行 15 条命令，6 次成功、9 次按预期拒绝。实测拒绝错误证书、无内嵌签名、程序和包文件变化、现存输出；并发收包仅一个成功。现有便携安装和检查入口已实测接受新清单。3 个关联文件 24/24 项通过，零跳过，1434 个候选文件前后哈希一致。正向验收使用 Windows 已签名的第三方样本及合成包，未对正式审易程序或安装器签名。两处旧预览保留，本轮未启动一键入口。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-windows-authenticode-20261118`。 [发行核验](WINDOWS_DESKTOP_CANDIDATE.md#核验-authenticode-发行包)
+新增外签收包与双签名验收。外签 EXE 的程序内容须与原候选逐字节一致，Windows 内嵌签名须有效、识别到时间戳并匹配预先确认的发布者证书 SHA-256。新包经 Ed25519 加签后再次验签可同时校验完整清单与 Windows 签名。独立 Windows 执行 15 条命令，6 次成功、9 次按预期拒绝。实测拒绝错误证书、无内嵌签名、程序和包文件变化、现存输出；并发收包仅一个成功。现有便携安装和检查入口已实测接受新清单。3 个关联文件 24/24 项通过，零跳过，1434 个候选文件前后哈希一致。正向验收使用 Windows 已签名的第三方样本及合成包，未对正式审易程序或安装器签名。两处旧预览保留，本轮未启动一键入口。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-windows-authenticode-20261118`。 [发行核验](WINDOWS_DESKTOP_CANDIDATE.md#核验-authenticode-发行包)
 
 ## 2026-11-18 M7T 四角色采集合成演练
 
-新增一键入口，每次启动生成独立本机库、已提交合成原件及退回后使用的补充件。独立 HTTP 核对四角色任务范围，经理可核对原件，合伙人经明确授权才可读取，撤权后重新登录仍拒绝。Windows 实际一键起窗，经理打开只读预览，114 字节原件与界面 SHA-256 一致。合伙人可分工，原件及核对入口均不可见，通用提示仍误提核对。候选正常关闭后服务退出。18 个关联文件 427/427 项通过，零跳过，1432 个候选文件前后哈希一致。两处旧预览保留，原业务一键未复验。未进入 main、未推送、未上线。两位负责人实签、获准脱敏业务试点、正式发行与生产验收仍待完成。证据位于 `D:/codex-temp/shenyi-m7-pilot-rehearsal-20261118`。 [团队采集演练指南](TEAM_PILOT_REHEARSAL.md)
+新增一键入口，每次启动生成独立本机库、已提交合成原件及退回后使用的补充件。独立 HTTP 核对四角色任务范围，经理可核对原件，合伙人经明确授权才可读取，撤权后重新登录仍拒绝。Windows 实际一键起窗，经理打开只读预览，114 字节原件与界面 SHA-256 一致。合伙人可分工，原件及核对入口均不可见，通用提示仍误提核对。候选正常关闭后服务退出。18 个关联文件 427/427 项通过，零跳过，1432 个候选文件前后哈希一致。两处旧预览保留，原业务一键未复验。未进入 main、未推送、未上线。两位负责人实签、获准脱敏业务试点、正式发行与生产验收仍待完成。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-pilot-rehearsal-20261118`。 [团队采集演练指南](TEAM_PILOT_REHEARSAL.md)
 
 ## 2026-11-18 M7S Windows 验签后直接启动与版本切换演练
 
-新增 launch，明确指定独立 HTTPS 团队配置，只读核验正在使用的签名版再直接启动应用。活动锁、清单或签名未通过时拒绝启动。回执记录进程创建，服务身份和登录仍由客户端核验。独立 Windows 真实客户端依次启动 0.61.0、签名演练版 0.61.1 和回滚后的 0.61.0。三版均完成合成实习生登录和授权任务查阅，只有首次绑定设备，升级和回滚沿用相同设备密钥。回滚后最高已接受版本保留 0.61.1。4 个关联文件 51/51 项通过，1428 个源码文件前后哈希一致。正式发行证书、生产安装与日常账号分权、正式版本升级、Mac 实机和生产试点仍待验。两处旧预览保留，原一键未复验。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-windows-verified-launch-20261118`。 [直接启动说明](WINDOWS_DESKTOP_CANDIDATE.md#直接启动已验签版本)
+新增 launch，明确指定独立 HTTPS 团队配置，只读核验正在使用的签名版再直接启动应用。活动锁、清单或签名未通过时拒绝启动。回执记录进程创建，服务身份和登录仍由客户端核验。独立 Windows 真实客户端依次启动 0.61.0、签名演练版 0.61.1 和回滚后的 0.61.0。三版均完成合成实习生登录和授权任务查阅，只有首次绑定设备，升级和回滚沿用相同设备密钥。回滚后最高已接受版本保留 0.61.1。4 个关联文件 51/51 项通过，1428 个源码文件前后哈希一致。正式发行证书、生产安装与日常账号分权、正式版本升级、Mac 实机和生产试点仍待验。两处旧预览保留，原一键未复验。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-windows-verified-launch-20261118`。 [直接启动说明](WINDOWS_DESKTOP_CANDIDATE.md#直接启动已验签版本)
 
 ## 2026-11-18 M7R Windows 日常账号只读启动定位
 
-新增 resolve-launch，只读验证当前版本签名、清单和安装状态。已存在安装锁或核验期间状态更换时拒绝返回路径，安装、检查和回滚继续保留原有操作员锁。Windows 非提升账号实测，独立 NTFS 安装根拒绝创建写锁，现有 inspect 被拒绝，resolve-launch 验签成功。错误公钥与实际存在的锁被拒绝。从返回的路径打开已安装客户端、完成合成手机号登录及 DPAPI 绑定，只见被指派任务。关闭后安装状态、2,008 个文件和 251 个目录保持一致。4 个关联文件 47/47 项通过，零跳过，1428 个候选文件冻结一致。正式安装与日常账号分开配置、操作系统签名和真实版本升级仍待验。两处旧预览保留，原一键未复验。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-windows-readonly-launch-20261118`。 [只读启动定位](WINDOWS_DESKTOP_CANDIDATE.md#日常账号只读启动定位)
+新增 resolve-launch，只读验证当前版本签名、清单和安装状态。已存在安装锁或核验期间状态更换时拒绝返回路径，安装、检查和回滚继续保留原有操作员锁。Windows 非提升账号实测，独立 NTFS 安装根拒绝创建写锁，现有 inspect 被拒绝，resolve-launch 验签成功。错误公钥与实际存在的锁被拒绝。从返回的路径打开已安装客户端、完成合成手机号登录及 DPAPI 绑定，只见被指派任务。关闭后安装状态、2,008 个文件和 251 个目录保持一致。4 个关联文件 47/47 项通过，零跳过，1428 个候选文件冻结一致。正式安装与日常账号分开配置、操作系统签名和真实版本升级仍待验。两处旧预览保留，原一键未复验。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-windows-readonly-launch-20261118`。 [只读启动定位](WINDOWS_DESKTOP_CANDIDATE.md#日常账号只读启动定位)
 
 ## 2026-11-18 M7Q Windows 安装目录写入保护
 
-以 8873209 对应的原 Windows 0.61.0 包进行独立 NTFS 权限演练。系统级文件权限拒绝在程序包新增文件、目录及写入包内文件，独立用户资料目录继续可写。非提升权限下实测真实选件取消零写入、选件后一次持钥提交及 64 字节原件保存、重启沿用原设备。160 次隔离 HTTPS 请求中有 24 次持钥访问。7 个检查点无新增 log，退出后严格签名清单复检通过，2,006 文件和 247 目录一致。5 个关联文件共 66/66 项通过，1428 个候选文件冻结一致。只手动配置独立副本，正式安装账号权限分工、自动部署权限、正式升级回滚、Authenticode、Mac 与生产仍待验证。两个旧预览保留，原一键未复验。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-windows-release-integrity-20261118`。 [安装目录保护](WINDOWS_DESKTOP_CANDIDATE.md#限制安装目录写入)
+以 8873209 对应的原 Windows 0.61.0 包进行独立 NTFS 权限演练。系统级文件权限拒绝在程序包新增文件、目录及写入包内文件，独立用户资料目录继续可写。非提升权限下实测真实选件取消零写入、选件后一次持钥提交及 64 字节原件保存、重启沿用原设备。160 次隔离 HTTPS 请求中有 24 次持钥访问。7 个检查点无新增 log，退出后严格签名清单复检通过，2,006 文件和 247 目录一致。5 个关联文件共 66/66 项通过，1428 个候选文件冻结一致。只手动配置独立副本，正式安装账号权限分工、自动部署权限、正式升级回滚、Authenticode、Mac 与生产仍待验证。两个旧预览保留，原一键未复验。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-windows-release-integrity-20261118`。 [安装目录保护](WINDOWS_DESKTOP_CANDIDATE.md#限制安装目录写入)
 
 ## 2026-11-18 M7P 采集提交反馈与 Windows 原生选件
 
-修复已提交任务误报权限不足的提示，同一版本的服务端权限核验依旧决定是否允许提交。提交后显示「本任务已提交，等待负责人核对。」已提交时禁止重复上传，退回后按现有权限重新核验。由 95321ce 重新构建 Windows x64 0.61.0 便携候选，安装前使用临时发布密钥验签。Windows 实测取消零写入，真实选件和一次签名提交保存 64 字节原件，重启用原设备读取。窗口打开后安装包会出现空 log 目录，无窗口输入的对照也复现。文件哈希一致，但严格使用后验签未通过，工作目录实验已撤销。23 个关联文件 396/396 项通过，零跳过，1428 个候选文件哈希一致。两处旧预览保留，原一键未复验。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-windows-native-collection-20261118`。 [Windows 候选](WINDOWS_DESKTOP_CANDIDATE.md#采集提交与原生选件)
+修复已提交任务误报权限不足的提示，同一版本的服务端权限核验依旧决定是否允许提交。提交后显示「本任务已提交，等待负责人核对。」已提交时禁止重复上传，退回后按现有权限重新核验。由 95321ce 重新构建 Windows x64 0.61.0 便携候选，安装前使用临时发布密钥验签。Windows 实测取消零写入，真实选件和一次签名提交保存 64 字节原件，重启用原设备读取。窗口打开后安装包会出现空 log 目录，无窗口输入的对照也复现。文件哈希一致，但严格使用后验签未通过，工作目录实验已撤销。23 个关联文件 396/396 项通过，零跳过，1428 个候选文件哈希一致。两处旧预览保留，原一键未复验。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-windows-native-collection-20261118`。 [Windows 候选](WINDOWS_DESKTOP_CANDIDATE.md#采集提交与原生选件)
 
 ## 2026-11-18 M7O Windows 受管客户端便携安装验收
 
-由 a58c801 重新构建 Windows x64 0.61.0 候选，以临时 Ed25519 发布密钥签名并安装到独立目录。安装前后重新验签，2006 个包文件与清单一致，82 个源码文件与工作区一致。Windows 独立实测打开三个已安装窗口，核实技术管理员查询本团队订阅、实习生只见已分配任务且实际保存 64 字节合成原件、重开沿用原设备密钥。173 次实际隔离 HTTPS 请求含 28 次设备持钥业务请求。提交成功后的权限文案仍待调整，正式系统选件对话框未验。10 个关联文件共 102/102 项通过，零跳过，1428 个候选文件哈希一致。两处旧预览保留，原一键未复验。未进入 main、未推送、未上线。Windows Authenticode、系统安装器、真实跨版本升级、Mac 实机及生产试点仍待完成。证据位于 `D:/codex-temp/shenyi-m7-windows-managed-acceptance-20261118`。 [Windows 候选](WINDOWS_DESKTOP_CANDIDATE.md#受管服务窗口验收)
+由 a58c801 重新构建 Windows x64 0.61.0 候选，以临时 Ed25519 发布密钥签名并安装到独立目录。安装前后重新验签，2006 个包文件与清单一致，82 个源码文件与工作区一致。Windows 独立实测打开三个已安装窗口，核实技术管理员查询本团队订阅、实习生只见已分配任务且实际保存 64 字节合成原件、重开沿用原设备密钥。173 次实际隔离 HTTPS 请求含 28 次设备持钥业务请求。提交成功后的权限文案仍待调整，正式系统选件对话框未验。10 个关联文件共 102/102 项通过，零跳过，1428 个候选文件哈希一致。两处旧预览保留，原一键未复验。未进入 main、未推送、未上线。Windows Authenticode、系统安装器、真实跨版本升级、Mac 实机及生产试点仍待完成。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-windows-managed-acceptance-20261118`。 [Windows 候选](WINDOWS_DESKTOP_CANDIDATE.md#受管服务窗口验收)
 
 ## 2026-11-18 M7N 受管库恢复前变化核对
 
-新增 compare-managed-sealed 离线命令。验证加密归档认证标签和解密快照字节哈希，再把当前权威库的结构及逐表分类型摘要与认证清单核对。仅报告结构、物理字节是否一致以及固定范围的变化表数。一致返回 0，有差异返回 2，核验失败返回 1，无需写入明文恢复库。Windows 独立验证 14 项实际命令和 1 项归档读取期间切换 WAL 的受控故障，确认差异归类、拒绝条件、停用与撤权、设备及账务变化，以及源库和归档保全。6 个关联文件共 46/46 项通过，零跳过，1428 个候选文件哈希一致。两处旧预览保留，原一键未复验。未进入 main、未推送、未上线。正式台账补偿、实际数据切换及审批仍待完成。证据位于 `D:/codex-temp/shenyi-m7-restore-comparison-20261118`。 [恢复前核对](TEAM_OFFLINE_BACKUP.md#恢复前核对变化)
+新增 compare-managed-sealed 离线命令。验证加密归档认证标签和解密快照字节哈希，再把当前权威库的结构及逐表分类型摘要与认证清单核对。仅报告结构、物理字节是否一致以及固定范围的变化表数。一致返回 0，有差异返回 2，核验失败返回 1，无需写入明文恢复库。Windows 独立验证 14 项实际命令和 1 项归档读取期间切换 WAL 的受控故障，确认差异归类、拒绝条件、停用与撤权、设备及账务变化，以及源库和归档保全。6 个关联文件共 46/46 项通过，零跳过，1428 个候选文件哈希一致。两处旧预览保留，原一键未复验。未进入 main、未推送、未上线。正式台账补偿、实际数据切换及审批仍待完成。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-restore-comparison-20261118`。 [恢复前核对](TEAM_OFFLINE_BACKUP.md#恢复前核对变化)
 
 ## 2026-11-18 M7M 受管团队订阅与席位只读查询
 
-受管 HTTPS 客户端新增「订阅与席位」只读入口。已绑定电脑的本团队技术管理员可查看北京时间订阅期限、已购席位、启用成员与邀请预留。到期后仍可查，员工和其他团队管理员无此权限。Windows 原生 Electron 主进程通过受管 HTTPS 复核有效和到期团队、跨团队拒绝、重启后原电脑读回和 SQLite 业务与权益记录一致。19 个关联文件共 183/183 项通过，零跳过，1428 个候选文件哈希一致。支付、增购、续费及对账仍待正式账务接入。退款由产品负责人受理，团队端不提交。未进入 main、未推送、未上线；两个旧预览保留，原一键未复验。本轮未重新生成安装包或做 Mac 实机验收。证据位于 `D:/codex-temp/shenyi-m7-managed-billing-20261118`。 [受管服务查询说明](MANAGED_TEAM_SERVICE.md#查阅订阅与席位)
+受管 HTTPS 客户端新增「订阅与席位」只读入口。已绑定电脑的本团队技术管理员可查看北京时间订阅期限、已购席位、启用成员与邀请预留。到期后仍可查，员工和其他团队管理员无此权限。Windows 原生 Electron 主进程通过受管 HTTPS 复核有效和到期团队、跨团队拒绝、重启后原电脑读回和 SQLite 业务与权益记录一致。19 个关联文件共 183/183 项通过，零跳过，1428 个候选文件哈希一致。支付、增购、续费及对账仍待正式账务接入。退款由产品负责人受理，团队端不提交。未进入 main、未推送、未上线；两个旧预览保留，原一键未复验。本轮未重新生成安装包或做 Mac 实机验收。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-managed-billing-20261118`。 [受管服务查询说明](MANAGED_TEAM_SERVICE.md#查阅订阅与席位)
 
 ## 2026-11-18 M7L 受管服务可选微信网站应用扫码
 
-受管 HTTPS 服务新增可选微信网站应用配置，默认关闭。Windows 独立 CLI 与桌面主进程客户端验证手机号密码＋原绑定设备签名首次关联、再次扫码沿用同一员工及任务、异团队和异设备拒绝。取消、错误状态或证明、重复票据和供应商失败均按预期拒绝，5 次换码均为隔离模拟。Nginx 本机实测正常回调、故障 502 与回调日志省略。12 个关联文件共 196/196 项通过，1428 个候选文件冻结一致。Windows 与 macOS 双架构候选已从本轮源码重新构建核验，Mac 实机和发行签名待验。两个旧预览保留，原一键启动本轮未复验。未进入 main、未推送、未上线。证据和新构件位于 `D:/codex-temp/shenyi-m7-managed-wechat-20261118`。真实微信应用审核、域名、手机扫码和真实回调仍待验。 [微信配置与验证](MANAGED_TEAM_SERVICE.md#可选微信网站应用扫码)
+受管 HTTPS 服务新增可选微信网站应用配置，默认关闭。Windows 独立 CLI 与桌面主进程客户端验证手机号密码＋原绑定设备签名首次关联、再次扫码沿用同一员工及任务、异团队和异设备拒绝。取消、错误状态或证明、重复票据和供应商失败均按预期拒绝，5 次换码均为隔离模拟。Nginx 本机实测正常回调、故障 502 与回调日志省略。12 个关联文件共 196/196 项通过，1428 个候选文件冻结一致。Windows 与 macOS 双架构候选已从本轮源码重新构建核验，Mac 实机和发行签名待验。两个旧预览保留，原一键启动本轮未复验。未进入 main、未推送、未上线。证据和新构件位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-managed-wechat-20261118`。真实微信应用审核、域名、手机扫码和真实回调仍待验。 [微信配置与验证](MANAGED_TEAM_SERVICE.md#可选微信网站应用扫码)
 
 ## 2026-11-18 M7K macOS 双架构桌面候选构件
 
-已生成审易 0.61.0 的 macOS arm64 与 x64 ZIP。两份均以官方 Electron 45.3.2 为输入，校验实际 SHA-256。独立复核逐项读取每包 2761 个条目，验证 14 条框架符号链接与执行权限、6 个关键 Mach-O、主程序与四个 helper、82 份仓库源码和 36 个锁定运行依赖。两个应用载荷逐字节一致，ZIP 哈希与各自清单一致。另核对了拒绝错误输入、并发发布目录和发布前后 I/O 故障。6 个关联文件共 65/65 项通过，1426 候选文件冻结一致。Windows 重建包 2005 个文件通过清单核验，两个旧预览保留，原一键启动本轮未复验。候选从 Windows 生成，Mac 原生运行、Keychain、签名公证和系统安装升级仍待验。未进入 main、未推送、未上线。证据与构件位于 `D:/codex-temp/shenyi-m7-macos-candidate-20261118`。 [构建与实机验收](MACOS_DESKTOP_CANDIDATE.md)
+已生成审易 0.61.0 的 macOS arm64 与 x64 ZIP。两份均以官方 Electron 45.3.2 为输入，校验实际 SHA-256。独立复核逐项读取每包 2761 个条目，验证 14 条框架符号链接与执行权限、6 个关键 Mach-O、主程序与四个 helper、82 份仓库源码和 36 个锁定运行依赖。两个应用载荷逐字节一致，ZIP 哈希与各自清单一致。另核对了拒绝错误输入、并发发布目录和发布前后 I/O 故障。6 个关联文件共 65/65 项通过，1426 候选文件冻结一致。Windows 重建包 2005 个文件通过清单核验，两个旧预览保留，原一键启动本轮未复验。候选从 Windows 生成，Mac 原生运行、Keychain、签名公证和系统安装升级仍待验。未进入 main、未推送、未上线。证据与构件位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-macos-candidate-20261118`。 [构建与实机验收](MACOS_DESKTOP_CANDIDATE.md)
 
 ## 2026-11-18 M7J 受管库加密备份与离线恢复演练
 
-受管库新增离线加密备份和恢复演练。备份核对预期实例 UUID 与独立 SQLite 文件，成功后仅保留 AES-256-GCM 归档。Windows 实机经独立解密检查了 98 张表的结构和分类型数据，附件、权限及撤权记录一致。恢复回执区分认证快照与带隔离标记的副本。当前版和上一版均允许正常原库启动，均拒绝启动改名后的演练库。8 个错误输入或工件拒绝通过。7 个关联文件共 54/54 项通过，零跳过，1423 个候选文件哈希前后相同。两个旧预览保留，原一键启动本轮未重验。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-managed-backup-20261118`。实际受管库的备份存储、快照后权限和支付事实核对、正式切换仍待验。 [受管库备份](TEAM_OFFLINE_BACKUP.md#受管库加密备份)
+受管库新增离线加密备份和恢复演练。备份核对预期实例 UUID 与独立 SQLite 文件，成功后仅保留 AES-256-GCM 归档。Windows 实机经独立解密检查了 98 张表的结构和分类型数据，附件、权限及撤权记录一致。恢复回执区分认证快照与带隔离标记的副本。当前版和上一版均允许正常原库启动，均拒绝启动改名后的演练库。8 个错误输入或工件拒绝通过。7 个关联文件共 54/54 项通过，零跳过，1423 个候选文件哈希前后相同。两个旧预览保留，原一键启动本轮未重验。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-managed-backup-20261118`。实际受管库的备份存储、快照后权限和支付事实核对、正式切换仍待验。 [受管库备份](TEAM_OFFLINE_BACKUP.md#受管库加密备份)
 
 ## 2026-11-18 M7I Linux 单机团队服务部署候选
 
-已交付 Linux 单机部署候选，包含非 root systemd 单元、Nginx 双段 TLS 和外部配置示例。Windows 独立实测验证 24 次代理上游请求，设备持钥登录、编码查询和约 2 MiB 附件原样抵达，SQLite 原件哈希一致。公共健康路径、错误 Host/SNI、超限及错误上游 CA 均按预期拒绝。另从 Git 发布归档独立安装锁定依赖，验证初始化、启动和重启后登录。8 个关联文件共 68/68 项通过，零跳过，1421 个候选文件测试前后哈希一致。两个旧预览保留，原一键启动本轮未重验。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-linux-deploy-20261118`。Linux/systemd 实机、受管非演示库备份恢复和真实国内部署仍待验。 [部署与回滚](LINUX_TEAM_DEPLOYMENT.md)
+已交付 Linux 单机部署候选，包含非 root systemd 单元、Nginx 双段 TLS 和外部配置示例。Windows 独立实测验证 24 次代理上游请求，设备持钥登录、编码查询和约 2 MiB 附件原样抵达，SQLite 原件哈希一致。公共健康路径、错误 Host/SNI、超限及错误上游 CA 均按预期拒绝。另从 Git 发布归档独立安装锁定依赖，验证初始化、启动和重启后登录。8 个关联文件共 68/68 项通过，零跳过，1421 个候选文件测试前后哈希一致。两个旧预览保留，原一键启动本轮未重验。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-linux-deploy-20261118`。Linux/systemd 实机、受管非演示库备份恢复和真实国内部署仍待验。 [部署与回滚](LINUX_TEAM_DEPLOYMENT.md)
 
 ## 2026-11-18 M7H 受管团队服务审核式密码恢复
 
-受管 HTTPS 服务已接入可选审核式密码恢复。默认关闭，启用须配置短信服务并通过数据库结构检查。独立 Windows 本机 TLS 实测员工由本团队技术管理员审核、技术管理员由产品负责人审核。改密后旧密码和会话失效，新密码可沿用原绑定电脑。跨团队审核、短信单因素与凭证重放均被拒绝，最高审核账号无法在线恢复。运行中缺少关键触发器时恢复入口返回 503。13 个关联文件共 271/271 项通过，零跳过，1417 个候选文件测试前后哈希一致。短信使用合成供应商。两个旧预览保留，桌面一键本轮未重验。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-managed-recovery-20261118`。真实短信投递、正式账务、macOS 和国内部署仍待验。 [受管恢复配置](MANAGED_TEAM_SERVICE.md#可选审核式密码恢复)
+受管 HTTPS 服务已接入可选审核式密码恢复。默认关闭，启用须配置短信服务并通过数据库结构检查。独立 Windows 本机 TLS 实测员工由本团队技术管理员审核、技术管理员由产品负责人审核。改密后旧密码和会话失效，新密码可沿用原绑定电脑。跨团队审核、短信单因素与凭证重放均被拒绝，最高审核账号无法在线恢复。运行中缺少关键触发器时恢复入口返回 503。13 个关联文件共 271/271 项通过，零跳过，1417 个候选文件测试前后哈希一致。短信使用合成供应商。两个旧预览保留，桌面一键本轮未重验。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-managed-recovery-20261118`。真实短信投递、正式账务、macOS 和国内部署仍待验。 [受管恢复配置](MANAGED_TEAM_SERVICE.md#可选审核式密码恢复)
 
 ## 2026-11-18 M7G 可选阿里云短信与激活验收
 
-短信接入由服务器外部配置明确启用。Windows 本机 HTTPS 实测首技术管理员和受邀实习生激活，模拟供应商拒绝和错误验证码都被拒绝。12 个关联文件共 167/167 项通过，零跳过。合成订阅和单席验证邀请预留转已用，未授权项目或资料，重启后可复用设备。三条短信请求均在本地拦截和验签。两个旧预览保留，桌面一键未重验。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-aliyun-sms-20261118`。真实短信资质、模板和投递待验。 [短信配置说明](MANAGED_TEAM_SERVICE.md#可选阿里云短信配置)
+短信接入由服务器外部配置明确启用。Windows 本机 HTTPS 实测首技术管理员和受邀实习生激活，模拟供应商拒绝和错误验证码都被拒绝。12 个关联文件共 167/167 项通过，零跳过。合成订阅和单席验证邀请预留转已用，未授权项目或资料，重启后可复用设备。三条短信请求均在本地拦截和验签。两个旧预览保留，桌面一键未重验。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-aliyun-sms-20261118`。真实短信资质、模板和投递待验。 [短信配置说明](MANAGED_TEAM_SERVICE.md#可选阿里云短信配置)
 
 ## 2026-11-18 M7F 首位产品负责人初始化
 
-新环境的离线初始化只创建一名负责人和七项已确认的审核权限。要求操作者确认手机号已线下核验。198 项关联测试全部通过，零跳过。Windows 独立验收通过真实 HTTPS 完成合成负责人的手机号登录、绑定电脑、创建和审核团队申请，缺少短信服务时未激活团队或首管理员。已入库的七项权限中五项在线可用，恢复与退款入口仍依赖相应服务。两个旧预览保留，本轮未重验桌面一键。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-owner-bootstrap-20261118`。 [初始化说明](MANAGED_TEAM_SERVICE.md#首位产品负责人)
+新环境的离线初始化只创建一名负责人和七项已确认的审核权限。要求操作者确认手机号已线下核验。198 项关联测试全部通过，零跳过。Windows 独立验收通过真实 HTTPS 完成合成负责人的手机号登录、绑定电脑、创建和审核团队申请，缺少短信服务时未激活团队或首管理员。已入库的七项权限中五项在线可用，恢复与退款入口仍依赖相应服务。两个旧预览保留，本轮未重验桌面一键。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-owner-bootstrap-20261118`。 [初始化说明](MANAGED_TEAM_SERVICE.md#首位产品负责人)
 
 ## 2026-11-18 M7E 受管团队 HTTPS 服务
 
-新增使用外部配置、非演示库和独立 TLS 证书的本机服务入口。服务严格核对实例身份和请求地址，手机号密码可登录，现有设备和业务权限继续生效。演示登录和模拟账务拒绝。13 个关联文件共 154/154 项通过，零跳过。独立 Windows CLI 实测两次优雅停止、端口关闭及重启后设备与任务连续性，Electron 源码桌面实测手机号登录入口。两个旧预览保留，桌面一键未重验。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-managed-service-20261118`。实际国内主机、公开证书、首位负责人开通、供应商及生产迁移待验。 [启动与部署说明](MANAGED_TEAM_SERVICE.md)
+新增使用外部配置、非演示库和独立 TLS 证书的本机服务入口。服务严格核对实例身份和请求地址，手机号密码可登录，现有设备和业务权限继续生效。演示登录和模拟账务拒绝。13 个关联文件共 154/154 项通过，零跳过。独立 Windows CLI 实测两次优雅停止、端口关闭及重启后设备与任务连续性，Electron 源码桌面实测手机号登录入口。两个旧预览保留，桌面一键未重验。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-managed-service-20261118`。实际国内主机、公开证书、首位负责人开通、供应商及生产迁移待验。 [启动与部署说明](MANAGED_TEAM_SERVICE.md)
 
 ## 2026-11-18 M7D Windows 本地便携安装、升级和回滚
 
-已增加离线 CLI，可从已签候选安装或升级，并核验、切换至记录中的上一版。独立 Windows 实机运行 9 条命令，实际启动顺序为 0.61.0→0.61.1→0.61.0。三次启动使用同一设备密钥，通过 HTTPS 读取指派任务。回滚后的最高版本仍为 0.61.1，两份已验包均无法再次应用。升级包只改变版本元数据。5 个关联文件共 29/29 项通过，零跳过。旧预览保留，本轮未重验桌面一键。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-installed-candidate-20261118`。Windows 正式签名、系统安装器、实际业务数据迁移与 macOS 仍待验。 [本地安装说明](WINDOWS_DESKTOP_CANDIDATE.md)
+已增加离线 CLI，可从已签候选安装或升级，并核验、切换至记录中的上一版。独立 Windows 实机运行 9 条命令，实际启动顺序为 0.61.0→0.61.1→0.61.0。三次启动使用同一设备密钥，通过 HTTPS 读取指派任务。回滚后的最高版本仍为 0.61.1，两份已验包均无法再次应用。升级包只改变版本元数据。5 个关联文件共 29/29 项通过，零跳过。旧预览保留，本轮未重验桌面一键。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-installed-candidate-20261118`。Windows 正式签名、系统安装器、实际业务数据迁移与 macOS 仍待验。 [本地安装说明](WINDOWS_DESKTOP_CANDIDATE.md)
 
 ## 2026-11-18 M7C Windows 候选发布清单签名
 
-已增加独立签名和验签 CLI。Ed25519 签名绑定原始清单；验签还要求候选版本高于输入的已安装版本，并检查实际文件范围和 SHA-256。四个关联文件共 22/22 项通过，零跳过。实际 Windows 包九条 CLI 命令独立实测通过，包括错误公钥、签名篡改、同版或低版候选、文件改动和多余文件。2006 个包文件哈希一致。`Shenyi.exe` 的 Authenticode 状态保持 `NotSigned`，生产证书、安装升级和签名公证仍待完成。未进入 main、未推送、未上线。两个旧预览保留，桌面一键本轮未复验。证据位于 `D:/codex-temp/shenyi-m7-signed-candidate-20261118`。 [构建与签名说明](WINDOWS_DESKTOP_CANDIDATE.md)
+已增加独立签名和验签 CLI。Ed25519 签名绑定原始清单；验签还要求候选版本高于输入的已安装版本，并检查实际文件范围和 SHA-256。四个关联文件共 22/22 项通过，零跳过。实际 Windows 包九条 CLI 命令独立实测通过，包括错误公钥、签名篡改、同版或低版候选、文件改动和多余文件。2006 个包文件哈希一致。`Shenyi.exe` 的 Authenticode 状态保持 `NotSigned`，生产证书、安装升级和签名公证仍待完成。未进入 main、未推送、未上线。两个旧预览保留，桌面一键本轮未复验。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-signed-candidate-20261118`。 [构建与签名说明](WINDOWS_DESKTOP_CANDIDATE.md)
 
 ## 2026-11-18 M7B 加密备份与离线恢复
 
-现有离线备份可封存为单一 AES-256-GCM 工件，包含 SQLite 和清单。密钥错误或密文被篡改时拒绝恢复；两次真实 Windows CLI 恢复的精确字节、98 张表的分类型摘要、两份底稿和两份原件 BLOB 均匹配。4 个关联文件共 36/36 项通过，零跳过，1402 个候选文件测试前后哈希一致。独立 Python 回读了两个加密包。两个旧预览保留。本轮未重验桌面一键入口，未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-sealed-backup-20261118`。生产恢复仍需密钥及存储治理、可信撤销事实和切换验证。 [操作说明](TEAM_OFFLINE_BACKUP.md)
+现有离线备份可封存为单一 AES-256-GCM 工件，包含 SQLite 和清单。密钥错误或密文被篡改时拒绝恢复；两次真实 Windows CLI 恢复的精确字节、98 张表的分类型摘要、两份底稿和两份原件 BLOB 均匹配。4 个关联文件共 36/36 项通过，零跳过，1402 个候选文件测试前后哈希一致。独立 Python 回读了两个加密包。两个旧预览保留。本轮未重验桌面一键入口，未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-sealed-backup-20261118`。生产恢复仍需密钥及存储治理、可信撤销事实和切换验证。 [操作说明](TEAM_OFFLINE_BACKUP.md)
 
 ## 2026-11-18 M7A Windows x64 便携候选
 
-已生成未签名的 Windows x64 目录包，包外配置指定可信 HTTPS 服务，运行使用独立设备密钥及客户端配置目录。21 个关联测试文件共 340/340 项通过，零跳过。原生 Windows 实测配置拒绝 5 项、合成 HTTPS 登录与持钥绑定、实习生的指派任务读取、错误实例拒绝和正常退出。清单独立回读校验 2005 项，加入清单自身后共 2006 项在原生验收前后哈希一致。普通独立候选一键已验，两个旧预览保留，原两条业务一键本轮未重验。未进入 main、未推送、未上线。证据位于 `D:/codex-temp/shenyi-m7-windows-package-20261118`。M7 下一步为签名安装、升级校验、macOS 和国内部署恢复验证。M6 待双方走查和实际原件验收。 [构建与启动说明](WINDOWS_DESKTOP_CANDIDATE.md)
+已生成未签名的 Windows x64 目录包，包外配置指定可信 HTTPS 服务，运行使用独立设备密钥及客户端配置目录。21 个关联测试文件共 340/340 项通过，零跳过。原生 Windows 实测配置拒绝 5 项、合成 HTTPS 登录与持钥绑定、实习生的指派任务读取、错误实例拒绝和正常退出。清单独立回读校验 2005 项，加入清单自身后共 2006 项在原生验收前后哈希一致。普通独立候选一键已验，两个旧预览保留，原两条业务一键本轮未重验。未进入 main、未推送、未上线。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m7-windows-package-20261118`。M7 下一步为签名安装、升级校验、macOS 和国内部署恢复验证。M6 待双方走查和实际原件验收。 [构建与启动说明](WINDOWS_DESKTOP_CANDIDATE.md)
 
 ## 2026-11-18 M6E 只读底稿长表与键盘操作
 
-底稿加载完成后，阅读区可用 Tab 聚焦并通过方向键滚动。切换工作表保留所选按钮的焦点，并从左上角显示新表。读取失败清除旧表，提示并聚焦现有刷新权限与版本入口。30 个关联文件冻结回归 363 项通过，零失败。一个 Word 浏览器项因默认路径没有 Chromium 而跳过，显式指定 Chrome 后同源单独通过。合计 364/364 项通过，1396 个候选文件哈希一致。Windows 原生用两张合成工作表验证 100% 和 200% 下的分页阅读、焦点、恢复和无新增业务写入。Chrome 单独复测专业渲染器的合成版式，列宽、合并、隐藏及缓存原文保持，另已验证四份 Office 类型解析一致。普通独立候选一键实测启动和正常退出。两处旧预览保留，原两条业务一键本轮未重验。未进入 main、未推送、未上线。证据在 `D:/codex-temp/shenyi-m6-workpaper-ux-20261118`。 Windows 原生使用无目录版式的合成 XLSX，预置专业目录对应原件未在 Electron 实机复核。方向键和 Page Down 已验，End 键在 100% 与 200% 下表现不同。macOS 实机、双方走查、正式官网购买及生产仍待完成。 [现有品牌规范](../desktop/brand-spec.md)。
+底稿加载完成后，阅读区可用 Tab 聚焦并通过方向键滚动。切换工作表保留所选按钮的焦点，并从左上角显示新表。读取失败清除旧表，提示并聚焦现有刷新权限与版本入口。30 个关联文件冻结回归 363 项通过，零失败。一个 Word 浏览器项因默认路径没有 Chromium 而跳过，显式指定 Chrome 后同源单独通过。合计 364/364 项通过，1396 个候选文件哈希一致。Windows 原生用两张合成工作表验证 100% 和 200% 下的分页阅读、焦点、恢复和无新增业务写入。Chrome 单独复测专业渲染器的合成版式，列宽、合并、隐藏及缓存原文保持，另已验证四份 Office 类型解析一致。普通独立候选一键实测启动和正常退出。两处旧预览保留，原两条业务一键本轮未重验。未进入 main、未推送、未上线。证据在 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m6-workpaper-ux-20261118`。 Windows 原生使用无目录版式的合成 XLSX，预置专业目录对应原件未在 Electron 实机复核。方向键和 Page Down 已验，End 键在 100% 与 200% 下表现不同。macOS 实机、双方走查、正式官网购买及生产仍待完成。 [现有品牌规范](../desktop/brand-spec.md)。
 
 ## 2026-11-18 M6D 账务缩放与键盘操作
 
-优化年费、增购和退款工具栏的窄窗口布局，长订单号和关联编号可完整换行。订单核对恢复当前操作的键盘焦点，用户已移开的焦点不被拉回，批量失败可继续键盘操作重试。批量状态区为空时仍保留无障碍语义，纯管理账号侧栏和面包屑改用「管理与审核」。28 个关联文件共 263/263 项通过，零失败或跳过。1396 个候选文件测试前后哈希一致。独立 Windows 验收覆盖最高 200% 的九组布局、59 次持钥请求和 14 张截图。键盘取消未创建订单，退款原单缺失后可重新查询，80 字符跟进编号完整写入合成库，期限及席位保持。账务独立候选一键实测启动和正常退出。两处旧预览保留，原两条业务一键本轮未重验。未进入 main、未推送、未上线。证据在 `D:/codex-temp/shenyi-m6-billing-ux-20261118`。 M6 后续继续走查只读底稿长表、键盘滚动、错误反馈和两位负责人验收。macOS 实机、正式官网购买与生产支付仍待相应条件。 [现有品牌规范](../desktop/brand-spec.md)。
+优化年费、增购和退款工具栏的窄窗口布局，长订单号和关联编号可完整换行。订单核对恢复当前操作的键盘焦点，用户已移开的焦点不被拉回，批量失败可继续键盘操作重试。批量状态区为空时仍保留无障碍语义，纯管理账号侧栏和面包屑改用「管理与审核」。28 个关联文件共 263/263 项通过，零失败或跳过。1396 个候选文件测试前后哈希一致。独立 Windows 验收覆盖最高 200% 的九组布局、59 次持钥请求和 14 张截图。键盘取消未创建订单，退款原单缺失后可重新查询，80 字符跟进编号完整写入合成库，期限及席位保持。账务独立候选一键实测启动和正常退出。两处旧预览保留，原两条业务一键本轮未重验。未进入 main、未推送、未上线。证据在 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m6-billing-ux-20261118`。 M6 后续继续走查只读底稿长表、键盘滚动、错误反馈和两位负责人验收。macOS 实机、正式官网购买与生产支付仍待相应条件。 [现有品牌规范](../desktop/brand-spec.md)。
 
 ## 2026-11-18 M6C 角色工作台快捷入口
 
-给经理、合伙人、技术管理员和独立审核账号增加模块快捷入口，跟随现有面板可见状态。按键打开原面板并聚焦标题。未选择时不打开面板或读取目标记录，退出时清除导航。纯管理账号省去无任务的搜索和列表，并保留原邀请核对的刷新入口。117 个关联文件共 1791/1791 项通过，零失败或跳过。1396 个候选文件测试前后哈希一致。独立 Windows 验收覆盖五类合成账号、两组窗口及缩放、12 次键盘跳转、75 次持钥读取和 14 张截图。普通及账务独立候选一键均实测启动和正常退出。两处旧预览保留，原两条业务一键未重验。未进入 main、未推送、未上线。证据在 `D:/codex-temp/shenyi-m6-role-navigation-20261118`。 纯管理账号的侧栏和面包屑仍沿用「资料采集」。M6 后续继续核验账务长列表的 200% 缩放、状态反馈与键盘焦点恢复，再走查只读长表并完成两位负责人验收。macOS 实机、正式官网购买与生产支付仍待相应条件。 [现有品牌规范](../desktop/brand-spec.md)。
+给经理、合伙人、技术管理员和独立审核账号增加模块快捷入口，跟随现有面板可见状态。按键打开原面板并聚焦标题。未选择时不打开面板或读取目标记录，退出时清除导航。纯管理账号省去无任务的搜索和列表，并保留原邀请核对的刷新入口。117 个关联文件共 1791/1791 项通过，零失败或跳过。1396 个候选文件测试前后哈希一致。独立 Windows 验收覆盖五类合成账号、两组窗口及缩放、12 次键盘跳转、75 次持钥读取和 14 张截图。普通及账务独立候选一键均实测启动和正常退出。两处旧预览保留，原两条业务一键未重验。未进入 main、未推送、未上线。证据在 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m6-role-navigation-20261118`。 纯管理账号的侧栏和面包屑仍沿用「资料采集」。M6 后续继续核验账务长列表的 200% 缩放、状态反馈与键盘焦点恢复，再走查只读长表并完成两位负责人验收。macOS 实机、正式官网购买与生产支付仍待相应条件。 [现有品牌规范](../desktop/brand-spec.md)。
 
 ## 2026-11-18 M6B 官网本地候选
 
-新增独立官网，介绍资料采集、职级与权限、团队年订阅、桌面版本和常见问题。合成工作台以界面示意展示。正式下载、购买与备案等事项在页面上显示当前状态。Windows 官网一键已验，官方静态包只包含首页、样式和原审易标识。20/20 个相关测试通过，零失败或跳过。独立 Chrome 验收覆盖三个视口、站内链接、键盘导航、常见问题与请求范围。两处旧预览前后观察一致，原两条业务一键未重验。未进入 main、未推送、未上线。证据在 `D:/codex-temp/shenyi-m6-website-20261118`。 M6 继续覆盖经理、合伙人和管理员界面并收集双方走查。官网正式运营待签名安装包、主体备案、条款和购买入口明确。macOS 原生及真实交易继续待验收。 [官网使用说明](../website/README.md)。
+新增独立官网，介绍资料采集、职级与权限、团队年订阅、桌面版本和常见问题。合成工作台以界面示意展示。正式下载、购买与备案等事项在页面上显示当前状态。Windows 官网一键已验，官方静态包只包含首页、样式和原审易标识。20/20 个相关测试通过，零失败或跳过。独立 Chrome 验收覆盖三个视口、站内链接、键盘导航、常见问题与请求范围。两处旧预览前后观察一致，原两条业务一键未重验。未进入 main、未推送、未上线。证据在 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m6-website-20261118`。 M6 继续覆盖经理、合伙人和管理员界面并收集双方走查。官网正式运营待签名安装包、主体备案、条款和购买入口明确。macOS 原生及真实交易继续待验收。 [官网使用说明](../website/README.md)。
 
 ## 2026-11-18 M6A 桌面登录与采集工作台
 
-调整登录和采集工作台。已指派任务移到个人设置前方，四项个人设置合为「账号与设备」。提高辅助文字和键盘焦点对比度，窄窗口自动改为单栏。键盘打开任务后聚焦详情。117 个关联文件 1790/1790 通过。最后仅调整 CSS 以保留登录错误提示的读屏区域，直接相关 162/162 复跑通过。两轮零失败或跳过，1390 个候选文件在各轮前后哈希一致。原生 Windows 实测实习生与助理登录、首次绑机、任务隔离和键盘操作。12 个页面与视口组合在 100% 至 200% 缩放下没有横向溢出，独立合成一键已验。两处旧预览前后观察一致，原两条一键未重验。未进入 main、未推送、未上线。证据在 `D:/codex-temp/shenyi-m6-desktop-ui-20261118`。 待产品负责人走查视觉方向。后续继续经理、合伙人与管理员页面的视觉易用性、独立官网、macOS 和双方验收。M5 正式价格、支付和其他商业验收仍是待完成项。 [现有品牌规范](../desktop/brand-spec.md)。
+调整登录和采集工作台。已指派任务移到个人设置前方，四项个人设置合为「账号与设备」。提高辅助文字和键盘焦点对比度，窄窗口自动改为单栏。键盘打开任务后聚焦详情。117 个关联文件 1790/1790 通过。最后仅调整 CSS 以保留登录错误提示的读屏区域，直接相关 162/162 复跑通过。两轮零失败或跳过，1390 个候选文件在各轮前后哈希一致。原生 Windows 实测实习生与助理登录、首次绑机、任务隔离和键盘操作。12 个页面与视口组合在 100% 至 200% 缩放下没有横向溢出，独立合成一键已验。两处旧预览前后观察一致，原两条一键未重验。未进入 main、未推送、未上线。证据在 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m6-desktop-ui-20261118`。 待产品负责人走查视觉方向。后续继续经理、合伙人与管理员页面的视觉易用性、独立官网、macOS 和双方验收。M5 正式价格、支付和其他商业验收仍是待完成项。 [现有品牌规范](../desktop/brand-spec.md)。
 
 ## 2026-11-18 M5M Windows 合成账务整体验收
 
-新增 Windows 一键账务候选，每次启动使用独立数据库、端口和设备目录。已原生实测增购、续费、超时关单、迟到收款以及产品负责人登记退款受理和跟进，实习生无账务及退款权限。58 个关联测试文件 924/924 通过，零失败和跳过，1390 个候选文件前后哈希一致。独立到期续费测试经过 24 次真实本机 HTTP 请求、18 次设备验签、四份 SQLite 快照和重启回读。到期保留授权历史的读取，暂停新增；可信模拟款只兑现一次，经理凭原授权恢复写入。两处旧预览经两次只读观察一致。新增一键已验，原两条一键未重验。未进入 main、未推送、未上线。证据在 `D:/codex-temp/shenyi-m5-preview-20261118`。 M5 正式商业验收仍需价格及服务条款、真实商户与对账退款、主动到期提醒和权益处置。macOS 原生及双方签收各自待验。本地 M6 可接续现有视觉方向与官网准备。 [本地验收指南](M5_LOCAL_ACCEPTANCE.md)。
+新增 Windows 一键账务候选，每次启动使用独立数据库、端口和设备目录。已原生实测增购、续费、超时关单、迟到收款以及产品负责人登记退款受理和跟进，实习生无账务及退款权限。58 个关联测试文件 924/924 通过，零失败和跳过，1390 个候选文件前后哈希一致。独立到期续费测试经过 24 次真实本机 HTTP 请求、18 次设备验签、四份 SQLite 快照和重启回读。到期保留授权历史的读取，暂停新增；可信模拟款只兑现一次，经理凭原授权恢复写入。两处旧预览经两次只读观察一致。新增一键已验，原两条一键未重验。未进入 main、未推送、未上线。证据在 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-m5-preview-20261118`。 M5 正式商业验收仍需价格及服务条款、真实商户与对账退款、主动到期提醒和权益处置。macOS 原生及双方签收各自待验。本地 M6 可接续现有视觉方向与官网准备。 [本地验收指南](M5_LOCAL_ACCEPTANCE.md)。
 
 ## 2026-11-18 M5L 模拟订单超时关闭
 
-M5L 基于 `abf9f8f` 接入可信模拟关单。年费新单在创建时锁定截止时间，增购沿用原报价期限。到点仍须核验回执。先有已验收款或异常证据不得新增关单，关单后收到的有效收款留证待复核，不发放本单期限或席位。50 个关联文件 783/783 通过，零失败和跳过，1386 份候选源码哈希一致。独立 HTTP 84 次请求、持久重启、Windows 原生 36 次设备验签通过。两处旧预览保留。未进入 main、未重验原一键、未上线。正式时效、真实支付退款、权益处置和 macOS 仍待验收。证据在 `D:/codex-temp/shenyi-order-closure-20261118`。 [模拟关单合同](BILLING_ORDER_CLOSURE_CONTRACT.md)。
+M5L 基于 `abf9f8f` 接入可信模拟关单。年费新单在创建时锁定截止时间，增购沿用原报价期限。到点仍须核验回执。先有已验收款或异常证据不得新增关单，关单后收到的有效收款留证待复核，不发放本单期限或席位。50 个关联文件 783/783 通过，零失败和跳过，1386 份候选源码哈希一致。独立 HTTP 84 次请求、持久重启、Windows 原生 36 次设备验签通过。两处旧预览保留。未进入 main、未重验原一键、未上线。正式时效、真实支付退款、权益处置和 macOS 仍待验收。证据在 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-order-closure-20261118`。 [模拟关单合同](BILLING_ORDER_CLOSURE_CONTRACT.md)。
 
 ## 2026-11-18 M5K 产品负责人退款受理留痕
 
-M5K 基于 `dbde470` 接入产品负责人原订单受理与跟进登记。独立权限、持钥会话和当前密码共同校验，原订单和已核验收款关联追加记录。团队及其他审核角色保持拒绝。63 个相关测试文件 1307/1307 通过，零跳过。首轮一项旧测试把新增资料保护触发器计入旧层。精确核验新层后只修这一文件并完整复跑，其余 62 个文件沿用首轮验证，运行代码一致。独立 HTTP 86 次请求、持久重启及密码核验期间撤权已验，Windows 原生 35 次设备验签通过。旧预览保留。未进入 main、未重验原一键、未上线。实际退款、权益处置和 Mac 仍待验收。证据在 `D:/codex-temp/shenyi-refund-intake-20261118`。 [退款受理合同](BILLING_REFUND_INTAKE_CONTRACT.md)。
+M5K 基于 `dbde470` 接入产品负责人原订单受理与跟进登记。独立权限、持钥会话和当前密码共同校验，原订单和已核验收款关联追加记录。团队及其他审核角色保持拒绝。63 个相关测试文件 1307/1307 通过，零跳过。首轮一项旧测试把新增资料保护触发器计入旧层。精确核验新层后只修这一文件并完整复跑，其余 62 个文件沿用首轮验证，运行代码一致。独立 HTTP 86 次请求、持久重启及密码核验期间撤权已验，Windows 原生 35 次设备验签通过。旧预览保留。未进入 main、未重验原一键、未上线。实际退款、权益处置和 Mac 仍待验收。证据在 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-refund-intake-20261118`。 [退款受理合同](BILLING_REFUND_INTAKE_CONTRACT.md)。
 
 ## 2026-11-18 M5J 本团队账务批量核对
 
-M5J 基于 `3be9465` 接入桌面批量核对。技术管理员能逐批核对本团队年费或增购，每批最多 8 笔，逐笔处理查单、可信收款与异常并复用原权益账本。首版退款由产品负责人受理，团队暂不在客户端提交退款申请。39 组关联测试 706/706，零失败或跳过，1370 份候选文件哈希前后一致。独立 HTTP 34 次请求和持久重启通过，Windows 原生 49 次设备验签通过。两处旧预览保留，未进入 main，未重验原一键入口，未上线。正式商户、实款退款、权益处置及 Mac 仍待完成。证据在 `D:/codex-temp/shenyi-billing-reconciliation-20261118`。 [批量对账合同](BILLING_BATCH_RECONCILIATION_CONTRACT.md)。
+M5J 基于 `3be9465` 接入桌面批量核对。技术管理员能逐批核对本团队年费或增购，每批最多 8 笔，逐笔处理查单、可信收款与异常并复用原权益账本。首版退款由产品负责人受理，团队暂不在客户端提交退款申请。39 组关联测试 706/706，零失败或跳过，1370 份候选文件哈希前后一致。独立 HTTP 34 次请求和持久重启通过，Windows 原生 49 次设备验签通过。两处旧预览保留，未进入 main，未重验原一键入口，未上线。正式商户、实款退款、权益处置及 Mac 仍待完成。证据在 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-billing-reconciliation-20261118`。 [批量对账合同](BILLING_BATCH_RECONCILIATION_CONTRACT.md)。
 
 ## 2026-11-18 M5I 模拟退款与拒付复核
 
-M5I 基于 `5a293b4` 接收可信模拟全额退款和确认拒付。异常按原交易留证，桌面显示待复核。异常证据先入账的订单暂不发放新权益，较早已全额撤回的订单不阻挡后续正常续费。已兑现期限、席位和成员访问保持原样。37 个关联文件最终 657/657 通过，零失败和跳过。首轮的两项历史迁移统计遗漏了新层的精确投影。修订两项测试后全量相关门重跑，运行代码未改。独立 HTTP 复核 61 次真实请求并验证持久重启，Windows 原生 41 次实际设备验签。旧预览保留，未进入 main，未重验一键，未上线。退款申请和处理规则、正式渠道及 macOS 仍待完成。证据位于 `D:/codex-temp/shenyi-payment-exceptions-20261118`。 [模拟异常合同](PAYMENT_EXCEPTION_CONTRACT.md)。
+M5I 基于 `5a293b4` 接收可信模拟全额退款和确认拒付。异常按原交易留证，桌面显示待复核。异常证据先入账的订单暂不发放新权益，较早已全额撤回的订单不阻挡后续正常续费。已兑现期限、席位和成员访问保持原样。37 个关联文件最终 657/657 通过，零失败和跳过。首轮的两项历史迁移统计遗漏了新层的精确投影。修订两项测试后全量相关门重跑，运行代码未改。独立 HTTP 复核 61 次真实请求并验证持久重启，Windows 原生 41 次实际设备验签。旧预览保留，未进入 main，未重验一键，未上线。退款申请和处理规则、正式渠道及 macOS 仍待完成。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-payment-exceptions-20261118`。 [模拟异常合同](PAYMENT_EXCEPTION_CONTRACT.md)。
 
 ## 2026-11-18 M5H 桌面订阅与席位
 
-M5H 基于 `335ac0e` 接入桌面「订阅与席位」。本团队技术管理员可查看容量和订单、创建年续费／增购，并通过可信合成来源核对结果。降档须先释放启用成员及有效邀请占用的席位。51 个关联测试文件 889/889 项通过，零失败或跳过。1361 个候选文件在测试前后哈希一致。独立 Windows 原生验收 5 个场景，51 次实际设备验签全部通过。两处旧预览保留。未进入 main，未重验原一键入口，未上线。正式价格、真实支付和退款、Mac 与官网仍待完成。证据位于 `D:/codex-temp/shenyi-desktop-billing-20261118`。 [桌面账务合同](DESKTOP_BILLING_CONTRACT.md)。
+M5H 基于 `335ac0e` 接入桌面「订阅与席位」。本团队技术管理员可查看容量和订单、创建年续费／增购，并通过可信合成来源核对结果。降档须先释放启用成员及有效邀请占用的席位。51 个关联测试文件 889/889 项通过，零失败或跳过。1361 个候选文件在测试前后哈希一致。独立 Windows 原生验收 5 个场景，51 次实际设备验签全部通过。两处旧预览保留。未进入 main，未重验原一键入口，未上线。正式价格、真实支付和退款、Mac 与官网仍待完成。证据位于 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-desktop-billing-20261118`。 [桌面账务合同](DESKTOP_BILLING_CONTRACT.md)。
 
 ## 2026-11-18 M5G 本地候选
 
-M5G 基于 `12495e1` 完成下一年度席位的合成续费候选。默认取原期限结束前一毫秒的已购容量，本团队技术管理员可调整。减席前先释放足够的现有承诺，建单与兑现均检查，付款后的并发占位冲突进入待核对状态。原子提交新增年期和选定容量，触发故障时只保留可信收款记录。22份完整相关测试 259/259，零失败或跳过，1354个候选文件前后哈希一致。首轮258/259，唯一失败为旧年单按前缀计数误将三条新增触发器算入。改用精确校验旧层定义的测试助手后重跑，业务源码未改。独立本机HTTP证据在 `D:/codex-temp/shenyi-annual-seats-20261118/review/`。合成总价为团队年费加席位年单价乘所选数量，正式价格、商户退款、桌面购买仍待接入。未进入main、未推送、未重验一键、未上线，旧预览保留，Goal继续。 [年度续费合同](ANNUAL_SEAT_RENEWAL_CONTRACT.md)。
+M5G 基于 `12495e1` 完成下一年度席位的合成续费候选。默认取原期限结束前一毫秒的已购容量，本团队技术管理员可调整。减席前先释放足够的现有承诺，建单与兑现均检查，付款后的并发占位冲突进入待核对状态。原子提交新增年期和选定容量，触发故障时只保留可信收款记录。22份完整相关测试 259/259，零失败或跳过，1354个候选文件前后哈希一致。首轮258/259，唯一失败为旧年单按前缀计数误将三条新增触发器算入。改用精确校验旧层定义的测试助手后重跑，业务源码未改。独立本机HTTP证据在 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-annual-seats-20261118/review/`。合成总价为团队年费加席位年单价乘所选数量，正式价格、商户退款、桌面购买仍待接入。未进入main、未推送、未重验一键、未上线，旧预览保留，Goal继续。 [年度续费合同](ANNUAL_SEAT_RENEWAL_CONTRACT.md)。
 
 ## 2026-11-18 M5F 本地候选
 
-M5F 基于 `4814242` 完成服务器合成席位增购候选。技术管理员锁定人数、精确剩余时长折算的整单金额和原到期日。可信收款先持久化，之后原子发布一份容量记录。重复通知与跨续费复用交易号不会重复授席，逾期收款留下可查事实供处理。19份完整相关测试 234/234，退出码0，零失败、跳过、取消或待办，1348个候选文件哈希前后一致。独立本机HTTP及其他证据见 `D:/codex-temp/shenyi-seat-orders-20261118/`。采用用户确认的按精确剩余时间折算并整单向上取整到分，候选分母为报价时点起一个北京时间自然年，最长报价15分钟，合成价格不作正式标价。实际退款、年度席位续转、桌面购买、商户接入还待完成。未进入main、未推送、未重验一键、未上线，旧预览均保留，Goal继续。 [增购订单合同](SEAT_ADDITION_ORDER_CONTRACT.md)。
+M5F 基于 `4814242` 完成服务器合成席位增购候选。技术管理员锁定人数、精确剩余时长折算的整单金额和原到期日。可信收款先持久化，之后原子发布一份容量记录。重复通知与跨续费复用交易号不会重复授席，逾期收款留下可查事实供处理。19份完整相关测试 234/234，退出码0，零失败、跳过、取消或待办，1348个候选文件哈希前后一致。独立本机HTTP及其他证据见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-seat-orders-20261118/`。采用用户确认的按精确剩余时间折算并整单向上取整到分，候选分母为报价时点起一个北京时间自然年，最长报价15分钟，合成价格不作正式标价。实际退款、年度席位续转、桌面购买、商户接入还待完成。未进入main、未推送、未重验一键、未上线，旧预览均保留，Goal继续。 [增购订单合同](SEAT_ADDITION_ORDER_CONTRACT.md)。
 
 ## 2026-11-18 M5E 本地候选
 
-M5E 基于 `3d3d169` 实现三类员工邀请发出即预留、激活转换、撤回或到期释放。服务端在写事务内检查容量，技术管理员首次兼任占一席，且可查本团队席位汇总。20份完整相关测试 502/502，19份484项和单独补跑的1份18项均通过，无失败或跳过。首门502项测试退出0，绑定脚本因1份测试开跑后改动退出1。保留原始结果，补跑固定1341个候选文件，只替换该份证据。独立本机HTTP证据在 `D:/codex-temp/shenyi-seat-reservations-20261118/review/`。初版无 rowid 导致六条旧快照测试失败，保留 rowid 后通过。当前使用合成容量，增购折算、年单容量续转、桌面购买及生产支付待接。未进入 main、未推送、未重验一键、未上线。旧两预览保留，M5与完整Goal继续。 [席位预留合同](INVITATION_SEAT_CAPACITY_CONTRACT.md)。
+M5E 基于 `3d3d169` 实现三类员工邀请发出即预留、激活转换、撤回或到期释放。服务端在写事务内检查容量，技术管理员首次兼任占一席，且可查本团队席位汇总。20份完整相关测试 502/502，19份484项和单独补跑的1份18项均通过，无失败或跳过。首门502项测试退出0，绑定脚本因1份测试开跑后改动退出1。保留原始结果，补跑固定1341个候选文件，只替换该份证据。独立本机HTTP证据在 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-seat-reservations-20261118/review/`。初版无 rowid 导致六条旧快照测试失败，保留 rowid 后通过。当前使用合成容量，增购折算、年单容量续转、桌面购买及生产支付待接。未进入 main、未推送、未重验一键、未上线。旧两预览保留，M5与完整Goal继续。 [席位预留合同](INVITATION_SEAT_CAPACITY_CONTRACT.md)。
 
 ## 2026-11-18 最新：M5D实现与验收
 
-`codex/annual-order-simulation`从`d88e809`接续，本地M5D候选已验。实现本团队技术管理员服务端锁价年单、北京自然年、独立HMAC合成来源、先持久验真事实再同事务发布订阅及兑现回执、主动查单和重启幂等补偿；默认关闭，启用须严格device＋team-management-v1，不授审计资料。固定Node24的40完整相关文件1005/1005、0fail/skip/cancel/todo、exit0、799.344秒；fresh 1332候选覆盖全部selection，before/after字节同。作者日历/网关/store/API及schema项含于根门，不累加。独审首轮两个有界场景32真实TCP、23运行时设备验签及23真实KDF，实际末fulfil插入故障保留inbox/回滚term，close/reopen后confirmedAt保持；43B合成采集原件和原项目grant保持，不外推全部历史底稿/GUI/Mac/HTTPS/商户。原API夹具两FAIL、gateway Proxy两RED、schema原3FAIL均保留；未弱化测试或KDF。schema89表/355显式DDL，旧86/346与原11表peel合同保持。旧预览/共享库/vault保留；未push/进main/重验一键/上线。无生产价格、增席容量/折算、退款或购买UI，M4未全完，M5/Goal active。合同[年单模拟收款](ANNUAL_ORDER_SIMULATION_CONTRACT.md)，证据D:/codex-temp/shenyi-annual-order-simulation-20261118/。
+`codex/annual-order-simulation`从`d88e809`接续，本地M5D候选已验。实现本团队技术管理员服务端锁价年单、北京自然年、独立HMAC合成来源、先持久验真事实再同事务发布订阅及兑现回执、主动查单和重启幂等补偿；默认关闭，启用须严格device＋team-management-v1，不授审计资料。固定Node24的40完整相关文件1005/1005、0fail/skip/cancel/todo、exit0、799.344秒；fresh 1332候选覆盖全部selection，before/after字节同。作者日历/网关/store/API及schema项含于根门，不累加。独审首轮两个有界场景32真实TCP、23运行时设备验签及23真实KDF，实际末fulfil插入故障保留inbox/回滚term，close/reopen后confirmedAt保持；43B合成采集原件和原项目grant保持，不外推全部历史底稿/GUI/Mac/HTTPS/商户。原API夹具两FAIL、gateway Proxy两RED、schema原3FAIL均保留；未弱化测试或KDF。schema89表/355显式DDL，旧86/346与原11表peel合同保持。旧预览/共享库/vault保留；未push/进main/重验一键/上线。无生产价格、增席容量/折算、退款或购买UI，M4未全完，M5/Goal active。合同[年单模拟收款](ANNUAL_ORDER_SIMULATION_CONTRACT.md)，证据$SHENYI_LOCAL_TEMP_ROOT/shenyi-annual-order-simulation-20261118/。
 
 本轮另确认下一片：发出邀请即预留席位；年期内增席与团队原到期日对齐，按剩余期限折算。启用业务人数原计数规则保持，邀请预留另记；仅记录政策，本片不实现容量/增席，也未确定实际价、精确折算公式与舍入。
 
@@ -940,7 +940,7 @@ M5E 基于 `3d3d169` 实现三类员工邀请发出即预留、激活转换、�
 
 新团队审核／首纯技术管理员的原4写＋1preview保持，不设置购买先后、业务资料或财务特权。旧预览／sharedDB／vault保留，仅metadata／公开methods核对；没有push／main／一键重验／上线。M4仍待决策及验收，M5／完整Goal继续active。
 
-本轮用户另已确认下一片订单政策：本团队技术管理员可看金额、创建续费／增购席位订单，不授审计资料；未到期从原到期顺延、过期从可信收款确认起算，按北京时间自然年，2月29对应次年2月28同一时刻。只记录决定，本片未实现订单／自然年算法／支付／续费界面；价格、席位容量与折算、退款和购买入口位置仍未决定。下一片接桌面状态／订单续费与可信模拟支付。见[M5C合同](SUBSCRIPTION_MANAGEMENT_EXPIRY_CONTRACT.md)、[订阅决策](SUBSCRIPTION_SEAT_DECISION.md)和`D:/codex-temp/shenyi-subscription-management-expiry-20261118/`。以下保留历史范围。
+本轮用户另已确认下一片订单政策：本团队技术管理员可看金额、创建续费／增购席位订单，不授审计资料；未到期从原到期顺延、过期从可信收款确认起算，按北京时间自然年，2月29对应次年2月28同一时刻。只记录决定，本片未实现订单／自然年算法／支付／续费界面；价格、席位容量与折算、退款和购买入口位置仍未决定。下一片接桌面状态／订单续费与可信模拟支付。见[M5C合同](SUBSCRIPTION_MANAGEMENT_EXPIRY_CONTRACT.md)、[订阅决策](SUBSCRIPTION_SEAT_DECISION.md)和`$SHENYI_LOCAL_TEMP_ROOT/shenyi-subscription-management-expiry-20261118/`。以下保留历史范围。
 
 ## 2026-11-18 最新：M5B现有业务数据到期控制候选
 
@@ -952,7 +952,7 @@ M5E 基于 `3d3d169` 实现三类员工邀请发出即预留、激活转换、�
 
 查阅、原权导出、历史原件／回执和临时上传取消保持；取消不删除已发布资料。两旧预览／共享DB／vault保留，仅元数据和公开methods核对。没有push／main／一键重验／上线。M4仍待决策及验收，M5与完整Goal继续active。
 
-本轮用户确认到期管理仅允许停用、撤权及原规则下换机／安全处理，邀请／启用／升职／增权须先续费。已写canonical决策，但管理接口／task assignment仍待下一片接线；当前`business-data-v1`不能称全局管理到期控制。桌面状态／主动续费入口、定价容量／年历／退款、订单支付与生产亦未完成。见[M5B合同](SUBSCRIPTION_BUSINESS_EXPIRY_CONTRACT.md)及[订阅决策](SUBSCRIPTION_SEAT_DECISION.md)；证据`D:/codex-temp/shenyi-subscription-business-expiry-20261118/`。以下保留历史范围。
+本轮用户确认到期管理仅允许停用、撤权及原规则下换机／安全处理，邀请／启用／升职／增权须先续费。已写canonical决策，但管理接口／task assignment仍待下一片接线；当前`business-data-v1`不能称全局管理到期控制。桌面状态／主动续费入口、定价容量／年历／退款、订单支付与生产亦未完成。见[M5B合同](SUBSCRIPTION_BUSINESS_EXPIRY_CONTRACT.md)及[订阅决策](SUBSCRIPTION_SEAT_DECISION.md)；证据`$SHENYI_LOCAL_TEMP_ROOT/shenyi-subscription-business-expiry-20261118/`。以下保留历史范围。
 
 ## 2026-11-18 最新：M5A订阅与席位底座候选
 
@@ -960,7 +960,7 @@ M5E 基于 `3d3d169` 实现三类员工邀请发出即预留、激活转换、�
 
 固定Node24相关12完整文件161/161、0fail／skip／cancel，fresh1308候选覆盖所有selected且before／after同。独立新3完整文件39/39；首真实TCP64请求／28签名通过，第二时序harness修装载顺序后只复验未完成部分，原FAIL保留，不重跑绿场景。首run无before.sqlite，不冒称物理双库；schema86／346保旧84非空typed行／UUID／原件／freeze。此前5005仅旧代码基线，本片未重跑完整unit／browser／原生。
 
-M4转待决策与验收，尚未完成，不开放未确认模块；当前唯一实现M5A，M5整体继续。旧预览／共享库保留，未push／main／一键重验／收款／上线，Goal active。见[范围合同](SUBSCRIPTION_FOUNDATION_CONTRACT.md)、[已确认政策](SUBSCRIPTION_SEAT_DECISION.md)和`D:/codex-temp/shenyi-subscription-foundation-20261118/`。以下保留历史范围。
+M4转待决策与验收，尚未完成，不开放未确认模块；当前唯一实现M5A，M5整体继续。旧预览／共享库保留，未push／main／一键重验／收款／上线，Goal active。见[范围合同](SUBSCRIPTION_FOUNDATION_CONTRACT.md)、[已确认政策](SUBSCRIPTION_SEAT_DECISION.md)和`$SHENYI_LOCAL_TEMP_ROOT/shenyi-subscription-foundation-20261118/`。以下保留历史范围。
 
 ## 2026-11-18 最新：完整可移植单元严格门通过，订阅政策已确认
 
@@ -970,7 +970,7 @@ M4转待决策与验收，尚未完成，不开放未确认模块；当前唯一
 
 用户已确认席位只计启用业务成员、纯技术admin不占席、兼任只一席；到期暂停新增／修改，已授权历史按原权查阅／导出，保留主动续费。[订阅决策](SUBSCRIPTION_SEAT_DECISION.md)及需求7.1已更新，M5仍planned、未实现收费；其他商业细则仍分别确认，不阻断不依赖它们的合成原型。报告原问题待答。
 
-旧预览和共享库保留，仅元数据／公开methods核同；原OS门前提未变不重试，canonical ZIP缺口及共享／一键、Mac、发行／TLS／商户／国内上线仍未通过。未push／main／一键重验／上线，M4／Goal active。证据`D:/codex-temp/shenyi-m4-portable-regression-20261118/`；以下保留历史范围。
+旧预览和共享库保留，仅元数据／公开methods核同；原OS门前提未变不重试，canonical ZIP缺口及共享／一键、Mac、发行／TLS／商户／国内上线仍未通过。未push／main／一键重验／上线，M4／Goal active。证据`$SHENYI_LOCAL_TEMP_ROOT/shenyi-m4-portable-regression-20261118/`；以下保留历史范围。
 
 ## 2026-11-18 最新：账表快照被动数组边界修复
 
@@ -978,7 +978,7 @@ M4转待决策与验收，尚未完成，不开放未确认模块；当前唯一
 
 新增同10断言原码2pass／8fail→修后10/10；五完整相关文件58/58，独立五文件53/53（含原外部3与两真实browser），均0失败／跳过，分别计数不相加。1155源门内同，原1154仅codec改1、新test1，其他1153保持；实际旧端15358B合成快照在新旧codec逐byte及两摘要一致。详见[进度](../进度.md)及[快照合同](LEDGER_CHECK_SNAPSHOT_CONTRACT.md)。
 
-原63 browser严格门仍缺固定SHA原始ZIP，当前344＝281＋63只为发现，未跑完整unit／strict；后续补冻结候选全量unit。OS门工具前提未变不重复，两旧预览／共享库按用户决定保留，仅元数据和公开methods核同。报告及M5细则原问题待答；未push／main／一键重验／上线，M4／Goal active，M5 planned。证据`D:/codex-temp/shenyi-ledger-array-prototype-20261118/`。以下保留历史范围。
+原63 browser严格门仍缺固定SHA原始ZIP，当前344＝281＋63只为发现，未跑完整unit／strict；后续补冻结候选全量unit。OS门工具前提未变不重复，两旧预览／共享库按用户决定保留，仅元数据和公开methods核同。报告及M5细则原问题待答；未push／main／一键重验／上线，M4／Goal active，M5 planned。证据`$SHENYI_LOCAL_TEMP_ROOT/shenyi-ledger-array-prototype-20261118/`。以下保留历史范围。
 
 ## 2026-11-18 最新：同库四模块组合隔离回归通过
 
@@ -986,13 +986,13 @@ M4转待决策与验收，尚未完成，不开放未确认模块；当前唯一
 
 两实际TCP场景作者及独审各240请求／112验签；各111 GET空body摘要独立复算，1 POST仅已签摘要头。独审4库／8包及4220物理断言通过；6 raw404正文精确，17 wire404头核准，typed404正文未保存。正常main-client＋内存Ed25519／loopback，不代表GUI、DPAPI、TLS；clearSession不称logout。root核49＋58项证据SHA与1154源同（旧1152无改）。runner仅发现343＝280＋63，未跑完整unit／strict。
 
-两旧预览保留，仅元数据和公开methods与前项检查点核同，本轮无CUA或oldDB／vault操作；共享库未升级，既有OS包Open／Save门仍未通过，工具不变不重试。报告授权及新问M5席位／到期细则待答；M5未启动。未push／main／一键重验／上线，M4／Goal active。证据`D:/codex-temp/shenyi-cross-module-isolation-20261118/independent/final-review.json`；以下保留历史范围。
+两旧预览保留，仅元数据和公开methods与前项检查点核同，本轮无CUA或oldDB／vault操作；共享库未升级，既有OS包Open／Save门仍未通过，工具不变不重试。报告授权及新问M5席位／到期细则待答；M5未启动。未push／main／一键重验／上线，M4／Goal active。证据`$SHENYI_LOCAL_TEMP_ROOT/shenyi-cross-module-isolation-20261118/independent/final-review.json`；以下保留历史范围。
 
 ## 2026-11-18 最新：真实OS尝试保全，本关未通过
 
 从`705bcab`接续M4，在全新正常Windows候选中实际选入来源JSON，1945B／SHA及WQ持久一致；随后底稿包原生框控件缓存512失效，重绑后同错，按保护规则停止单次尝试。包Open未完成、Save未到，底稿五表及迁入／导出0，不能声称OS pair通过。exec exit1且外部driver清理末尾disposed报错，root已补核5自有PID／4667关闭及停机只读快照；73项物理断言仅核partial事实，1152源未改。
 
-两旧预览继续保留；工具初错捕旧图已排除，未向old输入／请求激活或读DB／vault。记录器首段PNG缺口与来源UIA／actions、未正常logout分别披露。前提未变不自动重试；未push／main／一键重验／上线，M4／Goal active，报告待原答复。见[实际边界](NATIVE_OS_FILE_DIALOG_ACCEPTANCE.md)及`D:/codex-temp/shenyi-native-os-dialogs-20261118/`。以下保留历史范围。
+两旧预览继续保留；工具初错捕旧图已排除，未向old输入／请求激活或读DB／vault。记录器首段PNG缺口与来源UIA／actions、未正常logout分别披露。前提未变不自动重试；未push／main／一键重验／上线，M4／Goal active，报告待原答复。见[实际边界](NATIVE_OS_FILE_DIALOG_ACCEPTANCE.md)及`$SHENYI_LOCAL_TEMP_ROOT/shenyi-native-os-dialogs-20261118/`。以下保留历史范围。
 
 ## 2026-11-18 最新：员工邀请历史分页
 
@@ -1000,19 +1000,19 @@ M4转待决策与验收，尚未完成，不开放未确认模块；当前唯一
 
 独立13完整文件249/249、零失败／跳过、76695ms；52新项包含于总数。1152源门内raw同；收口仅新API测试EOF去2B、原断言29项复验，最终1151raw同＋1纯格式，旧1149仅5product＋旧expected null共6路径变化；UI有已披露EOL机械变化，非目标raw未宣称同。真实TCP21请求逐项对照／5业务签名带完整query重核，撤权分页404，194实际依赖同、自有服务关闭。均不是原生Win/Mac发行验收；342文件仅runner发现，未跑完整strict。
 
-两旧预览按用户决定保留，root仅进程／窗口／公开methods前后核同，未操作UI／DB／vault或升级共享库。未push／main／原一键重验／上线；报告待原答复，M4及完整Goal active。详见[进度](../进度.md)、[分页合同](EMPLOYEE_INVITATION_PAGING_CONTRACT.md)和`D:/codex-temp/shenyi-invitation-pagination-20261118/independent/gate-result.json`。以下保留历史范围。
+两旧预览按用户决定保留，root仅进程／窗口／公开methods前后核同，未操作UI／DB／vault或升级共享库。未push／main／原一键重验／上线；报告待原答复，M4及完整Goal active。详见[进度](../进度.md)、[分页合同](EMPLOYEE_INVITATION_PAGING_CONTRACT.md)和`$SHENYI_LOCAL_TEMP_ROOT/shenyi-invitation-pagination-20261118/independent/gate-result.json`。以下保留历史范围。
 
 ## 2026-11-18 最新：正常Windows资料回执验收
 
 当前资料回执修复已在全新正常Windows候选首轮standalone exit0实跑：正常账号／DPAPI／创建及来源核验／UI五权，import与add自动fresh后回执10／13字段对真实持久事件一致；commit／add各一次、无回执GET补救。撤read后清正文详情，typed GET404；3原件加55B后4份，历史保持。
 
-257 HTTP／120运行时验签、7库／4图及147物理断言经独审；完整字段由真实DOM＋DB证明，02图仅部分import、03图为原件区。671运行/helper和1149旧源保持，本轮未改产品、未native测其余四动作或故障／race、未重跑113／全量strict。原预览与共享库保留；未push／main／一键重验／上线，M4／Goal active，报告待答。详见[进度](../进度.md)及D:/codex-temp/shenyi-native-material-receipt-20261118/independent/final-review.json。以下为历史范围。
+257 HTTP／120运行时验签、7库／4图及147物理断言经独审；完整字段由真实DOM＋DB证明，02图仅部分import、03图为原件区。671运行/helper和1149旧源保持，本轮未改产品、未native测其余四动作或故障／race、未重跑113／全量strict。原预览与共享库保留；未push／main／一键重验／上线，M4／Goal active，报告待答。详见[进度](../进度.md)及$SHENYI_LOCAL_TEMP_ROOT/shenyi-native-material-receipt-20261118/independent/final-review.json。以下为历史范围。
 
 ## 2026-11-18 最新：资料操作确认回执反馈修复
 
 资料操作已确认成功后，自动刷新不再无意清空回执：fresh同scope、设备与读权／版本稳定才恢复详情；503／429等未知只保完成状态和原编号，硬拒绝／关闭／切换／ABA退役旧反馈。覆盖导入、核对、关门／重开、原件新增／移除，未改专业规则、服务端或手工历史回执语义。
 
-固定Node24独审7完整文件113/113，外部硬拒绝9/9另计；20新增已包含于113，旧码同断言真实10RED保留，初版两测试错误已纠正留证。仅JSDOM，非当前原生或完整strict。1148旧源仅1产品改／1147同，两旧预览及共享库保留；未push／main／上线，M4／Goal active，报告权限待原答复。详见[进度](../进度.md)及`D:/codex-temp/shenyi-material-receipt-20261118/independent/final/final-review.json`。以下为历史范围。
+固定Node24独审7完整文件113/113，外部硬拒绝9/9另计；20新增已包含于113，旧码同断言真实10RED保留，初版两测试错误已纠正留证。仅JSDOM，非当前原生或完整strict。1148旧源仅1产品改／1147同，两旧预览及共享库保留；未push／main／上线，M4／Goal active，报告权限待原答复。详见[进度](../进度.md)及`$SHENYI_LOCAL_TEMP_ROOT/shenyi-material-receipt-20261118/independent/final/final-review.json`。以下为历史范围。
 
 ## 2026-11-18 最新：正常Windows七块限流续传验收
 
@@ -1024,7 +1024,7 @@ root与独审实际核7份SQLite完整性／FK、来源record.json原字节、�
 
 主驱动／服务Node24.22.1，实际Electron45.3.2内嵌Node24.22.2；main43064与3个Chromium子进程出生profile、真实DPAPI、155API／26表单／31密码清空及七项webPreferences保持。launcher33632单列，结束后launcher＋4Electron及5291监听均实际查无残留。Playwright debug／engine flags（含NetworkServiceSandbox例外）不代表发行环境。原审核与ac503898两预览进程／窗口和公开methods标识保持，不操作其UI／DB／vault，不升级实际共享库。正常桌面入口本轮已实跑；一键cmd、OS Open／Save、Mac、TLS／生产及530MiB仍未验。报告授权待原答复；未push／进入main／上线，M4和完整Goal active。
 
-证据根`D:/codex-temp/shenyi-native-seven-chunk-20261118/`：`root-evidence-audit.json`、`independent/final-review.json`与`author/run-2026-11-17T20-42-21-464Z-97d4e2ef/`；命令、exit、驱动／源、截图／库及清理由原清单绑定。启动前发现并修正的外部清理误报、语法准备旧稿均保留，没有失败GUI运行。以下保留前项记录及其当时范围。
+证据根`$SHENYI_LOCAL_TEMP_ROOT/shenyi-native-seven-chunk-20261118/`：`root-evidence-audit.json`、`independent/final-review.json`与`author/run-2026-11-17T20-42-21-464Z-97d4e2ef/`；命令、exit、驱动／源、截图／库及清理由原清单绑定。启动前发现并修正的外部清理误报、语法准备旧稿均保留，没有失败GUI运行。以下保留前项记录及其当时范围。
 
 ## 2026-11-18 最新：分块拼装与早拒HTTP传输修复
 
@@ -1038,7 +1038,7 @@ root与独审实际核7份SQLite完整性／FK、来源record.json原字节、�
 
 root核1146旧源仅两产品文件变化，其余1144原字节保持，新增两测试。原审核与ac503898两预览进程／窗口及公开methods标识保持，未重载、登录或读取其业务库／vault；实际共享库与两原一键继续保留。当前补丁未做正常Electron／OS、Mac、TLS、最大包或生产验收。报告授权仍待原答复；未push／进入main／上线，M4与完整Goal active。
 
-证据根`D:/codex-temp/shenyi-chunk-assembly-20261118/`：`root-evidence-audit.json`、`independent/transport-review/final-discard/final-review.json`、`author/author-summary.json`及`root-http/run-2026-11-17T20-21-32-426Z-368c5087/`。精确命令、exit、TAP／源及失败工件按各清单绑定。以下保留前项记录及其当时范围。
+证据根`$SHENYI_LOCAL_TEMP_ROOT/shenyi-chunk-assembly-20261118/`：`root-evidence-audit.json`、`independent/transport-review/final-discard/final-review.json`、`author/author-summary.json`及`root-http/run-2026-11-17T20-21-32-426Z-368c5087/`。精确命令、exit、TAP／源及失败工件按各清单绑定。以下保留前项记录及其当时范围。
 
 ## 2026-11-18 最新：正常Windows Electron限流续传与发布后撤权验收
 
@@ -1050,7 +1050,7 @@ root核1146旧源仅两产品文件变化，其余1144原字节保持，新增�
 
 只关闭本次4个Electron进程与7754监听，原审核与ac503898两预览的四进程／两窗口字段保持，公开methods200／设备门保持；未读取其业务库／vault，未升级实际共享库。正常桌面入口已实跑；一键cmd、实际OS Open／Save、Mac、TLS／生产及530MiB最大包仍未验。Playwright加入debug／engine flags（含NetworkServiceSandbox例外），七项正常产品偏好检查不扩大成发行／整机service sandbox验收。未push／进入main／上线；报告授权仍待原答复，M4和完整Goal active。
 
-证据根`D:/codex-temp/shenyi-workpaper-native-resume-20261118/`：`root-evidence-audit.json`、`independent/final-review.json`与`author/run-2026-11-17T19-21-00-503Z/`；精确命令、源码、截图／库和清理按原始工件绑定。以下保留前项记录及其当时范围。
+证据根`$SHENYI_LOCAL_TEMP_ROOT/shenyi-workpaper-native-resume-20261118/`：`root-evidence-audit.json`、`independent/final-review.json`与`author/run-2026-11-17T19-21-00-503Z/`；精确命令、源码、截图／库和清理按原始工件绑定。以下保留前项记录及其当时范围。
 
 ## 2026-11-18 最新：真实HTTP限流、丢响应与底稿续传验收
 
@@ -1060,7 +1060,7 @@ root核1146旧源仅两产品文件变化，其余1144原字节保持，新增�
 
 两份新增完整文件5/5及四份原HTTP／transport完整文件35/35通过，零失败／跳过／取消；独立审查者重新执行新增5项并逐请求交叉复核client与listener、固定URL／UUID、真实socket关闭和清理工件。1143份既有运行／测试文件raw保持，独审自身1060文件清单前后同；新增fixture／测试另计，不混作同一来源清单。作者首轮的数据库终态名误期望，以及fetch拒绝早于socket close通知的观察时序错误均保留，分别按现有published语义、等待特定真实close事件修正；没有产品修补或降低断言。
 
-新增测试服务仅监听各自系统分配的loopback端口，均已关闭；两个既有预览不重载、不登录、不读业务库／vault。本轮未重验一键或正常Electron／OS对话框，不代表TLS、Mac、530MiB最大包、完整unit／browser严格门或生产验收。未push／进入main／上线；报告授权仍待原答复，M4和完整Goal active，其余用户保留项与专业决定保持。证据根`D:/codex-temp/shenyi-workpaper-http-resume-20261118/`，实际命令、计数、源码与逐请求工件以`root-evidence-audit.json`及`independent/`最终报告为准。
+新增测试服务仅监听各自系统分配的loopback端口，均已关闭；两个既有预览不重载、不登录、不读业务库／vault。本轮未重验一键或正常Electron／OS对话框，不代表TLS、Mac、530MiB最大包、完整unit／browser严格门或生产验收。未push／进入main／上线；报告授权仍待原答复，M4和完整Goal active，其余用户保留项与专业决定保持。证据根`$SHENYI_LOCAL_TEMP_ROOT/shenyi-workpaper-http-resume-20261118/`，实际命令、计数、源码与逐请求工件以`root-evidence-audit.json`及`independent/`最终报告为准。
 
 以下保留前项记录及其当时范围。
 
@@ -1074,7 +1074,7 @@ root核1146旧源仅两产品文件变化，其余1144原字节保持，新增�
 
 两份保留预览进程／窗口仍响应、公开methods200且设备门开启；本轮不关闭、重载、登录或查询其业务库／vault，旧窗口未加载本次修复。实际共享升级与两原一键继续依用户决定保留，本轮新候选一键也未重跑。未push／进入main／上线；报告授权仍待原问题答复，不擅自开放。M4／完整Goal active，原始ZIP／OS／Mac／发行／供应商／支付／官网及M5—M8和专业决定仍保留。
 
-证据根`D:/codex-temp/shenyi-device-heartbeat-quota-20261118/`：`root-evidence-audit.json`、`root-new-final.tap`、`related-gate/final-candidate2/`；独审及三组闭环见`D:/codex-temp/shenyi-native-readiness-20261118/design-review/final-review.json`与`capacity-preflight/ui-real-client-candidate2-final-with-office.tap`。范围合同见[设备会话合同](DESKTOP_DEVICE_SESSION_CONTRACT.md)与[底稿界面合同](WORKPAPER_UI_CONTRACT.md)。
+证据根`$SHENYI_LOCAL_TEMP_ROOT/shenyi-device-heartbeat-quota-20261118/`：`root-evidence-audit.json`、`root-new-final.tap`、`related-gate/final-candidate2/`；独审及三组闭环见`$SHENYI_LOCAL_TEMP_ROOT/shenyi-native-readiness-20261118/design-review/final-review.json`与`capacity-preflight/ui-real-client-candidate2-final-with-office.tap`。范围合同见[设备会话合同](DESKTOP_DEVICE_SESSION_CONTRACT.md)与[底稿界面合同](WORKPAPER_UI_CONTRACT.md)。
 
 以下保留前项记录及其当时范围。
 
@@ -1084,7 +1084,7 @@ root核1146旧源仅两产品文件变化，其余1144原字节保持，新增�
 
 最终两完整文件26/26、零失败／跳过，1036相关源前后保持；4套非空业务的12库经root Python只读交叉核验，独立9项证据审计通过。标量UUID、失败发布、最终目标变更与WAL副本附档问题均有原失败及修后复验。备份含历史凭据及权限且未加密，只供离线核验，不能直接当生产恢复；Mac／ACL／加密／可信撤销重放与正式切换另验。
 
-旧审核与新候选预览保留，实际共享库未读／未升级；本轮桌面入口未重跑，相关源码保持。未push／合入main／上线，M4和完整Goal active。下一报告授权已询问、尚待答复，其他外部与专业关卡继续保留。证据根`D:/codex-temp/shenyi-team-backup-20261118/`，完整范围见根目录进度。
+旧审核与新候选预览保留，实际共享库未读／未升级；本轮桌面入口未重跑，相关源码保持。未push／合入main／上线，M4和完整Goal active。下一报告授权已询问、尚待答复，其他外部与专业关卡继续保留。证据根`$SHENYI_LOCAL_TEMP_ROOT/shenyi-team-backup-20261118/`，完整范围见根目录进度。
 
 以下保留前项范围。
 
@@ -1093,7 +1093,7 @@ root核1146旧源仅两产品文件变化，其余1144原字节保持，新增�
 
 `codex/isolated-team-preview`从`3694916`接续，新增[独立合成候选入口](ISOLATED_CANDIDATE_PREVIEW.md)。新cmd已实跑并保留“ac503898”登录窗口；旧审核窗口／实际共享库／旧vault不迁移、不关闭，两原cmd未重验。每次全新数据与设备密钥，不自动续用。原生早期缓存串默认目录及隐藏窗口的首轮失败保留，修后以受控CLI从进程出生隔离，实际main／GPU／network／renderer均落新目录。
 
-相关6文件79/79、零跳过，1030相关文件前后一致；既有client／设备／HTTPS／配置125/125是另一命令。修复后正常Windows8阶段／2图、真实DPAPI、27条GET验签、并存／单实例及坏配置／错CLI拒绝通过；627运行依赖保持。原生第二实例本候选cache拒绝警告保留。独立复核13项通过，详见根目录进度及仓库外`D:/codex-temp/shenyi-isolated-preview-20261118/`。
+相关6文件79/79、零跳过，1030相关文件前后一致；既有client／设备／HTTPS／配置125/125是另一命令。修复后正常Windows8阶段／2图、真实DPAPI、27条GET验签、并存／单实例及坏配置／错CLI拒绝通过；627运行依赖保持。原生第二实例本候选cache拒绝警告保留。独立复核13项通过，详见根目录进度及仓库外`$SHENYI_LOCAL_TEMP_ROOT/shenyi-isolated-preview-20261118/`。
 
 main未合入、远程未推送、线上未发布；新一键可达，原两一键未重验。M4及完整Goal保持active。完整unit／原始ZIP严格门、OS Open/Save、Mac、安装更新、真实供应商／客户／支付与M5—M8均不据此宣称完成。
 
@@ -1112,7 +1112,7 @@ main未合入、远程未推送、线上未发布；新一键可达，原两一�
 
 真实OS补验未得到独立可定位的弹窗句柄，焦点与画面冲突后未点击／按键／输入路径；隔离driver超时后已关闭自己的窗口，heads／versions为0且无导出。原审核预览未动，也未推断其中无未保存内容。用户已明确选择“保留旧预览，继续其他开发和验收”：本轮不关闭旧预览、不升级实际共享库、不重验两原一键；共享库仅有前项只读备份和隔离副本升级预演，后续须遵守此保留决定，不重复请求关闭。
 
-证据根：`D:/codex-temp/shenyi-workpaper-acceptance-20261117/`；root汇总`root-evidence-audit.json`，浏览器`browser-strict-final/report.json`，M4P独审`independent-ledger/final-recheck/review.md`，最终Windows独审`independent-native-final-owner-poll/independent-review.json`。未push／进入main／上线，原一键未重验；M4和完整Goal保持active。余项为授权原包严格门、可靠OS Open／Save、依用户决定保留的共享库与两原一键，以及其他M4模块；Mac、安装更新、真实客户／供应商／支付／生产和后续M5—M8尚未完成，专业运行／复核／新冻结／重开依用户和米老师决定。
+证据根：`$SHENYI_LOCAL_TEMP_ROOT/shenyi-workpaper-acceptance-20261117/`；root汇总`root-evidence-audit.json`，浏览器`browser-strict-final/report.json`，M4P独审`independent-ledger/final-recheck/review.md`，最终Windows独审`independent-native-final-owner-poll/independent-review.json`。未push／进入main／上线，原一键未重验；M4和完整Goal保持active。余项为授权原包严格门、可靠OS Open／Save、依用户决定保留的共享库与两原一键，以及其他M4模块；Mac、安装更新、真实客户／供应商／支付／生产和后续M5—M8尚未完成，专业运行／复核／新冻结／重开依用户和米老师决定。
 
 以下为前项阶段记录，保留其当时范围。
 
@@ -1120,7 +1120,7 @@ main未合入、远程未推送、线上未发布；新一键可达，原两一�
 
 M4Q正常底稿桌面候选已接入：旧135接口保持、尾部追加20窄IPC；负责人验密分别配置查阅／填写／导出，完整包显式首次迁入，原表／历史版本、CAS填写保存、原编号回执及所选版本原生导出进入正常页面。实习生／助理入口隐藏且直调拒绝；账号／设备／项目或失权清除旧内容，未知操作不盲重发。
 
-Node24完整可移植单元严格复验262文件4756/4756通过，0失败／跳过／取消／todo，1190.891秒；1264候选文件运行期间raw一致，TAP编号／plan／footer和exit0已核。按原脚本--unit发现集合，粗排除63整文件，不称完整browser strict。原串行4732项中的辅助层清单遗漏、随后4750项中的文件晚改校验盲区均已修，原失败保留；最终按相同260文件＋新增回归2文件重新执行，2并发，未改原runner／旧测试断言或工作因子。证据根D:/codex-temp/shenyi-workpaper-ui-20261117/。
+Node24完整可移植单元严格复验262文件4756/4756通过，0失败／跳过／取消／todo，1190.891秒；1264候选文件运行期间raw一致，TAP编号／plan／footer和exit0已核。按原脚本--unit发现集合，粗排除63整文件，不称完整browser strict。原串行4732项中的辅助层清单遗漏、随后4750项中的文件晚改校验盲区均已修，原失败保留；最终按相同260文件＋新增回归2文件重新执行，2并发，未改原runner／旧测试断言或工作因子。证据根$SHENYI_LOCAL_TEMP_ROOT/shenyi-workpaper-ui-20261117/。
 
 真实Chrome作者28项／8图、Windows正常Electron合成闭环另行记录；严格签名HTTP／DPAPI／SQLite、155 API／channel、26表单／31密码框及退出清理均分层验证。Chrome native geometry为明确受控视图，不冒充真实catalog；Windows注入文件选择路径，不冒充实际OS文件对话框操作。deadline／IPC／UI／兼容层、schema剥层及持久内容复核分别独审，已确证问题的原失败、修复与关闭证据已由root按原始TAP／manifest／当前源码复核。
 
@@ -1132,7 +1132,7 @@ Node24完整可移植单元严格复验262文件4756/4756通过，0失败／跳�
 
 M4Q已接桌面主进程typed client及私有文件工作流：设备签名／server UUID／窄响应门、完整包native picker与Worker核验、同ID分块迁入／显式续传／未知结果原回执；read && export下流式临时落盘、ZIP实际CRC／SHA／冻结绑定、最终核权及实际发布目标复核。真实createTeamClient到严格服务端的迁入／原表／填写CAS／回执／导出已测，但尚未注册正常底稿IPC与UI。
 
-固定Node24相关门62文件1100/1100通过，零失败／跳过／取消／todo，848.765秒；1252候选文件运行前后raw一致，TAP连续编号／plan／footer及exit0核对。包括本轮129例（API24、实际main-client4、迁入26、transport13、落盘51、发布11）及前项服务端／实际Chrome原表解析、旧client／设备／账表／来源／资料导出／受信HTTPS／135-RPC兼容；不是完整严格门或正常底稿UI／真实OS对话框验收。证据根D:/codex-temp/shenyi-workpaper-desktop-client-20261117/。
+固定Node24相关门62文件1100/1100通过，零失败／跳过／取消／todo，848.765秒；1252候选文件运行前后raw一致，TAP连续编号／plan／footer及exit0核对。包括本轮129例（API24、实际main-client4、迁入26、transport13、落盘51、发布11）及前项服务端／实际Chrome原表解析、旧client／设备／账表／来源／资料导出／受信HTTPS／135-RPC兼容；不是完整严格门或正常底稿UI／真实OS对话框验收。证据根$SHENYI_LOCAL_TEMP_ROOT/shenyi-workpaper-desktop-client-20261117/。
 
 关键代码由其他作者独立复核：API31/31（158范围文件）、迁入与Worker28/28（187）、导出／落盘79/79＋4/4（619）。root已核28／49／29工件、原始TAP／命令exit及当前直接文件与范围哈希。发现的4项P2均修复并按原事实复验关闭，旧失败／BUG复现保留；作者自身代码未自验成独审。范围不扩大为正常IPC/UI、OS原生、Mac、最大容量、M4P整体、完整M4Q或Goal。
 
@@ -1144,7 +1144,7 @@ M4Q已接桌面主进程typed client及私有文件工作流：设备签名／se
 
 M4Q服务端已接read && export固定已保存版本的独立团队ZIP导出，保留该版本填写、逐引用MIME、原件、既有冻结和首次迁入清单／SHA。预检与传输中复核权限、租约、来源和head，失败中断，不替换版本。只包含所选版本，不支持团队包再迁入或完整历史恢复。正常桌面导入／原表／保存／回执／导出发布仍待接入。
 
-固定Node24相关门47文件828/828通过，零失败／跳过／取消／todo，642.016秒；1234候选文件运行前后raw一致，连续TAP／plan／footer与exit0核对。包含本轮24例、原HTTP及前序权限／迁入／原表／实际Chrome四型解析／填写／设备／schema兼容；不是完整严格门或正常桌面／原生验收。证据根D:/codex-temp/shenyi-workpaper-export-20261117/。
+固定Node24相关门47文件828/828通过，零失败／跳过／取消／todo，642.016秒；1234候选文件运行前后raw一致，连续TAP／plan／footer与exit0核对。包含本轮24例、原HTTP及前序权限／迁入／原表／实际Chrome四型解析／填写／设备／schema兼容；不是完整严格门或正常桌面／原生验收。证据根$SHENYI_LOCAL_TEMP_ROOT/shenyi-workpaper-export-20261117/。
 
 本轮导出及新增路由／HTTP流式转发已由独立agent有界验收，原24例及额外探针和真实TCP／Python ZIP核验分别记录，root已核对原始证据与当前文件哈希，未解已确证P1/P2为0。前序基础授权／完整包迁入／Office准入也已补独审：146/146、实际Chrome9/9、额外3/3，原TAP与36证据文件／22直接源绑定均已核对；原填写独审仍保留其59/59＋Chrome14/14范围。不得扩大为M4P整体、正常桌面、完整M4Q或Goal验收。
 
@@ -1160,7 +1160,7 @@ head条件更新和一条不可变entries版本在同一事务完成，精确两
 
 固定Node24按41文件最终798/798通过，0失败／跳过／取消／todo，583.859秒；1227候选源before／after raw一致，连续TAP／plan／footer及exit0核对。四类实际原件、独立双权、冻结及独立可写范围、原型键、32MiB输出边界、原件／旧版本／人工来源及故障回滚包含在内；旧原表／实际Chrome四型解析对照、导入／授权／来源／账表／角色／成员／设备／schema兼容同时执行。不是完整严格门、真实跨进程／TCP、正常桌面或原生验收。本次填写保存链路已完成独立安全／数据复核，范围及自行执行证据以独立报告为准，前序未独审范围不自动通过。
 
-证据根 `D:/codex-temp/shenyi-workpaper-cas-20261117/`，见[填写CAS与历史版本](WORKPAPER_ENTRIES_CONTRACT.md)。实际共享库未打开／升级，一键未针对本轮重验；没有新schema／全局体积扩容，dist／desktop／shared产品源保持。未push／进入main／上线，M4和完整Goal继续active。后续接团队read && export及正常桌面保存／回执交互，再完成相应原生、完整严格门和剩余独审；专业复核／新冻结／重开仍待米老师明确。
+证据根 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-workpaper-cas-20261117/`，见[填写CAS与历史版本](WORKPAPER_ENTRIES_CONTRACT.md)。实际共享库未打开／升级，一键未针对本轮重验；没有新schema／全局体积扩容，dist／desktop／shared产品源保持。未push／进入main／上线，M4和完整Goal继续active。后续接团队read && export及正常桌面保存／回执交互，再完成相应原生、完整严格门和剩余独审；专业复核／新冻结／重开仍待米老师明确。
 
 以下历史记录保留各自阶段范围，当前状态以上述检查点为准。
 
@@ -1170,7 +1170,7 @@ M4Q已新增原表解析、字段准入与独立read查阅服务端候选。按�
 
 固定Node24按36个相关文件，最终756/756通过，0失败／跳过／取消／todo，483.969秒；1217候选文件before／after raw一致，连续TAP、plan及footer／exit0核对。原完整包导入、三权／来源／账表／项目／职级／成员／设备／schema兼容同时执行；新检查覆盖实际线程完成点撤权／重登录／正常释放对照、伪造index、补充原件、冻结与只读额外写回滚。
 
-真实Chrome与Node对同字节合成XLSX、含实际BIFF公式／数组／隐藏行记录的XLS、DOCX及旧DOC进行对照，原值／Word模型及字段ID一致，原文件SHA保持、无pageerror／远程请求。此为解析器对照，未代替正常桌面、TCP/TLS、原生或真实业务模板验收。证据根 `D:/codex-temp/shenyi-workpaper-entries-20261117/`，见[原表解析与字段合同](WORKPAPER_FORM_CONTRACT.md)。
+真实Chrome与Node对同字节合成XLSX、含实际BIFF公式／数组／隐藏行记录的XLS、DOCX及旧DOC进行对照，原值／Word模型及字段ID一致，原文件SHA保持、无pageerror／远程请求。此为解析器对照，未代替正常桌面、TCP/TLS、原生或真实业务模板验收。证据根 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-workpaper-entries-20261117/`，见[原表解析与字段合同](WORKPAPER_FORM_CONTRACT.md)。
 
 本轮只增加按权GET原表接口，没有新schema／全局请求体扩容或专业规则动作。实际共享库未打开／升级，一键入口未针对本轮重验；未push／进入main／上线。根检查与完整严格门、独审分别记录；独立agent仍受已知额度限制待补，不以root代替。M4／完整Goal继续active；下一步使用现有服务端字段准入接read && write下填写CAS和不可变追加版本／原编号回执，再接团队导出及正常桌面。
 
@@ -1182,7 +1182,7 @@ M4Q完整底稿包首次团队导入、不可变版本1、按权查阅记录／�
 
 固定Node24按27个相关文件，最终683/683通过、0失败／跳过／取消／todo，434.219秒；1203候选文件before／after raw一致，连续TAP、plan及footer／exit0已核对。旧授权／来源／账表／项目／成员／职级／设备兼容同时执行。隔离库新增5表／17触发器／1索引（23定义）至84表／342定义，原79表／319定义全部typed行（含auth）与UUID保留；异常／非空新层禁止历史投影，3份旧测试适配逐byte逆变换通过。
 
-此前Chrome正常旧index实际下载的5984字节合成包，按原SHA经已审核旧Q迁入，在真实签名Request应用边界逐byte读回原JSON和2份原件，保留rev7／1份冻结快照，只有1个发布版本、临时块清空，旧资源typed行保持。另测实际超过1MiB两块包、逻辑2×530MiB预留及第三份拒绝；不称最大容量压力验收。证据根 `D:/codex-temp/shenyi-workpaper-data-20261117/`，详见[首次导入与版本合同](WORKPAPER_DATA_CONTRACT.md)。
+此前Chrome正常旧index实际下载的5984字节合成包，按原SHA经已审核旧Q迁入，在真实签名Request应用边界逐byte读回原JSON和2份原件，保留rev7／1份冻结快照，只有1个发布版本、临时块清空，旧资源typed行保持。另测实际超过1MiB两块包、逻辑2×530MiB预留及第三份拒绝；不称最大容量压力验收。证据根 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-workpaper-data-20261117/`，详见[首次导入与版本合同](WORKPAPER_DATA_CONTRACT.md)。
 
 本阶段仍是root相关检查，不是完整原严格门、TCP/TLS、正常桌面、Windows原生或独立验收。实际共享库未打开／升级，一键入口未针对新增数据层重验；未push／进入main／上线。独立复核受既有额度限制待补，不以root代替；M4与整个Goal继续active。下一步接原表可编辑字段与公式／链接／隐藏／只读保护，再做填写CAS、团队导出和正常桌面；专业复核／冻结／重开仍待米老师明确。
 
@@ -1194,7 +1194,7 @@ M4Q完整项目底稿包及旧版显式导出已接候选：保留原 ZIP、已�
 
 固定Node24按18个相关文件，最终320/320通过、0失败／跳过／取消／todo，43.015秒；1189候选文件before／after raw一致。真实Chrome旧正常index实际下载，并由Node和Chrome双向读回；逐库typed行／结构及全部Blob哈希保持，1次下载／1次URL创建释放、0业务写入／计算。1280×900和900×900均已复看，最终图与早先已看图逐byte同SHA，无横向溢出；来源同rev填写／编号／立项变化和页面失效拒绝发布，独立试用按钮禁用。上述为root相关门，不是完整严格门、Windows原生或独立验收。
 
-前项M4P及本项授权基础的独审仍待额度条件恢复，不因root通过改判。包层没有新增HTTP／schema／IPC，实际共享库未打开／升级；团队一键入口未针对本轮重验。未push／进入main／上线，M4及完整Goal继续active。详见[完整底稿包合同](WORKPAPER_PACKAGE_CONTRACT.md)；证据 `D:/codex-temp/shenyi-workpaper-package-20261117/related-final/related-report.json`。
+前项M4P及本项授权基础的独审仍待额度条件恢复，不因root通过改判。包层没有新增HTTP／schema／IPC，实际共享库未打开／升级；团队一键入口未针对本轮重验。未push／进入main／上线，M4及完整Goal继续active。详见[完整底稿包合同](WORKPAPER_PACKAGE_CONTRACT.md)；证据 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-workpaper-package-20261117/related-final/related-report.json`。
 
 下列授权基础和M4P记录保留其各自检查范围。
 
@@ -1206,23 +1206,23 @@ M4Q底稿团队接入进行中。用户已确认负责人验密后，分别为�
 
 M4P账表校验只读接入进行中：用户已确认先只开放查阅，运行以后再定；旧版显式导出快照，由项目负责人核验并验证当前密码后导入团队，只供查阅，不写底稿。账表快照已接正常团队页面和12项窄IPC，提供独立项目列表、明确读权、来源核验导入、历史只读展示及本人原回执查询。当前正常界面、Windows原生、986项定向、4324项完整可移植单元严格门、旧8组原生兼容及两原一键／共享数据保全均通过root检查；独立复核仍待完成，不作M4P整体验收。
 
-最新root检查：原Node24 `scripts/test.mjs --unit --strict` 4324/4324通过，0失败／跳过／取消／todo，1889.031秒；连续TAP／plan／footer及exit0已复核，226文件选入／61整browser粗排除，1168源before／after／当次current raw保持。旧8组Windows原生兼容270.079秒通过，48处外部精确适配可逆重建原bytes、原业务断言调用数不变，实际新增层另行核验；不与986专题门或前序计数累加。普通／审核两原cmd的实际窗口、health和设备协议均当次可达；两共享库实际升至77表／290定义，旧73表／252定义全部typed行（含auth无豁免）、9／16账号及两固定UUID保持，4张新账表表为空。原审核预览已恢复打开；最后活性为当次观察，不承诺持续存活。证据根 `D:/codex-temp/shenyi-ledger-check-acceptance-20261117/`；独立复核不豁免，未push／进入main／上线。
+最新root检查：原Node24 `scripts/test.mjs --unit --strict` 4324/4324通过，0失败／跳过／取消／todo，1889.031秒；连续TAP／plan／footer及exit0已复核，226文件选入／61整browser粗排除，1168源before／after／当次current raw保持。旧8组Windows原生兼容270.079秒通过，48处外部精确适配可逆重建原bytes、原业务断言调用数不变，实际新增层另行核验；不与986专题门或前序计数累加。普通／审核两原cmd的实际窗口、health和设备协议均当次可达；两共享库实际升至77表／290定义，旧73表／252定义全部typed行（含auth无豁免）、9／16账号及两固定UUID保持，4张新账表表为空。原审核预览已恢复打开；最后活性为当次观察，不承诺持续存活。证据根 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-ledger-check-acceptance-20261117/`；独立复核不豁免，未push／进入main／上线。
 
-正常界面本轮root入口／UI相关门797/797通过、0失败／跳过／取消／todo，172.844秒；新增22项包含在其中。测试时1164候选文件before／after raw保持。原123项入口和22form／27密码固定基线保留，唯一新增12项／两form／两密码，当前135RPC／24form／29密码；43份旧检查仅精确名单投影和计数层适配，87项首段表达式及4项静态后续表达式／导入均可从原字节完整重建，其他字节与业务断言保持。变体门拒绝未授权增删／改序及额外表单／密码放宽。首轮794项740pass／54fail为数量冲突，适配后791pass／3fail中一项实际发现模块未加载时全局改密退出未清新增密码，已修复；另两项静态适配未落盘。部分修补中止后误启动的验证明确中断并留证，74项前提门通过后才执行本最终门。见 `D:/codex-temp/shenyi-ledger-check-ui-20261117/ui-compat-verified-final/api-report.json`、`entry-adapter-final-verification.json`及保留失败／中断日志。
+正常界面本轮root入口／UI相关门797/797通过、0失败／跳过／取消／todo，172.844秒；新增22项包含在其中。测试时1164候选文件before／after raw保持。原123项入口和22form／27密码固定基线保留，唯一新增12项／两form／两密码，当前135RPC／24form／29密码；43份旧检查仅精确名单投影和计数层适配，87项首段表达式及4项静态后续表达式／导入均可从原字节完整重建，其他字节与业务断言保持。变体门拒绝未授权增删／改序及额外表单／密码放宽。首轮794项740pass／54fail为数量冲突，适配后791pass／3fail中一项实际发现模块未加载时全局改密退出未清新增密码，已修复；另两项静态适配未落盘。部分修补中止后误启动的验证明确中断并留证，74项前提门通过后才执行本最终门。见 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-ledger-check-ui-20261117/ui-compat-verified-final/api-report.json`、`entry-adapter-final-verification.json`及保留失败／中断日志。
 
-正常Chrome完整流程已通过并复看截图：实际HTML／CSS／preload／主进程桥、真实TeamClient及签名Request／隔离SQLite，自授读权→来源核验→追加导入→历史只读→关闭清理／重开；1280×900及900×900无横向溢出，原HTML字符串不执行。源文件SHA和规范JSON保持，26张原资源表typed行保持，一笔导入POST／一份版本，无计算引擎资源或pageerror。主frame与picker为注入fixture，团队后端未用TCP/TLS，不称Electron／OS／Mac／独立验收。最终报告 `D:/codex-temp/shenyi-ledger-check-ui-20261117/browser/run-2026-11-17T05-18-52-108Z/report.json`；首轮过时侧栏文案已修，旧图／报告保留。
+正常Chrome完整流程已通过并复看截图：实际HTML／CSS／preload／主进程桥、真实TeamClient及签名Request／隔离SQLite，自授读权→来源核验→追加导入→历史只读→关闭清理／重开；1280×900及900×900无横向溢出，原HTML字符串不执行。源文件SHA和规范JSON保持，26张原资源表typed行保持，一笔导入POST／一份版本，无计算引擎资源或pageerror。主frame与picker为注入fixture，团队后端未用TCP/TLS，不称Electron／OS／Mac／独立验收。最终报告 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-ledger-check-ui-20261117/browser/run-2026-11-17T05-18-52-108Z/report.json`；首轮过时侧栏文案已修，旧图／报告保留。
 
-桌面主进程基础阶段root相关门150/150通过、0失败／跳过／取消／todo，104.532秒；新28项包含在其中，不与历史门相加。测试时1156候选文件before／after raw保持。真实TeamClient＋签名Request应用边界／隔离SQLite／D盘合成文件验证18MiB快照、哈希及响应头、独立读权、撤权／账号切换／取消／旧错误、受信服务预检、选取预检与私有字节绑定、错误Q／超限／读取失败、在途关闭及未知回执不重发；原客户端、设备、材料、资料保全、业务确认和立项来源相关检查一并通过。原生对话框为fixture，未做OS窗口／真实网络／Mac／生产验收。首轮新27项25pass／2fail为查询fixture误带版本字段，接口拒绝不放宽；另有metadata-retire-before.tap真实复现旧元数据错误会暂停后开的有效面板，修为四类读取捕获查阅代次后通过本门。证据：`D:/codex-temp/shenyi-ledger-check-desktop-20261117/client-related-final/api-report.json`。该主进程基础阶段无新HTTP／schema／IPC，未打开共享库，不改原专业算法；独立复核仍待额度条件解除，不以root代替。
+桌面主进程基础阶段root相关门150/150通过、0失败／跳过／取消／todo，104.532秒；新28项包含在其中，不与历史门相加。测试时1156候选文件before／after raw保持。真实TeamClient＋签名Request应用边界／隔离SQLite／D盘合成文件验证18MiB快照、哈希及响应头、独立读权、撤权／账号切换／取消／旧错误、受信服务预检、选取预检与私有字节绑定、错误Q／超限／读取失败、在途关闭及未知回执不重发；原客户端、设备、材料、资料保全、业务确认和立项来源相关检查一并通过。原生对话框为fixture，未做OS窗口／真实网络／Mac／生产验收。首轮新27项25pass／2fail为查询fixture误带版本字段，接口拒绝不放宽；另有metadata-retire-before.tap真实复现旧元数据错误会暂停后开的有效面板，修为四类读取捕获查阅代次后通过本门。证据：`$SHENYI_LOCAL_TEMP_ROOT/shenyi-ledger-check-desktop-20261117/client-related-final/api-report.json`。该主进程基础阶段无新HTTP／schema／IPC，未打开共享库，不改原专业算法；独立复核仍待额度条件解除，不以root代替。
 
-服务端阶段root相关门392/392通过、0失败／跳过／取消／todo，211.656秒；测试期间1150候选文件before／after raw保持。覆盖真实设备签名Request、独立查阅权、无继承授权、负责人密码导入、W→Q及旧Q归属、版本／操作回执、body／KDF撤权ABA、只读／导入额外写回滚、大文件预检及并发限额、旧权限／停用／设备兼容。隔离库新增四空表／38定义至77表／290定义，旧73表／252定义及typed行／UUID保持；四类孤儿账表历史均禁止重建服务器身份。两份旧schema测试只增加显式四空表／38定义层，保留固定历史基线及旧断言。证据：`D:/codex-temp/shenyi-ledger-check-server-20261117/backend-related-final/api-report.json`。首轮相关385项为382pass／3fail，拒绝码断言过窄和两处旧schema数量固定，原失败完整保留；定向75门曾通过，随后补身份历史保护后运行本门。以上不是完整严格门、正常桌面或独立验收；独审额度限制仍待解除，不绕过、不替代。
+服务端阶段root相关门392/392通过、0失败／跳过／取消／todo，211.656秒；测试期间1150候选文件before／after raw保持。覆盖真实设备签名Request、独立查阅权、无继承授权、负责人密码导入、W→Q及旧Q归属、版本／操作回执、body／KDF撤权ABA、只读／导入额外写回滚、大文件预检及并发限额、旧权限／停用／设备兼容。隔离库新增四空表／38定义至77表／290定义，旧73表／252定义及typed行／UUID保持；四类孤儿账表历史均禁止重建服务器身份。两份旧schema测试只增加显式四空表／38定义层，保留固定历史基线及旧断言。证据：`$SHENYI_LOCAL_TEMP_ROOT/shenyi-ledger-check-server-20261117/backend-related-final/api-report.json`。首轮相关385项为382pass／3fail，拒绝码断言过窄和两处旧schema数量固定，原失败完整保留；定向75门曾通过，随后补身份历史保护后运行本门。以上不是完整严格门、正常桌面或独立验收；独审额度限制仍待解除，不绕过、不替代。
 
 新快照基础含28项核心／真实Chrome往返检查，连同原勾稽26项相关门共54通过、0失败／跳过／取消／todo；原自动校验专项另有5项通过。两次运行时原1132文件raw保持，之后只更新本项文档；未重跑完整4214门，不把专题累加成完整回归。独立复核仍待完成，不以root检查替代。
 
-旧端导出阶段兼容相关门139/139通过、0失败／跳过／取消／todo，56.156秒；该门1139候选文件before／after raw保持。真实正常旧index完成下载及编解码读回，全部库typed行／DDL及原件SHA保持；无保存结果、未保存输入、版本／同rev内容／立项／固定身份／关闭上下文变化拒绝，旧归属来源仍逐byte一致。20种loader篡改均被原固定hash守卫拒绝，两份旧测试仅精确loader例外及Chrome环境入口适配，原断言和固定hash未改。以上是root检查，不是M4P独审或完整软件验收。证据：`D:/codex-temp/shenyi-ledger-check-export-20261117/related-after-adapters/related-report.json`、`loader-guard-mutations.json`及原日志。首轮真实页面把编辑触发的既有操作计时混入全库保全，8pass／2fail；拆分独立输入拒绝后新browser 11pass，随后补旧来源兼容进入最终139门。首轮related 133pass／2fail为旧loader守卫及缺默认Chromium，修后原门全部执行；早期失败保留。
+旧端导出阶段兼容相关门139/139通过、0失败／跳过／取消／todo，56.156秒；该门1139候选文件before／after raw保持。真实正常旧index完成下载及编解码读回，全部库typed行／DDL及原件SHA保持；无保存结果、未保存输入、版本／同rev内容／立项／固定身份／关闭上下文变化拒绝，旧归属来源仍逐byte一致。20种loader篡改均被原固定hash守卫拒绝，两份旧测试仅精确loader例外及Chrome环境入口适配，原断言和固定hash未改。以上是root检查，不是M4P独审或完整软件验收。证据：`$SHENYI_LOCAL_TEMP_ROOT/shenyi-ledger-check-export-20261117/related-after-adapters/related-report.json`、`loader-guard-mutations.json`及原日志。首轮真实页面把编辑触发的既有操作计时混入全库保全，8pass／2fail；拆分独立输入拒绝后新browser 11pass，随后补旧来源兼容进入最终139门。首轮related 133pass／2fail为旧loader守卫及缺默认Chromium，修后原门全部执行；早期失败保留。
 
 继续同一M4P：正常页面、窄IPC和只读链路已接候选，下一步补独立复核及其发现问题的修正；其他M4模块继续按原路线逐项推进，并按实际问题补齐；独立额度限制不取消验收。运行、映射保存及底稿写入继续关闭，Mac／生产及双方业务签收单列，既定来源和权限决定不重复询问。 见[实际服务端合同](LEDGER_CHECK_SERVER_CONTRACT.md)。
 
-证据根 `D:/codex-temp/shenyi-ledger-check-discovery-20261117/`，见 `snapshot-related-report.json`、`legacy-baseline-verified-report.json`。未push／进入main／上线；本轮两原cmd的窗口／公开设备协议已实测，范围以最新检查点为准；M4整体和完整Goal保持active。见[当前合同](LEDGER_CHECK_SNAPSHOT_CONTRACT.md)及[权限／来源决定](LEDGER_CHECK_ACCESS_DECISION.md)。
+证据根 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-ledger-check-discovery-20261117/`，见 `snapshot-related-report.json`、`legacy-baseline-verified-report.json`。未push／进入main／上线；本轮两原cmd的窗口／公开设备协议已实测，范围以最新检查点为准；M4整体和完整Goal保持active。见[当前合同](LEDGER_CHECK_SNAPSHOT_CONTRACT.md)及[权限／来源决定](LEDGER_CHECK_ACCESS_DECISION.md)。
 
 ## 最近已验功能：M4O
 
@@ -1232,11 +1232,11 @@ M4O立项来源独立授权、查阅及规范JSON保存已实现，分支 `codex
 
 Windows正常入口12场景／7PNG／148依赖及独立原生产物复核已通过：正常W创建、原件上传和业务确认、Q审核迁入后的正常查阅、负责人逐项授权、source-only非负责人入口、AND四组合、W/Q原规范JSON逐byte保存、held Save撤权／取消零发布、真实rename后结果未知不重试均有证据。服务端51、client93、UI34及各独立专题通过；这些组存在重叠，不与完整回归相加。旧8组strict原生兼容一批通过，265.265秒、577源及原始输入保持；97份旧验收适配／8阶段125条转换链已独审，旧历史66/189、69/209、70/217均真重建，早期失败和P2修前证据保留。
 
-原固定Node24 `scripts/test.mjs --unit --strict` 最终门：PASS；tests 4214／pass 4214／fail 0／skip 0／cancel 0／todo 0，TAP 1773861.365 ms、inner wrapper（Date.now） 1770471 ms、outer wrapper 1774860 ms；215 selected／59整browser粗排除，1022源before-after-current raw状态 一致。最终报告 D:/codex-temp/shenyi-workspace-source-access-20261117/full/full-audited-report.json；TAP SHA-256 217ac227106debb9386545dab0eb729eaa6b111a54dd55b76eab7714929fa7b5；独立完整门复核 D:/codex-temp/shenyi-workspace-source-access-20261117/independent-full-review/review.json。计数来自最终连续TAP/plan/footer与源清单，不采用途中计数。
+原固定Node24 `scripts/test.mjs --unit --strict` 最终门：PASS；tests 4214／pass 4214／fail 0／skip 0／cancel 0／todo 0，TAP 1773861.365 ms、inner wrapper（Date.now） 1770471 ms、outer wrapper 1774860 ms；215 selected／59整browser粗排除，1022源before-after-current raw状态 一致。最终报告 $SHENYI_LOCAL_TEMP_ROOT/shenyi-workspace-source-access-20261117/full/full-audited-report.json；TAP SHA-256 217ac227106debb9386545dab0eb729eaa6b111a54dd55b76eab7714929fa7b5；独立完整门复核 $SHENYI_LOCAL_TEMP_ROOT/shenyi-workspace-source-access-20261117/independent-full-review/review.json。计数来自最终连续TAP/plan/footer与源清单，不采用途中计数。
 
-四次实际只读在线备份及独审保留原71表223定义、全部typed行（含auth，无豁免）、9／16合成账号和两UUID；升级后73表252定义，仅新增2表／26trigger／1index，两来源表空。两个原cmd入口当次真实窗口、health及设备协议可达，不宣称持续存活。1108原文件51,358,212B和13处既存CRLF前件保留；范围预审为115旧改＋23新、993原raw保持，业务公式、原编号／Q-W及历史原件不变。证据根 `D:/codex-temp/shenyi-workspace-source-access-20261117/`，原生／兼容／共享及范围独审分别见 `independent-native-review/review-final.json`、`independent-compatibility-review/review.json`、`independent-shared-final-review/review.json`、`independent-scope-review/report.json`。
+四次实际只读在线备份及独审保留原71表223定义、全部typed行（含auth，无豁免）、9／16合成账号和两UUID；升级后73表252定义，仅新增2表／26trigger／1index，两来源表空。两个原cmd入口当次真实窗口、health及设备协议可达，不宣称持续存活。1108原文件51,358,212B和13处既存CRLF前件保留；范围预审为115旧改＋23新、993原raw保持，业务公式、原编号／Q-W及历史原件不变。证据根 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-workspace-source-access-20261117/`，原生／兼容／共享及范围独审分别见 `independent-native-review/review-final.json`、`independent-compatibility-review/review.json`、`independent-shared-final-review/review.json`、`independent-scope-review/report.json`。
 
-本地交付状态 windows_local_candidate_technical_verified；实际commit与最终门禁以外部 `D:/codex-temp/shenyi-workspace-source-access-20261117/final-delivery.json` 及Git为准，不预填未来SHA。未push／进入main／上线。M4整体及完整Goal保持active，其他专业模块逐出口授权／显式迁入、真实身份与商户／支付供应商、订阅席位、国内域名服务器及备案、Mac／真人picker／真实异机／双平台签名发行和两负责人业务签收仍按独立关卡推进。本片不代替这些验收；既有M3E和M4历史原样保留。
+本地交付状态 windows_local_candidate_technical_verified；实际commit与最终门禁以外部 `$SHENYI_LOCAL_TEMP_ROOT/shenyi-workspace-source-access-20261117/final-delivery.json` 及Git为准，不预填未来SHA。未push／进入main／上线。M4整体及完整Goal保持active，其他专业模块逐出口授权／显式迁入、真实身份与商户／支付供应商、订阅席位、国内域名服务器及备案、Mac／真人picker／真实异机／双平台签名发行和两负责人业务签收仍按独立关卡推进。本片不代替这些验收；既有M3E和M4历史原样保留。
 
 ## 最近已验交付：M3E本人电脑信息与记录
 
@@ -1246,7 +1246,7 @@ M3E本人设备自查入口已实现并通过Windows本地候选验收：`codex/
 
 最终原Node24严格gate 4036/4036，0fail／skip／cancel／todo（1727789.1835ms），205selected／59整文件browser粗排除；1000源before-after-current raw同。新109项已含于总数，不与专题相加。首full真实4030通过＋6失败、0skip／cancel／todo（1688680.0319ms）及1000源当轮raw同证据全留。仅6旧验收精确适配3325B，跨epoch994源同、产品0变；固定Node24原5文件90/90通过（76962.2215ms），Node25的90项单列补充而非门禁。旧8组strict兼容PASS，实际633.734秒，568源与3原始输入前后保持；首default失败及7组未运行不改判通过。
 
-证据：`D:/codex-temp/shenyi-my-device-20261117/`；完整gate `full-rerun/full-audited-report.json`，旧兼容 `compatibility-rerun/summary.json`，六夹具独审 `independent-client-entry/after-root-apply/review.json`，server／UI独审 `independent-server-ui/verification.json`，client／入口独审 `independent-client-entry/review-final.json`，范围独审 `independent-final/scope-rerun.json`，Node24／25边界 `commands/runtime-resolution-correction.json`。完整及兼容独审均已PASS，见 independent-final/full-review.json／independent-final/compatibility-review.json。范围75旧改＋14新，1018原文件raw保持。M3整体及完整Goal仍active；下一仅拟定最高审核账号独立人工恢复的有界合同，不擅自开工；M4立项来源查阅／导出分权已由用户确认，项目负责人验证密码后分别明确授予自己或本项目经理／合伙人；待独立实现，当前专业模块仍关闭，不再重复询问该决定。Mac、真人picker、真实异机／身份供应商、双平台发行和生产未验。未push／进入main／线上发布，未来本地commit以实际Git与外部manifest为准。
+证据：`$SHENYI_LOCAL_TEMP_ROOT/shenyi-my-device-20261117/`；完整gate `full-rerun/full-audited-report.json`，旧兼容 `compatibility-rerun/summary.json`，六夹具独审 `independent-client-entry/after-root-apply/review.json`，server／UI独审 `independent-server-ui/verification.json`，client／入口独审 `independent-client-entry/review-final.json`，范围独审 `independent-final/scope-rerun.json`，Node24／25边界 `commands/runtime-resolution-correction.json`。完整及兼容独审均已PASS，见 independent-final/full-review.json／independent-final/compatibility-review.json。范围75旧改＋14新，1018原文件raw保持。M3整体及完整Goal仍active；下一仅拟定最高审核账号独立人工恢复的有界合同，不擅自开工；M4立项来源查阅／导出分权已由用户确认，项目负责人验证密码后分别明确授予自己或本项目经理／合伙人；待独立实现，当前专业模块仍关闭，不再重复询问该决定。Mac、真人picker、真实异机／身份供应商、双平台发行和生产未验。未push／进入main／线上发布，未来本地commit以实际Git与外部manifest为准。
 
 上一M3D受信HTTPS集成本地候选已验：`codex/trusted-team-https` 从M4N本地 `6ccfe68` 按[执行合同](TRUSTED_TEAM_HTTPS_CONTRACT.md)及[配置说明](TRUSTED_TEAM_HTTPS.md)接通固定HTTPS origin/预期UUID、秘密前无秘密探测、每响应身份核对和实际桌面入口。完整原Node24严格gate3927/3927、0fail/skip/cancel/todo（1699019.3723ms），199selected/59整文件browser粗排除，988源before-after-current raw同；新98项包含在总数。新Windows实际main原生6case/5PNG/4阶段库＋runtime及独审通过，69B输入/库原件/保存逐字节与SHA3bd88d48cbd4f6abad989ab66cbb3fc53ce99ed3bcce31432bebdfc2a318d767相同，3actor/90profile/1独立OS vault保全；native1087当时before-after-current同，后仅已列说明文档变化，当前产品/测试988仍同。wrongUUID仅3次无秘密methods、无CA为0次HTTP，依据冻结执行断言与事件终态，不冒称有独立actor分界原始索引。旧相关8组顺序兼容631.86秒、563源及3输入保持，四真RO保70表217定义与全部typed行/auth零豁免、9与16账号/UUID不变，两原cmd实际可达。116RPC/21form/26秘密输入不增。2项unknown/迟到logout及1项remote帮助文案P2均有修前Fail→修后Pass；配置/客户端/TLS首次夹具失败完整保留。范围11旧改＋11新增，其余1071原文件raw保持，旧device-entry仅一行dependency适配，无专业规则/DDL更改。仅本地候选与本地提交，以实际Git及外部交付manifest为准；未push/main/线上发布。M3正式部署/供应商、最高owner恢复、设备自查/历史入口和双平台发行仍待；M4专业模块立项查阅/导出授权待答，保持in_progress，Goal active。Mac、真人picker、客户/公开生产及两负责人业务签收未完成。
 
@@ -1465,4 +1465,4 @@ Node24完整portable 1552通过/0失败/0跳过，271.29秒；新4专项110项�
 - strict device+当前密码、SQL最小人员scope、CAS/ABA/事务改role，撤旧session/lease/grants/未完成票、逐task版本一次；保留账号/membership有效、credential/phone/wechat/binding/原件history。专用1table1index，不改旧schema。
 - 完整portable2000/0fail/0skip、524.43秒、45源hash不变；新170项包含于总数。独立安全87/UI333、新client14/DOM19/entry3及strict原生4vault/5图5SQL/62Bhash均通过，unknown只1POST、heldSave0write，独立无剩本地P1/P2。14旧native兼容通过，11诊断与3strict分层记录。
 - 两真实一键升级51表/89对象，原50表/87定义及全部旧行保持；普通9/review14，无新seed/自动角色/自动设备。startup后全表row/DDL不变、auth豁免[]。最终review cmd37584→Node2128→Electron5124窗口/strict methods可达，8773原网页HTTP200；未来操作进程须重新核路径/父链。
-- 根证据D:/codex-temp/shenyi-m4-foundation-20261115/。未push/main/上线。管理员兼职、项目创建/任务及专业模块/迁移仍待M4；正式身份/远程配置/最高owner恢复、Mac/真实跨电脑/安装发布等外部版缺口不隐去，完整Goal active。
+- 根证据$SHENYI_LOCAL_TEMP_ROOT/shenyi-m4-foundation-20261115/。未push/main/上线。管理员兼职、项目创建/任务及专业模块/迁移仍待M4；正式身份/远程配置/最高owner恢复、Mac/真实跨电脑/安装发布等外部版缺口不隐去，完整Goal active。
