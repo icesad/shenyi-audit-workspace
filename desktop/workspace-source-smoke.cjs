@@ -1,6 +1,6 @@
 'use strict';
 // Isolated normal-main acceptance. The default entry only compiles and fingerprints.
-const fs=require('node:fs/promises'),path=require('node:path'),assert=require('node:assert/strict'),vm=require('node:vm');
+const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict'),vm=require('node:vm');
 const {createHash,randomUUID}=require('node:crypto'),{backup}=require('node:sqlite');
 const {pathToFileURL}=require('node:url');
 const codec=require('../dist/legacy-project-source.js');
@@ -8,9 +8,9 @@ const legacyFixture=require('../tests/helpers/legacy-project-source-fixture.cjs'
 const {createDeviceClientFixture}=require('./device-client-smoke.cjs');
 const {nativeBudgetRow,nativeWaitPlan}=require('./material-preview-smoke.cjs');
 const {workspaceSourceExportAllowed}=require('./workspace-source-export.cjs');
-const ROOT='D:/codex-temp/shenyi-workspace-source-access-20261117/native';
-const SOURCE='D:/codex-temp/shenyi-legacy-project-registration-20261116/old-browser/legacy-source-from-old-ui.json';
-const PASSWORD='ShenyiDemo!2026',FIXED_NODE='C:/Users/icesa/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe';
+const ROOT=process.env.SHENYI_WORKSPACE_SOURCE_SMOKE_ROOT||path.join(os.tmpdir(),'shenyi-workspace-source-access-20261117','native');
+const SOURCE=process.env.SHENYI_WORKSPACE_SOURCE_SMOKE_SOURCE||path.join(os.tmpdir(),'shenyi-legacy-project-registration-20261116','old-browser','legacy-source-from-old-ui.json');
+const PASSWORD='ShenyiDemo!2026',FIXED_NODE=process.env.SHENYI_WORKSPACE_SOURCE_SMOKE_NODE||process.execPath;
 const CHANNELS=['shenyi:workspace-source-access','shenyi:workspace-source-members','shenyi:workspace-source-access-change','shenyi:workspace-source','shenyi:workspace-source-export','shenyi:workspace-source-export-cancel'];
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const waiting=ms=>new Promise(resolve=>setTimeout(resolve,ms));
