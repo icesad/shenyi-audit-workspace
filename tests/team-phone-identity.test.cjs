@@ -219,6 +219,14 @@ test('invalid phone login requests do not consume the address budget',async t=>{
   assert.equal(accepted.status,200,accepted.raw);
 });
 
+test('phone login rate limits are isolated by edge address',async t=>{
+  const f=await fixture(t),user=await login(f);await bind(f,user.token);
+  const first='203.0.113.11',second='198.51.100.21',bucket='phone-login-ip:'+hash(first);
+  f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,60)').run(bucket,f.now);
+  assert.equal((await call(f,'/api/auth/phone/login',{body:{phone:PHONE,password:PASSWORD},clientIp:first})).status,429);
+  const allowed=await call(f,'/api/auth/phone/login',{body:{phone:PHONE,password:PASSWORD},clientIp:second});
+  assert.equal(allowed.status,200,allowed.raw);
+});
 test('pure SMS cannot reset without an explicit independent recovery approval strategy',async t=>{
   const f=await fixture(t), user=await login(f);await bind(f,user.token);
   const providers={sms:f.providers.sms,phonePepper:f.providers.phonePepper};
