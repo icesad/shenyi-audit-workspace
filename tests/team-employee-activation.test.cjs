@@ -222,9 +222,10 @@ test('invalid anonymous onboarding requests cannot exhaust another source or the
   }
   const delivered=f.sent.at(-1),activationBody={invitationCode:invitation.invitationCode,phone:PHONE,challengeId:delivered.challengeId,code:delivered.code,password:NEW_PASSWORD,displayName:'合成员工',accept:true};
   for(let i=0;i<60;i++){
-    const r=await activate(f,{...activationBody,invitationCode:invalidCode});
+    const r=await call(f,'/api/auth/onboarding/activate',{body:{...activationBody,invitationCode:invalidCode},headers:{'X-Shenyi-Client-IP':sources[0]}});
     assert.equal(r.status,404);
   }
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limits WHERE bucket=?').get('onboarding:activate:global').n,0);
-  const valid=await activate(f,activationBody);assert.equal(valid.status,200,valid.raw);
+  const valid=await call(f,'/api/auth/onboarding/activate',{body:activationBody,headers:{'X-Shenyi-Client-IP':sources[1]}});
+  assert.equal(valid.status,200,valid.raw);
 });
