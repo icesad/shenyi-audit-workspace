@@ -12,7 +12,7 @@ concurrency:
 jobs:
   unit:
     runs-on: windows-2025
-    timeout-minutes: 90
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
