@@ -189,6 +189,22 @@
     if(leading)warn('文档开头有未归属的正文，预览保留为说明；导入时附在首标题说明中，不作为独立资料项。');
     return {rows,warnings};
   }
+  function suggest(source){
+    const outline=prepare(source,'outline');
+    let numbered;
+    try{
+      numbered=prepare(source,'numbered');
+      const outlineCount=outline.rows.filter(row=>row.level>0).length;
+      const numberedCount=numbered.rows.filter(row=>row.level>0).length;
+      if(numberedCount&&(!outlineCount||numberedCount>=outlineCount*3&&numberedCount-outlineCount>=5)){
+        build(numbered.rows);
+        return {...numbered,mode:'numbered',automatic:true};
+      }
+    }catch(error){
+      if(!outline.rows.some(row=>row.level))throw error;
+    }
+    return {...outline,mode:'outline',automatic:true};
+  }
   function build(rows){
     if(!Array.isArray(rows)||rows.length>MAX_ROWS)fail('大纲预览行无效或过多。');
     const out=[],stack=[],leading=[];let current=null,chars=0;
@@ -208,5 +224,5 @@
     if(out.reduce((n,x)=>n+x.title.length+x.description.length,0)>LIMIT)fail('大纲最多 150,000 字符（含说明）。');
     return out;
   }
-  const api=Object.freeze({read,prepare,build});if(typeof module==='object'&&module.exports)module.exports=api;else root.AuditOutline=api;
+  const api=Object.freeze({read,prepare,suggest,build});if(typeof module==='object'&&module.exports)module.exports=api;else root.AuditOutline=api;
 })(globalThis);

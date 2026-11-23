@@ -58,6 +58,8 @@ test('saved ledger export: real normal page, readonly data preservation and late
  });
  await t.test('normal index row exports the original saved record and does not calculate or write',async()=>{
   const {page,errors,external}=await pageFor('/'),f=fixture();await seed(page,f);await page.reload();await page.locator('[data-view="project"]').first().click();
+  await page.locator('.pi-summary-table').getByRole('link',{name:f.id,exact:true}).click();
+  await page.getByRole('button',{name:'登记与附件',exact:true}).click();
   const button=page.locator('[data-project-ledger-snapshot="'+f.id+'"]');await button.waitFor();await page.waitForFunction(id=>!document.querySelector('[data-project-ledger-snapshot="'+id+'"]')?.disabled,f.id);
   await observe(page);const before=await fingerprint(page);
   const [download]=await Promise.all([page.waitForEvent('download'),button.click()]);const file=await download.path(),bytes=await fsp.readFile(file),parsed=await C.parse(bytes.toString('utf8'));

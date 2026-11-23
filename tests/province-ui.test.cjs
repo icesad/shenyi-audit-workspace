@@ -1,125 +1,261 @@
-const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{JSDOM}=require('jsdom');
-const KEY='hengdu.audit.quote.records.v2';
-function setup(raw){const dir=path.join(__dirname,'../dist'),dom=new JSDOM(fs.readFileSync(path.join(dir,'index.html'),'utf8'),{url:'http://localhost/',runScripts:'outside-only'}),w=dom.window;if(raw!==undefined)w.localStorage.setItem(KEY,raw);w.confirm=()=>true;w.HTMLDialogElement.prototype.showModal=function(){this.open=true};for(const file of ['calc.js','rule-catalog.js','regions.js','backup-restore.js','app.js'])w.eval(fs.readFileSync(path.join(dir,file),'utf8'));return {w,d:w.document,dom};}
-function change(w,el,value,event='change'){el.value=value;el.dispatchEvent(new w.Event(event,{bubbles:true}));}
-const slot=(d,n)=>d.querySelector('[data-comparison-slot="'+n+'"]'),ids=d=>[0,1,2].map(n=>slot(d,n).value);
-test('three in-card province dropdowns replace old top selector; each has34 options',()=>{const {d,dom}=setup();assert.equal(d.querySelector('#comparison-province'),null);assert.equal(d.querySelector('.province-control'),null);assert.deepEqual(ids(d),['gx','hb','110000']);assert.equal(d.querySelectorAll('.region-card').length,3);for(let i=0;i<3;i++){assert.equal([...slot(d,i).options].filter(o=>o.value).length,34);assert.equal(slot(d,i).getAttribute('aria-label'),['第一地 · 默认客户所在地','第二地 · 默认执行团队所在地','第三地 · 自选地区'][i]);}dom.window.close();});
-test('cards select independently and explicitly show borrowed Hebei provenance',t=>{
-  const {w,d,dom}=setup();t.after(()=>dom.window.close());
-  change(w,slot(d,1),'210000');assert.deepEqual(ids(d),['gx','210000','110000']);
-  assert.equal(d.querySelector('[name=location]').value,'广西');
-  const card=d.querySelectorAll('.region-card')[1],hb=w.RuleCatalog.defaultRule('hb');
-  assert.match(card.textContent,/河北/);assert.ok(card.textContent.includes(hb.document));
-  assert.match(card.querySelector('.region-price').textContent,/20,100\.00/);
-  assert.equal(card.querySelector('button').disabled,false);
-  card.querySelector('button').click();
-  assert.equal(d.querySelector('#quote-form [name=basis]').value,'210000');
-  assert.match(d.querySelector('#final-price').textContent,/20,100\.00/);
-  assert.match(d.querySelector('#basis-description').textContent,/河北/);
+const {test} = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const {JSDOM} = require('jsdom');
+
+const dist = path.resolve(__dirname, '../dist');
+function setup(t, storage = []) {
+  const dom = new JSDOM(fs.readFileSync(path.join(dist, 'index.html'), 'utf8'), {url:'http://localhost/',runScripts:'outside-only'});
+  const w = dom.window;
+  t.after(() => w.close());
+  for (const [key, value] of storage) w.localStorage.setItem(key, value);
+  for (const file of ['calc.js', 'rule-catalog.js', 'regions.js', 'backup-restore.js', 'app.js']) w.eval(fs.readFileSync(path.join(dist, file), 'utf8'));
+  const $ = selector => w.document.querySelector(selector);
+  const rows = () => [...w.document.querySelectorAll('#quote-estimates-rows tr')].filter(row => row.cells.length > 1);
+  function estimate(name) {
+    $('#quote-region').value = name;
+    $('#comparison').dispatchEvent(new w.Event('submit', {bubbles:true,cancelable:true}));
+  }
+  return {w, $, rows, estimate};
+}
+
+test('manual province entry rejects foreign regions, unknown names and blank text', t => {
+  const {estimate, $, rows} = setup(t);
+  assert.equal($('#quote-region[list]'), null);
+  assert.deepEqual([...$('#estimate-tax').options].map(option => option.value), ['1','3','6']);
+  assert.equal($('#estimate-factor').type, 'text');
+  for (const value of ['', '河北市', '安大略省', 'California', '广西省美国']) {
+    estimate(value);
+    assert.equal($('#quote-region-message').textContent, '输入错误', value);
+    assert.equal($('#quote-region').getAttribute('aria-invalid'), 'true');
+  }
+  assert.equal(rows().length, 0);
 });
-test('duplicate selections stay three visible cards, with unique basis options and duplicate hint',()=>{const {w,d,dom}=setup();change(w,slot(d,0),'hb');assert.equal(d.querySelectorAll('.region-card').length,3);assert.deepEqual(ids(d),['hb','hb','110000']);assert.match(d.querySelector('.card-label').textContent,/重复/);const options=[...d.querySelector('#quote-form [name=basis]').options].map(x=>x.value);assert.equal(options.filter(x=>x==='hb').length,1);change(w,slot(d,0),'sh');assert.equal(d.querySelectorAll('.region-card').length,3);assert.deepEqual(ids(d),['sh','hb','110000']);dom.window.close();});
-test('customization and reset preserve independently editable provincial defaults',t=>{
-  const {w,d,dom}=setup();t.after(()=>dom.window.close());
-  change(w,slot(d,0),'210000');d.querySelector('[data-view=rules]').click();
-  const editor=d.querySelector('#rule-editor'),before=editor.textContent;
-  assert.match(before,/河北/);assert.equal(d.querySelector('#rules-form [name=mode]').value,'progressive');
-  assert.equal(d.querySelector('#rules-form [name=fixedYuan]').value,'');
-  change(w,d.querySelector('#rules-form [name=mode]'),'fixed');
-  change(w,d.querySelector('#rules-form [name=fixedYuan]'),'7654','input');
-  d.querySelector('#rules-form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
-  const card=()=>d.querySelector('.region-card');
-  assert.match(card().textContent,/7,654.00/);assert.match(card().textContent,/本所自定义 · 待核/);
-  assert.match(d.querySelectorAll('.region-card')[1].querySelector('.region-price').textContent,/20,100.00/,'editing borrowed rule must not edit 河北');
-  d.querySelector('#restore-rule').click();
-  assert.equal(d.querySelector('#rules-form [name=mode]').value,'progressive');
-  assert.match(card().textContent,/20,100.00/);assert.match(card().textContent,/河北/);
+
+test('all province-level regions can be typed and scope-limited areas are saved without a price', t => {
+  const {w, estimate, $, rows} = setup(t);
+  for (const province of w.RuleCatalog.PROVINCES) {
+    estimate(province.name);
+    assert.equal($('#quote-region').value, province.name);
+    assert.match($('#quote-region-message').textContent, /已记录/, province.name);
+    if (province.scopePending) assert.match($('#quote-region-message').textContent, /适用范围及币种待确认/);
+  }
+  assert.equal($('#quote-estimates-status').textContent,'34 条');
+  const displayed=[];
+  for(const page of [1,2,3,4]){
+    $(`#estimate-pagination [data-estimate-page="${page}"]`).click();
+    displayed.push(...rows());
+  }
+  assert.equal(displayed.length,34);
+  assert.equal(displayed.filter(row => row.querySelector('.quote-record-amount').textContent === '待测算').length,3);
 });
-test('all 34 are visible in the separate editor; HK/Macau/Taiwan templates remain read-only and not quotable',t=>{
-  const {w,d,dom}=setup();t.after(()=>dom.window.close());
-  d.querySelector('[data-view=rules]').click();
-  const picker=d.querySelector('#rules-region-select'),codes=[...picker.options].map(o=>o.value).filter(Boolean);
-  assert.equal(codes.length,34);assert.equal(new Set(codes).size,34);
-  const original=ids(d),hb=w.RuleCatalog.defaultRule('hb');
-  for(const code of codes){
-    change(w,picker,code);
-    const rule=w.RuleCatalog.defaultRule(code),form=d.querySelector('#rules-form');
-    assert.equal(picker.value,code);assert.deepEqual(ids(d),original,code+' editor selection must not alter compare slots');
-    assert.equal(form.elements.namedItem('mode').value,rule.mode,code);
-    assert.equal(form.elements.namedItem('basis').value,rule.basis,code);
-    assert.equal(form.querySelectorAll('[data-tier][data-field=upToYuan]').length,rule.tiers.length,code);
-    if(rule.status==='scope_reference'){
-      assert.equal(d.querySelector('#rule-editor-parameters').disabled,true,code);
-      assert.equal(rule.tiers.length,hb.tiers.length);
-      assert.match(d.querySelector('#rule-editor').textContent,/仅展示|只读|不计算/,code);
+
+test('region history keeps repeated submissions, tax, provenance, and prices across a reload', t => {
+  const x = setup(t);
+  x.$('#estimate-tax').value = '6';
+  x.$('#estimate-factor').value = '70%';
+  x.estimate('　北京　');
+  assert.match(x.rows()[0].textContent, /北京市.*14,914\.20/);
+  assert.match(x.rows()[0].querySelector('.quote-record-amount').title, /借用河北历史口径，非当地标准/);
+  assert.equal(x.$('#estimate-result').value,'¥ 14,914.20');
+  x.$('#estimate-factor').value = '';
+  x.estimate('北京');
+  assert.equal(x.$('#final-price').textContent, '¥ 21,306.00');
+  assert.equal(x.$('#estimate-factor').value, '100%');
+  x.estimate('广东省');
+  assert.match(x.$('#final-price').textContent,/21,306\.00/);
+  assert.equal(x.rows().length, 3);
+  assert.equal(new Set(x.rows().map(row => row.querySelector('select').dataset.estimateOutcome)).size, 3);
+  assert.ok(x.rows().every(row=>!row.cells[2].textContent));
+  const storage = Array.from({length:x.w.localStorage.length}, (_, i) => x.w.localStorage.key(i)).map(key => [key, x.w.localStorage.getItem(key)]);
+  const reloaded = setup(t, storage);
+  assert.deepEqual(reloaded.rows().map(row => row.textContent), x.rows().map(row => row.textContent));
+  assert.equal(reloaded.$('#quote-estimates-status').textContent, '3 条');
+});
+
+test('pending historical rows have stable independent identifiers and an empty project code cell', t => {
+  const key = 'hengdu.audit.quote.estimates.v1.123-456-789-1234';
+  const raw = JSON.stringify({createdAt:1,provinceId:'gx',cents:1500000,project:'原测算项目'});
+  const x = setup(t, [[key, raw]]);
+  const oldCode = x.rows()[0].querySelector('select').dataset.estimateOutcome;
+  assert.match(oldCode, /^[a-f0-9-]{36}$/);
+  assert.equal(setup(t, [[key, raw]]).rows()[0].querySelector('select').dataset.estimateOutcome, oldCode);
+  x.estimate('广西');
+  x.$('#proposal-form [name=projectName]').value = '另一笔合成项目';
+  x.estimate('广西');
+  assert.equal(new Set(x.rows().map(row => row.querySelector('select').dataset.estimateOutcome)).size, 3);
+  assert.equal(x.w.localStorage.getItem(key), raw);
+});
+
+test('ambiguous historical awards stay in storage and no longer mark every row as won',t=>{
+  const prefix='hengdu.audit.quote.estimates.v1.';
+  const group='10000000-0000-4000-8000-000000000000';
+  const outcome='hengdu.audit.quote.estimate-outcome.v1.'+group;
+  const original=JSON.stringify({outcome:'won',awardedAt:'2026-11-22T00:00:00.000Z'});
+  const records=['hb','gx'].map((provinceId,i)=>[prefix+`${i+2}0000000-0000-4000-8000-000000000000`,JSON.stringify({
+    projectCode:group,createdAt:i+1,provinceId,auditeeQuotes:[{name:'合成甲公司',cents:100},{name:'合成乙公司',cents:200}]
+  })]);
+  const x=setup(t,[...records,[outcome,original]]);
+  const codes=x.rows().map(row=>row.querySelector('select').dataset.estimateOutcome);
+  assert.equal(new Set(codes).size,4);
+  assert.ok(x.rows().every(row=>row.querySelector('select').value===''));
+  assert.ok(x.rows().every(row=>!row.querySelector('[data-project-info]')));
+  assert.ok(x.rows().every(row=>!row.cells[2].textContent));
+  assert.equal(x.w.localStorage.getItem(outcome),original);
+  assert.ok(records.every(([key,value])=>x.w.localStorage.getItem(key)===value));
+  assert.deepEqual(setup(t,[...records,[outcome,original]]).rows().map(row=>row.querySelector('select').dataset.estimateOutcome),codes);
+});
+
+test('local formulas keep their basis and provenance and do not silently price an out-of-range project', t => {
+  const {w, estimate, $, rows} = setup(t);
+  for (const [name, document, basis, amount] of [
+    ['湖南', /湘价服/, /资产总额/, /21,210\.00/],
+    ['广东', /粤价/, /孰高/, /20,301\.00/],
+    ['重庆', /重庆注协/, /平均/, /28,280\.00/],
+    ['上海', /本所自定义工时预算/, /工时预算/, /33,936\.00/]
+  ]) {
+    estimate(name);
+    const row = rows().find(row => row.cells[7].textContent.startsWith(name));
+    const price = row.querySelector('.quote-record-amount');
+    assert.match(price.title, document);
+    assert.match(price.title, basis);
+    assert.doesNotMatch(price.title, /借用河北/);
+    assert.match(price.textContent, amount);
+  }
+  $('#client-form [name=assets]').value = '110000';
+  $('#client-form [name=revenue]').value = '110000';
+  $('#client-form [name=revenue]').dispatchEvent(new w.Event('input',{bubbles:true}));
+  estimate('重庆');
+  assert.match($('#quote-region-message').textContent, /双方协商/);
+  assert.ok(rows().some(row => row.cells[7].textContent === '重庆市' && row.querySelector('.quote-record-amount').textContent === '待测算'));
+});
+
+test('date, audited unit, project type and result combine before summing the visible unit prices', t => {
+  const prefix = 'hengdu.audit.quote.estimates.v1.';
+  const codes = [1,2,3,4].map(i => '00000000-0000-4000-8000-' + String(i).padStart(12,'0'));
+  const records = [
+    {date:'2026-11-20',project:'年度决算审计',projectType:'年度财务报表审计',cents:350003,
+      auditeeQuotes:[{name:'合成北区Ａ公司',cents:120001},{name:'合成南区公司',cents:230002}]},
+    {date:'2026-11-21',project:'收支专项审计',projectType:'专项审计',customerName:'合成北区Ａ公司',cents:450003},
+    {date:'2026-11-22',project:'待补规模专项',projectType:'专项审计',customerName:'合成北区Ａ公司',cents:null},
+    {date:'2026-11-22',project:'验资项目',projectType:'验资服务',customerName:'合成西区公司',cents:0}
+  ];
+  const measurementIds=records.map((_,i)=>`${i+2}0000000-0000-4000-8000-000000000000`);
+  const stored = records.map((record,i)=>[prefix+measurementIds[i],JSON.stringify({provinceId:'hb',createdAt:i+1,projectCode:codes[i],
+    firm:'合成投标方'+i,contact:'合成联系人'+i,phone:'010-0000000'+i,email:'test'+i+'@example.invalid',...record})]);
+  const outcomes = [[measurementIds[0],'won'],[codes[1],'lost']].map(([code,value])=>['hengdu.audit.quote.estimate-outcome.v1.'+code,value]);
+  const {w,$,rows} = setup(t,[...stored,...outcomes]);
+  const total = () => $('#quote-estimates-total').textContent;
+  function openFilter(name){
+    $(`[data-estimate-column="${name}"] button`).click();
+  }
+  function filterDate(value){
+    openFilter('date');
+    assert.equal($('#estimate-filter-value').type,'date');
+    $('#estimate-filter-value').value=value;
+    $('#estimate-filter-form').requestSubmit();
+  }
+  function filter(name,value,search='') {
+    openFilter(name);
+    if(search){
+      $('#estimate-filter-search').value=search;
+      $('#estimate-filter-search').dispatchEvent(new w.Event('input',{bubbles:true}));
+      assert.deepEqual([...$('#estimate-filter-options').querySelectorAll('button')].map(button=>button.dataset.value),['',value]);
     }
+    const option=[...$('#estimate-filter-options').querySelectorAll('button')].find(button=>button.dataset.value===value);
+    assert.ok(option,'filter option '+name+' '+value);
+    option.click();
   }
-  d.querySelector('[data-view=quote]').click();
-  for(const [code,name] of [['810000','香港特别行政区'],['820000','澳门特别行政区'],['710000','台湾省']]){
-    change(w,slot(d,0),code);
-    const card=d.querySelector('.region-card');
-    assert.equal(card.querySelector('.region-price').textContent.trim(),'—');
-    assert.equal(card.querySelector('button').disabled,true);
-    change(w,d.querySelector('[name=location]'),name,'input');
-    assert.equal(d.querySelector('#save').disabled,true);assert.match(d.querySelector('#client-error').textContent,/币种待确认/);
+  assert.equal(rows().length,5);
+  assert.equal(total(),'¥ 8,000.06');
+  assert.equal($('#quote-estimates-total-note').textContent,'（1 条待测算）');
+  openFilter('type');
+  assert.deepEqual([...$('#estimate-filter-options').querySelectorAll('button')].map(button=>button.dataset.value),
+    ['','年度财务报表审计','专项审计','报表审阅','咨询服务','内控测试','经济责任审计','验资服务','其他']);
+  w.document.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  filterDate('2026-11-20');
+  assert.equal(rows().length,2);
+  assert.equal(total(),'¥ 3,500.03');
+  filter('auditee','合成北区Ａ公司','　北区a　');
+  assert.equal(rows().length,1);
+  assert.equal(total(),'¥ 1,200.01');
+  filter('outcome','中标');
+  assert.match(rows()[0].textContent,/合成北区Ａ公司.*年度决算审计/);
+  assert.equal(total(),'¥ 1,200.01');
+  filter('type','专项审计');
+  assert.equal(rows().length,0);
+  assert.equal(total(),'¥ 0.00');
+  assert.match($('#quote-estimates-rows').textContent,/没有符合筛选条件/);
+  filterDate('');
+  filter('outcome','未中标');
+  assert.equal(rows().length,1);
+  assert.match(rows()[0].textContent,/收支专项审计/);
+  assert.equal(total(),'¥ 4,500.03');
+  filter('outcome','待确认');
+  assert.equal(rows().length,1);
+  assert.equal(rows()[0].querySelector('select').selectedOptions[0].textContent,'待确认');
+  assert.equal(total(),'—');
+  assert.equal($('#quote-estimates-total-note').textContent,'（1 条待测算）');
+  $('#estimate-filter-clear').click();
+  assert.equal(total(),'¥ 8,000.06');
+  filter('type','验资服务');
+  assert.equal(rows().length,1);
+  assert.equal(total(),'¥ 0.00');
+  assert.equal($('#quote-estimates-total-note').textContent,'');
+  assert.deepEqual([...w.document.querySelectorAll('[data-estimate-column]')].map(th=>th.dataset.estimateColumn),
+    ['date','auditee','firm','project','type','amount','outcome','contact']);
+  for(const [column,value] of Object.entries({firm:'合成投标方2',project:'待补规模专项',contact:'合成联系人2'})){
+    $('#estimate-filter-clear').click();
+    filter(column,value);
+    assert.equal(rows()[0].cells[5].textContent,'待补规模专项');
   }
+  assert.ok(stored.every(([key,value])=>w.localStorage.getItem(key)===value));
 });
-test('customer and team each update only their own comparison slot even after manual selections',()=>{const {w,d,dom}=setup();change(w,slot(d,2),'210000');change(w,d.querySelector('[name=location]'),'北京市','input');assert.deepEqual(ids(d),['110000','hb','210000']);change(w,d.querySelector('[name=team]'),'上海','input');assert.deepEqual(ids(d),['110000','sh','210000']);change(w,slot(d,0),'gx');change(w,d.querySelector('[name=team]'),'广西','input');assert.deepEqual(ids(d),['gx','gx','210000']);assert.equal(d.querySelector('[name=location]').value,'北京市');change(w,d.querySelector('[name=location]'),'河北','input');assert.deepEqual(ids(d),['hb','gx','210000']);dom.window.close();});
-test('moving active quoted province out of all cards blocks rather than silently switching basis',()=>{const {w,d,dom}=setup();d.querySelector('[data-choose=gx]').click();assert.equal(d.querySelector('#quote-form [name=basis]').value,'gx');change(w,slot(d,0),'hb');assert.equal(d.querySelector('#quote-form [name=basis]').value,'gx');assert.match(d.querySelector('#quote-error').textContent,/移出参考栏/);assert.equal(d.querySelector('#save').disabled,true);dom.window.close();});
 
-
-test('opening a legacy empty rule never silently rewrites or prices it; explicit restore updates only the current draft',t=>{
-  const seed=setup();t.after(()=>seed.dom.window.close());
-  change(seed.w,slot(seed.d,0),'210000');
-  seed.d.querySelector('#save').click();
-  const [old]=JSON.parse(seed.w.localStorage.getItem(KEY)),id='210000';
-  delete old.snapshot.regionalDefaults;
-  const i=old.snapshot.rules.findIndex(r=>r.id===id);
-  assert.ok(i>=0);
-  old.snapshot.rules[i]={id,name:'辽宁省',document:'未配置',status:'missing',sourceUrl:'',version:'未配置',basis:'assets',mode:'fixed',minimumYuan:0,fixedYuan:null,tiers:[],notes:'该地区尚未配置规则；自定义规则仅为本所草稿，未核定。'};
-  old.calculation.regions[id]={error:'待配置规则',missing:true};
-  const raw=JSON.stringify([old]),{w,d,dom}=setup(raw);t.after(()=>dom.window.close());
-  assert.equal(d.querySelector('[data-view=history]'),null);d.querySelector('#history-list [data-load="'+old.id+'"]').click();
-  const card=()=>d.querySelector('.region-card');
-  assert.equal(card().querySelector('.region-price').textContent.trim(),'—');
-  assert.equal(d.querySelector('#restore-recalc-warning').hidden,true,'the historical snapshot still reproduces');
-  assert.equal(w.localStorage.getItem(KEY),raw);
-  d.querySelector('[data-view=rules]').click();
-  assert.match(d.querySelector('#rule-editor').textContent,/未配置/);
-  w.confirm=()=>false;d.querySelector('#restore-rule').click();
-  assert.equal(card().querySelector('.region-price').textContent.trim(),'—');
-  w.confirm=()=>true;d.querySelector('#restore-rule').click();
-  assert.match(card().querySelector('.region-price').textContent,/20,100\.00/);
-  assert.match(d.querySelector('#final-price').textContent,/33,600\.00/,'restoring a reference must not silently change the manual quote basis');
-  assert.equal(w.localStorage.getItem(KEY),raw);
+test('minimum price includes the exact amount, excludes pending and below-threshold rows, and composes with date',t=>{
+  const prices=[2999999,3000000,3000001,null,0];
+  const {$,rows}=setup(t,prices.map((cents,i)=>['hengdu.audit.quote.estimates.v1.'+i,
+    JSON.stringify({createdAt:i+1,provinceId:'hb',cents,date:i===2?'2025-11-20':'2026-11-20'})]));
+  const field=$('#estimate-filter-value'),form=$('#estimate-filter-form');
+  $('[data-estimate-column=amount] button').click();
+  field.value='30000';form.requestSubmit();
+  assert.deepEqual(rows().map(row=>row.cells[8].textContent),['¥ 30,000.01','¥ 30,000.00']);
+  assert.equal($('#quote-estimates-total').textContent,'¥ 60,000.01');
+  $('[data-estimate-column=date] button').click();
+  field.value='2026-11-20';form.requestSubmit();
+  assert.deepEqual(rows().map(row=>row.cells[8].textContent),['¥ 30,000.00']);
+  $('[data-estimate-column=amount] button').click();
+  assert.equal(field.value,'30000.00');
+  $('#estimate-filter-reset').click();
+  assert.equal(rows().length,4);
 });
 
-test('local historical formulas take precedence and keep scope/basis distinct from borrowed references',t=>{
-  const {w,d,dom}=setup();t.after(()=>dom.window.close());
-  const card=()=>d.querySelectorAll('.region-card')[2];
-  for(const [code,document,basis,amount] of [
-    ['430000',/湘价服/,/资产总额/,/21,000\.00/],
-    ['440000',/粤价/,/孰高/,/20,100\.00/],
-    ['500000',/重庆注协/,/平均/,/28,000\.00/],
-    ['sh',/本所自定义工时预算/,/工时预算/,/33,600\.00/]
-  ]){
-    change(w,slot(d,2),code);
-    assert.match(card().querySelector('.card-facts').textContent,document,code);
-    assert.match(card().querySelector('.card-facts').textContent,basis,code);
-    assert.match(card().querySelector('.region-price').textContent,amount,code);
-    assert.doesNotMatch(card().textContent,/借用河北/,code);
-  }
-  change(w,slot(d,2),'500000');
-  change(w,d.querySelector('#client-form [name=assets]'),'110000','input');
-  change(w,d.querySelector('#client-form [name=revenue]'),'110000','input');
-  assert.equal(card().querySelector('.region-price').textContent.trim(),'—');
-  assert.match(card().querySelector('.card-label').textContent,/双方协商/);
-  assert.equal(card().querySelector('[data-choose]').disabled,true);
+test('quote total preserves exact cents even when the combined amount exceeds a safe number', t => {
+  const { $ } = setup(t,[1,2].map(i=>['hengdu.audit.quote.estimates.v1.'+i,
+    JSON.stringify({createdAt:i,provinceId:'hb',cents:Number.MAX_SAFE_INTEGER})]));
+  assert.equal($('#quote-estimates-total').textContent,'¥ 180,143,985,094,819.82');
+});
 
-  change(w,slot(d,2),'110000');
-  d.querySelector('[data-view=rules]').click();
-  const editor=d.querySelector('#rule-editor'),rule=w.RuleCatalog.defaultRule('110000');
-  assert.match(editor.textContent,/废止/);
-  assert.match(editor.textContent,/借用河北/);
-  assert.notEqual(rule.sourceUrl,rule.localPolicyUrl);
-  assert.equal(editor.querySelector('a[href="'+rule.localPolicyUrl+'"]').textContent.trim().includes('当地政策'),true);
+test('45 records paginate ten at a time and keep totals for all filtered rows', t => {
+  const {$,rows}=setup(t,Array.from({length:45},(_,i)=>['hengdu.audit.quote.estimates.v1.'+i,
+    JSON.stringify({createdAt:i+1,provinceId:'hb',cents:10000,date:i<12?'2026-11-21':'2026-11-22'})]));
+  const pageButtons=()=>[...$('#estimate-pagination').querySelectorAll('button')].map(button=>button.textContent);
+  assert.deepEqual(pageButtons(),['上一页','1','2','3','4','5','下一页']);
+  assert.equal(rows().length,10);
+  assert.equal(rows()[0].cells[0].textContent,'45');
+  assert.equal($('#quote-estimates-total').textContent,'¥ 4,500.00');
+  $('#estimate-pagination [data-estimate-page="5"]').click();
+  assert.equal(rows().length,5);
+  assert.equal(rows()[0].cells[0].textContent,'5');
+  assert.equal($('#estimate-pagination [aria-current]').textContent,'5');
+  assert.equal($('#quote-estimates-total').textContent,'¥ 4,500.00');
+  $('[data-estimate-column=date] button').click();
+  $('#estimate-filter-value').value='2026-11-21';
+  $('#estimate-filter-form').requestSubmit();
+  assert.deepEqual(pageButtons(),['上一页','1','2','下一页']);
+  assert.equal($('#estimate-pagination [aria-current]').textContent,'1');
+  assert.equal($('#quote-estimates-total').textContent,'¥ 1,200.00');
+  $('#estimate-pagination [data-estimate-page="2"]').click();
+  assert.equal(rows().length,2);
 });

@@ -3,7 +3,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{pathToFileURL}=require('node:url');
 const DIST=path.resolve(__dirname,'../dist');
 async function browserCase(run){
- const {chromium}=require('playwright'),browser=await chromium.launch({headless:true,executablePath:chromium.executablePath()});
+ const {chromium}=require('playwright'),browser=await chromium.launch({headless:true,executablePath:process.env.QUOTE_LEDGER_CHROMIUM_EXECUTABLE||chromium.executablePath()});
  try{const page=await browser.newPage(),errors=[],remote=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(/^https?:/.test(r.url()))remote.push(r.url());});
   await page.goto(pathToFileURL(path.join(DIST,'rule-catalog.js')).href);
   for(const file of ['quote-layouts.js','bidder-archive-vendor.js','bidder-archive.js','tender-import.js','project-workspace-store.js','contract-template.js','project-contract.js'])await page.addScriptTag({content:fs.readFileSync(path.join(DIST,file),'utf8')});

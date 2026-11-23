@@ -5,7 +5,7 @@
 })(globalThis,function(root,checklist){
   'use strict';
   const FORMAT='shenyi-material-preservation',VERSION=1,FORMAL='hengdu.audit.materials.v1',TRIAL='hengdu.audit.materials.trial.v1';
-  const FILE_MAX=12*1024*1024,FILES_MAX=150*1024*1024,RECORD_MAX=24*1024*1024,MANIFEST_MAX=4*1024*1024,PACKAGE_MAX=180*1024*1024,COUNT_MAX=5000;
+  const FILE_MAX=100*1024*1024,FILES_MAX=150*1024*1024,RECORD_MAX=24*1024*1024,MANIFEST_MAX=4*1024*1024,PACKAGE_MAX=180*1024*1024,COUNT_MAX=5000;
   const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu,HASH=/^[a-f0-9]{64}$/u;
   const enc=new TextEncoder(),dec=new TextDecoder('utf-8',{fatal:true});
   const POLICY=Object.freeze({scope:'single-project-material-record-and-all-referenced-originals',completeAttachmentHistory:true,includesRemovedAttachments:true,includesPriorGenerations:true,includesOriginalChecklistDocument:false,includesWorkpaperArchives:false,includesOtherDatabases:false,teamImported:false,identityAuthenticated:false,professionalApprovalClaimed:false});

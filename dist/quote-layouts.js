@@ -20,7 +20,7 @@
     if(typeof input!=='object'||Array.isArray(input))throw Error('报价版式选项格式不正确。');
     const limit={negotiationNo:100,authorizedPerson:80,authorizedRole:80,copies:40,workDays:60,validity:100,costScope:200,
       serviceScope:200,firmAddress:160,bankName:120,bankAccount:80,fax:60,legalRepresentative:80,packageNo:80,packageName:120};
-    const result={previewOnly:input.previewOnly===true};
+    const result={previewOnly:input.previewOnly===true,grossOnly:input.grossOnly===true};
     for(const [k,n]of Object.entries(limit)){
       const v=input[k];
       if(v===undefined||v===null)continue;
@@ -105,10 +105,17 @@
     const [whole,frac]=[(n/BATCH_SCALE).toString(),(n%BATCH_SCALE).toString().padStart(6,'0')];
     return (negative?'-':'')+whole+'.'+frac.replace(/0+$/u,'').padEnd(2,'0');
   }
-  function withBatch(c,s,id,rows){
+  function withBatch(c,s,id,rows,grossOnly){
     if(!rows)return c;
     const sum=rows.reduce((total,r)=>total+BigInt(r.totalCents),0n);
     if(sum!==BigInt(s.totalCents))throw Error('分户报价之和与报价合计不一致。');
+    if(grossOnly){
+      const table={quotePriceTable:true,table:[['被审计单位','含税报价（元）'],...rows.map(row=>[row.name,money(row.totalCents)]),['合计',money(s.totalCents)]]};
+      const at=c.blocks.findIndex(block=>block.detailTable);
+      if(at>=0)c.blocks.splice(at,1,table);
+      else c.blocks.splice(c.blocks.findIndex(block=>block.strong)+1,0,table);
+      return c;
+    }
     const period=rows[0].period,onePeriod=Boolean(period)&&rows.every(r=>r.period===period);
     const showPeriods=!onePeriod&&rows.some(r=>r.period);
     const totals=BATCH_METRICS.map((_,i)=>rows.some(r=>r.amounts[i]===null)?null:rows.reduce((n,r)=>n+r.amounts[i],0n));
@@ -137,11 +144,12 @@
 
     return c;
   }
-  function content(s,id,o){
-    const quote='人民币 ¥'+money(s.totalCents)+' 元（大写：'+upper(s.totalCents)+'）',
-      tax='税前金额 ¥'+money(s.subtotalCents)+' 元；另计税额 ¥'+money(s.taxCents)+' 元（'+s.taxRateText+'）。',
+  function content(s,id,o,template=false){
+    const quote=template?'人民币 ¥________ 元（大写：________）':'人民币 ¥'+money(s.totalCents)+' 元（大写：'+upper(s.totalCents)+'）',
+      tax=o.grossOnly?'':template?'税前金额 ¥________ 元；另计税额 ¥________ 元（税率：____%）。':'税前金额 ¥'+money(s.subtotalCents)+' 元；另计税额 ¥'+money(s.taxCents)+' 元（'+s.taxRateText+'）。',
+      tableAmount=template?'¥________（大写：________）':'¥'+money(s.totalCents)+'（大写：'+upper(s.totalCents)+'）',
       name=plain(s.firmName,'待填写'),contact=s.bidderContact||{},
-      dates='日期：'+s.quoteDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/,'$1 年 $2 月 $3 日');
+      dates=template?'日期：____ 年 __ 月 __ 日':'日期：'+s.quoteDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/,'$1 年 $2 月 $3 日');
     const rec='致：'+s.issuer,info=plain([contact.phone,contact.email].filter(Boolean).join(' / '));
     const meta=p=>({p,meta:true,noindent:true});
     const line=(p,strong=false)=>({p,noindent:true,strong});
@@ -153,7 +161,7 @@
     if(id==='format1')return {title:'报价函',recipient:rec,blocks:[
       {p:'根据贵方对「'+s.projectName+'」的询价，现列示我方'+s.auditYear+' 年度'+auditType+'相关报价，供贵方核对。'},
       line('1. 报价总额（含税）：'+quote+'。'+tax,true),
-      {detailTable:true,quotePriceTable:true,table:[['公司名称','报价（单位：元）'],[s.customerName,'¥'+money(s.totalCents)+'（大写：'+upper(s.totalCents)+'）']]},
+      {detailTable:true,quotePriceTable:true,table:[['公司名称','报价（单位：元）'],[s.customerName,tableAmount]]},
       line('2. 报价费用范围：'+cost+'；额外费用以双方书面确认内容为准。'),
       line('3. 履约事项：按适用法律与双方书面约定执行。'),
       line('4. 项目服务范围：'+scope+'；服务期限：'+plain(o.workDays)+'。'),
@@ -169,11 +177,12 @@
       line('4. 报告与交付：核对报告内容、交付件和服务期限（'+plain(o.workDays)+'）。'),
       line('5. 问题沟通：汇总需沟通事项，核对反馈和交付安排。'),
       line('上述服务的报价总额（含税）：'+quote+'。费用范围：'+cost+'。',true),
-      meta(tax),
+      ...(tax?[meta(tax)]:[]),
       meta('报价有效期：'+plain(o.validity)+'　联系人：'+plain(contact.name)+'　联系方式：'+info)
     ],closing:['供应商全称：'+name,dates]};
     return {title:projectLine,subtitle:titleOf,recipient:rec,blocks:[
       {p:'根据贵方对本项目的询价，现列示我方报价及相关事项，供核对。'},
+      ...(o.grossOnly&&!s.quoteRows?[line('被审计单位：'+s.customerName)]:[]),
       line('1. 报价总额（含税）：'+quote+'。',true),
       line('2. 现场服务期限：'+plain(o.workDays)+'；食宿、交通及其他费用范围：'+cost+'。'),
       line('3. 履约安排：以采购文件和双方最终书面约定为准。'),
@@ -227,7 +236,7 @@
     const run='<w:r><w:drawing>'+open+'<wp:extent cx="'+cx+'" cy="'+cy+'"/>'+(anchor?'<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>':'')+'<wp:docPr id="'+i+'" name="'+name+'" descr="'+label+'"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="'+PIC+'"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="'+name+'"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdImage'+i+'"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="'+cx+'" cy="'+cy+'"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>'+(anchor?'</wp:anchor>':'</wp:inline>')+'</w:drawing></w:r>';
     return anchor?run:'<w:p><w:pPr><w:spacing w:after="70"/><w:jc w:val="right"/></w:pPr>'+run+'</w:p>';
   }
-  function docxOf(c,id,images){
+  function docxOf(c,id,images,statusLabel=status,footer=images.length?note:unsignedNote){
     const files=Object.create(null),rels=['<Relationship Id="rIdStyles" Type="'+R+'/styles" Target="styles.xml"/>'];
     files['[Content_Types].xml']=XML+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>';
     files['_rels/.rels']=XML+'<Relationships xmlns="'+PKG+'"><Relationship Id="rId1" Type="'+R+'/officeDocument" Target="word/document.xml"/></Relationships>';
@@ -242,7 +251,7 @@
     }).join('');
     const closing=c.closing.map((v,i)=>para(v,{align:'right',keep:i<c.closing.length-1,space:companyRun&&i===c.closing.length-1?460:85,
       before:companyRun&&i===c.closing.length-2?800:0,extra:i===c.closing.length-1?companyRun:''})).join('');
-    files['word/document.xml']=XML+'<w:document xmlns:w="'+W+'" xmlns:r="'+R+'" xmlns:wp="'+WP+'" xmlns:a="'+A+'" xmlns:pic="'+PIC+'"><w:body>'+para(status,{align:'right',pt:9,color:'725125',space:80})+para(c.title,{align:'center',bold:true,pt:id==='format1'?18:16,style:'Title',keep:true,space:190})+ (c.subtitle?para(c.subtitle,{align:'center',pt:12,bold:true,keep:true}):'')+para(c.recipient,{keep:true,bold:true})+c.blocks.map(x=>x.heading?para(x.heading,{pt:13,bold:true,keep:true,before:130,space:75}):x.table?table(x.table,x.batch,x.quotePriceTable,x.responseTable):para(x.p,{indent:!x.noindent,bold:!!x.strong,pt:x.meta?10:11,space:x.meta?30:c.blocks.some(b=>b.batch)?90:125,line:c.blocks.some(b=>b.batch)?305:340,keep:!!x.noindent&&x.p.startsWith('分户报价明细')})).join('')+closing+sign+para(images.length?note:unsignedNote,{pt:9,color:'51605E',space:0})+'<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1380" w:right="1333" w:bottom="1380" w:left="1333" w:header="600" w:footer="600" w:gutter="0"/></w:sectPr></w:body></w:document>';
+    files['word/document.xml']=XML+'<w:document xmlns:w="'+W+'" xmlns:r="'+R+'" xmlns:wp="'+WP+'" xmlns:a="'+A+'" xmlns:pic="'+PIC+'"><w:body>'+para(statusLabel,{align:'right',pt:9,color:'725125',space:80})+para(c.title,{align:'center',bold:true,pt:id==='format1'?18:16,style:'Title',keep:true,space:190})+ (c.subtitle?para(c.subtitle,{align:'center',pt:12,bold:true,keep:true}):'')+para(c.recipient,{keep:true,bold:true})+c.blocks.map(x=>x.heading?para(x.heading,{pt:13,bold:true,keep:true,before:130,space:75}):x.table?table(x.table,x.batch,x.quotePriceTable,x.responseTable):para(x.p,{indent:!x.noindent,bold:!!x.strong,pt:x.meta?10:11,space:x.meta?30:c.blocks.some(b=>b.batch)?90:125,line:c.blocks.some(b=>b.batch)?305:340,keep:!!x.noindent&&x.p.startsWith('分户报价明细')})).join('')+closing+sign+para(footer,{pt:9,color:'51605E',space:0})+'<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1380" w:right="1333" w:bottom="1380" w:left="1333" w:header="600" w:footer="600" w:gutter="0"/></w:sectPr></w:body></w:document>';
     files['word/_rels/document.xml.rels']=XML+'<Relationships xmlns="'+PKG+'">'+rels.join('')+'</Relationships>';
     return zip(files);
   }
@@ -256,7 +265,7 @@
         const y=o.quoteRows[i];return x.name!==y.name||x.period!==y.period||x.totalCents!==y.totalCents||x.amounts.some((v,j)=>v!==y.amounts[j]);
       }))throw Error('分户报价明细与报价快照不一致。');
     }
-    const c=withBatch(content(s,id,o),s,id,savedRows||o.quoteRows),images=await assetsFor(confirmed,qp);
+    const c=withBatch(content(s,id,o),s,id,savedRows||o.quoteRows,o.grossOnly),images=await assetsFor(confirmed,qp);
     const html=htmlOf(c,id,images);return Object.freeze({html,...(o.previewOnly?{}:{docx:docxOf(c,id,images)})});
   }
   async function buildUnsignedWord(snapshot,ids=[],options={}){
@@ -272,6 +281,15 @@
     return Object.freeze(names.length===1?{name:names[0],mime:MIME,bytes:files[names[0]]}:
       {name:'审计报价-无章Word.zip',mime:'application/zip',bytes:zip(files)});
   }
-  const api=Object.freeze({catalog,styles:styles+templateStyles+signStyles,render,buildUnsignedWord,docxMime:MIME,packOfficeParts:zip,upper});
+  function buildTemplateWord(id,bidder){
+    const ordinal=catalog.findIndex(format=>format.id===id);
+    if(ordinal<0||typeof bidder?.name!=='string'||!bidder.name.trim())throw Error('请选择有效的报价单位和模板。');
+    const fields={firmName:bidder.name,issuer:'________',customerName:'________',projectName:'________',
+      auditYear:'____',projectType:'________',bidderContact:{name:bidder.contactName,phone:bidder.phone,email:bidder.email}};
+    const layout=content(fields,id,{},true);
+    const bytes=docxOf(layout,id,[],'报价模板 · 待填写','填写后请核对项目、金额、税率与附件。');
+    return Object.freeze({name:`报价模板${'一二三'[ordinal]}.docx`,mime:MIME,bytes});
+  }
+  const api=Object.freeze({catalog,styles:styles+templateStyles+signStyles,render,buildUnsignedWord,buildTemplateWord,docxMime:MIME,packOfficeParts:zip,upper});
   if(typeof module==='object'&&module.exports)module.exports=api;else root.QuoteLayouts=api;
 })(globalThis);

@@ -29,6 +29,21 @@
       if(!out.size)fail('压缩包里没有可读取的文件。');
       return out;
     }
+    function zipSizes(size,packed,start,length){
+      if(size!==0xffffffff&&packed!==0xffffffff)return {size,packed};
+      const end=start+length;
+      for(let p=start;p+4<=end;){
+        const id=u16(p),fieldEnd=p+4+u16(p+2);p+=4;
+        if(fieldEnd>end)fail();
+        if(id!==1){p=fieldEnd;continue;}
+        const readSize=()=>{
+          if(p+8>fieldEnd||u32(p+4)!==0)fail('ZIP64 成员大小超出本机读取范围。');
+          const n=u32(p);p+=8;return n;
+        };
+        return {size:size===0xffffffff?readSize():size,packed:packed===0xffffffff?readSize():packed};
+      }
+      fail('ZIP64 成员缺少有效大小。');
+    }
     function parseZip(){
       if(data.length<22)fail();
       let e=data.length-22;const min=Math.max(0,e-65535);
@@ -39,17 +54,22 @@
       const out=new Map(),unique=new Set(),ranges=[];let p=start;
       for(let i=0;i<count;i++){
         if(p+46>e||u32(p)!==0x02014b50||u16(p+34))fail();
-        const flags=u16(p+8),method=u16(p+10),checksum=u32(p+16),packed=u32(p+20),size=u32(p+24);
+        const flags=u16(p+8),method=u16(p+10),checksum=u32(p+16);
         if(flags&0x2041)fail('暂不支持加密 ZIP。');
-        if(![0,8].includes(method)||(flags&~0x80e)||(method===0&&packed!==size))fail('ZIP 压缩方法或标记不受支持。');
+        if(![0,8].includes(method)||(flags&~0x80e))fail('ZIP 压缩方法或标记不受支持。');
         const n=u16(p+28),ex=u16(p+30),next=p+46+n+ex+u16(p+32),local=u32(p+42);
         if(!n||next>e||local+30>start||u32(local)!==0x04034b50||u16(local+6)!==flags||u16(local+8)!==method||u16(local+26)!==n)fail();
+        const {size,packed}=zipSizes(u32(p+24),u32(p+20),p+46+n,ex);
+        if(method===0&&packed!==size)fail('ZIP 成员实际大小与声明不一致。');
         const unixType=u16(p+40)&0xf000;
         if(unixType!==0&&unixType!==0x8000&&unixType!==0x4000)fail('压缩包含链接或非普通文件，请重新打包。');
         const dataStart=local+30+n+u16(local+28),stop=dataStart+packed;
         if(stop>start)fail();
         for(let j=0;j<n;j++)if(data[local+30+j]!==data[p+46+j])fail();
-        if(!(flags&8)&&(u32(local+14)!==checksum||u32(local+18)!==packed||u32(local+22)!==size))fail();
+        if(!(flags&8)){
+          const original=zipSizes(u32(local+22),u32(local+18),local+30+n,u16(local+28));
+          if(u32(local+14)!==checksum||original.packed!==packed||original.size!==size)fail();
+        }
         let raw;try{raw=utf8.decode(data.subarray(p+46,p+46+n));}catch{fail('ZIP 文件名不是 UTF-8，请用支持 UTF-8 文件名的工具重新打包。');}
         const dir=raw.endsWith('/')||raw.endsWith('\\')||unixType===0x4000||(u32(p+38)&16)!==0;
         if(dir&&(size||packed>16||checksum))fail();
@@ -208,14 +228,14 @@
     worker.onmessage=({data:m})=>{
       if(!pending||m?.id!==pending.id)return;
       const p=pending;pending=null;clearTimeout(p.timer);
-      if(m.ok)p.resolve(m.value);else{close();p.reject(Error(m.message));}
+      if(m.ok)p.resolve(m.value);else{if(p.op==='open')close();p.reject(Error(m.message));}
     };
     function ask(op,fields){
       if(closed)return Promise.reject(Error('压缩包读取已关闭。'));
       if(pending)return Promise.reject(Error('压缩包仍在读取，请稍候。'));
       return new Promise((resolve,reject)=>{
         const id=++seq,timer=setTimeout(()=>close('压缩包读取超时，已停止。请缩小资料包或逐个上传。'),LIMITS.timeMs);
-        pending={id,timer,resolve,reject};
+        pending={id,op,timer,resolve,reject};
         try{worker.postMessage({id,op,...fields});}catch{close('无法读取所选压缩包。');}
       });
     }
