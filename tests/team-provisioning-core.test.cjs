@@ -184,3 +184,31 @@ test('an existing marked prototype upgrades all additive auth tables atomically 
   assert.deepEqual(db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name").all(),before);assert.equal(db.prepare("SELECT status FROM team_users WHERE user_id='preserved'").get().status,'active');for(const name of [...usageNames,...sourceSchemaNames])assert.equal(db.prepare('SELECT COUNT(*) n FROM sqlite_schema WHERE name=?').get(name).n,0);
   initializeTeamDatabase(db);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_schema WHERE type='table' AND name LIKE 'team_%'").get().n-ledgerCheckSchemaLayer(db).tables,before.length+47);for(const name of ['team_access_reviewers','team_member_access_events','team_device_bindings','team_device_challenges','team_device_leases','team_device_request_replays','team_device_events','team_device_replacement_reviewers','team_device_replacement_requests','team_device_replacement_challenges','team_device_replacement_events','team_business_role_events','team_project_access_projects','team_project_access_grants','team_project_access_events','team_administrator_business_role_reviewers','team_administrator_business_roles','team_administrator_business_role_events','team_project_migration_reviewers','team_project_migration_provenance','team_project_migration_events','team_material_grants','team_material_records','team_material_files','team_material_events','team_material_imports','team_material_import_chunks','team_material_maintenance_grants','team_material_maintenance_events','team_collection_workspace_creations','team_workspace_formalizations','team_device_usage','team_workspace_source_events','team_workspace_source_grants'])assert.ok(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(name));const usageAfter=db.prepare("SELECT type,name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().filter(row=>usageNames.includes(row.name));assert.deepEqual(usageAfter.map(row=>row.type+':'+row.name).sort(),['table:team_device_usage','trigger:device_usage_insert_owned_active','trigger:device_usage_update_owned_monotonic','index:my_device_event_owner_time','index:my_device_replacement_owner_request','index:my_device_replacement_event_request_time'].sort());assert.equal(db.prepare('SELECT COUNT(*) n FROM team_device_usage').get().n,0);for(const name of ['team_workspace_source_events','team_workspace_source_grants'])assert.equal(db.prepare('SELECT COUNT(*) n FROM '+name).get().n,0);assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
 });
+
+test('invalid anonymous first-administrator requests cannot exhaust another source or the shared valid-ticket budget',async t=>{
+  const f=await fixture(t),approved=await approve(f),ticket={invitationCode:approved.invitationCode},invalidCode=randomBytes(32).toString('base64url');
+  const sources=['203.0.113.20','203.0.113.21'];
+  for(const action of ['preview','challenges']){
+    for(let i=0;i<60;i++){
+      const r=await f.call(PUBLIC+'/'+action,{token:null,body:{invitationCode:invalidCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[0]}});
+      assert.equal(r.status,404,action+': '+r.raw);
+    }
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limits WHERE bucket=?').get('first-administrator:'+action+':global').n,0);
+    if(action==='preview'){
+      const valid=await f.call(PUBLIC+'/preview',{token:null,body:{invitationCode:ticket.invitationCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[1]}});
+      assert.equal(valid.status,200,valid.raw);
+    }else{
+      const valid=await f.call(PUBLIC+'/challenges',{token:null,body:{invitationCode:ticket.invitationCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[1]}});
+      assert.equal(valid.status,202,valid.raw);
+      assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get('first-administrator:challenges:global').attempts,1);
+    }
+  }
+  const delivered=f.sent.at(-1),activationBody={invitationCode:ticket.invitationCode,phone:PHONE,challengeId:delivered.challengeId,code:delivered.code,password:NEW_PASSWORD,displayName:'合成首管理员',accept:true};
+  for(let i=0;i<60;i++){
+    const r=await f.call(PUBLIC+'/activate',{token:null,body:{...activationBody,invitationCode:invalidCode},headers:{'X-Shenyi-Client-IP':sources[0]}});
+    assert.equal(r.status,404);
+  }
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limits WHERE bucket=?').get('first-administrator:activate:global').n,0);
+  const valid=await f.call(PUBLIC+'/activate',{token:null,body:activationBody,headers:{'X-Shenyi-Client-IP':sources[1]}});
+  assert.equal(valid.status,200,valid.raw);
+});
