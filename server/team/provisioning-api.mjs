@@ -2,7 +2,7 @@ import {isIP} from 'node:net';
 /** Owner-reviewed, invitation-only team opening. No route grants reviewer power.
  * Providers are injected for isolated verification; no real SMS is configured. */
 import {createHash,createHmac,randomBytes,randomInt,randomUUID,timingSafeEqual} from 'node:crypto';
-import {authenticated,consume,limitedPasswordWork} from './auth-api.mjs';
+import {authenticated,consume,consumeBounded,limitedPasswordWork} from './auth-api.mjs';
 import {canOperateTeam,hasAffiliation,platformReviewer,restrictedBusinessIdentity} from './administration-policy.mjs';
 import {normalizePhone} from './phone-api.mjs';
 import {onboardingAvailable} from './employee-invitations-api.mjs';
@@ -153,7 +153,7 @@ export async function handleTeamProvisioningRequest(request,{db,now=Date.now,ide
   // The shared business budget is spent only after a live first-administrator ticket is proven.
   const suppliedAddress=request.headers.get('x-shenyi-client-ip')||'local';
   const clientAddress=isIP(suppliedAddress)?suppliedAddress.toLowerCase():'local';
-  consume(db,'first-administrator:'+action+':ip:'+digest(clientAddress),now(),60000,60);
+  consumeBounded(db,'first-administrator:'+action+':ip:','first-administrator:'+action+':ip:'+digest(clientAddress),now(),60000,60);
   const ticket=liveTicket(db,body.invitationCode,phone,now());
   consume(db,'first-administrator:'+action+':global',now(),60000,60);
   if(action==='preview')return json({teamId:ticket.team_id,teamName:ticket.team_name,phoneMasked:mask(phone),expiresAt:ticket.expires_at});
