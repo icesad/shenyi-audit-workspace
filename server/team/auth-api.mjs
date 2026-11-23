@@ -25,15 +25,12 @@ export function consumeBounded(db, prefix, bucket, now, window, maximum, capacit
   return transaction(db, () => {
     db.prepare('DELETE FROM team_auth_limits WHERE substr(bucket,1,length(?))=? AND window_start<?')
       .run(prefix, prefix, now - window);
+    const exists = db.prepare('SELECT 1 FROM team_auth_limits WHERE bucket=?').get(bucket);
     const count = db.prepare('SELECT COUNT(*) AS count FROM team_auth_limits WHERE substr(bucket,1,length(?))=?')
       .get(prefix, prefix).count;
-    if (count >= capacity) {
-      db.prepare(`DELETE FROM team_auth_limits WHERE bucket IN (
-        SELECT bucket FROM team_auth_limits
-        WHERE substr(bucket,1,length(?))=? AND bucket<>?
-        ORDER BY window_start ASC,bucket ASC LIMIT ?
-      )`).run(prefix, prefix, bucket, count - capacity + 1);
-    }
+    // Never evict an active source bucket: doing so would reset that source's rate limit.
+    // At capacity, reject only a new source until an expired bucket is reclaimed.
+    if (!exists && count >= capacity) tooMany();
     consume(db, bucket, now, window, maximum);
   });
 }
