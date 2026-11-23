@@ -222,8 +222,13 @@ test('anonymous onboarding source buckets reclaim expired rows and enforce a har
   consumeBounded(f.db,prefix,prefix+'fresh-source',now,60000,60,10000);
   assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM team_auth_limits WHERE substr(bucket,1,length(?))=?').get(prefix,prefix).n,1);
   assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(prefix+'fresh-source').attempts,1);
-  for(let i=0;i<10000;i++)insert.run(prefix+'active-'+String(i).padStart(5,'0'),now,1);
-  consumeBounded(f.db,prefix,prefix+'another-source',now,60000,60,10000);
+  for(let i=0;i<9999;i++)insert.run(prefix+'active-'+String(i).padStart(5,'0'),now,1);
+  const protectedBucket=prefix+'active-00000';
+  f.db.prepare('UPDATE team_auth_limits SET attempts=59 WHERE bucket=?').run(protectedBucket);
+  consumeBounded(f.db,prefix,protectedBucket,now,60000,60,10000);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(protectedBucket).attempts,60);
   assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM team_auth_limits WHERE substr(bucket,1,length(?))=?').get(prefix,prefix).n,10000);
-  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(prefix+'another-source').attempts,1);
+  assert.throws(()=>consumeBounded(f.db,prefix,prefix+'new-source-at-capacity',now,60000,60,10000));
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(protectedBucket).attempts,60);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM team_auth_limits WHERE substr(bucket,1,length(?))=?').get(prefix,prefix).n,10000);
 });
