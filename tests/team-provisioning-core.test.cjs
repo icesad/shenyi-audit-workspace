@@ -212,3 +212,18 @@ test('invalid anonymous first-administrator requests cannot exhaust another sour
   const valid=await call(f,FIRST+'/activate',{token:null,body:activationBody,headers:{'X-Shenyi-Client-IP':sources[1]}});
   assert.equal(valid.status,200,valid.raw);
 });
+
+
+test('anonymous onboarding source buckets reclaim expired rows and enforce a hard capacity',async t=>{
+  const f=await fixture(t),{consumeBounded}=await load('auth-api.mjs');
+  const prefix='first-administrator:challenges:ip:',now=f.now;
+  const insert=f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)');
+  for(let i=0;i<10000;i++)insert.run(prefix+'old-'+String(i).padStart(5,'0'),now-120000,1);
+  consumeBounded(f.db,prefix,prefix+'fresh-source',now,60000,60,10000);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM team_auth_limits WHERE substr(bucket,1,length(?))=?').get(prefix,prefix).n,1);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(prefix+'fresh-source').attempts,1);
+  for(let i=0;i<10000;i++)insert.run(prefix+'active-'+String(i).padStart(5,'0'),now,1);
+  consumeBounded(f.db,prefix,prefix+'another-source',now,60000,60,10000);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM team_auth_limits WHERE substr(bucket,1,length(?))=?').get(prefix,prefix).n,10000);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(prefix+'another-source').attempts,1);
+});
