@@ -205,10 +205,10 @@ test('invalid anonymous first-administrator requests cannot exhaust another sour
   }
   const delivered=f.sent.at(-1),activationBody={invitationCode:ticket.invitationCode,phone:PHONE,challengeId:delivered.challengeId,code:delivered.code,password:NEW_PASSWORD,displayName:'合成首管理员',accept:true};
   for(let i=0;i<60;i++){
-    const r=await f.call(PUBLIC+'/activate',{token:null,body:{...activationBody,invitationCode:invalidCode},headers:{'X-Shenyi-Client-IP':sources[0]}});
+    const r=await call(f,PUBLIC+'/activate',{token:null,body:{...activationBody,invitationCode:invalidCode},headers:{'X-Shenyi-Client-IP':sources[0]}});
     assert.equal(r.status,404);
   }
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limits WHERE bucket=?').get('first-administrator:activate:global').n,0);
-  const valid=await f.call(PUBLIC+'/activate',{token:null,body:activationBody,headers:{'X-Shenyi-Client-IP':sources[1]}});
+  const valid=await call(f,PUBLIC+'/activate',{token:null,body:activationBody,headers:{'X-Shenyi-Client-IP':sources[1]}});
   assert.equal(valid.status,200,valid.raw);
 });
