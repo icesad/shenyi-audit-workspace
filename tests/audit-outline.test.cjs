@@ -11,6 +11,16 @@ test('actual outlines retain 1–9, names and manual breaks rather than guessed 
   assert.match(prepared.rows[0].text,/\n未拆的29、/);
 });
 
+test('automatic outline selection recovers missing numbered rows and preserves complete Word styles',()=>{
+  const headings=Array.from({length:8},(_,i)=>({text:(i+1)+'、第'+(i+1)+'项',level:i<2?1:null,styleName:''}));
+  const suggested=A.suggest(source(headings));
+  assert.equal(suggested.mode,'numbered');
+  assert.equal(A.build(suggested.rows).length,8);
+  const styled=A.suggest(source(headings.map(row=>({...row,level:1}))));
+  assert.equal(styled.mode,'outline');
+  assert.equal(A.build(styled.rows).length,8);
+});
+
 test('numbered mode preserves original labels and scopes repeated 33 to its Chinese category',()=>{
   const p=A.prepare(source(['一、综合类','29、存货','29.1 明细','29.1.1 佐证','33、资产','二、业务类','33、合同','33.1 发票']),'numbered');
   assert.deepEqual(levels(p),[1,2,3,4,2,1,2,3]);

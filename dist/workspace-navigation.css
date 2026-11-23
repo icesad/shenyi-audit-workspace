@@ -1,15 +1,20 @@
-/* Six grouped business areas; settings is deliberately separate from them. */
+/* Business navigation and the separate settings entry. */
 .sidebar{padding-top:24px;padding-bottom:15px}
 .sidebar>.workspace-label{margin-top:23px;margin-bottom:13px}
 .sidebar .workspace-navigation{display:block;min-height:0;overflow:auto;flex:1;scrollbar-width:thin;scrollbar-color:#536a62 transparent;padding-right:3px}
 .nav-group{margin:0 0 8px;border:0}
-.nav-group>summary{display:flex;align-items:center;gap:9px;cursor:pointer;list-style:none;border-radius:6px;padding:8px 6px;color:#e1ebe5;font-size:13px;line-height:1.4}
+.nav-group>summary,.nav-group .nav-direct{display:flex;align-items:center;gap:9px;cursor:pointer;list-style:none;border-radius:6px;padding:8px 6px;color:#e1ebe5;font-size:13px;line-height:1.4}
+.nav-quote-heading{display:flex;border-radius:6px}
+.sidebar .nav-quote-heading>.nav-direct{flex:1;min-width:0;margin:0;background:transparent;border:0;text-align:left}
+.sidebar .nav-quote-heading>.nav-direct>span{display:inline;font-size:inherit;line-height:inherit}
+.nav-quote-toggle{display:grid;place-items:center;flex:0 0 28px;border:0;border-radius:6px;background:transparent;cursor:pointer}
+.sidebar .nav-quote-heading>button:hover{background:#2b443c}
 .nav-group>summary::-webkit-details-marker{display:none}
-.nav-group>summary::after{content:'›';margin-left:auto;color:#9eb6aa;transform:rotate(0deg);font-size:18px;line-height:14px}
-.nav-group[open]>summary::after{transform:rotate(90deg)}
+.nav-group>summary::after,.nav-quote-toggle::after{content:'›';color:#9eb6aa;font-size:18px;line-height:14px}
+.nav-group>summary::after{margin-left:auto}
+.nav-group[open]>summary::after,.nav-quote-toggle[aria-expanded=true]::after{transform:rotate(90deg)}
 .nav-group>summary small{font-size:9px;color:#9cb2a6;font-weight:400;white-space:nowrap}
-.nav-group-number{color:#8aa99b;font-size:10px;font-variant-numeric:tabular-nums;letter-spacing:.6px}
-.nav-group.is-current>summary{color:#fff;background:#29483e}
+.nav-group.is-current>summary,.nav-group.is-current>.nav-quote-heading{color:#fff;background:#29483e}
 .nav-group-items{padding:2px 0 4px 19px}
 .sidebar .nav-group-items :is(.nav-item,.nav-sub-item){display:block;width:100%;text-align:left;padding:7px 9px;margin:1px 0;border:0;border-radius:5px;background:transparent;color:#b8ccc1;line-height:1.5;font:inherit;font-size:11px;cursor:pointer}
 .sidebar .nav-group-items :is(.nav-item,.nav-sub-item):hover{background:#2b443c;color:#fff}
@@ -39,7 +44,7 @@
 .planned-scope-grid section{background:#f5f8f4;border:1px solid #e0e7df;border-radius:8px;padding:15px;scroll-margin-top:20px}
 .planned-scope-grid h3{font-size:14px;margin:0 0 8px}.planned-scope-grid p{font-size:12px;margin:0}
 #quote-documents,#bid-documents{scroll-margin-top:20px}
-main:is([data-workspace-view=basics],[data-workspace-view=settings]) :is(#pricing-notice,#restore-recalc-warning){display:none!important}
+main:is([data-workspace-view=basics],[data-workspace-view=settings]) #restore-recalc-warning{display:none!important}
 @media(max-width:1150px) and (min-width:821px){.sidebar{width:194px;padding-left:12px;padding-right:12px}main{margin-left:194px;width:calc(100% - 194px)}.nav-group-items{padding-left:13px}}
 @media(max-width:820px){
  .sidebar{padding:16px 18px 10px}.sidebar>.brand-home{margin-bottom:9px}
@@ -55,5 +60,5 @@ main:is([data-workspace-view=basics],[data-workspace-view=settings]) :is(#pricin
 @media(max-width:600px){.home-stage-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.basics-grid{grid-template-columns:1fr}.home-stage-description{font-size:11px}.home-stage-go{font-size:11px}}
 @media print{.workspace-navigation,.workspace-settings-link,.account-settings-button{display:none!important}}
 
-/* Settings supplies its own page heading. */
-main[data-workspace-view=settings] > .page-heading{display:none}
+main[data-workspace-view=settings] .as-heading{display:none}
+#view-audit .pw-steps{display:none}

@@ -56,14 +56,16 @@ test('bidder imports actual documents and two certificates locally, with explici
    document.body.innerHTML='<div id="bidder-library-editor"></div><div id="bidder-picker"></div>';globalThis.confirm=()=>true;
    const historical=await Q.readAttachment(file(png,'historic.png','image/png'),'business_license');
    const old={id:'legacy',version:1,kind:'own',name:firm,team:'河北',contactName:'历史联系人',phone:'',email:'',attachments:[],credentialKinds:[],signingAssets:[{...historical,kind:'company_seal'}],signingKinds:['company_seal']},db=new Map([['legacy',old]]),applications=[];
-   globalThis.BidderLibrary={readProfileFile:(f,k)=>Q.readAttachment(f,k),open:async()=>({list:async()=>[...db.values()],get:async id=>structuredClone(db.get(id)),update:async(id,v,fields,assets)=>{const r={...fields,id,version:v+1,attachments:assets.filter(x=>['business_license','practice_certificate'].includes(x.kind)),signingAssets:assets.filter(x=>!['business_license','practice_certificate'].includes(x.kind))};r.credentialKinds=r.attachments.map(x=>x.kind);r.signingKinds=r.signingAssets.map(x=>x.kind);db.set(id,r);return structuredClone(r);},create:async()=>{throw Error('unexpected automatic save');}})};
+   globalThis.BidderLibrary={readProfileFile:(f,k)=>Q.readAttachment(f,k),open:async()=>({list:async()=>[...db.values()],get:async id=>structuredClone(db.get(id)),update:async(id,v,fields,assets,materials)=>{const r={...fields,id,version:v+1,materials,attachments:assets.filter(x=>['business_license','practice_certificate'].includes(x.kind)),signingAssets:assets.filter(x=>!['business_license','practice_certificate'].includes(x.kind))};r.credentialKinds=r.attachments.map(x=>x.kind);r.signingKinds=r.signingAssets.map(x=>x.kind);db.set(id,r);return structuredClone(r);},create:async()=>{throw Error('unexpected automatic save');}})};
    const ui=BidderUI.connect({apply:(r,o)=>applications.push({r,o}),detach:()=>{}});await ui.ready;
-   ok(document.body.textContent.includes('导入基础资料')&&!/公司公章|法人章|投标人签字|印章与签字/.test(document.body.textContent),'new import title and no signing UI');
+   ok(document.body.textContent.includes('拖入事务所资料')&&!/公司公章|法人章|投标人签字|印章与签字/.test(document.body.textContent),'one firm materials dropzone and no signing UI');
    ok(!document.querySelector('#bidder-edit-company_seal')&&!document.querySelector('[data-import-kind="company_seal"]'),'no hidden/native signing upload slots');
-   const accept=document.querySelector('#bidder-archive-file').accept;ok(['.zip','.rar','.pdf','.docx','.doc','.txt','.rtf','.odt','.xlsx','.png'].every(x=>accept.split(',').includes(x)),'picker actual document formats');
+   ok(document.querySelector('#bidder-archive-file').multiple,'picker accepts multiple documents');
+   ok(document.querySelector('#bidder-library-editor').lastElementChild.contains(document.querySelector('#bidder-directory')),'saved firm list appears below the form');
    const tick=()=>new Promise(r=>setTimeout(r,20));
    document.querySelector('[data-bidder-edit="legacy"]').click();await tick();
-   const input=document.querySelector('#bidder-archive-file'),transfer=new DataTransfer();transfer.items.add(scan);input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+   const input=document.querySelector('#bidder-archive-file'),transfer=new DataTransfer();transfer.items.add(scan);transfer.items.add(file('合成原件','原始资料.bin'));
+   document.querySelector('.bidder-dropzone').dispatchEvent(new DragEvent('drop',{dataTransfer:transfer,bubbles:true}));
    for(let i=0;i<250&&input.disabled;i++)await tick();
    ok(document.querySelector('#bidder-edit-name').value===firm&&db.get('legacy').version===1,'import never overwrites existing draft or automatically saves');
    const use=document.querySelector('[data-bidder-material="0"]'),choice=document.querySelector('[aria-label="资料 1 的证照类型"]');choice.value='business_license';use.click();
@@ -71,10 +73,52 @@ test('bidder imports actual documents and two certificates locally, with explici
    ok(document.querySelector('#bidder-file-business_license').textContent.includes('scanned-original.pdf'),'manual source-to-license assignment works after confirmation');
    document.querySelector('#bidder-save').click();await tick();
    ok(db.get('legacy').version===2&&db.get('legacy').attachments.length===1&&db.get('legacy').signingAssets.length===1,'save retains historical opaque signing asset without exposing or deleting it');
+   ok(db.get('legacy').materials.length===2&&await db.get('legacy').materials[1].blob.text()==='合成原件','stores all dropped originals, including formats without recognition');
+   ok(document.querySelector('.bidder-saved-files').textContent.includes('原始资料.bin'),'saved originals are available in the firm editor');
    const picker=document.querySelector('#bidder-picker-select');picker.value='legacy';picker.dispatchEvent(new Event('change',{bubbles:true}));await tick();
    ok(applications.length===1&&!('signingAssets'in applications[0].r)&&!('signingKinds'in applications[0].r)&&Object.keys(applications[0].o).length===0,'selected firm applies credentials, never historical signing assets');
    return {checks:checks.length};
   },{doc:Array.from(doc),macroDoc:Array.from(macroDoc)}).catch(e=>{throw e;});
-  assert.ok(result.checks>10);assert.deepEqual(requests,[]);assert.deepEqual(errors,[]);
+  assert.ok(result.checks>10);
+  await page.goto(pathToFileURL(path.join(D,'index.html')).href);
+  const openLibrary=()=>page.locator('[data-nav-group=basics] [data-view=bidders]').evaluate(node=>node.click());
+  await openLibrary();
+  const firm='合成列表示例会计师事务所',library=page.locator('#bidder-library-editor');
+  assert.equal(await library.locator('input[type=file]').count(),1);
+  assert.equal(await library.locator('#bidder-edit-kind,#bidder-edit-team,#bidder-edit-contactName,#bidder-edit-phone,#bidder-edit-email,.bidder-cert-grid').count(),0);
+  assert.equal(await library.getByRole('heading',{name:'已有资料'}).isVisible(),true);
+  await library.getByLabel('新增事务所名称').fill(firm);
+  const transfer=await page.evaluateHandle(async name=>{
+   const doc=await PDFLib.PDFDocument.create();doc.addPage();
+   const pdf=await doc.save(),data=new DataTransfer();
+   data.items.add(new File(['事务所名称：'+name+'\n联系人：李示'], '基础资料.txt',{type:'text/plain'}));
+   for(const title of ['营业执照','执业证书'])data.items.add(new File([pdf],title+'.pdf',{type:'application/pdf'}));
+   return data;
+  },firm);
+  await library.locator('.bidder-dropzone').dispatchEvent('drop',{dataTransfer:transfer});
+  await library.getByText('已选 3 份资料 · 识别到 2 项证照。',{exact:true}).waitFor();
+  await library.getByRole('button',{name:'保存资料',exact:true}).click();
+  const saved=library.locator('#bidder-directory .bidder-row').filter({hasText:firm});
+  await saved.getByRole('button',{name:'下载 基础资料.txt',exact:true}).waitFor();
+  const profile=await page.evaluate(async name=>{
+   const db=await BidderLibrary.open();
+   try{
+    const row=(await db.list()).find(r=>r.name===name);
+    const record=await db.get(row.id);
+    return {id:record.id,files:record.materials.map(file=>file.name),certs:record.credentialKinds,contact:record.contactName};
+   }finally{db.close();}
+  },firm);
+  assert.deepEqual(profile.files,['基础资料.txt','营业执照.pdf','执业证书.pdf']);
+  assert.deepEqual(profile.certs,['business_license','practice_certificate']);
+  assert.equal(profile.contact,'李示');
+  await page.reload();await openLibrary();
+  await saved.getByRole('button',{name:'查看资料 '+firm,exact:true}).click();
+  const downloading=page.waitForEvent('download');
+  await saved.getByRole('button',{name:'下载 基础资料.txt',exact:true}).click();
+  assert.match(fs.readFileSync(await (await downloading).path(),'utf8'),new RegExp(firm));
+  await page.locator('[data-nav-group=quote] [data-view=quote]').evaluate(node=>node.click());
+  await page.locator('#bidder-picker-select').selectOption(profile.id);
+  await page.waitForFunction(name=>document.querySelector('[name=firmName]').value===name,firm);
+  assert.deepEqual(requests,[]);assert.deepEqual(errors,[]);
  }finally{await browser.close();}
 });

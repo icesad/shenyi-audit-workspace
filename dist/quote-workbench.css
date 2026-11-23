@@ -1,118 +1,134 @@
-/* Four vertical information columns, then one full-width quote document workspace.
- * Screen-only. Form owners, source order, original print/export templates are unchanged. */
 @media screen {
-  #view-quote {min-width:0}
-  .quote-intake-heading {display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 14px}
-  .quote-intake-heading h2 {font-size:15px;letter-spacing:.04em}
-  .quote-intake-heading>span {font-size:11px;color:var(--muted)}
-  .quote-intake-grid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;height:clamp(520px,64vh,700px);min-width:0;align-items:stretch}
-  #proposal-form.quote-party-columns {grid-column:span 2;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;min-width:0;min-height:0;margin:0}
-  .quote-intake-grid .quote-intake-column {display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;padding:16px 14px;margin:0;background:#fff;border:1px solid #dce5de;border-radius:10px}
-  .quote-intake-column>.section-title {min-height:46px;flex:none;align-items:flex-start;flex-direction:column;justify-content:flex-start;gap:4px;margin:0 0 12px;padding:0 0 11px;border-bottom:1px solid #e8eeea}
-  .quote-intake-column>.section-title h2 {font-size:14px;line-height:1.5;letter-spacing:0}
-  .quote-intake-column>.section-title>span {font-size:10px;color:#80918a}
-  .quote-intake-column .step {font-size:10px;margin-right:7px}
-  .quote-column-body {min-width:0;min-height:0;flex:1;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;padding-right:4px;overscroll-behavior:contain}
-  .quote-column-body .client-fields {grid-template-columns:minmax(0,1fr);gap:12px}
-  .quote-column-body .fields label {font-size:11px;line-height:1.5}
-  .quote-column-body .fields input,.quote-column-body .fields select {height:var(--form-control-height);min-height:var(--form-control-height);padding:7px 9px;font-size:12px;margin-top:5px}
-  .quote-column-body .fields label small {float:none;display:block;font-size:10px}
-  .quote-column-body .muted {font-size:11px;line-height:1.7;margin:10px 0 14px;overflow-wrap:anywhere}
-  .quote-column-body .tiny {line-height:1.7;overflow-wrap:anywhere}
-  .quote-column-body .intake-import {display:block;padding:11px;border-radius:7px}
-  .quote-column-body .intake-import label {display:block;font-size:12px}
-  .quote-column-body .intake-import small {font-size:10px;line-height:1.7;margin-top:5px}
-  .quote-column-body input[type=file] {display:block;box-sizing:border-box;width:100%;max-width:100%;min-width:0;font-size:10px;margin-top:10px}
-  .quote-column-body input[type=file]::file-selector-button {font:inherit;padding:6px 8px;background:white;border:1px solid #b6cbbf;border-radius:4px;color:var(--accent);margin-right:5px}
-  .quote-column-body #bidder-picker {margin:0 0 14px}
-  .quote-column-body .bidder-picker-actions {display:flex;flex-direction:column;align-items:stretch;gap:7px}
-  .quote-column-body .bidder-picker-actions label {flex:none;max-width:100%;font-size:11px}
-  .quote-column-body .bidder-picker-actions .btn {width:100%;min-height:34px;white-space:normal;padding:7px 9px}
-  .quote-column-body #bidder-picker select {height:var(--form-control-height);margin-top:5px;font-size:12px}
-  .quote-column-body #bidder-picker-status {font-size:10px;line-height:1.6;overflow-wrap:anywhere}
-  .quote-column-body .form-foot {display:flex;flex-direction:column;align-items:stretch;gap:8px;margin-top:13px;padding-top:10px}
-  .quote-column-body .form-foot>span {max-width:none}
-  .quote-column-body .form-foot .btn {white-space:normal;padding:7px 9px}
-  .quote-column-body .form-foot .text-button {align-self:flex-start;text-align:left}
-  /* Every source table cell remains present; compact cards are a presentation only. */
-  #auditee-column #auditee-list {margin:0 0 16px}
-  #auditee-column #auditee-list>.table-scroll {max-height:210px;overflow:auto;border:1px solid #dde8e1;border-radius:7px;padding:8px;background:#f7faf7}
-  #auditee-column .auditee-table {display:block;min-width:0;width:100%;font-size:10px}
-  #auditee-column .auditee-table caption {display:block;width:100%;font-size:10px;padding:0 0 8px!important}
-  #auditee-column .auditee-table thead {position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-  #auditee-column .auditee-table tbody {display:grid;gap:8px;min-width:0}
-  #auditee-column .auditee-table tr {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 8px;padding:9px;border:1px solid #e0e8e2;border-radius:6px;background:#fff;min-width:0}
-  #auditee-column .auditee-table tr[aria-current=true] {border-color:#87b5a0;box-shadow:inset 3px 0 #367f68}
-  #auditee-column .auditee-table td {display:block;min-width:0;padding:0;border:0;white-space:normal!important;overflow-wrap:anywhere;line-height:1.5}
-  #auditee-column .auditee-table td:first-child,#auditee-column .auditee-table td:last-child {grid-column:1/-1}
-  #auditee-column .auditee-table td:first-child {font-size:11px;margin-bottom:3px}
-  #auditee-column .auditee-table td:not(:first-child):not(:last-child)::before {display:block;font-size:9px;color:#8a9a91;content:var(--auditee-cell-label)}
-  #auditee-column .auditee-table td:nth-child(2) {--auditee-cell-label:'所在地'}
-  #auditee-column .auditee-table td:nth-child(3) {--auditee-cell-label:'年度'}
-  #auditee-column .auditee-table td:nth-child(4) {--auditee-cell-label:'资产（万元）'}
-  #auditee-column .auditee-table td:nth-child(5) {--auditee-cell-label:'收入（万元）'}
-  #auditee-column .auditee-table td:nth-child(6) {--auditee-cell-label:'净利润（万元）'}
-  #auditee-column .auditee-table td:nth-child(7) {--auditee-cell-label:'数据期间'}
-  #auditee-column .auditee-table td:last-child {border-top:1px solid #e5ede7;margin-top:3px;padding-top:3px}
-  #auditee-column #auditee-list>label {display:grid;gap:6px;margin-top:10px;font-size:10px;color:#6d8177}
-  #auditee-column #auditee-list>label input {box-sizing:border-box;min-width:0;width:100%;height:34px;border:1px solid #d7e3da;border-radius:5px;padding:6px 8px;font-size:11px;color:var(--ink);background:#fbfcf9}
-  #auditee-column #auditee-list .form-foot {border:0;margin-top:9px;padding:0;gap:5px}
-  #auditee-column #auditee-list .form-foot .muted {margin:0;font-size:9px}
-  .quote-comparison-column .comparison {display:grid;grid-template-columns:minmax(0,1fr);gap:9px}
-  .quote-comparison-column .region-card {padding:10px 11px;margin:0;border-radius:7px;overflow:visible}
-  .quote-comparison-column .region-card .card-top {display:block}
-  .quote-comparison-column .region-heading {width:100%;min-width:0}
-  .quote-comparison-column .region-heading>label {font-size:9px;line-height:1.4}
-  .quote-comparison-column .region-province {height:var(--form-control-height);min-height:var(--form-control-height);font-size:11px;margin:4px 0 5px;padding:5px 30px 5px 8px}
-  .quote-comparison-column .region-en {display:none}
-  .quote-comparison-column .region-card>.badge {font-size:8px;padding:2px 5px;max-width:100%;white-space:normal}
-  .quote-comparison-column .region-price {font-size:23px;line-height:1.2;margin-top:5px;overflow-wrap:anywhere}
-  .quote-comparison-column .region-price small {font-size:11px}
-  .quote-comparison-column .card-label {font-size:9px;line-height:1.5;margin:4px 0 6px}
-  .quote-comparison-column .region-card summary {font-size:9px;padding:2px 0}
-  .quote-comparison-column .region-card details {font-size:10px}
-  .quote-comparison-column .card-facts {padding:5px 0;margin:8px 0}
-  .quote-comparison-column .fact {font-size:10px;display:block;margin:6px 0}
-  .quote-comparison-column .fact span:last-child {display:block;text-align:left;overflow-wrap:anywhere}
-  .quote-comparison-column .region-card .choose {margin-top:7px;min-height:29px;padding:5px 7px;font-size:10px;white-space:normal}
-  #view-proposal .quote-output-module {width:100%;margin-top:26px}
-  #view-proposal .quote-output-module>.document-heading {align-items:center;padding:16px 0}
-  #view-proposal .quote-output-module .bottom-grid {grid-template-columns:minmax(280px,.85fr) minmax(0,1.25fr);gap:18px}
-  #view-proposal .quote-output-module .panel {margin-top:0}
-  #view-proposal .quote-output-module .quote-summary {min-width:0}
-}
-@media screen and (max-width:1199px) {
-  .quote-intake-grid {grid-template-columns:repeat(2,minmax(0,1fr));height:auto;gap:16px}
-  #proposal-form.quote-party-columns {grid-column:1/-1;gap:16px}
-  .quote-intake-grid .quote-intake-column {height:600px;max-height:none}
-  .quote-comparison-column .comparison {gap:10px}
-}
-@media screen and (max-width:759px) {
-  .quote-intake-heading {align-items:flex-start;flex-direction:column;gap:5px}
-  .quote-intake-grid,#proposal-form.quote-party-columns {grid-template-columns:minmax(0,1fr);gap:16px}
-  #proposal-form.quote-party-columns {grid-column:auto}
-  .quote-intake-grid .quote-intake-column {height:auto;max-height:none;min-height:0;padding:18px 16px}
-  .quote-column-body {overflow:visible;scrollbar-gutter:auto;padding-right:0;overscroll-behavior:auto}
-  .quote-intake-column>.section-title {min-height:0}
-  #auditee-column #auditee-list>.table-scroll {max-height:260px}
-  #view-proposal .quote-output-module .bottom-grid {grid-template-columns:minmax(0,1fr)}
-}
-@media screen {
-  .quote-comparison-column .region-card {display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:5px 8px}
-  .quote-comparison-column .card-top,.quote-comparison-column .card-label {grid-column:1/-1}
-  .quote-comparison-column .region-card>.badge {grid-column:1;justify-self:start}
-  .quote-comparison-column .region-price {grid-column:2;font-size:22px;text-align:right;margin:0;white-space:nowrap}
-  .quote-comparison-column .card-label {margin:0}
-  .quote-comparison-column .region-card details {grid-column:1;min-width:0}
-  .quote-comparison-column .region-card details[open] {grid-column:1/-1}
-  .quote-comparison-column .region-card .choose {grid-column:2;width:auto;margin:0;max-width:125px}
+  #view-quote { min-width: 0; }
+  #bidding-navigation { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+  #bidding-navigation .btn[aria-current=page] { background: #edf5ee; border-color: #8eaf9c; color: var(--accent); }
+  .quote-setup { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; }
+  .quote-file-stack { display: grid; align-content: start; min-width: 0; gap: 12px; }
+  :is(.quote-setup,.quote-file-stack) > .panel { min-width: 0; margin: 0; padding: 19px 22px; }
+  .quote-setup h2, .quote-estimates h2 { font-size: 1rem; margin: 0 0 11px; }
+  .quote-file-drop {
+    position: relative; display: grid; place-items: center; align-content: center; gap: 5px;
+    min-height: 94px; padding: 9px; border: 1px dashed #80a69a; border-radius: 8px;
+    background: #f2f8f5; color: var(--accent); text-align: center; cursor: pointer;
+  }
+  .quote-file-drop:hover, .quote-file-drop.is-dragover { background: #e7f3ed; border-color: var(--accent); }
+  .quote-file-drop:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .quote-file-drop input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+  .quote-file-icon { display: grid; place-items: center; width: 29px; height: 29px; border: 1px solid #aec9bf; border-radius: 7px; background: #fff; font-size: 19px; }
+  .quote-file-drop span:last-child, #tender-status { font-size: .8125rem; }
+  #tender-status { margin: 9px 0 0; overflow-wrap: anywhere; }
+  #tender-status:empty { margin: 0; }
+  .quote-region-entry { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-bottom: 11px; }
+  .quote-region-panel label { display: grid; min-width: 0; gap: 4px; font-size: .875rem; }
+  .quote-region-panel :is(input,select) { width: 100%; min-width: 0; min-height: var(--form-control-height, 40px); padding: 7px 10px; border: 1px solid #d7e4db; border-radius: 6px; color: var(--ink); background-color: #f8faf7; }
+  .quote-region-panel :is(input,select):focus-visible { outline: 2px solid #80a69a; outline-offset: 1px; }
+  .quote-region-panel #comparison > button { min-height: var(--form-control-height, 40px); white-space: nowrap; }
+  #quote-region[aria-invalid=true] { border-color: var(--red); }
+  .quote-region-message, .quote-result-status { margin: 7px 0 0; color: var(--accent); font-size: .8125rem; }
+  .quote-region-message:empty, .quote-result-status:empty { display: none; }
+  .quote-region-message.error { color: var(--red); }
+  .quote-final-panel { background: #f2f8f5; }
+  #estimate-result { display: block; margin: 5px 0 0; color: var(--accent); font-size: clamp(1.35rem, 2.2vw, 1.8rem); font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .estimate-details { margin-top: 14px; }
+  .estimate-details .table-scroll { max-height: 25rem; overflow: auto; }
+  .estimate-detail-table { width: 100%; font-size: .8125rem; }
+  .estimate-detail-table th, .estimate-detail-table td { padding: 8px; }
+  .estimate-details .estimate-detail-table :is(th,td) { padding-inline: 6px; }
+  .estimate-detail-table thead th { white-space: nowrap; background: #f2f6f3; }
+  .estimate-detail-table tbody th { color: var(--ink); overflow-wrap: anywhere; font-weight: 500; }
+  .estimate-detail-table td { font-variant-numeric: tabular-nums; }
+  .estimate-detail-table tbody th, .estimate-detail-table td { white-space: normal; }
+  .quote-reference-file { display: grid; gap: 6px; margin: 8px 0 0; overflow-wrap: anywhere; }
+  .quote-reference-file > div { display: flex; flex-wrap: wrap; gap: 6px; }
+  .quote-unit-panel { margin: 14px 0; padding: 14px 20px; }
+  .quote-unit-row { display: flex; align-items: start; flex-wrap: wrap; gap: 10px 16px; }
+  .quote-unit-panel #bidder-picker { flex: 1 1 245px; max-width: 460px; min-width: 0; margin: 0; }
+  .quote-unit-panel #bidder-picker-status { margin: 5px 0 0; font-size: .8125rem; }
+  .quote-unit-panel #bidder-picker-status:empty { display: none; }
+  .quote-template-downloads { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; padding-top:1.55rem; }
+  .quote-template-downloads select { min-height: var(--form-control-height, 40px); padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background:#fff;color:var(--ink); }
+  .quote-template-downloads select:disabled { opacity:.55; }
+  .quote-template-downloads .btn { min-height: var(--form-control-height, 40px); white-space: nowrap; }
+  .quote-intake-review { margin: 14px 0; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  .quote-intake-review > summary { padding: 10px 15px; cursor: pointer; color: var(--accent); font-weight: 600; }
+  .quote-intake-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 0 12px 12px; }
+  #proposal-form.quote-party-columns { display: grid; grid-column: span 2; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+  .quote-intake-grid .quote-intake-column { min-width: 0; margin: 0; padding: 14px; border-radius: 8px; box-shadow: none; }
+  .quote-intake-grid .client-fields { grid-template-columns: minmax(0, 1fr); gap: 9px; }
+  .quote-intake-grid .client-fields label small { display: block; float: none; }
+  .quote-estimates { margin: 0; padding: 18px 20px; }
+  .quote-estimates-heading { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 2px 12px; margin-bottom: 12px; }
+  .quote-estimates-heading h2, .quote-estimates-heading p { grid-column: 1; margin: 0; }
+  .quote-estimates-heading p { font-size: .8125rem; }
+  #estimate-filter-clear { grid-column: 2; grid-row: 1 / span 2; align-self: center; padding: 5px 10px; white-space: nowrap; }
+  .quote-estimates-scroll { max-height: min(680px,70vh); overflow: auto; scrollbar-gutter: stable; border: 1px solid var(--line); border-radius: 7px; }
+  .quote-estimates-table { width: 100%; min-width: 1190px; font-size: .75rem; }
+  .quote-estimates-table th { color: var(--ink); background: #f2f6f3; white-space: nowrap; }
+  .quote-estimates-table thead { position: sticky; top: 0; z-index: 2; }
+  .quote-estimates-table tfoot { position: sticky; bottom: 0; z-index: 1; }
+  .quote-estimates-table th, .quote-estimates-table td { padding: 10px 9px; vertical-align: top; }
+  .quote-estimates-table td { overflow-wrap: anywhere; }
+  .estimate-filter-trigger {
+    display: inline-grid; place-items: center; width: 22px; height: 22px; margin-left: 4px; vertical-align: middle;
+    border: 1px solid #cbd9d0; border-radius: 4px; background: #fff; color: var(--accent); cursor: pointer;
+  }
+  .estimate-filter-trigger::before { content: ''; border: 4px solid transparent; border-bottom: 0; border-top-color: currentColor; }
+  .estimate-filter-trigger:is(:hover,[aria-expanded=true]) { background: #e6f1e9; }
+  .estimate-filter-trigger[data-filter-active] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .estimate-filter-menu {
+    position: fixed; z-index: 25; width: min(280px,calc(100vw - 16px)); padding: 8px;
+    border: 1px solid #cbd9d0; border-radius: 8px; color: var(--ink); background: #fff;
+    box-shadow: 0 5px 18px #153b3026;
+  }
+  .estimate-filter-menu h3 { margin: 1px 0 7px; font-size: .875rem; }
+  .workspace-table-filter-menu { inset:auto; margin:0; }
+  .estimate-filter-menu input { width: 100%; min-height: 36px; padding: 4px 8px; border: 1px solid #d7e4db; border-radius: 5px; font: inherit; }
+  #estimate-filter-form label { display: block; margin-bottom: 4px; }
+  .estimate-filter-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+  .estimate-filter-actions .btn { padding: 5px 10px; }
+  .estimate-filter-options { display: grid; max-height: min(250px,45vh); overflow: auto; margin-top: 6px; }
+  .estimate-filter-options button { padding: 7px 8px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+  .estimate-filter-options button:is(:hover,[aria-pressed=true]) { background: #e8f3eb; color: var(--accent); }
+  .estimate-filter-options p { margin: 5px 8px; }
+  .quote-estimates-table tbody td:nth-child(2) { white-space: nowrap; }
+  .quote-estimates-table tbody td:nth-child(12) { min-width: 108px; }
+  .quote-estimates-table tbody td:nth-child(13) { min-width: 145px; }
+  .quote-estimates-table tfoot :is(th,td) { border-top: 1px solid var(--line); border-bottom: 0; background: #f2f6f3; }
+  .quote-estimates-table tfoot small { font-weight: 400; }
+  .quote-estimates-table tbody tr:last-child td { border-bottom: 0; }
+  .quote-estimates-table .quote-estimates-empty { padding: 22px 12px; color: var(--muted); }
+  .estimate-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 5px; margin-top: 10px; }
+  .estimate-pagination .btn { min-width: 32px; padding: 5px 9px; }
+  .estimate-pagination [aria-current=page] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .quote-record-amount { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 650; }
+  .quote-estimates-code { min-width: 118px; font-size: .6875rem; }
+  .quote-estimates-code code { overflow-wrap: anywhere; }
+  .quote-estimates-code a { color: var(--accent); text-underline-offset: 2px; }
+  .quote-estimates-table select { min-width: 95px; padding: 4px 9px; border: 1px solid #d7e4db; border-radius: 6px; color: var(--ink); background-color: #f8faf7; }
+  #view-proposal .quote-output-module { width: 100%; margin-top: 26px; }
+  #view-proposal .quote-output-module > .document-heading { align-items: center; padding: 16px 0; }
+  #view-proposal .quote-output-module .bottom-grid { grid-template-columns: minmax(280px, .85fr) minmax(0, 1.25fr); gap: 18px; }
+  #view-proposal .quote-output-module .panel { margin-top: 0; }
+  #view-proposal .quote-output-module .quote-summary { min-width: 0; }
 }
 
-@media screen {
-  #view-quote .quote-column-body .fields input,#view-quote .quote-column-body .fields select,#view-quote .quote-column-body #bidder-picker select,#view-quote .quote-comparison-column .region-province {height:var(--form-control-height);min-height:var(--form-control-height);font-size:var(--form-control-font-size)}
+@media screen and (max-width: 820px) {
+  .quote-setup, .quote-intake-grid, #proposal-form.quote-party-columns { grid-template-columns: minmax(0, 1fr); }
+  #proposal-form.quote-party-columns { grid-column: auto; }
+  #view-proposal .quote-output-module .bottom-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media screen and (max-width: 575px) {
+  :is(.quote-setup,.quote-file-stack) > .panel, .quote-estimates, .quote-unit-panel { padding-inline: 14px; }
 }
 
 /* Requested: attachments occupy the former reason area; do not alter intake layout. */
 #view-proposal .negotiation .quote-extra-panel{padding:0;margin:22px 0 0;border:0;box-shadow:none;background:transparent;min-width:0}#view-proposal .quote-extra-panel input{max-width:100%}#view-proposal .quote-extra-panel .qe-list{overflow-wrap:anywhere}
 
-.page-draft-toolbar{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin:16px 0 0;font-size:12px;color:var(--muted,#6b7f79)}.page-draft-toolbar .error{color:#ad3535}.ledger-result-select{display:grid;gap:5px;font-size:12px}.ledger-result-select select{min-height:40px;width:130px}
+main > .page-heading { display: block; }
+.page-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.page-title-row h1 { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.page-draft-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; font-size: 12px; color: var(--muted,#6b7f79); }
+.page-draft-toolbar .btn { white-space: nowrap; }
+#page-save-status { max-width: min(260px,34vw); overflow-wrap: anywhere; }
+.page-draft-toolbar .error { color: #ad3535; }
+.ledger-result-select{display:grid;gap:5px;font-size:12px}.ledger-result-select select{min-height:40px;width:130px}

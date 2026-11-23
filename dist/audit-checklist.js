@@ -148,7 +148,8 @@
 
   // Schema 1 is deliberately not migrated on read. Schema 2 adds an immutable
   // outline generation and file versions; legacy is the exact pre-conversion record.
-  const FILE_STORE='materialFiles',FILE_MAX=12*1024*1024,PROJECT_MAX=150*1024*1024,TREE_RECORD_MAX=8*1024*1024;
+  const FILE_STORE='materialFiles',FILE_MAX=12*1024*1024,ARCHIVE_MAX=100*1024*1024,PROJECT_MAX=150*1024*1024,TREE_RECORD_MAX=8*1024*1024;
+  const fileLimit=name=>/\.(?:zip|rar)$/iu.test(name)?ARCHIVE_MAX:FILE_MAX;
   const uuid=()=>root.crypto.randomUUID(),isUuid=x=>typeof x==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(x);
   function treeNodes(input){
     if(!Array.isArray(input)||!input.length||input.length>MAX)fail('标题树须有 1–500 个节点。');
@@ -172,7 +173,7 @@
   const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
   function fileMeta(x){
     exact(x,['id','nodeId','generationId','name','size','type','sha256','at','reviewer']);
-    if(!isUuid(x.id)||!isUuid(x.generationId)||!/^n[1-9]\d{0,2}$/u.test(x.nodeId)||!Number.isSafeInteger(x.size)||x.size<1||x.size>FILE_MAX||typeof x.sha256!=='string'||!/^\b[0-9a-f]{64}$/u.test(x.sha256))fail('资料文件元数据无效。');
+    if(!isUuid(x.id)||!isUuid(x.generationId)||!/^n[1-9]\d{0,2}$/u.test(x.nodeId)||!Number.isSafeInteger(x.size)||x.size<1||typeof x.name!=='string'||x.size>fileLimit(x.name)||typeof x.sha256!=='string'||!/^\b[0-9a-f]{64}$/u.test(x.sha256))fail('资料文件元数据无效。');
     const name=str(x.name,180,true),type=str(x.type,100,true),reviewer=str(x.reviewer,100,true);iso(x.at);
     if(name!==x.name||type!==x.type||reviewer!==x.reviewer||/[\\/:*?"<>|\r\n\t]/u.test(name)||/^[. ]|[. ]$/u.test(name)||!Object.hasOwn(FILE_TYPES,name.split('.').at(-1).toLowerCase())||FILE_TYPES[name.split('.').at(-1).toLowerCase()]!==type)fail('资料文件名称或类型无效。');
     return x;
@@ -327,7 +328,9 @@
     if(names.some(n=>/^(?:EncryptedPackage|EncryptionInfo)$/i.test(n)))fail('旧Office资料已加密，当前无法核验；请另存未加密文件。');const expected={doc:/^WordDocument$/i,xls:/^(?:Workbook|Book)$/i,ppt:/^PowerPoint Document$/i}[ext];if(!names.some(n=>expected.test(n)))bad();
   }
   async function preparedFile(file,{DOMParser=root.DOMParser}={}){
-    if(!file||typeof file.arrayBuffer!=='function'||!Number.isSafeInteger(file.size)||file.size<1||file.size>FILE_MAX)fail('每份资料文件须为 1 字节至 12 MiB。');
+    if(!file||typeof file.arrayBuffer!=='function'||!Number.isSafeInteger(file.size)||file.size<1)fail('请选择非空资料文件。');
+    const max=fileLimit(file.name);
+    if(file.size>max)fail('单份'+(max===ARCHIVE_MAX?'压缩包不超过 100 MiB。':'资料不超过 12 MiB。'));
     const name=safeName(file.name),ext=name.split('.').at(-1).toLowerCase(),type=FILE_TYPES[ext];if(!type){if(['tif','tiff','heic','heif'].includes(ext))fail('当前离线版没有TIFF/HEIC解码能力，暂不接收；请提供PNG、JPEG或PDF副本。');if(['docm','xlsm','pptm','dotm','xlam','ppam'].includes(ext))fail('当前不接收宏类型Office资料，请另存DOCX、XLSX或PPTX无宏副本。');fail('不支持的资料文件类型。');}matchingMime(ext,file.type);
     const bytes=new Uint8Array(await file.arrayBuffer());if(bytes.length!==file.size)fail('文件读取不完整，未保存。');const start=xs=>xs.every((v,i)=>bytes[i]===v),ascii=(a,b)=>new TextDecoder('ascii').decode(bytes.subarray(a,b)),d=new DataView(bytes.buffer),zip=()=>start([0x50,0x4b])&&[[3,4],[5,6],[7,8]].some(p=>bytes[2]===p[0]&&bytes[3]===p[1]),mismatch=()=>fail('文件内容与扩展名不符，未保存。');
     if(ext==='pdf'){if(!start([37,80,68,70,45]))mismatch();}
@@ -445,6 +448,6 @@
     });
   }
   const open=()=>openDatabase(DB),openTrial=()=>openDatabase(TRIAL_DB,true);
-  const api=Object.freeze({parse,create,createTree,apply,gate,validate,open,openTrial,TRIAL_ID,STATES,FILE_TYPES,prepareFile:preparedFile,leafNodes:r=>r?.schema===2?copy(leafNodesOf(validateV2(r).nodes)):copy(validateV1(r).items)});
+  const api=Object.freeze({parse,create,createTree,apply,gate,validate,open,openTrial,TRIAL_ID,STATES,FILE_TYPES,fileLimit,prepareFile:preparedFile,leafNodes:r=>r?.schema===2?copy(leafNodesOf(validateV2(r).nodes)):copy(validateV1(r).items)});
   if(typeof module==='object'&&module.exports)module.exports=api;else root.AuditChecklist=api;
 })(globalThis);
