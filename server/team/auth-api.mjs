@@ -22,18 +22,20 @@ export function consume(db, bucket, now, window, maximum) {
 export function consumeBounded(db, prefix, bucket, now, window, maximum, capacity = 10_000) {
   if (typeof prefix !== 'string' || !prefix || !bucket.startsWith(prefix) ||
       !Number.isSafeInteger(capacity) || capacity < 1) throw new TypeError('Invalid bounded rate-limit bucket');
-  db.prepare('DELETE FROM team_auth_limits WHERE substr(bucket,1,length(?))=? AND window_start<?')
-    .run(prefix, prefix, now - window);
-  const count = db.prepare('SELECT COUNT(*) AS count FROM team_auth_limits WHERE substr(bucket,1,length(?))=?')
-    .get(prefix, prefix).count;
-  if (count >= capacity) {
-    db.prepare(`DELETE FROM team_auth_limits WHERE bucket IN (
-      SELECT bucket FROM team_auth_limits
-      WHERE substr(bucket,1,length(?))=? AND bucket<>?
-      ORDER BY window_start ASC,bucket ASC LIMIT ?
-    )`).run(prefix, prefix, bucket, count - capacity + 1);
-  }
-  consume(db, bucket, now, window, maximum);
+  return transaction(db, () => {
+    db.prepare('DELETE FROM team_auth_limits WHERE substr(bucket,1,length(?))=? AND window_start<?')
+      .run(prefix, prefix, now - window);
+    const count = db.prepare('SELECT COUNT(*) AS count FROM team_auth_limits WHERE substr(bucket,1,length(?))=?')
+      .get(prefix, prefix).count;
+    if (count >= capacity) {
+      db.prepare(`DELETE FROM team_auth_limits WHERE bucket IN (
+        SELECT bucket FROM team_auth_limits
+        WHERE substr(bucket,1,length(?))=? AND bucket<>?
+        ORDER BY window_start ASC,bucket ASC LIMIT ?
+      )`).run(prefix, prefix, bucket, count - capacity + 1);
+    }
+    consume(db, bucket, now, window, maximum);
+  });
 }
 export function accountView(db, identity, expiresAt) {
   const row = db.prepare('SELECT display_name FROM team_credentials WHERE user_id=?').get(identity.userId);
