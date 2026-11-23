@@ -1,3 +1,4 @@
+import {isIP} from 'node:net';
 import {administratorBusinessEligibilitySql} from './administrator-business-role-policy.mjs';
 import {captureManagementSubscriptionGuard} from './subscription-management-policy.mjs';
 import {captureSeatAdmission} from './seat-capacity-policy.mjs';
@@ -189,8 +190,13 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
   if(request.method!=='POST')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'POST'});
   const fields=action==='activate'?['invitationCode','phone','challengeId','code','password','displayName','accept']:['invitationCode','phone'];
   const body=await readJson(request,fields),phone=normalizePhone(body.phone);
-  consume(db,'onboarding:'+action+':global',now(),60000,60);
+  // Anonymous traffic is isolated by the trusted edge address before checking the invitation.
+  // The shared business budget is spent only after a live invitation is proven.
+  const suppliedAddress=request.headers.get('x-shenyi-client-ip')||'local';
+  const clientAddress=isIP(suppliedAddress)?suppliedAddress.toLowerCase():'local';
+  consume(db,'onboarding:'+action+':ip:'+digest(clientAddress),now(),60000,60);
   const invitation=liveInvitation(db,body.invitationCode,phone,now());
+  consume(db,'onboarding:'+action+':global',now(),60000,60);
   if(action==='preview')return json(publicInvitation(invitation));
   const {sms,pepper}=smsProvider(identityProviders);
   if(action==='challenges'){
