@@ -57,7 +57,10 @@ test('saved ledger export: real normal page, readonly data preservation and late
   assert.equal(rejected,true);assert.deepEqual(await page.evaluate(()=>indexedDB.databases()),[]);assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
  });
  await t.test('normal index row exports the original saved record and does not calculate or write',async()=>{
-  const {page,errors,external}=await pageFor('/'),f=fixture();await seed(page,f);await page.reload();await page.locator('[data-view="project"]').first().click();
+  const {page,errors,external}=await pageFor('/'),f=fixture();
+  // Model an unfocused tab so the independent foreground timer cannot write during the export.
+  await page.addInitScript(()=>{ document.hasFocus=()=>false; });
+  await seed(page,f);await page.reload();await page.locator('[data-view="project"]').first().click();
   await page.locator('.pi-summary-table').getByRole('link',{name:f.id,exact:true}).click();
   await page.getByRole('button',{name:'登记与附件',exact:true}).click();
   const button=page.locator('[data-project-ledger-snapshot="'+f.id+'"]');await button.waitFor();await page.waitForFunction(id=>!document.querySelector('[data-project-ledger-snapshot="'+id+'"]')?.disabled,f.id);
