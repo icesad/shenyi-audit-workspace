@@ -201,3 +201,30 @@ test('loopback HTTP uses the same invitation and origin boundaries without expos
   const created=await fetch(service.address.url+admin,{method:'POST',headers:{'Content-Type':'application/json',Origin:'shenyi://app',Authorization:'Bearer '+f.manager},body:JSON.stringify({phone:PHONE,role:'intern'})});assert.equal(created.status,201);const invitation=await created.json();
   const preview=await fetch(service.address.url+'/api/auth/onboarding/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({invitationCode:invitation.invitationCode,phone:PHONE})});assert.equal(preview.status,200);assert.ok(!(await preview.text()).includes(PHONE));assert.equal(preview.headers.get('access-control-allow-origin'),null);
 });
+
+test('invalid anonymous onboarding requests cannot exhaust another source or the shared valid-invitation budget',async t=>{
+  const f=await fixture(t),invitation=await invite(f),invalidCode=randomBytes(32).toString('base64url');
+  const sources=['203.0.113.10','203.0.113.11'];
+  for(const action of ['preview','challenges']){
+    for(let i=0;i<60;i++){
+      const r=await call(f,'/api/auth/onboarding/'+action,{body:{invitationCode:invalidCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[0]}});
+      assert.equal(r.status,404,action+': '+r.raw);
+    }
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limits WHERE bucket=?').get('onboarding:'+action+':global').n,0);
+    if(action==='preview'){
+      const valid=await call(f,'/api/auth/onboarding/preview',{body:{invitationCode:invitation.invitationCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[1]}});
+      assert.equal(valid.status,200,valid.raw);
+    }else{
+      const valid=await call(f,'/api/auth/onboarding/challenges',{body:{invitationCode:invitation.invitationCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[1]}});
+      assert.equal(valid.status,202,valid.raw);
+      assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get('onboarding:challenges:global').attempts,1);
+    }
+  }
+  const delivered=f.sent.at(-1),activationBody={invitationCode:invitation.invitationCode,phone:PHONE,challengeId:delivered.challengeId,code:delivered.code,password:NEW_PASSWORD,displayName:'合成员工',accept:true};
+  for(let i=0;i<60;i++){
+    const r=await activate(f,{...activationBody,invitationCode:invalidCode});
+    assert.equal(r.status,404);
+  }
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limits WHERE bucket=?').get('onboarding:activate:global').n,0);
+  const valid=await activate(f,activationBody);assert.equal(valid.status,200,valid.raw);
+});
