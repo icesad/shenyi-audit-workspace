@@ -23,7 +23,7 @@ export function consumeBounded(db, prefix, bucket, now, window, maximum, capacit
   if (typeof prefix !== 'string' || !prefix || !bucket.startsWith(prefix) ||
       !Number.isSafeInteger(capacity) || capacity < 1) throw new TypeError('Invalid bounded rate-limit bucket');
   return transaction(db, () => {
-    db.prepare('DELETE FROM team_auth_limits WHERE substr(bucket,1,length(?))=? AND window_start<?')
+    db.prepare('DELETE FROM team_auth_limits WHERE substr(bucket,1,length(?))=? AND window_start<=?')
       .run(prefix, prefix, now - window);
     const exists = db.prepare('SELECT 1 FROM team_auth_limits WHERE bucket=?').get(bucket);
     const count = db.prepare('SELECT COUNT(*) AS count FROM team_auth_limits WHERE substr(bucket,1,length(?))=?')
