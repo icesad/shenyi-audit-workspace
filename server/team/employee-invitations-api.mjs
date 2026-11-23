@@ -5,7 +5,7 @@ import {captureSeatAdmission} from './seat-capacity-policy.mjs';
 /** Invite-only activation experiment. SMS adapters are explicit, server-side
  * injections; no real sending, public signup or team creation is bundled. */
 import {createHash,createHmac,randomBytes,randomInt,randomUUID,timingSafeEqual} from 'node:crypto';
-import {authenticated,consume,limitedPasswordWork} from './auth-api.mjs';
+import {authenticated,consume,consumeBounded,limitedPasswordWork} from './auth-api.mjs';
 import {normalizePhone} from './phone-api.mjs';
 import {hashPassword,verifyPassword,validPassword} from './passwords.mjs';
 import {canOperateTeam,hasAffiliation} from './administration-policy.mjs';
@@ -194,7 +194,7 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
   // The shared business budget is spent only after a live invitation is proven.
   const suppliedAddress=request.headers.get('x-shenyi-client-ip')||'local';
   const clientAddress=isIP(suppliedAddress)?suppliedAddress.toLowerCase():'local';
-  consume(db,'onboarding:'+action+':ip:'+digest(clientAddress),now(),60000,60);
+  consumeBounded(db,'onboarding:'+action+':ip:','onboarding:'+action+':ip:'+digest(clientAddress),now(),60000,60);
   const invitation=liveInvitation(db,body.invitationCode,phone,now());
   consume(db,'onboarding:'+action+':global',now(),60000,60);
   if(action==='preview')return json(publicInvitation(invitation));
