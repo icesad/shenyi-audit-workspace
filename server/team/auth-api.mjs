@@ -21,22 +21,25 @@ export function consume(db, bucket, now, window, maximum) {
 /** Record a source attempt, or return false only when a new source cannot fit.
  * Existing exhausted sources still throw 429. Callers accepting false must
  * validate a real credential before consuming any shared business budget. */
-export function tryConsumeBounded(db, prefix, bucket, now, window, maximum, capacity = 10_000) {
+/** Reserve a bounded source bucket inside a caller-owned SQLite write transaction. */
+export function tryConsumeBoundedInTransaction(db, prefix, bucket, now, window, maximum, capacity = 10_000) {
   if (typeof prefix !== 'string' || !prefix || !bucket.startsWith(prefix) ||
       !Number.isSafeInteger(capacity) || capacity < 1) throw new TypeError('Invalid bounded rate-limit bucket');
-  return transaction(db, () => {
-    db.prepare('DELETE FROM team_auth_limits WHERE substr(bucket,1,length(?))=? AND window_start<=?')
-      .run(prefix, prefix, now - window);
-    const exists = db.prepare('SELECT 1 FROM team_auth_limits WHERE bucket=?').get(bucket);
-    const count = db.prepare('SELECT COUNT(*) AS count FROM team_auth_limits WHERE substr(bucket,1,length(?))=?')
-      .get(prefix, prefix).count;
-    // Never evict an active source bucket: doing so would reset that source's rate limit.
-    // A full anonymous pool must not stop a new source proving a real ticket.
-    // No bucket is inserted, evicted or reset on this capacity-only path.
-    if (!exists && count >= capacity) return false;
-    consume(db, bucket, now, window, maximum);
-    return true;
-  });
+  db.prepare('DELETE FROM team_auth_limits WHERE substr(bucket,1,length(?))=? AND window_start<=?')
+    .run(prefix, prefix, now - window);
+  const exists = db.prepare('SELECT 1 FROM team_auth_limits WHERE bucket=?').get(bucket);
+  const count = db.prepare('SELECT COUNT(*) AS count FROM team_auth_limits WHERE substr(bucket,1,length(?))=?')
+    .get(prefix, prefix).count;
+  // Never evict an active source bucket: doing so would reset that source's rate limit.
+  // A full anonymous pool must not stop a new source proving a real ticket.
+  // No bucket is inserted, evicted or reset on this capacity-only path.
+  if (!exists && count >= capacity) return false;
+  consume(db, bucket, now, window, maximum);
+  return true;
+}
+/** Standalone variant for callers that do not need atomicity with other budgets. */
+export function tryConsumeBounded(db, prefix, bucket, now, window, maximum, capacity = 10_000) {
+  return transaction(db, () => tryConsumeBoundedInTransaction(db, prefix, bucket, now, window, maximum, capacity));
 }
 /** Callers without a credential-validation fallback retain fail-closed admission. */
 export function consumeBounded(db, prefix, bucket, now, window, maximum, capacity = 10_000) {

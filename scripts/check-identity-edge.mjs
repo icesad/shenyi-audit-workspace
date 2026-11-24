@@ -24,6 +24,7 @@ for (let index = 0; index < args.length; index++) {
 }
 const routes = ['onboarding', 'first-administrator'].flatMap(kind =>
   ['preview', 'challenges', 'activate'].map(action => '/api/auth/' + kind + '/' + action));
+routes.push('/api/auth/phone/challenges');
 if (includeRecovery) routes.push('/api/auth/recovery-requests');
 const host = 'team.shenyi.example', stop = new AbortController(), held = new Map(), clients = new Set(), sockets = new Set();
 const slowBodies = new Set(), upstreamSlowBodies = new Set();

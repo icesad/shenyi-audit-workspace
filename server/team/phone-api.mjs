@@ -5,7 +5,7 @@
 import {createHash, createHmac, randomInt, randomUUID, timingSafeEqual} from 'node:crypto';
 import {isIP} from 'node:net';
 import {
-  authenticated, consume, limitedPasswordWork, issueSession,
+  authenticated, consume, tryConsumeBoundedInTransaction, limitedPasswordWork, issueSession,
 } from './auth-api.mjs';
 import {hashPassword, validPassword, verifyPassword} from './passwords.mjs';
 import {ApiError, ID, invalid, json, readJson, transaction} from './http-utils.mjs';
@@ -17,6 +17,13 @@ const genericChallengeError = () => { throw new ApiError(400, 'INVALID_CHALLENGE
 const signInError = () => { throw new ApiError(401, 'SIGN_IN_REQUIRED', '账号或密码无效，请重新登录。'); };
 const credentialConflict = () => { throw new ApiError(409, 'CREDENTIAL_CHANGED', '账号状态已改变，请重新验证。'); };
 const maskedPhone = phone => phone.slice(0, 5) + '****' + phone.slice(-4);
+function assertRateLimitAvailable(db, bucket, at, window, maximum) {
+  const row = db.prepare('SELECT window_start,attempts FROM team_auth_limits WHERE bucket=?').get(bucket);
+  const start = !row || at < row.window_start || at - row.window_start >= window ? at : row.window_start;
+  const attempts = start === row?.window_start ? row.attempts : 0;
+  if (attempts >= maximum) throw new ApiError(429, 'TOO_MANY_ATTEMPTS', '操作过于频繁，请稍后重试。');
+}
+
 
 export function normalizePhone(value) {
   if (typeof value !== 'string' || value.length > 64) invalid();
@@ -150,10 +157,31 @@ export async function handlePhoneRequest(request, {db, now = Date.now, identityP
     const owner = body.purpose === 'reset' ? validPhoneMapping(mapping,now())?mapping.user_id:null : identity.userId;
     const previous = owner ? credential(db, owner) : null;
     if (identity && previous?.status !== 'active') signInError();
-    consume(db, 'sms:global', now(), 60_000, 60);
-    consume(db, 'sms:phone:' + digest(phone), now(), 10 * 60_000, 3);
-    if (identity) consume(db, 'sms:user:' + digest(identity.userId), now(), 10 * 60_000, 10);
-    const at = now(), row = {
+    // Nginx overwrites this header with the observed client address.
+    const suppliedAddress = request.headers.get('x-shenyi-client-ip') || 'local';
+    const clientAddress = isIP(suppliedAddress) ? suppliedAddress.toLowerCase() : 'local';
+    const at = now();
+    // Reserve the source and every SMS allowance atomically. If any narrower or
+    // shared budget rejects, SQLite rolls back the source reservation as well.
+    transaction(db, () => {
+      const sourceAllowed = tryConsumeBoundedInTransaction(
+        db, 'sms:source:', 'sms:source:' + digest(clientAddress), at, 60_000, 10,
+      );
+      if (!sourceAllowed && !identity) {
+        // Reset challenges have no verified credential before SMS delivery. Fail closed
+        // at source-pool capacity so an unrecorded IP cannot bypass the per-source limit.
+        throw new ApiError(429, 'TOO_MANY_ATTEMPTS', '操作过于频繁，请稍后重试。');
+      }
+      const phoneBucket = 'sms:phone:' + digest(phone);
+      const userBucket = identity ? 'sms:user:' + digest(identity.userId) : null;
+      assertRateLimitAvailable(db, phoneBucket, at, 10 * 60_000, 3);
+      if (userBucket) assertRateLimitAvailable(db, userBucket, at, 10 * 60_000, 10);
+      assertRateLimitAvailable(db, 'sms:global', at, 60_000, 60);
+      consume(db, phoneBucket, at, 10 * 60_000, 3);
+      if (userBucket) consume(db, userBucket, at, 10 * 60_000, 10);
+      consume(db, 'sms:global', at, 60_000, 60);
+    });
+    const row = {
       challenge_id: randomUUID(), purpose: body.purpose, phone, user_id: owner,
       session_hash: identity ? digest(identity.token) : null,
       credential_revision: previous?.revision ?? null, expires_at: at + 5 * 60_000,
