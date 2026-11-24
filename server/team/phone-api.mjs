@@ -161,7 +161,12 @@ export async function handlePhoneRequest(request, {db, now = Date.now, identityP
     const suppliedAddress = request.headers.get('x-shenyi-client-ip') || 'local';
     const clientAddress = isIP(suppliedAddress) ? suppliedAddress.toLowerCase() : 'local';
     const at = now();
-    tryConsumeBounded(db, 'sms:source:', 'sms:source:' + digest(clientAddress), at, 60_000, 10);
+    const sourceAllowed = tryConsumeBounded(db, 'sms:source:', 'sms:source:' + digest(clientAddress), at, 60_000, 10);
+    if (!sourceAllowed && !identity) {
+      // Reset challenges have no verified credential before SMS delivery. Fail closed
+      // at source-pool capacity so an unrecorded IP cannot bypass the per-source limit.
+      throw new ApiError(429, 'TOO_MANY_ATTEMPTS', '操作过于频繁，请稍后重试。');
+    }
     // Preflight all narrower and shared budgets before spending any allowance.
     transaction(db, () => {
       const phoneBucket = 'sms:phone:' + digest(phone);
