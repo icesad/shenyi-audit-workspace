@@ -27,54 +27,56 @@ export function consume(db, bucket, now, window, maximum) {
 }
 const BOUNDED_POOL_CLEANUP_BATCH = 256;
 
-/** Record a source attempt, or return false only when a new source cannot fit.
- * Existing exhausted sources still throw 429. Pool membership and its counter
- * are maintained transactionally; expiry cleanup is indexed and batch-bounded. */
-export function tryConsumeBounded(db, prefix, bucket, now, window, maximum, capacity = 10_000) {
+/** Reserve one source attempt inside a caller-owned SQLite write transaction.
+ * Pool membership and its counter are maintained transactionally; expiry
+ * cleanup is indexed and batch-bounded. */
+export function tryConsumeBoundedInTransaction(db, prefix, bucket, now, window, maximum, capacity = 10_000) {
   if (typeof prefix !== 'string' || !prefix || !bucket.startsWith(prefix) ||
       !Number.isSafeInteger(capacity) || capacity < 1) throw new TypeError('Invalid bounded rate-limit bucket');
-  return transaction(db, () => {
-    const prior = db.prepare('SELECT window_start,attempts FROM team_auth_limits WHERE bucket=?').get(bucket);
-    if (prior && now >= prior.window_start && now - prior.window_start < window && prior.attempts >= maximum) tooMany();
+  const prior = db.prepare('SELECT window_start,attempts FROM team_auth_limits WHERE bucket=?').get(bucket);
+  if (prior && now >= prior.window_start && now - prior.window_start < window && prior.attempts >= maximum) tooMany();
 
-    const pool = db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix);
-    if (!pool) throw new Error('Bounded rate-limit pool metadata is not initialized');
+  const pool = db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix);
+  if (!pool) throw new Error('Bounded rate-limit pool metadata is not initialized');
 
-    const expired = db.prepare(`SELECT bucket FROM team_auth_limit_pool_buckets
-      WHERE prefix=? AND window_start<=? ORDER BY window_start,bucket LIMIT ?`)
-      .all(prefix, now - window, Math.min(capacity, BOUNDED_POOL_CLEANUP_BATCH));
-    const deleteBucket = db.prepare('DELETE FROM team_auth_limits WHERE bucket=?');
-    const deleteMembership = db.prepare('DELETE FROM team_auth_limit_pool_buckets WHERE prefix=? AND bucket=?');
-    for (const row of expired) {
-      deleteBucket.run(row.bucket);
-      if (deleteMembership.run(prefix, row.bucket).changes !== 1) throw new Error('Bounded rate-limit pool membership changed');
-    }
-    if (expired.length) {
-      const changed = db.prepare(`UPDATE team_auth_limit_pools SET active_count=active_count-?
-        WHERE prefix=? AND active_count>=?`).run(expired.length, prefix, expired.length);
-      if (changed.changes !== 1) throw new Error('Bounded rate-limit pool counter is inconsistent');
-    }
+  const expired = db.prepare(`SELECT bucket FROM team_auth_limit_pool_buckets
+    WHERE prefix=? AND window_start<=? ORDER BY window_start,bucket LIMIT ?`)
+    .all(prefix, now - window, Math.min(capacity, BOUNDED_POOL_CLEANUP_BATCH));
+  const deleteBucket = db.prepare('DELETE FROM team_auth_limits WHERE bucket=?');
+  const deleteMembership = db.prepare('DELETE FROM team_auth_limit_pool_buckets WHERE prefix=? AND bucket=?');
+  for (const row of expired) {
+    deleteBucket.run(row.bucket);
+    if (deleteMembership.run(prefix, row.bucket).changes !== 1) throw new Error('Bounded rate-limit pool membership changed');
+  }
+  if (expired.length) {
+    const changed = db.prepare(`UPDATE team_auth_limit_pools SET active_count=active_count-?
+      WHERE prefix=? AND active_count>=?`).run(expired.length, prefix, expired.length);
+    if (changed.changes !== 1) throw new Error('Bounded rate-limit pool counter is inconsistent');
+  }
 
-    const exists = db.prepare('SELECT 1 FROM team_auth_limits WHERE bucket=?').get(bucket);
-    const count = db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count;
-    // Never evict an active source bucket: doing so would reset that source's rate limit.
-    // At capacity, only the caller's separately bounded proof-validation path may continue.
-    if (!exists && count >= capacity) return false;
+  const exists = db.prepare('SELECT 1 FROM team_auth_limits WHERE bucket=?').get(bucket);
+  const count = db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count;
+  // Never evict an active source bucket: doing so would reset that source's rate limit.
+  // At capacity, only the caller's separately bounded proof-validation path may continue.
+  if (!exists && count >= capacity) return false;
 
-    consume(db, bucket, now, window, maximum);
-    const windowStart = db.prepare('SELECT window_start FROM team_auth_limits WHERE bucket=?').get(bucket).window_start;
-    const membership = db.prepare('SELECT 1 FROM team_auth_limit_pool_buckets WHERE prefix=? AND bucket=?').get(prefix, bucket);
-    if (membership) {
-      db.prepare('UPDATE team_auth_limit_pool_buckets SET window_start=? WHERE prefix=? AND bucket=?')
-        .run(windowStart, prefix, bucket);
-    } else {
-      db.prepare('INSERT INTO team_auth_limit_pool_buckets(prefix,bucket,window_start) VALUES (?,?,?)')
-        .run(prefix, bucket, windowStart);
-      const changed = db.prepare('UPDATE team_auth_limit_pools SET active_count=active_count+1 WHERE prefix=?').run(prefix);
-      if (changed.changes !== 1) throw new Error('Bounded rate-limit pool counter is not writable');
-    }
-    return true;
-  });
+  consume(db, bucket, now, window, maximum);
+  const windowStart = db.prepare('SELECT window_start FROM team_auth_limits WHERE bucket=?').get(bucket).window_start;
+  const membership = db.prepare('SELECT 1 FROM team_auth_limit_pool_buckets WHERE prefix=? AND bucket=?').get(prefix, bucket);
+  if (membership) {
+    db.prepare('UPDATE team_auth_limit_pool_buckets SET window_start=? WHERE prefix=? AND bucket=?')
+      .run(windowStart, prefix, bucket);
+  } else {
+    db.prepare('INSERT INTO team_auth_limit_pool_buckets(prefix,bucket,window_start) VALUES (?,?,?)')
+      .run(prefix, bucket, windowStart);
+    const changed = db.prepare('UPDATE team_auth_limit_pools SET active_count=active_count+1 WHERE prefix=?').run(prefix);
+    if (changed.changes !== 1) throw new Error('Bounded rate-limit pool counter is not writable');
+  }
+  return true;
+}
+/** Standalone wrapper for callers that do not already own a write transaction. */
+export function tryConsumeBounded(db, prefix, bucket, now, window, maximum, capacity = 10_000) {
+  return transaction(db, () => tryConsumeBoundedInTransaction(db, prefix, bucket, now, window, maximum, capacity));
 }
 /** Callers without a credential-validation fallback retain fail-closed admission. */
 export function consumeBounded(db, prefix, bucket, now, window, maximum, capacity = 10_000) {
