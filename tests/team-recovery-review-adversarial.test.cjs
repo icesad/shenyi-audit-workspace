@@ -150,8 +150,10 @@ test('shared recovery budget rejection preserves a valid SMS proof for retry',as
   f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)')
     .run('recovery-request:global',f.now,60);
   const submit=()=>call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:c.code});
-  const rejected=await submit();
-  assert.equal(rejected.status,429,rejected.raw);
+  for(let i=0;i<5;i++){
+    const rejected=await submit();
+    assert.equal(rejected.status,429,rejected.raw);
+  }
   assert.equal(f.db.prepare('SELECT attempts FROM team_phone_challenges WHERE challenge_id=?').get(c.challengeId).attempts,0);
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests').get().n,0);
 
