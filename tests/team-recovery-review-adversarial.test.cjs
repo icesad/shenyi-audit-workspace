@@ -30,13 +30,13 @@ async function approved(f,id='employee-a',actor='admin-a'){const p=await pending
 const reset=(f,p,patch={})=>call(f,'/api/auth/phone/reset',{challengeId:p.c.challengeId,code:p.c.code,newPassword:NEW,recoveryProof:p.approval.recoveryProof,...patch});
 const credential=(f,id='employee-a')=>({...f.db.prepare('SELECT * FROM team_credentials WHERE user_id=?').get(id)});
 const activeSessions=(f,id)=>f.db.prepare('SELECT COUNT(*) n FROM team_sessions WHERE user_id=? AND revoked_at IS NULL').get(id).n;
-function mutateBeforeTransaction(t,db,mutate){const original=db.exec;let hit=false;db.exec=function(sql){if(!hit&&/^BEGIN IMMEDIATE/.test(sql)){hit=true;mutate();}return original.call(this,sql);};t.after(()=>db.exec=original);return ()=>hit;}
+function mutateBeforeTransaction(t,db,mutate,occurrence=1){const original=db.exec;let seen=0,hit=false;db.exec=function(sql){if(/^BEGIN IMMEDIATE/.test(sql)){seen++;if(!hit&&seen===occurrence){hit=true;mutate();}}return original.call(this,sql);};t.after(()=>db.exec=original);return ()=>hit;}
 
 test('reviewed mode capability requires explicit mode and SMS but does not grant reviewer power',async t=>{const f=await fixture(t);const r=await call(f,'/api/auth/recovery-requests/capabilities');assert.deepEqual(r.data,{reviewed:true,available:true});const disabled=await call(f,'/api/auth/recovery-requests/capabilities',undefined,undefined,{reviewedRecovery:true});assert.deepEqual(disabled.data,{reviewed:true,available:false});for(const actor of ['employee-a','orphan','provision'])assert.deepEqual((await call(f,'/api/account/recovery-reviews/access',undefined,f.tokens[actor])).data,{canReview:false});for(const actor of ['admin-a','owner'])assert.deepEqual((await call(f,'/api/account/recovery-reviews/access',undefined,f.tokens[actor])).data,{canReview:true});});
 
 test('verified known, unknown and unroutable phones receive identical pending-shaped receipts',async t=>{const f=await fixture(t),known=await pending(f),unknownCode=await sms(f,'orphan','+8613900000000'),unknown=await submit(f,unknownCode),orphan=await pending(f,'orphan');for(const value of [known.receipt,unknown,orphan.receipt]){assert.equal(value.status,'pending');assert.equal(value.expiresAt,NOW+300000);assert.equal(value.revision,1);assert.equal(JSON.stringify(value).includes('employee'),false);}assert.equal((await list(f,'admin-a')).data.requests.length,1);assert.deepEqual((await list(f,'owner')).data.requests,[]);});
 
-test('wrong SMS, altered purpose and caller-selected identity cannot create review requests',async t=>{const f=await fixture(t),c=await sms(f),bad=c.code==='000000'?'999999':'000000';assert.equal((await call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:bad})).status,400);for(const patch of [{userId:'employee-b'},{teamId:'team-b'},{approved:true},{role:'partner'},{phone:PHONES['employee-b']}])assert.equal((await call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:c.code,...patch})).status,400);assert.deepEqual((await list(f,'admin-a')).data.requests,[]);});
+test('wrong SMS, altered purpose and caller-selected identity cannot create review requests',async t=>{const f=await fixture(t),c=await sms(f),bad=c.code==='000000'?'999999':'000000';assert.equal((await call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:bad})).status,400);assert.equal(f.db.prepare('SELECT attempts FROM team_phone_challenges WHERE challenge_id=?').get(c.challengeId).attempts,1);for(const patch of [{userId:'employee-b'},{teamId:'team-b'},{approved:true},{role:'partner'},{phone:PHONES['employee-b']}])assert.equal((await call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:c.code,...patch})).status,400);assert.deepEqual((await list(f,'admin-a')).data.requests,[]);});
 
 test('pending submission is idempotent for one verified challenge without creating extra review records',async t=>{const f=await fixture(t),p=await pending(f),again=await call(f,'/api/auth/recovery-requests',{challengeId:p.c.challengeId,code:p.c.code});assert.ok([200,201].includes(again.status),again.raw);assert.deepEqual(again.data,p.receipt);assert.equal((await list(f,'admin-a')).data.requests.length,1);});
 
@@ -109,7 +109,7 @@ test('review list applies own-scope before the fifty-row limit and exposes no ot
 
 test('approval storage failure returns no proof and rolls back review and event state',async t=>{const f=await fixture(t),p=await pending(f);f.db.exec("CREATE TRIGGER recovery_approval_event_failure BEFORE INSERT ON team_recovery_events BEGIN SELECT RAISE(ABORT,'synthetic event failure'); END");const result=await decision(f,p.receipt.requestId,1);assert.equal(result.status,503,result.raw);assert.equal(result.raw.includes('synthetic event'),false);const row=f.db.prepare('SELECT * FROM team_recovery_requests WHERE request_id=?').get(p.receipt.requestId);assert.equal(row.status,'pending');assert.equal(row.revision,1);assert.equal(row.token_hash,null);assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_events').get().n,0);});
 
-test('request creation rechecks the SMS deadline inside its insert transaction',async t=>{const f=await fixture(t),c=await sms(f);f.now=c.expiresAt-1;const hit=mutateBeforeTransaction(t,f.db,()=>{f.now=c.expiresAt;});const result=await call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:c.code});assert.equal(hit(),true);const stored=f.db.prepare('SELECT created_at,expires_at,status FROM team_recovery_requests WHERE challenge_id=?').get(c.challengeId);assert.equal(result.status,400,JSON.stringify({response:result.data,stored}));assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests WHERE challenge_id=?').get(c.challengeId).n,0);assert.equal(f.db.prepare("SELECT 1 FROM team_auth_limits WHERE bucket='recovery-request:global'").get(),undefined);assert.deepEqual((await list(f,'admin-a')).data.requests,[]);});
+test('request creation rechecks the SMS deadline inside its insert transaction',async t=>{const f=await fixture(t),c=await sms(f);f.now=c.expiresAt-1;const hit=mutateBeforeTransaction(t,f.db,()=>{f.now=c.expiresAt;},2);const result=await call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:c.code});assert.equal(hit(),true);const stored=f.db.prepare('SELECT created_at,expires_at,status FROM team_recovery_requests WHERE challenge_id=?').get(c.challengeId);assert.equal(result.status,400,JSON.stringify({response:result.data,stored}));assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests WHERE challenge_id=?').get(c.challengeId).n,0);assert.equal(f.db.prepare("SELECT 1 FROM team_auth_limits WHERE bucket='recovery-request:global'").get(),undefined);assert.deepEqual((await list(f,'admin-a')).data.requests,[]);});
 
 
 test('anonymous recovery requests are source-isolated and malformed or invalid proofs cannot consume the shared budget',async t=>{
@@ -140,6 +140,25 @@ test('anonymous recovery requests are source-isolated and malformed or invalid p
   assert.equal(created.status,201,created.raw);
   const validBucket='recovery-request:ip:'+hash(validAddress);
   assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(validBucket).attempts,1);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:global'").get().attempts,1);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests').get().n,1);
+});
+
+
+test('shared recovery budget rejection preserves a valid SMS proof for retry',async t=>{
+  const f=await fixture(t),c=await sms(f);
+  f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)')
+    .run('recovery-request:global',f.now,60);
+  const submit=()=>call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:c.code});
+  const rejected=await submit();
+  assert.equal(rejected.status,429,rejected.raw);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_phone_challenges WHERE challenge_id=?').get(c.challengeId).attempts,0);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests').get().n,0);
+
+  f.now+=60000;
+  const accepted=await submit();
+  assert.equal(accepted.status,201,accepted.raw);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_phone_challenges WHERE challenge_id=?').get(c.challengeId).attempts,1);
   assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:global'").get().attempts,1);
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests').get().n,1);
 });
