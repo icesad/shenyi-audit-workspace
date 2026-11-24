@@ -144,6 +144,86 @@ test('anonymous recovery requests are source-isolated and malformed or invalid p
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests').get().n,1);
 });
 
+async function recoveryAtSourceCapacity(t){
+  const {fullSourcePool}=require('./helpers/onboarding-rate-limit-capacity.cjs');
+  const f=await fixture(t),proof=await sms(f);
+  const pool=fullSourcePool(f.db,'recovery-request:ip:',f.now);
+  const post=(address,body={challengeId:proof.challengeId,code:proof.code})=>rawCall(f,
+    new Request('http://127.0.0.1:8774/api/auth/recovery-requests',{
+      method:'POST',headers:{'Content-Type':'application/json','X-Shenyi-Client-IP':address},
+      body:JSON.stringify(body),
+    }));
+  const attempts=()=>f.db.prepare('SELECT attempts FROM team_phone_challenges WHERE challenge_id=?').get(proof.challengeId).attempts;
+  const global=()=>f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:global'").get();
+  const requests=()=>f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests').get().n;
+  return {f,proof,pool,post,attempts,global,requests};
+}
+
+test('full recovery source storage still permits an unseen source with a live SMS proof',async t=>{
+  const {pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  const response=await post(pool.validAddress);
+  assert.equal(response.status,201,response.raw);
+  assert.equal(response.data.status,'pending');
+  assert.equal(attempts(),1);
+  assert.equal(global().attempts,1);
+  assert.equal(requests(),1);
+  pool.assertUnchanged();
+});
+
+test('full recovery source storage cannot reset an already exhausted source',async t=>{
+  const {pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  const response=await post(pool.blockedAddress);
+  assert.equal(response.status,429,response.raw);
+  assert.equal(attempts(),0);
+  assert.equal(global(),undefined);
+  assert.equal(requests(),0);
+  pool.assertUnchanged();
+});
+
+test('full recovery source storage rejects unknown SMS proofs without spending shared budget',async t=>{
+  const {pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  const response=await post(pool.invalidAddress,{challengeId:randomUUID(),code:'000000'});
+  assert.equal(response.status,400,response.raw);
+  assert.equal(attempts(),0);
+  assert.equal(global(),undefined);
+  assert.equal(requests(),0);
+  pool.assertUnchanged();
+});
+
+test('full recovery source storage still charges a wrong code to the real SMS challenge',async t=>{
+  const {proof,pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  const code=proof.code==='000000'?'999999':'000000';
+  const response=await post(pool.invalidAddress,{challengeId:proof.challengeId,code});
+  assert.equal(response.status,400,response.raw);
+  assert.equal(attempts(),1);
+  assert.equal(global(),undefined);
+  assert.equal(requests(),0);
+  pool.assertUnchanged();
+});
+
+test('full recovery source storage preserves valid proof retries until shared quota recovers',async t=>{
+  const {f,pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)')
+    .run('recovery-request:global',f.now,60);
+  for(let i=0;i<5;i++){
+    const rejected=await post(pool.validAddress);
+    assert.equal(rejected.status,429,rejected.raw);
+  }
+  assert.equal(attempts(),0);
+  assert.equal(global().attempts,60);
+  assert.equal(requests(),0);
+  pool.assertUnchanged();
+
+  f.now+=60000;
+  const accepted=await post(pool.validAddress);
+  assert.equal(accepted.status,201,accepted.raw);
+  assert.equal(attempts(),1);
+  assert.equal(global().attempts,1);
+  assert.equal(requests(),1);
+  assert.equal(f.db.prepare("SELECT COUNT(*) n FROM team_auth_limits WHERE bucket LIKE 'recovery-request:ip:%'").get().n,1);
+});
+
+
 
 test('shared recovery budget rejection preserves a valid SMS proof for retry',async t=>{
   const f=await fixture(t),c=await sms(f);

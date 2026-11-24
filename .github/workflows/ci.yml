@@ -37,3 +37,28 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run check:repo
       - run: npm run test:tools
+      - name: Install native edge smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends nginx openssl
+      - name: Prove slow-body regression against the prior edge configuration
+        timeout-minutes: 3
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {spawnSync} from 'node:child_process';
+          const result = spawnSync(process.execPath, [
+            'scripts/check-identity-edge.mjs', '--include-recovery', '--config',
+            'tests/fixtures/nginx-identity-global-pool.vulnerable.conf',
+          ], {encoding: 'utf8', timeout: 110000, maxBuffer: 4 * 1024 * 1024});
+          if (result.error) throw result.error;
+          process.stdout.write(result.stdout);
+          process.stderr.write(result.stderr);
+          assert.equal(result.signal, null, 'Baseline must finish without a signal');
+          assert.equal(result.status, 1, 'Vulnerable baseline must fail the new isolation assertion');
+          assert.match(result.stderr, /\[identity-edge\] FAIL: SLOW_BODY_ISOLATION: fresh source[^\r\n]*[\r\n]+429 !== 200/);
+          console.log('[identity-edge] prior global-pool starvation reproduced by the slow-body regression.');
+          NODE
+      - name: Verify real Nginx identity edge limits
+        timeout-minutes: 3
+        run: node scripts/check-identity-edge.mjs --include-recovery
