@@ -31,14 +31,53 @@ async function generateCertificates(directory){
  await fs.writeFile(path.join(directory,'public-certificates.json'),JSON.stringify({openssl,certificates},null,2));
  return {directory,ca:path.join(directory,'root-ca.pem'),certificates,openssl};
 }
-async function listenHigh(server){for(let attempt=0;attempt<12;attempt++){const port=randomInt(20000,60000);try{await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',()=>{server.removeListener('error',reject);resolve();});});return 'https://127.0.0.1:'+port;}catch(error){if(error.code!=='EADDRINUSE')throw error;}}throw Error('Unable to reserve an owned random high TLS port');}
-async function closeServer(server){server.closeAllConnections?.();await new Promise(resolve=>server.close(resolve));}
+async function listenHigh(server){
+ let lastError;
+ for(let attempt=0;attempt<12;attempt++){
+  const port=randomInt(20000,60000);
+  try{
+   await new Promise((resolve,reject)=>{
+    const clear=()=>{server.removeListener('error',onError);server.removeListener('listening',onListening);};
+    const onError=error=>{clear();reject(error);},onListening=()=>{clear();resolve();};
+    server.once('error',onError);server.once('listening',onListening);
+    try{server.listen(port,'127.0.0.1');}catch(error){onError(error);}
+   });
+   return 'https://127.0.0.1:'+port;
+  }catch(error){
+   // These ports are automatic fixture candidates, never a requested fixed port.
+   // Windows can reserve a candidate even when no other listener owns it.
+   if(!['EACCES','EADDRINUSE'].includes(error.code))throw error;
+   lastError=error;
+  }
+ }
+ throw new Error('Unable to reserve an owned random high TLS port after 12 attempts',{cause:lastError});
+}
+async function closeServer(server){
+ const closed=new Promise((resolve,reject)=>server.close(error=>error&&error.code!=='ERR_SERVER_NOT_RUNNING'?reject(error):resolve()));
+ server.closeAllConnections?.();await closed;
+}
 async function createTrustedHttpsFixture({directory,seed='minimal'}={}){
  if(directory)await fs.mkdir(path.resolve(directory),{recursive:true});
  const runDirectory=directory?await fs.mkdtemp(path.join(path.resolve(directory),'run-')):await fs.mkdtemp(path.join(os.tmpdir(),'shenyi-trusted-https-'));
+ const servers=[],sockets=new Set(),pending=new Set();let db,service,closed=false;
+ const trackConnections=server=>{server.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>sockets.delete(socket));});return server;};
+ const ownServer=server=>{servers.push(server);return trackConnections(server);};
+ const cleanup=async removeDirectory=>{
+  if(closed)return [];closed=true;const errors=[];
+  // Start every close before awaiting any of them, including partial setup.
+  const closing=servers.map(closeServer);
+  if(service)closing.push(Promise.resolve().then(()=>{const result=service.close();service.server.closeAllConnections?.();return result;}));
+  for(const socket of sockets){try{socket.destroy();}catch(error){errors.push(error);}}
+  for(const result of await Promise.allSettled(closing))if(result.status==='rejected')errors.push(result.reason);
+  if(!removeDirectory)await Promise.allSettled([...pending]);
+  if(db){try{db.close();}catch(error){errors.push(error);}}
+  if(removeDirectory){try{await fs.rm(runDirectory,{recursive:true,force:true,maxRetries:3,retryDelay:100});}catch(error){errors.push(error);}}
+  return errors;
+ };
+ try{
  const certificate=await generateCertificates(path.join(runDirectory,'certificates'));
  const {initializeTeamDatabase,seedDemoTeamData}=await source('database.mjs'),{startTeamServer}=await source('dev-server.mjs');
- const db=new DatabaseSync(path.join(runDirectory,'synthetic-team.sqlite'));initializeTeamDatabase(db);
+ db=new DatabaseSync(path.join(runDirectory,'synthetic-team.sqlite'));initializeTeamDatabase(db);
  if(seed==='demo')await seedDemoTeamData(db);else{
   const passwordHash=await(await source('passwords.mjs')).hashPassword(PASSWORD);
   for(const [user,team,role]of [['intern-a','team-a','intern'],['intern-b','team-a','assistant'],['intern-foreign','team-b','intern']]){db.prepare("INSERT INTO team_users VALUES (?,'active')").run(user);db.prepare('INSERT INTO team_credentials(user_id,username,display_name,password_hash) VALUES (?,?,?,?)').run(user,user,'Synthetic '+user,passwordHash);}
@@ -47,8 +86,8 @@ async function createTrustedHttpsFixture({directory,seed='minimal'}={}){
   for(const [task,user]of [['task-a','intern-a'],['task-foreign','intern-b']]){db.prepare("INSERT INTO team_collection_tasks(team_id,task_id,project_id,title,instructions,status) VALUES ('team-a',?,'project-a',?,'Synthetic only','open')").run(task,'Synthetic '+task);db.prepare("INSERT INTO team_task_assignments VALUES ('team-a',?,?,'active')").run(task,user);}
  }
  const serverId=db.prepare("SELECT value FROM team_database_metadata WHERE name='device-server-id'").get().value;
- const service=await startTeamServer({db,port:0,identityProviders:{deviceProofRequired:true}});
- const state={offline:false,before:null,after:null},events=[],backendEvents=[],servers=[],pending=new Set();let counter=0,closed=false;
+ service=await startTeamServer({db,port:0,identityProviders:{deviceProofRequired:true}});trackConnections(service.server);
+ const state={offline:false,before:null,after:null},events=[],backendEvents=[];let counter=0;
  service.server.on('request',(req,res)=>{const entry={method:req.method,route:req.url};res.on('finish',()=>backendEvents.push({...entry,status:res.statusCode}));});
  const gateway=async(req,res)=>{
   const body=Buffer.concat(await Array.fromAsync(req));const headers={...req.headers};
@@ -61,11 +100,12 @@ async function createTrustedHttpsFixture({directory,seed='minimal'}={}){
   if(answer.holdBody){res.flushHeaders();await answer.holdBody;if(res.destroyed)return;}
   res.end(req.method==='HEAD'?undefined:answer.body);
  };
- const make=async(name)=>{const server=https.createServer({key:await fs.readFile(path.join(certificate.directory,(name==='expired'?'valid':name)+'.key')),cert:await fs.readFile(path.join(certificate.directory,name+'.pem'))},(req,res)=>{const job=gateway(req,res).catch(error=>{if(!res.destroyed)res.destroy(error);}).finally(()=>pending.delete(job));pending.add(job);});servers.push(server);return listenHigh(server);};
+ const make=async(name)=>{const server=ownServer(https.createServer({key:await fs.readFile(path.join(certificate.directory,(name==='expired'?'valid':name)+'.key')),cert:await fs.readFile(path.join(certificate.directory,name+'.pem'))},(req,res)=>{const job=gateway(req,res).catch(error=>{if(!res.destroyed)res.destroy(error);}).finally(()=>pending.delete(job));pending.add(job);}));return listenHigh(server);};
  const apiBase=await make('valid'),wrongHostBase=await make('wrong-host'),expiredBase=await make('expired');
- const counterServer=https.createServer({key:await fs.readFile(path.join(certificate.directory,'valid.key')),cert:await fs.readFile(path.join(certificate.directory,'valid.pem'))},(req,res)=>{counter++;res.end('unexpected redirect target');});servers.push(counterServer);const counterBase=await listenHigh(counterServer);
+ const counterServer=ownServer(https.createServer({key:await fs.readFile(path.join(certificate.directory,'valid.key')),cert:await fs.readFile(path.join(certificate.directory,'valid.pem'))},(req,res)=>{counter++;res.end('unexpected redirect target');}));const counterBase=await listenHigh(counterServer);
  const profile=Object.freeze({schemaVersion:1,apiBase,serverId});
- return {runDirectory,certificate,profile,wrongHostBase,expiredBase,counterBase,state,events,backendEvents,db,service,get counter(){return counter;},async close(){if(closed)return;closed=true;await Promise.all(servers.map(closeServer));await service.close();await Promise.allSettled([...pending]);db.close();}};
+ return {runDirectory,certificate,profile,wrongHostBase,expiredBase,counterBase,state,events,backendEvents,db,service,get counter(){return counter;},async close(){const errors=await cleanup(false);if(errors.length)throw new AggregateError(errors,'Owned TLS fixture cleanup failed');}};
+ }catch(cause){const errors=await cleanup(true);if(errors.length)throw new AggregateError([cause,...errors],'Owned TLS fixture setup and cleanup failed',{cause});throw cause;}
 }
 // Child-only startup trust. Scenario source and every terminal result remain in
 // the private fixture directory; stdout exposes no bearer, lease or private key.
