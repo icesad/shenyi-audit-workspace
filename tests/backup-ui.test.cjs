@@ -41,8 +41,10 @@ test('record accepted by standalone parser but invalid for page is refused befor
 test('legacy records infer known province, but unknown location requires correction and original raw remains untouched',()=>{
  for(const [location,expected] of [['河北','hb'],['上海','sh'],['广西','gx'],['其他地区','']]){
   const old=JSON.parse(JSON.stringify(record));old.snapshot.client.location=location;delete old.snapshot.selectedProvince;delete old.snapshot.comparisonProvinceIds;const raw=JSON.stringify([old]),x=setup(raw);
-  x.d.querySelector('#history-list [data-load]').click();assert.equal(x.d.querySelector('[data-comparison-slot="0"]').value,expected);
-  if(!expected){assert.match(x.d.querySelector('#client-error').textContent,/待确认/);assert.equal(x.d.querySelector('#save').disabled,true);assert.ok(![...x.d.querySelectorAll('[data-comparison-slot]')].some(e=>e.value==='gx'));}
+  x.d.querySelector('#history-list [data-load]').click();assert.equal(x.d.querySelector('[name=location]').value,location);
+  const firstBasis=x.d.querySelector('#quote-form [name=basis] option');
+  if(expected)assert.equal(firstBasis.value,expected);
+  else{assert.match(x.d.querySelector('#client-error').textContent,/待确认/);assert.equal(x.d.querySelector('#save').disabled,true);assert.equal(firstBasis.value,'hb');}
   assert.equal(x.w.localStorage.getItem(KEY),raw);x.dom.window.close();
  }
 });

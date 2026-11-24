@@ -5,7 +5,7 @@
   const STORES=['attachments','entries','settings'],KINDS=['business_license','practice_certificate'];
   const LIMITS=Object.freeze({attachmentBytes:32*1024*1024,extraBytes:64*1024*1024,attachments:100,entries:500});
   const SNAPSHOT_FIELDS=['firmName','customerName','auditYear','location','service','quoteDate','issuer','projectName','projectType','contactName','contactInfo','subtotalCents','taxCents','totalCents','taxRateText'];
-  const MESSAGES={QUOTE_LEDGER_INVALID:'本地报价台账数据无效，未更改已有记录。',QUOTE_LEDGER_SCHEMA:'本地报价台账结构不受支持，不会自动重置。',QUOTE_LEDGER_LIMIT:'本地报价台账容量达到限额，请先导出归档。',QUOTE_LEDGER_CONFLICT:'结果记录已变化，请明确重读后再追加。',QUOTE_LEDGER_UNAVAILABLE:'当前浏览器无法打开本地报价台账。',QUOTE_LEDGER_STORAGE:'本地保存未完成，已有记录保留。',QUOTE_LEDGER_NOT_FOUND:'未找到这条本地报价记录。'};
+  const MESSAGES={QUOTE_LEDGER_INVALID:'本地报价台账数据无效，未更改已有记录。',QUOTE_LEDGER_SCHEMA:'本地报价台账结构不受支持，不会自动重置。',QUOTE_LEDGER_LIMIT:'本地报价台账容量达到限额，请先导出归档。',QUOTE_LEDGER_CONFLICT:'结果记录已变化，请明确重读后再追加。',QUOTE_LEDGER_PROJECT_EXISTS:'这个项目编码已登记，请到报价历史查看原记录。',QUOTE_LEDGER_UNAVAILABLE:'当前浏览器无法打开本地报价台账。',QUOTE_LEDGER_STORAGE:'本地保存未完成，已有记录保留。',QUOTE_LEDGER_NOT_FOUND:'未找到这条本地报价记录。'};
   class QuoteLedgerError extends Error{constructor(code='QUOTE_LEDGER_INVALID'){super(MESSAGES[code]||MESSAGES.QUOTE_LEDGER_INVALID);this.name='QuoteLedgerError';this.code=Object.hasOwn(MESSAGES,code)?code:'QUOTE_LEDGER_INVALID';}}
   const fail=code=>{throw new QuoteLedgerError(code);};
   function exact(value,keys){if(!value||typeof value!=='object'||Array.isArray(value)||![Object.prototype,null].includes(Object.getPrototypeOf(value)))fail();const d=Object.getOwnPropertyDescriptors(value),names=Reflect.ownKeys(d);if(names.length!==keys.length||names.some(k=>typeof k!=='string'||!keys.includes(k)||!d[k].enumerable||!Object.hasOwn(d[k],'value')))fail();return value;}
@@ -15,7 +15,7 @@
   function ident(value){if(typeof value!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value))fail();return value;}
   function iso(value){if(typeof value!=='string'||!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value)||!Number.isFinite(Date.parse(value))||new Date(value).toISOString()!==value)fail();return value;}
   function packet(){const p=root.QuotePacket;if(!p||typeof p.verifyPair!=='function'||typeof p.verifyAttachment!=='function'||typeof p.normalizeSnapshot!=='function')fail('QUOTE_LEDGER_UNAVAILABLE');return p;}
-  function snapshot(value){exact(value,[...SNAPSHOT_FIELDS,...(value&&Object.hasOwn(value,'bidderContact')?['bidderContact']:[]),...(value&&Object.hasOwn(value,'quoteRows')?['quoteRows']:[])]);try{return packet().normalizeSnapshot(value);}catch(e){if(e instanceof QuoteLedgerError)throw e;fail();}}
+  function snapshot(value){exact(value,[...SNAPSHOT_FIELDS,...['bidderContact','quoteRows','riskLevel'].filter(key=>value&&Object.hasOwn(value,key))]);try{return packet().normalizeSnapshot(value);}catch(e){if(e instanceof QuoteLedgerError)throw e;fail();}}
   function reference(value){exact(value,['kind','name','mime','size','sha256']);if(![...KINDS,'extra'].includes(value.kind)||!Number.isSafeInteger(value.size)||value.size<1||value.size>3*1024*1024)fail();return {kind:value.kind,name:text(value.name),mime:text(value.mime,100),size:value.size,sha256:hash(value.sha256)};}
   const ref=file=>reference({kind:file.kind,name:file.name,mime:file.mime,size:file.size,sha256:file.sha256});
   function references(value){const a=array(value,2);if(a.length!==2)fail();const refs=a.map(reference);if(refs.some((r,i)=>r.kind!==KINDS[i]))fail();return refs;}
@@ -60,7 +60,24 @@
     const api={
       async getDefaultCredentials(){live();const data=await read(db,['attachments','settings']),stored=records(data.attachments),s=settings(data.settings);if(!s.length)return [];return filesFor(s[0].attachmentRefs,stored);},
       async saveCredentials(value){live();const incoming=await pair(value);live();return mutate(db,['attachments','settings'],(tx,data)=>{const stored=records(data.attachments);settings(data.settings);for(const r of newAttachments(stored,incoming))tx.objectStore('attachments').add(r);tx.objectStore('settings').put({schemaVersion:1,key:'defaultpair',attachmentRefs:incoming.map(ref)});return incoming.map(a=>({...a,bytes:new Uint8Array(a.bytes)}));});},
-      async register(value,credentials,additional=[]){live();const content=snapshot(value),incoming=await pair(credentials),extra=await extras(additional);live();return mutate(db,['attachments','entries'],(tx,data)=>{const all=entries(data.entries),stored=records(data.attachments);if(all.length>=LIMITS.entries)fail('QUOTE_LEDGER_LIMIT');for(const r of newAttachments(stored,[...incoming,...extra]))tx.objectStore('attachments').add(r);const created=entry({schemaVersion:extra.length?2:1,...(extra.length?{extraRefs:extra.map(ref)}:{}),id:root.crypto.randomUUID(),createdAt:new Date().toISOString(),snapshot:content,attachmentRefs:incoming.map(ref),events:[],lastEventNo:0});tx.objectStore('entries').add(created);return entry(created);});},
+      async register(value,credentials,additional=[],project=null){
+        live();
+        if(project!==null){exact(project,['id','outcome']);ident(project.id);if(!['','won','lost'].includes(project.outcome))fail();}
+        const id=project?.id||root.crypto.randomUUID(),outcome=project?.outcome||'';
+        const content=snapshot(value),incoming=await pair(credentials),extra=await extras(additional);
+        live();
+        return mutate(db,['attachments','entries'],(tx,data)=>{
+          const all=entries(data.entries),stored=records(data.attachments);
+          if(all.some(e=>e.id===id))fail('QUOTE_LEDGER_PROJECT_EXISTS');
+          if(all.length>=LIMITS.entries)fail('QUOTE_LEDGER_LIMIT');
+          for(const r of newAttachments(stored,[...incoming,...extra]))tx.objectStore('attachments').add(r);
+          const createdAt=new Date().toISOString();
+          const events=outcome?[{eventNo:1,recordedAt:createdAt,outcome,note:'沿用报价测算已登记的投标结果'}]:[];
+          const created=entry({schemaVersion:extra.length?2:1,...(extra.length?{extraRefs:extra.map(ref)}:{}),id,createdAt,snapshot:content,attachmentRefs:incoming.map(ref),events,lastEventNo:events.length});
+          tx.objectStore('entries').add(created);
+          return entry(created);
+        });
+      },
       async list(){live();const data=await read(db,['entries']);return entries(data.entries).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)||a.id.localeCompare(b.id));},
       async get(id){live();ident(id);const data=await read(db,['attachments','entries']),all=entries(data.entries),stored=records(data.attachments),e=all.find(x=>x.id===id);if(!e)fail('QUOTE_LEDGER_NOT_FOUND');return {entry:e,attachments:await filesFor(e.attachmentRefs,stored),extras:await extrasFor(e.extraRefs,stored)};},
       async appendResult(id,input){live();ident(id);exact(input,['expectedEventNo','outcome','note']);if(!Number.isSafeInteger(input.expectedEventNo)||input.expectedEventNo<0||!['won','lost','cancelled'].includes(input.outcome))fail();const expectedEventNo=input.expectedEventNo,outcome=input.outcome,note=text(input.note,2000,true);return mutate(db,['entries'],(tx,data)=>{const all=entries(data.entries),old=all.find(e=>e.id===id);if(!old)fail('QUOTE_LEDGER_NOT_FOUND');if(old.lastEventNo!==expectedEventNo)fail('QUOTE_LEDGER_CONFLICT');const next=entry({...old,lastEventNo:old.lastEventNo+1,events:[...old.events,{eventNo:old.lastEventNo+1,recordedAt:new Date().toISOString(),outcome,note}]});tx.objectStore('entries').put(next);return next;});},
