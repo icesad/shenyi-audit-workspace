@@ -1,5 +1,6 @@
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
-import {authenticated,consume,limitedPasswordWork} from './auth-api.mjs';
+import {isIP} from 'node:net';
+import {authenticated,consume,consumeBounded,limitedPasswordWork} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
 import {verifyRecoveryRequestChallenge} from './phone-api.mjs';
 import {canReviewRecovery,recoveryAuthority,recoveryTarget,recoveryReviewView,recoveryOwner,reviewedRecovery,reviewedRecoveryAvailable} from './recovery-review-policy.mjs';
@@ -16,14 +17,24 @@ export async function handleRecoveryReviewRequest(request,{db,now=Date.now,ident
   if(capability){if(request.method!=='GET')return method('GET');return json({reviewed:reviewedRecovery(identityProviders),available:reviewedRecoveryAvailable(identityProviders)});}
   if(create){
     if(request.method!=='POST')return method('POST');if(!reviewedRecoveryAvailable(identityProviders))unavailable();
-    consume(db,'recovery-request:global',now(),60000,60);
-    const body=await readJson(request,['challengeId','code']);if(typeof body.challengeId!=='string'||!ID.test(body.challengeId)||typeof body.code!=='string'||!/^\d{6}$/.test(body.code))invalid();
+    // Reject malformed bodies before consuming any anonymous rate-limit budget.
+    const body=await readJson(request,['challengeId','code']);
+    if(typeof body.challengeId!=='string'||!ID.test(body.challengeId)||typeof body.code!=='string'||!/^\d{6}$/.test(body.code))invalid();
+    // The edge proxy overwrites this header with the observed client address.
+    const suppliedAddress=request.headers.get('x-shenyi-client-ip')||'local';
+    const clientAddress=isIP(suppliedAddress)?suppliedAddress.toLowerCase():'local';
+    consumeBounded(db,'recovery-request:ip:','recovery-request:ip:'+digest(clientAddress),now(),60000,60);
+    // Invalid/expired SMS proofs consume only this source's budget, never the
+    // shared budget that protects all legitimate account-recovery requests.
     verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now());
     return transaction(db,()=>{
       // Verification reserves an attempt outside the write transaction. Recheck
       // the live challenge at the actual insert time without spending it twice.
       const at=now(),{row,eligible}=verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,at,{reserve:false});
       const existing=db.prepare('SELECT * FROM team_recovery_requests WHERE challenge_id=?').get(row.challenge_id);if(existing)return json(receipt(existing),201);
+      // Spend the shared business budget only for a verified, still-live proof,
+      // in the same transaction as the idempotent request insertion.
+      consume(db,'recovery-request:global',at,60000,60);
       const target=eligible?recoveryTarget(db,row.user_id,at):null,id=randomUUID();
       db.prepare(`INSERT INTO team_recovery_requests(request_id,challenge_id,target_user_id,team_id,target_kind,target_stamp,status,created_at,expires_at)
         VALUES (?,?,?,?,?,?,'pending',?,?)`).run(id,row.challenge_id,target?.userId??null,target?.teamId??null,target?.kind??null,target?.stamp??null,at,row.expires_at);
