@@ -190,6 +190,46 @@ test('full recovery source storage rejects unknown SMS proofs without spending s
   pool.assertUnchanged();
 });
 
+test('full recovery source overflow is indexed and bounded before SMS proof validation',async t=>{
+  const {f,pool,post,global,requests}=await recoveryAtSourceCapacity(t);
+  const prefix='recovery-request:ip:';
+  const expiryPlan=f.db.prepare(`EXPLAIN QUERY PLAN SELECT bucket FROM team_auth_limit_pool_buckets
+    WHERE prefix=? AND window_start<=? ORDER BY window_start,bucket LIMIT ?`).all(prefix,f.now-60000,256);
+  const expiryDetails=expiryPlan.map(row=>row.detail||'');
+  assert.ok(expiryDetails.some(detail=>detail.includes('team_auth_limit_pool_expiry')),JSON.stringify(expiryDetails));
+  assert.equal(expiryDetails.some(detail=>/SCAN team_auth_limit_pool_buckets/.test(detail)),false,JSON.stringify(expiryDetails));
+  const counterPlan=f.db.prepare('EXPLAIN QUERY PLAN SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').all(prefix);
+  assert.ok(counterPlan.some(row=>/SEARCH team_auth_limit_pools/.test(row.detail||'')),JSON.stringify(counterPlan));
+  assert.equal(f.db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count,10000);
+
+  // A full source pool cannot admit unbounded proof-validation work. The
+  // overflow gate is shared but deliberately separate from successful-request
+  // budget, so malformed/unknown proofs never spend the business quota.
+  for(let i=0;i<300;i++){
+    const address='198.51.'+Math.floor(i/250)+'.'+(i%250+1);
+    const response=await post(address,{challengeId:randomUUID(),code:'000000'});
+    assert.equal(response.status,400,response.raw);
+  }
+  const blocked=await post('198.51.2.1',{challengeId:randomUUID(),code:'000000'});
+  assert.equal(blocked.status,429,blocked.raw);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:overflow'").get().attempts,300);
+  assert.equal(global(),undefined);
+  assert.equal(requests(),0);
+  assert.equal(f.db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count,10000);
+  pool.assertUnchanged();
+});
+
+test('database initialization rebuilds bounded source-pool metadata from existing limiter rows',async t=>{
+  const f=await fixture(t),prefix='recovery-request:ip:';
+  const insert=f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)');
+  insert.run(prefix+'legacy-a',f.now,1);
+  insert.run(prefix+'legacy-b',f.now,2);
+  const {initializeTeamDatabase}=await source('database.mjs');
+  initializeTeamDatabase(f.db);
+  assert.equal(f.db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count,2);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limit_pool_buckets WHERE prefix=?').get(prefix).n,2);
+});
+
 test('full recovery source storage still charges a wrong code to the real SMS challenge',async t=>{
   const {proof,pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
   const code=proof.code==='000000'?'999999':'000000';
@@ -220,7 +260,7 @@ test('full recovery source storage preserves valid proof retries until shared qu
   assert.equal(attempts(),1);
   assert.equal(global().attempts,1);
   assert.equal(requests(),1);
-  assert.equal(f.db.prepare("SELECT COUNT(*) n FROM team_auth_limits WHERE bucket LIKE 'recovery-request:ip:%'").get().n,1);
+  assert.equal(f.db.prepare("SELECT COUNT(*) n FROM team_auth_limits WHERE bucket LIKE 'recovery-request:ip:%'").get().n,9745);
 });
 
 
