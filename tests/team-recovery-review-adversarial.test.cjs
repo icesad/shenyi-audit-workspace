@@ -110,3 +110,36 @@ test('review list applies own-scope before the fifty-row limit and exposes no ot
 test('approval storage failure returns no proof and rolls back review and event state',async t=>{const f=await fixture(t),p=await pending(f);f.db.exec("CREATE TRIGGER recovery_approval_event_failure BEFORE INSERT ON team_recovery_events BEGIN SELECT RAISE(ABORT,'synthetic event failure'); END");const result=await decision(f,p.receipt.requestId,1);assert.equal(result.status,503,result.raw);assert.equal(result.raw.includes('synthetic event'),false);const row=f.db.prepare('SELECT * FROM team_recovery_requests WHERE request_id=?').get(p.receipt.requestId);assert.equal(row.status,'pending');assert.equal(row.revision,1);assert.equal(row.token_hash,null);assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_events').get().n,0);});
 
 test('request creation rechecks the SMS deadline inside its insert transaction',async t=>{const f=await fixture(t),c=await sms(f);f.now=c.expiresAt-1;const hit=mutateBeforeTransaction(t,f.db,()=>{f.now=c.expiresAt;});const result=await call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:c.code});assert.equal(hit(),true);const stored=f.db.prepare('SELECT created_at,expires_at,status FROM team_recovery_requests WHERE challenge_id=?').get(c.challengeId);assert.equal(result.status,400,JSON.stringify({response:result.data,stored}));assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests WHERE challenge_id=?').get(c.challengeId).n,0);assert.deepEqual((await list(f,'admin-a')).data.requests,[]);});
+
+
+test('anonymous recovery requests are source-isolated and malformed or invalid proofs cannot consume the shared budget',async t=>{
+  const f=await fixture(t),route='/api/auth/recovery-requests';
+  const malformedAddress='198.51.100.20',blockedAddress='198.51.100.21',validAddress='198.51.100.22';
+  const post=(address,value)=>new Request('http://127.0.0.1:8774'+route,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-Shenyi-Client-IP':address},
+    body:JSON.stringify(value),
+  });
+  // A malformed anonymous body is rejected before even creating a source bucket.
+  for(let i=0;i<60;i++)assert.equal((await rawCall(f,post(malformedAddress,{}))).status,400);
+  const hash=value=>createHash('sha256').update(value).digest('hex');
+  const malformedBucket='recovery-request:ip:'+hash(malformedAddress);
+  assert.equal(f.db.prepare('SELECT 1 FROM team_auth_limits WHERE bucket=?').get(malformedBucket),undefined);
+
+  // Structurally valid but nonexistent challenges consume only this source's
+  // bounded bucket; they never consume the shared recovery-request budget.
+  const unknownChallenge=randomUUID(),invalidBody={challengeId:unknownChallenge,code:'000000'};
+  for(let i=0;i<60;i++)assert.equal((await rawCall(f,post(blockedAddress,invalidBody))).status,400);
+  assert.equal((await rawCall(f,post(blockedAddress,invalidBody))).status,429);
+  const blockedBucket='recovery-request:ip:'+hash(blockedAddress);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(blockedBucket).attempts,60);
+  assert.equal(f.db.prepare("SELECT 1 FROM team_auth_limits WHERE bucket='recovery-request:global'").get(),undefined);
+
+  // A different legitimate source can still submit a live SMS proof.
+  const challenge=await sms(f),created=await rawCall(f,post(validAddress,{challengeId:challenge.challengeId,code:challenge.code}));
+  assert.equal(created.status,201,created.raw);
+  const validBucket='recovery-request:ip:'+hash(validAddress);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(validBucket).attempts,1);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:global'").get().attempts,1);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests').get().n,1);
+});
