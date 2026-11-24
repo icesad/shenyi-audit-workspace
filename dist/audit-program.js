@@ -17,13 +17,13 @@
       templateBox=el('section',undefined,'ac-template-box'),templateInfo=el('p'),useTemplate=button('使用2026修正版模板','ac-use-template'),categoryNav=el('nav',undefined,'ac-category-nav'),body=el('section',undefined,'panel ac-list'),filter=el('select'),search=input('ac-search','搜索标题、说明或资料项',100),history=el('details',undefined,'ac-history'),
       pendingBox=el('div',undefined,'ac-import-pending'),pendingText=el('p'),pendingContinue=button('补齐后导入','ac-import-continue'),pendingCancel=button('取消本次导入','ac-import-cancel'),preview=el('div',undefined,'ac-outline-preview'),
       outlineStats=el('p',undefined,'tiny'),outlineCount=el('p',undefined,'ac-outline-count'),warning=el('p',undefined,'ac-outline-warning'),ack=el('input'),ackLabel=label('我已核对标题层级、正文说明的归属及末级上传项',ack),
-      log=el('ol'),caption=el('p',undefined,'muted'),trialNote=el('p','独立试用 · 与正式立项分开存储，不代表真实承接、签字或审计完成。','ac-trial-note');
+      log=el('ol'),caption=el('p',undefined,'muted'),trialNote=el('p','独立试用','ac-trial-note');
     const preservationExport=button('导出资料保全包','ac-preservation-export'),preservationImport=button('恢复资料保全包','ac-preservation-import'),preservationFile=el('input'),preservationBox=el('section',undefined,'ac-import-pending'),preservationSummary=el('div'),preservationNotice=el('p'),preservationAck=el('input'),preservationRestore=button('确认恢复到当前空资料区','ac-preservation-restore'),preservationCancel=button('取消本次恢复','ac-preservation-cancel'),preservationTrial=button('恢复到独立试用空资料区','ac-preservation-target-trial');
     preservationFile.id='ac-preservation-file';preservationFile.type='file';preservationFile.accept='.zip,application/zip';preservationFile.hidden=true;preservationBox.id='ac-preservation-preview';preservationBox.hidden=true;preservationSummary.id='ac-preservation-summary';preservationNotice.id='ac-preservation-notice';preservationNotice.setAttribute('role','status');preservationAck.id='ac-preservation-confirm';preservationAck.type='checkbox';preservationBox.append(el('h3','资料保全包恢复预检'),preservationSummary,preservationNotice,preservationTrial,label('我已核对同一项目UUID、正式／试用范围及空目标；仅恢复本机历史，不作为当前员工签审。',preservationAck),preservationRestore,preservationCancel);
     pendingBox.id='ac-import-pending';pendingBox.hidden=true;pendingBox.setAttribute('role','status');preview.id='ac-outline-preview';ack.type='checkbox';ack.id='ac-outline-confirm';ackLabel.className='ac-outline-ack';
     outlineCount.id="ac-outline-count";pendingBox.append(pendingText,outlineStats,outlineCount,warning,preview,ackLabel,pendingContinue,pendingCancel);
     reviewer.setAttribute('aria-required','true');trialNote.id='ac-trial-note';trialNote.hidden=true;selection.id='ac-project';file.id='ac-import';file.type='file';file.accept='.txt,.docx,.doc';status.id='ac-status';status.setAttribute('role','status');summary.id='ac-summary';
-    mode.id='ac-import-mode';mode.append(option('outline','读取 Word 真实标题级别'),option('numbered','按编号整理层级（预览确认）'),option('legacy','旧版行式导入（仅兼容）'));
+    mode.id='ac-import-mode';mode.append(option('auto','自动识别资料清单'),option('outline','读取 Word 真实标题级别'),option('numbered','按编号整理层级（预览确认）'),option('legacy','旧版行式导入（仅兼容）'));
     for(const [v,t]of[['all','全部状态'],['pending','待提供'],['received','已收到 · 未核对'],['confirmed','核对通过'],['na','不适用'],['problem','存在问题']])filter.append(option(v,t));
     filter.id='ac-filter';history.append(el('summary','查看操作留痕'),log);
     const fields=el('div',undefined,'ac-fields');fields.append(label('正式项目 / 独立试用',selection),label('核对人（必填，人工填写）',reviewer),label('操作理由',reason));
@@ -31,10 +31,8 @@
     templateBox.id='ac-template-box';templateBox.append(el('span','WORD STRUCTURE · 2026','ac-template-eyebrow'),el('h3','2026审计资料清单 · 修正版'),templateInfo,useTemplate);categoryNav.id='ac-category-nav';categoryNav.setAttribute('aria-label','资料分类导航');ackLabel.replaceChildren(ack,doc.createTextNode('我已核对标题层级、正文说明的归属及末级上传项'));
     const gates=el('div',undefined,'ac-actions');gates.append(close,reopen);
     const tools=el('div',undefined,'ac-tools');tools.append(filter,search);
-    top.append(el('h2','资料清单与逐项确认'),el('p','按标题与子标题组织资料，正文说明不单独拆项。点击末级资料标题选择文件；上传只表示已收到，核对通过或有理由不适用后才可明确关门。','muted'),
-      fields,templateBox,actions,pendingBox,preservationBox,el('p','资料保全包保存清单留痕所引用的全部原件，包含已移除和旧代版本；不含当初未保存的目录Word、其他模块或未被引用的孤立文件。只恢复到同UUID、同正式／试用范围的空资料区，不覆盖已有清单。','tiny'),el('p','Word 在本机读取标题与正文，不执行宏。标题样式不完整时，可按编号整理并逐项预览核对，不将推定层级冒充真实 Word 样式。','tiny'),trialNote,caption,summary,gates,status,
-      el('p','这里只控制本项目的资料清单关门，不表示已执行全部审计程序或批准报告。文件只存当前浏览器、未加密；核对人尚无账号认证。请在可信电脑使用，并单独备份资料原件。','tiny'));
-    body.append(categoryNav,tools,el('p','点击末级标题选择 PDF、Word/RTF/ODT、Excel/CSV/TSV/ODS、PPT/ODP、常用图片、UTF-8文本/JSON/MD/HTML/XML或ZIP/RAR。HTML/XML仅作惰性文本，DOCM/XLSM/PPTM宏类型与TIFF/HEIC暂不接收。每份最多 12 MiB，每项最多10份；本项目含历史原件总量最多150 MiB。文件只在本机保存，不自动核对或打开。','tiny'));host.replaceChildren(top,body,history);const rows=el('div');rows.id='ac-rows';body.append(rows);
+    top.append(el('h2','资料清单与逐项确认'),fields,templateBox,actions,pendingBox,preservationBox,trialNote,caption,summary,gates,status);
+    body.append(categoryNav,tools);host.replaceChildren(top,body,history);const rows=el('div');rows.id='ac-rows';body.append(rows);
     let db=null,projectDb=null,trialDb=null,projects=[],record=null,active='',serial=0,busy=false,pendingImport=null,pendingMaterial=null,pendingPreservation=null,preservationEpoch=0,preservationPhase='',preservationRecoveryTarget=false;const groupOpen=new Map();
     const names={pending:'待提供',received:'已收到 · 未核对',confirmed:'核对通过',na:'不适用',problem:'存在问题'};
     const say=(s,bad=false)=>{status.textContent=s;status.classList.toggle('error',bad);};
@@ -110,7 +108,7 @@
         title.onclick=()=>{if(pendingMaterial&&pendingMaterial.nodeId!==item.id&&!root.confirm('另一个标题还有未保存的所选文件。放弃它们并选择本项资料？'))return;if(pendingMaterial?.nodeId!==item.id)clearUploads();picker.click();};
         picker.onchange=()=>{const fs=Array.from(picker.files||[]);picker.value='';if(!fs.length)return;
           const current=record.attachments[item.id]||[];if(fs.length+current.length>10){say('每个资料项最多 10 个附件，请减少本次选择。',true);return;}
-          if(fs.some(f=>!f.size||f.size>12*1024*1024||!/\.(?:pdf|docx?|xlsx?|png|jpe?g|txt|zip|rar)$/iu.test(f.name))){say('请选择支持的非空资料文件，每份不超过 12 MiB。',true);return;}
+          if(fs.some(f=>!f.size||f.size>A.fileLimit(f.name)||!/\.(?:pdf|docx?|xlsx?|png|jpe?g|txt|zip|rar)$/iu.test(f.name))){say('请选择支持的非空资料文件。ZIP／RAR 单份不超过 100 MiB，其他资料不超过 12 MiB。',true);return;}
           pendingMaterial={key:active,token:serial,revision:record.revision,nodeId:item.id,files:fs};render();void run(commitMaterial);
         };
         const files=record.attachments[item.id]||[],list=el('ul',undefined,'ac-material-files');
@@ -156,10 +154,12 @@
     }
     function render(){
       rows.replaceChildren();log.replaceChildren();categoryNav.replaceChildren();const p=selected(),tree=record?.schema===2;
-      const ts=T?.stats();templateInfo.textContent=ts?'按确认版Word的四大分类、1–4级标题和主项1–52预置：'+ts.headings+' 个标题、'+ts.materials+' 个末级资料项。第四分类保留为空组，不要求上传。'+(record?'已有清单不会自动覆盖；使用模板会建立新版本并保留历史。':'选正式项目后明确建立；或点独立试用直接体验模板。'):'模板组件尚未载入，请刷新后重试。';
+      templateInfo.hidden=!!T;
+      templateInfo.textContent=T?'':'模板未载入，请刷新重试。';
       trialNote.hidden=!isTrial();trialBtn.setAttribute('aria-pressed',String(isTrial()));close.textContent=isTrial()?'确认试用资料关门':'确认资料关门';
-      caption.textContent=isTrial()?'独立试用：不关联报价或立项；新建按修正版Word模板预置，所有资料均未核对。记录与资料仅存本浏览器。':p?'项目：'+p.form.projectName+' · '+p.source.firmName+' · 报价编号 '+p.quoteId:'可点「独立试用」先体验；正式项目请在「立项」保存信息后刷新。';
-      if(!record){summary.textContent='本项目尚未建立资料清单。可使用上方2026修正版模板，或另选Word清单；不会自动写入正式项目。';controls();return;}
+      caption.hidden=isTrial()||!p;
+      caption.textContent=p&&!isTrial()?'项目：'+p.form.projectName+' · '+p.source.firmName+' · 项目编码 '+p.quoteId:'';
+      if(!record){summary.textContent=p?'尚未建立资料清单。':'请选择项目。';controls();return;}
       const g=A.gate(record);summary.textContent=(isTrial()?'独立试用 · ':'')+(record.closed?'已关门':'未关门')+' · '+(tree?'末级资料 ':'旧版行式资料 ')+g.total+' 项 · 核对通过 '+g.confirmed+' · 不适用 '+g.excluded+' · 待处理 '+g.blockers.length+' · 第 '+record.revision+' 版';
       const query=search.value.trim().toLowerCase();
       const matches=n=>(filter.value==='all'||record.states[n.id]?.status===filter.value)&&(!query||(n.title||n.text).toLowerCase().includes(query)||(n.description||'').toLowerCase().includes(query));
@@ -198,7 +198,7 @@
       preservationRecoveryTarget=false;clearPending();clearUploads();groupOpen.clear();const ticket=++serial;active=selection.value;record=null;render();if(!active)return;
       await run(async()=>{const r=await db.get(active);if(ticket!==serial)return;
         record=r;if(isTrial()&&!record){if(mode.value==='legacy')record=await db.create(projectOf(trialProject),A.parse(demoText),'系统（独立试用初始化）');else{if(!T)throw Error('模板组件未载入，请刷新后重试。');record=await db.importTree(projectOf(trialProject),T.get(),'系统（修正版模板试用初始化）','',0);}}render();
-        say(isTrial()?'已进入独立试用。新试用按修正版模板组织资料；不代表真实立项、核对通过或审计完成。':record?'已载入本项目清单。':'本项目尚未导入清单。');});
+        say(isTrial()?'已进入独立试用。':record?'已载入本项目清单。':'');});
     }
     async function show(){
       clearPreservation();if(busy)return;clearPending();clearUploads();serial++;
@@ -220,7 +220,7 @@
     };
     function previewRows(){
       const job=pendingImport;preview.replaceChildren();if(!job?.rows)return;ack.checked=false;
-      const levels=Object.entries(job.source.actualLevels||{}).filter(([,n])=>n>0);outlineStats.textContent='文件实际大纲：'+(levels.length?levels.map(([k,n])=>k+'级 '+n+' 段').join('；'):'未检测到标题级别')+'。当前预览：'+(job.mode==='numbered'?'按编号建议，尚需核对':'Word 真实大纲')+'。0 表示正文说明，不是上传项。';
+      const levels=Object.entries(job.source.actualLevels||{}).filter(([,n])=>n>0);outlineStats.textContent='文件实际大纲：'+(levels.length?levels.map(([k,n])=>k+'级 '+n+' 段').join('；'):'未检测到标题级别')+'。当前预览：'+(job.automatic?'自动选用':'')+(job.mode==='numbered'?'按编号整理，尚需核对':'Word 真实大纲')+'。0 表示正文说明，不是上传项。';
       warning.textContent=job.warnings.join('\n');warning.hidden=!job.warnings.length;
       for(const [i,row]of job.rows.entries()){
         const line=el('div',undefined,'ac-outline-row'),level=el('select');level.dataset.outlineLevel=String(i);level.setAttribute('aria-label','第 '+(i+1)+' 段的标题级别');
@@ -251,8 +251,8 @@
           const items=A.parse(text);if(token!==serial||key!==active)return;pendingImport={items,name:f.name,key,token,revision};pendingBox.hidden=false;preview.hidden=ackLabel.hidden=outlineStats.hidden=outlineCount.hidden=warning.hidden=true;
           pendingText.textContent='已读取「'+f.name+'」，共 '+items.length+' 项。旧版兼容导入仍按行拆分，不是新的标题结构；补齐核对人'+(record?'和操作理由':'')+'后可继续导入。';pendingContinue.textContent='补齐后导入';await commitImport();
         }else{
-          if(!O)throw Error('标题识别组件未载入，请刷新后重试。');const source=await O.read(f),prepared=O.prepare(source,chosen);if(token!==serial||key!==active)return;
-          pendingImport={name:f.name,key,token,revision,source,mode:chosen,rows:prepared.rows,warnings:prepared.warnings||[]};pendingBox.hidden=false;preview.hidden=ackLabel.hidden=outlineStats.hidden=outlineCount.hidden=false;
+          if(!O)throw Error('标题识别组件未载入，请刷新后重试。');const source=await O.read(f),prepared=chosen==='auto'?O.suggest(source):O.prepare(source,chosen);if(token!==serial||key!==active)return;
+          pendingImport={name:f.name,key,token,revision,source,mode:prepared.mode||chosen,automatic:prepared.automatic,rows:prepared.rows,warnings:prepared.warnings||[]};pendingBox.hidden=false;preview.hidden=ackLabel.hidden=outlineStats.hidden=outlineCount.hidden=false;
           pendingText.textContent='已读取「'+f.name+'」。请先核对下方层级，正文说明请选择0，不要把换行当成独立资料。';pendingContinue.textContent='补齐后导入';previewRows();updatePreviewCount();say('已读取清单。请核对层级，勾选确认，再导入。');
         }
       });
@@ -262,7 +262,14 @@
     close.onclick=()=>void run(async()=>{if(!record||!requireReviewer())return;if(!root.confirm((isTrial()?'【独立试用】':'')+'确认全部末级资料已核对通过或说明不适用，执行资料关门？这不是报告审批。'))return;record=await db.change(active,record.revision,{type:'close',reviewer:reviewer.value});clearUploads();render();say('已明确执行资料关门。修改前须说明理由重新开门。');});
     reopen.onclick=()=>void run(async()=>{if(!record||!requireReviewer())return;if(!reason.value.trim()){missingField(reason,'重新开门前，请填写「操作理由」。');return;}record=await db.change(active,record.revision,{type:'reopen',reviewer:reviewer.value,reason:reason.value});render();say('已重新开门并记录理由。');});
     exportBtn.onclick=()=>{if(!record)return;download(new Blob([JSON.stringify({app:'hengdu.audit.materials',mode:isTrial()?'trial':'project',exportedAt:new Date().toISOString(),record},null,2)],{type:'application/json'}),isTrial()?'独立试用-资料核对记录.json':'审计资料清单-核对与关门记录.json');say('已请求下载清单、文件元数据与留痕 JSON。JSON 不含文件正文，请逐份下载并另存资料原件；此导出暂不自动恢复其他浏览器。');};
-    render();return Object.freeze({show});
+    async function selectProject(id){
+      if(selection.value!==id){
+        await show();
+        if(!Array.from(selection.options).some(option=>option.value===id))throw Error('未找到该立项项目。');
+        selection.value=id;await loadProject();
+      }
+    }
+    render();return Object.freeze({show,selectProject});
   }
   root.AuditProgram=Object.freeze({mount});
 })(globalThis);

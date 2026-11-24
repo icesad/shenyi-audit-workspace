@@ -23,6 +23,9 @@ async function setup(t){
   w.confirm=()=>true;
   w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   w.HTMLDialogElement.prototype.close=function(){this.open=false;};
+  w.URL.createObjectURL=()=> 'blob:synthetic-quote';
+  w.URL.revokeObjectURL=()=>{};
+  w.HTMLAnchorElement.prototype.click=function(){};
   const rows=new Map([['A',profile('A',1)],['B',profile('B',1,1)]]);
   const archive=new Map(),rendered=[];let legacyReads=0;
   const db={
@@ -34,7 +37,7 @@ async function setup(t){
     async getDefaultCredentials(){legacyReads++;return profile('LEGACY',2).attachments;},
     async register(s,pair){const id=String(archive.size+1);archive.set(id,structuredClone({
       entry:{snapshot:s,id,lastEventNo:0,events:[]},attachments:pair
-    }));},
+    }));return structuredClone(archive.get(id).entry);},
     list:async()=>[...archive.values()].map(x=>structuredClone(x.entry)),
     get:async id=>structuredClone(archive.get(id))
   })};
@@ -44,11 +47,15 @@ async function setup(t){
     verifyExtras:async extras=>{assert.deepEqual(Array.from(extras),[]);return extras;},
     renderDocument:async(s,pair)=>{rendered.push({firm:s.firmName,files:names(pair)});return '<article>合成预览</article>';}
   };
+  w.QuoteWordDelivery={async build({snapshot,attachments}){
+    rendered.push({firm:snapshot.firmName,files:names(attachments)});
+    return {name:'synthetic.docx',bytes:new Uint8Array(),mime:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'};
+  }};
   for(const f of ['calc.js','rule-catalog.js','regions.js','backup-restore.js','bidder-ui.js','app.js'])w.eval(read(f));
   await tick();
   const change=(sel,value,type='change')=>{const e=$(sel);e.value=value;e.dispatchEvent(new w.Event(type,{bubbles:true}));};
   const pick=async id=>{change('#bidder-picker-select',id);await tick();};
-  const click=async sel=>{$(sel).click();await tick();};
+  const click=async sel=>{assert.ok($(sel),`${sel}：${$('#ledger-status').textContent}`);$(sel).click();await tick();};
   const gate=disabled=>{for(const sel of ['#preview','#register-quote'])assert.equal($(sel).disabled,disabled,sel+': '+$('#preview-status').textContent);};
   return {$,rows,db,archive,rendered,pick,click,gate,change,legacyReads:()=>legacyReads};
 }
@@ -56,8 +63,8 @@ test('quotation has no duplicate certificate uploads; a typed firm name cannot a
   const x=await setup(t),{$}=x;
   assert.equal($('#business-license-file, #practice-certificate-file, #save-credentials'),null);
   const panel=$('#credentials-list').closest('section');
-  assert.ok($('#view-bidders #bidder-edit-business_license[type=file]'));
-  assert.ok($('#view-bidders #bidder-edit-practice_certificate[type=file]'));
+  assert.equal($('#view-bidders #bidder-edit-business_license, #view-bidders #bidder-edit-practice_certificate'),null);
+  assert.ok($('#view-bidders #bidder-archive-file[type=file][multiple]'));
   assert.ok(panel.querySelector('#manage-bidder-credentials'));assert.ok($('#choose-bidder-for-quote'));
   x.change('#proposal-form [name=firmName]','合成A事务所','input');
   x.gate(true);assert.equal(x.legacyReads(),0);assert.doesNotMatch(panel.textContent,/LEGACY/);

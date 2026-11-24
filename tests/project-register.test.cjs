@@ -7,7 +7,7 @@ test('project register has exactly twenty-two columns and scoped immutable-sourc
  const source=fs.readFileSync(path.join(DIST,'project-register.js'),'utf8');
  assert.doesNotMatch(source,/\b(?:localStorage|sessionStorage|fetch|XMLHttpRequest)\b/);
  assert.match(source,/S\.save\(source\.quoteId,state\.workspace\.rev,\{projectRegister:value,amountCents:gross,projectInvoice:/);
- assert.match(source,/root\.ProjectContract\.uploadSigned\(source,selected,\{expectedRevision:state\.workspace\.rev\}\)/);
+ assert.match(source,/root\.ProjectContract\.uploadSigned\(source,selected,\{expectedRevision:state\.workspace\.rev,lookup\}\)/);
  assert.match(fs.readFileSync(path.join(DIST,'project-register.css'),'utf8'),/overflow-x:auto/);
 });
 test('real IndexedDB project register: automatic won rows, source retention, per-row metadata, CAS, and signed routing',async t=>{

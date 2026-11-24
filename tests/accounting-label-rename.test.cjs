@@ -2,7 +2,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{JSDOM}=require('jsdom');
 const dist=path.resolve(__dirname,'../dist');
 const {withoutWorkpaperPackageLoaders}=require('./helpers/workpaper-package-loaders.cjs');
-const changes={"dist/index.html": {"before": "db35acf85570a1cf9435028244c769b83d9c21b632af9edcf56138b5802f3821", "after": "27a036acea433d5e95e422bbe3898fb468fc5be730729845dc3a9a6d54d64f61", "replacements": [["data-nav-section=\"scope-accounting-cost\">人员与项目成本</button>", "data-nav-section=\"scope-accounting-cost\">项目成本核算</button>"], ["data-view=\"travel\">差旅费报销填报表</button>", "data-view=\"travel\">费用报销填报</button>"], ["<section id=\"scope-accounting-cost\"><h3>成本核算</h3>", "<section id=\"scope-accounting-cost\"><h3>项目成本核算</h3>"], ["data-view=\"costs\">进入成本核算</button>", "data-view=\"costs\">进入项目成本核算</button>"], ["<section id=\"scope-accounting-travel\"><h3>差旅费报销填报表</h3>", "<section id=\"scope-accounting-travel\"><h3>费用报销填报</h3>"]]}, "dist/app.js": {"before": "7e94c54acc2ef40a202872f540a1e306c0564f156c1d5c0c67dd8fac94b20cb2", "after": "9f5547769b219c75c53911cf0d82a296582b8b421aa408ab6f9b51f584434c6a", "replacements": [["travel:['核算 / 差旅费报销','差旅费报销填报表'", "travel:['核算 / 费用报销填报','费用报销填报'"], ["costs:['核算 / 成本核算','成本核算'", "costs:['核算 / 项目成本核算','项目成本核算'"]]}, "dist/project-costs.js": {"before": "7bbaa3b57aaac444e65fff2ce62211b11f5b9f7ad64d3b25344567848f0b768d", "after": "103fb9e7b551e80afdf98f5fcc7053227e1ec1f2662a301b0b0aab105cf72c5e", "replacements": [["head.append(el('h2','成本核算'),refreshButton)", "head.append(el('h2','项目成本核算'),refreshButton)"]]}};
+const changes={"dist/index.html":{"before":"cda75fc86a4eef2e69f1b08aa916f18d4414bfda82af47c8ac4e8e8a0c242210","after":"1a17297dfeaf143fc49cf4458af50f87f423f9a143230046c5c692de1d9dcafa","replacements":[["data-view=\"costs\">成本核算</button>","data-view=\"costs\">项目成本核算</button>"],["data-view=\"travel\">差旅费报销填报表</button>","data-view=\"travel\">费用报销填报</button>"]]},"dist/app.js":{"before":"40ae0266e1359bd65969e2201f3e97d5c61842575da91a098b1f7a20ff05d5ff","after":"4f38b896e0a42db414238eeae912c42f702f393688aed276d7a1a17f3e469e44","replacements":[["travel:['成本核算 / 差旅费报销','差旅费报销填报表'","travel:['成本核算 / 费用报销填报','费用报销填报'"],["costs:['成本核算 / 成本核算','成本核算'","costs:['成本核算 / 项目成本核算','项目成本核算'"]]},"dist/project-costs.js":{"before":"2abcc6dc4f1b50c2ebac14aecca2ec4547e52ffb583bd19cbcbf38f9beeb812e","after":"1429ecf2f664f44663667f7d9a2f65ff38699187b6d21ac0544bf637b751e532","replacements":[["head.append(el('h2','成本核算'),refreshButton)","head.append(el('h2','项目成本核算'),refreshButton)"]]}};
 test('accounting rename changes display strings only; no layout, field, event, persistence or calculation change',()=>{
  for(const [file,spec]of Object.entries(changes)){
   let source=fs.readFileSync(path.resolve(__dirname,'..',file),'utf8').replace(/\r\n/g,'\n'); // Canonical EOL across devices; exact content guard retained.
@@ -34,12 +34,10 @@ test('accounting rename changes display strings only; no layout, field, event, p
 test('sidebar and accounting entry display only requested new module names; all routing identities unchanged',()=>{
  const dom=new JSDOM(fs.readFileSync(path.join(dist,'index.html'),'utf8')),d=dom.window.document;
  try{
-  assert.equal(d.querySelector('[data-nav-section="scope-accounting-cost"]').textContent,'项目成本核算');
+  assert.equal(d.querySelector('.workspace-navigation [data-view="costs"]').textContent,'项目成本核算');
   assert.equal(d.querySelector('.workspace-navigation [data-view="travel"]').textContent,'费用报销填报');
-  assert.equal(d.querySelector('#scope-accounting-cost h3').textContent,'项目成本核算');
-  assert.equal(d.querySelector('#scope-accounting-travel h3').textContent,'费用报销填报');
-  assert.equal(d.querySelectorAll('.nav-group').length,6);
-  assert.equal(d.querySelector('#scope-accounting-cost button').dataset.view,'costs');
-  assert.equal(d.querySelector('#scope-accounting-travel button').dataset.view,'travel');
+  assert.equal(d.querySelectorAll('.nav-group').length,5);
+  assert.equal(d.querySelector('[data-home-view=costs] .home-stage-go').textContent.trim(),'进入项目成本核算 ↗');
+  assert.equal(d.querySelector('#view-accounting'),null);
  }finally{dom.window.close();}
 });
