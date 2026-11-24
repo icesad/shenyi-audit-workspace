@@ -1,6 +1,6 @@
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {isIP} from 'node:net';
-import {authenticated,consume,consumeBounded,limitedPasswordWork} from './auth-api.mjs';
+import {authenticated,consume,consumeBounded,assertRateLimitAvailable,limitedPasswordWork} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
 import {verifyRecoveryRequestChallenge} from './phone-api.mjs';
 import {canReviewRecovery,recoveryAuthority,recoveryTarget,recoveryReviewView,recoveryOwner,reviewedRecovery,reviewedRecoveryAvailable} from './recovery-review-policy.mjs';
@@ -24,16 +24,38 @@ export async function handleRecoveryReviewRequest(request,{db,now=Date.now,ident
     const suppliedAddress=request.headers.get('x-shenyi-client-ip')||'local';
     const clientAddress=isIP(suppliedAddress)?suppliedAddress.toLowerCase():'local';
     consumeBounded(db,'recovery-request:ip:','recovery-request:ip:'+digest(clientAddress),now(),60000,60);
-    // Invalid/expired SMS proofs consume only this source's budget, never the
-    // shared budget that protects all legitimate account-recovery requests.
-    verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now());
+
+    // First verify the SMS proof without spending an attempt. If the code itself
+    // is wrong, reserve one attempt and preserve that counter before returning.
+    try {
+      verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now(),{reserve:false});
+    } catch (error) {
+      verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now());
+      throw error;
+    }
+
     return transaction(db,()=>{
-      // Verification reserves an attempt outside the write transaction. Recheck
-      // the live challenge at the actual insert time without spending it twice.
-      const at=now(),{row,eligible}=verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,at,{reserve:false});
-      const existing=db.prepare('SELECT * FROM team_recovery_requests WHERE challenge_id=?').get(row.challenge_id);if(existing)return json(receipt(existing),201);
-      // Spend the shared business budget only for a verified, still-live proof,
-      // in the same transaction as the idempotent request insertion.
+      const existing=db.prepare('SELECT * FROM team_recovery_requests WHERE challenge_id=?').get(body.challengeId);
+      if(existing){
+        // Keep the historical behavior for an idempotent repeat: validate the
+        // same proof and account for an attempt, but do not spend global budget.
+        verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now());
+        return json(receipt(existing),201);
+      }
+
+      // Check shared capacity before reserving the SMS attempt. Since this and
+      // the later consume() run in one IMMEDIATE transaction, another writer
+      // cannot fill the budget between the check and the consume.
+      assertRateLimitAvailable(db,'recovery-request:global',now(),60000,60);
+
+      // Reserve the valid proof attempt only after capacity is known to exist.
+      const reserved=verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now());
+      const at=now();
+      // Recheck expiry and binding at the insert boundary. A proof expiring
+      // between the preflight and this transaction must not create a request.
+      const {row,eligible}=verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,at,{reserve:false});
+      if(row.challenge_id!==reserved.row.challenge_id)throw new ApiError(400,'INVALID_CHALLENGE','验证请求无效或已失效，请重新验证。');
+
       consume(db,'recovery-request:global',at,60000,60);
       const target=eligible?recoveryTarget(db,row.user_id,at):null,id=randomUUID();
       db.prepare(`INSERT INTO team_recovery_requests(request_id,challenge_id,target_user_id,team_id,target_kind,target_stamp,status,created_at,expires_at)
