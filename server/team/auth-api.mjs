@@ -18,6 +18,22 @@ export function consume(db, bucket, now, window, maximum) {
   if (attempts >= maximum) tooMany();
   db.prepare('INSERT INTO team_auth_limits VALUES (?,?,?) ON CONFLICT(bucket) DO UPDATE SET window_start=excluded.window_start,attempts=excluded.attempts').run(bucket, start, attempts + 1);
 }
+/** Keep anonymous per-source onboarding buckets bounded and reclaim expired windows. */
+export function consumeBounded(db, prefix, bucket, now, window, maximum, capacity = 10_000) {
+  if (typeof prefix !== 'string' || !prefix || !bucket.startsWith(prefix) ||
+      !Number.isSafeInteger(capacity) || capacity < 1) throw new TypeError('Invalid bounded rate-limit bucket');
+  return transaction(db, () => {
+    db.prepare('DELETE FROM team_auth_limits WHERE substr(bucket,1,length(?))=? AND window_start<=?')
+      .run(prefix, prefix, now - window);
+    const exists = db.prepare('SELECT 1 FROM team_auth_limits WHERE bucket=?').get(bucket);
+    const count = db.prepare('SELECT COUNT(*) AS count FROM team_auth_limits WHERE substr(bucket,1,length(?))=?')
+      .get(prefix, prefix).count;
+    // Never evict an active source bucket: doing so would reset that source's rate limit.
+    // At capacity, reject only a new source until an expired bucket is reclaimed.
+    if (!exists && count >= capacity) tooMany();
+    consume(db, bucket, now, window, maximum);
+  });
+}
 export function accountView(db, identity, expiresAt) {
   const row = db.prepare('SELECT display_name FROM team_credentials WHERE user_id=?').get(identity.userId);
   const memberships = db.prepare(`SELECT membership.team_id,membership.role FROM team_memberships AS membership
