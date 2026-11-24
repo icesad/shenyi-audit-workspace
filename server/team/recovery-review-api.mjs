@@ -23,10 +23,13 @@ export async function handleRecoveryReviewRequest(request,{db,now=Date.now,ident
     // The edge proxy overwrites this header with the observed client address.
     const suppliedAddress=request.headers.get('x-shenyi-client-ip')||'local';
     const clientAddress=isIP(suppliedAddress)?suppliedAddress.toLowerCase():'local';
+    const sourceAt=now();
     // A full source pool must not deny a new legitimate source before SMS proof
-    // validation. Existing sources still enforce their 60-request limit; an
-    // unstored source must pass the same proof and transactional business budget.
-    tryConsumeBounded(db,'recovery-request:ip:','recovery-request:ip:'+digest(clientAddress),now(),60000,60);
+    // validation. Existing sources still enforce their 60-request limit. Unstored
+    // sources use a separate small overflow budget so invalid proofs cannot create
+    // unbounded database work while the source table is at capacity.
+    const sourceRecorded=tryConsumeBounded(db,'recovery-request:ip:','recovery-request:ip:'+digest(clientAddress),sourceAt,60000,60);
+    if(!sourceRecorded)transaction(db,()=>consume(db,'recovery-request:overflow',sourceAt,60000,300));
 
     // First verify the SMS proof without spending an attempt. If the code itself
     // is wrong, reserve one attempt and preserve that counter before returning.
