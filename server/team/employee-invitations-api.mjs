@@ -196,7 +196,9 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
   // validation and per-IP bursts without a shared anonymous minute budget.
   const suppliedAddress=request.headers.get('x-shenyi-client-ip')||'local';
   const clientAddress=isIP(suppliedAddress)?suppliedAddress.toLowerCase():'local';
-  tryConsumeBounded(db,'onboarding:'+action+':ip:','onboarding:'+action+':ip:'+digest(clientAddress),now(),60000,60);
+  const sourceAt=now();
+  const sourceRecorded=tryConsumeBounded(db,'onboarding:'+action+':ip:','onboarding:'+action+':ip:'+digest(clientAddress),sourceAt,60000,60);
+  if(!sourceRecorded)transaction(db,()=>consume(db,'onboarding:'+action+':overflow',sourceAt,60000,300));
   const invitation=liveInvitation(db,body.invitationCode,phone,now());
   consume(db,'onboarding:'+action+':global',now(),60000,60);
   if(action==='preview')return json(publicInvitation(invitation));
