@@ -5,7 +5,7 @@
 import {createHash, createHmac, randomInt, randomUUID, timingSafeEqual} from 'node:crypto';
 import {isIP} from 'node:net';
 import {
-  authenticated, consume, tryConsumeBounded, limitedPasswordWork, issueSession,
+  authenticated, consume, tryConsumeBoundedInTransaction, limitedPasswordWork, issueSession,
 } from './auth-api.mjs';
 import {hashPassword, validPassword, verifyPassword} from './passwords.mjs';
 import {ApiError, ID, invalid, json, readJson, transaction} from './http-utils.mjs';
@@ -161,14 +161,17 @@ export async function handlePhoneRequest(request, {db, now = Date.now, identityP
     const suppliedAddress = request.headers.get('x-shenyi-client-ip') || 'local';
     const clientAddress = isIP(suppliedAddress) ? suppliedAddress.toLowerCase() : 'local';
     const at = now();
-    const sourceAllowed = tryConsumeBounded(db, 'sms:source:', 'sms:source:' + digest(clientAddress), at, 60_000, 10);
-    if (!sourceAllowed && !identity) {
-      // Reset challenges have no verified credential before SMS delivery. Fail closed
-      // at source-pool capacity so an unrecorded IP cannot bypass the per-source limit.
-      throw new ApiError(429, 'TOO_MANY_ATTEMPTS', '操作过于频繁，请稍后重试。');
-    }
-    // Preflight all narrower and shared budgets before spending any allowance.
+    // Reserve the source and every SMS allowance atomically. If any narrower or
+    // shared budget rejects, SQLite rolls back the source reservation as well.
     transaction(db, () => {
+      const sourceAllowed = tryConsumeBoundedInTransaction(
+        db, 'sms:source:', 'sms:source:' + digest(clientAddress), at, 60_000, 10,
+      );
+      if (!sourceAllowed && !identity) {
+        // Reset challenges have no verified credential before SMS delivery. Fail closed
+        // at source-pool capacity so an unrecorded IP cannot bypass the per-source limit.
+        throw new ApiError(429, 'TOO_MANY_ATTEMPTS', '操作过于频繁，请稍后重试。');
+      }
       const phoneBucket = 'sms:phone:' + digest(phone);
       const userBucket = identity ? 'sms:user:' + digest(identity.userId) : null;
       assertRateLimitAvailable(db, phoneBucket, at, 10 * 60_000, 3);
