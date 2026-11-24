@@ -286,3 +286,27 @@ test('first-administrator onboarding accepts valid tickets from new sources when
     });
   }
 });
+
+
+test('first-administrator onboarding bounds invalid ticket validation when a source pool is full',async t=>{
+  const {fullSourcePool}=require('./helpers/onboarding-rate-limit-capacity.cjs');
+  const f=await fixture(t),prefix='first-administrator:preview:ip:';
+  const pool=fullSourcePool(f.db,prefix,f.now),invalidCode=randomBytes(32).toString('base64url');
+  for(let i=0;i<300;i++){
+    const address='198.51.'+Math.floor(i/250)+'.'+(i%250+1);
+    const response=await call(f,FIRST+'/preview',{
+      body:{invitationCode:invalidCode,phone:PHONE},
+      headers:{'X-Shenyi-Client-IP':address},
+    });
+    assert.equal(response.status,404,response.raw);
+  }
+  const blocked=await call(f,FIRST+'/preview',{
+    body:{invitationCode:invalidCode,phone:PHONE},
+    headers:{'X-Shenyi-Client-IP':'198.51.2.1'},
+  });
+  assert.equal(blocked.status,429,blocked.raw);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='first-administrator:preview:overflow'").get().attempts,300);
+  assert.equal(f.db.prepare("SELECT 1 FROM team_auth_limits WHERE bucket='first-administrator:preview:global'").get(),undefined);
+  assert.equal(f.sent.length,0);
+  pool.assertUnchanged();
+});
