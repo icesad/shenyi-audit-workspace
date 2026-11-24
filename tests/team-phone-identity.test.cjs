@@ -280,3 +280,50 @@ test('unknown query/fields and unsupported phone methods are rejected before cre
   assert.equal((await call(f,'/api/auth/phone/login',{method:'GET'})).status,405);
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_phone_credentials').get().n,0);
 });
+
+test('SMS phone-specific throttling never spends the shared budget and another source remains usable',async t=>{
+  const f=await fixture(t),sourceA='198.51.100.30',sourceB='198.51.100.31';
+  for(let n=0;n<3;n++)assert.equal((await call(f,'/api/auth/phone/challenges',{clientIp:sourceA,body:{phone:PHONE,purpose:'reset'}})).status,202);
+  assert.equal((await call(f,'/api/auth/phone/challenges',{clientIp:sourceA,body:{phone:PHONE,purpose:'reset'}})).status,429);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get('sms:phone:'+hash(PHONE)).attempts,3);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='sms:global'").get().attempts,3);
+  assert.equal(f.sent.length,3);
+  const other=await call(f,'/api/auth/phone/challenges',{clientIp:sourceB,body:{phone:OTHER_PHONE,purpose:'reset'}});
+  assert.equal(other.status,202,other.raw);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='sms:global'").get().attempts,4);
+});
+
+test('per-source SMS limit prevents one source exhausting global budget; another source remains independent',async t=>{
+  const f=await fixture(t),sourceA='198.51.100.40',sourceB='198.51.100.41';
+  for(let n=0;n<10;n++){
+    const phone='+86'+String(13800000100+n);
+    assert.equal((await call(f,'/api/auth/phone/challenges',{clientIp:sourceA,body:{phone,purpose:'reset'}})).status,202);
+  }
+  assert.equal((await call(f,'/api/auth/phone/challenges',{clientIp:sourceA,body:{phone:'+8613800000200',purpose:'reset'}})).status,429);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='sms:global'").get().attempts,10);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get('sms:source:'+hash(sourceA)).attempts,10);
+  const other=await call(f,'/api/auth/phone/challenges',{clientIp:sourceB,body:{phone:'+8613800000201',purpose:'reset'}});
+  assert.equal(other.status,202,other.raw);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='sms:global'").get().attempts,11);
+});
+
+test('full SMS source bucket pool does not block a new phone challenge or evict active sources',async t=>{
+  const f=await fixture(t),prefix='sms:source:',insert=f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)');
+  f.db.exec('BEGIN IMMEDIATE');
+  try { for(let n=0;n<10000;n++)insert.run(prefix+hash('synthetic-source-'+n),f.now,1); f.db.exec('COMMIT'); }
+  catch(error){f.db.exec('ROLLBACK');throw error;}
+  const before=f.db.prepare('SELECT bucket,window_start,attempts FROM team_auth_limits WHERE substr(bucket,1,length(?))=? ORDER BY bucket').all(prefix,prefix);
+  const other=await call(f,'/api/auth/phone/challenges',{clientIp:'198.51.100.50',body:{phone:OTHER_PHONE,purpose:'reset'}});
+  assert.equal(other.status,202,other.raw);
+  const after=f.db.prepare('SELECT bucket,window_start,attempts FROM team_auth_limits WHERE substr(bucket,1,length(?))=? ORDER BY bucket').all(prefix,prefix);
+  assert.deepEqual(after,before);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='sms:global'").get().attempts,1);
+});
+
+test('a full shared SMS budget rejects before spending the phone-specific allowance',async t=>{
+  const f=await fixture(t);
+  f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)').run('sms:global',f.now,60);
+  assert.equal((await call(f,'/api/auth/phone/challenges',{clientIp:'198.51.100.60',body:{phone:OTHER_PHONE,purpose:'reset'}})).status,429);
+  assert.equal(f.db.prepare('SELECT 1 FROM team_auth_limits WHERE bucket=?').get('sms:phone:'+hash(OTHER_PHONE)),undefined);
+  assert.equal(f.sent.length,0);
+});
