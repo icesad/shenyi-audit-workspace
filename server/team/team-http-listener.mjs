@@ -13,19 +13,26 @@ const unavailablePreviewPorts = new Set([
 
 export async function listenOnLoopback(server, port, {exclusive = false} = {}) {
   for (let attempt = 0; attempt < 12; attempt++) {
-    await new Promise((resolve, reject) => {
-      const onError = error => {
-        server.off('listening', onListening);
-        reject(error);
-      };
-      const onListening = () => {
-        server.off('error', onError);
-        resolve();
-      };
-      server.once('error', onError);
-      server.once('listening', onListening);
-      server.listen({host, port, exclusive});
-    });
+    try {
+      await new Promise((resolve, reject) => {
+        const onError = error => {
+          server.off('listening', onListening);
+          reject(error);
+        };
+        const onListening = () => {
+          server.off('error', onError);
+          resolve();
+        };
+        server.once('error', onError);
+        server.once('listening', onListening);
+        server.listen({host, port, exclusive});
+      });
+    } catch (error) {
+      // Windows may assign an ephemeral port from an excluded/reserved range.
+      // Retry only OS-selected ports; a fixed-port permission error is actionable.
+      if (port === 0 && ['EACCES', 'EADDRINUSE'].includes(error.code)) continue;
+      throw error;
+    }
     const bound = server.address();
     if (port !== 0 || (bound.port >= 1024 && !unavailablePreviewPorts.has(bound.port))) return bound;
     await new Promise((resolve, reject) => {
