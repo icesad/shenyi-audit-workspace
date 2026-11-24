@@ -19,6 +19,12 @@ function fullSourcePool(db, prefix, now) {
       const address = '198.18.' + Math.floor(i / 256) + '.' + (i % 256);
       insert.run(prefix + digest(address), now, 1);
     }
+    const poolRows=db.prepare(`SELECT bucket,window_start FROM team_auth_limits
+      WHERE bucket>=? AND bucket<? ORDER BY bucket`).all(prefix,prefix+'\\u{10FFFF}');
+    const insertMembership=db.prepare('INSERT INTO team_auth_limit_pool_buckets(prefix,bucket,window_start) VALUES (?,?,?)');
+    for(const row of poolRows)insertMembership.run(prefix,row.bucket,row.window_start);
+    db.prepare(`INSERT INTO team_auth_limit_pools(prefix,active_count) VALUES (?,?)
+      ON CONFLICT(prefix) DO UPDATE SET active_count=excluded.active_count`).run(prefix,poolRows.length);
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');
