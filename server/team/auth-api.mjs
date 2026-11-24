@@ -34,6 +34,9 @@ export function tryConsumeBounded(db, prefix, bucket, now, window, maximum, capa
   if (typeof prefix !== 'string' || !prefix || !bucket.startsWith(prefix) ||
       !Number.isSafeInteger(capacity) || capacity < 1) throw new TypeError('Invalid bounded rate-limit bucket');
   return transaction(db, () => {
+    const prior = db.prepare('SELECT window_start,attempts FROM team_auth_limits WHERE bucket=?').get(bucket);
+    if (prior && now >= prior.window_start && now - prior.window_start < window && prior.attempts >= maximum) tooMany();
+
     const pool = db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix);
     if (!pool) throw new Error('Bounded rate-limit pool metadata is not initialized');
 
