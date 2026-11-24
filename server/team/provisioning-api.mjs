@@ -154,7 +154,9 @@ export async function handleTeamProvisioningRequest(request,{db,now=Date.now,ide
   // mandatory before shared business, SMS or KDF budgets can be consumed.
   const suppliedAddress=request.headers.get('x-shenyi-client-ip')||'local';
   const clientAddress=isIP(suppliedAddress)?suppliedAddress.toLowerCase():'local';
-  tryConsumeBounded(db,'first-administrator:'+action+':ip:','first-administrator:'+action+':ip:'+digest(clientAddress),now(),60000,60);
+  const sourceAt=now();
+  const sourceRecorded=tryConsumeBounded(db,'first-administrator:'+action+':ip:','first-administrator:'+action+':ip:'+digest(clientAddress),sourceAt,60000,60);
+  if(!sourceRecorded)transaction(db,()=>consume(db,'first-administrator:'+action+':overflow',sourceAt,60000,300));
   const ticket=liveTicket(db,body.invitationCode,phone,now());
   consume(db,'first-administrator:'+action+':global',now(),60000,60);
   if(action==='preview')return json({teamId:ticket.team_id,teamName:ticket.team_name,phoneMasked:mask(phone),expiresAt:ticket.expires_at});
