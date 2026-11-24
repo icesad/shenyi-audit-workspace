@@ -37,3 +37,10 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run check:repo
       - run: npm run test:tools
+      - name: Install native edge smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends nginx openssl
+      - name: Verify real Nginx identity edge limits
+        timeout-minutes: 3
+        run: node scripts/check-identity-edge.mjs --include-recovery

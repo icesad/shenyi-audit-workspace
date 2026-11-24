@@ -25,8 +25,10 @@ export function consume(db, bucket, now, window, maximum) {
   if (attempts >= maximum) tooMany();
   db.prepare('INSERT INTO team_auth_limits VALUES (?,?,?) ON CONFLICT(bucket) DO UPDATE SET window_start=excluded.window_start,attempts=excluded.attempts').run(bucket, start, attempts + 1);
 }
-/** Keep anonymous per-source onboarding buckets bounded and reclaim expired windows. */
-export function consumeBounded(db, prefix, bucket, now, window, maximum, capacity = 10_000) {
+/** Record a source attempt, or return false only when a new source cannot fit.
+ * Existing exhausted sources still throw 429. Callers accepting false must
+ * validate a real credential before consuming any shared business budget. */
+export function tryConsumeBounded(db, prefix, bucket, now, window, maximum, capacity = 10_000) {
   if (typeof prefix !== 'string' || !prefix || !bucket.startsWith(prefix) ||
       !Number.isSafeInteger(capacity) || capacity < 1) throw new TypeError('Invalid bounded rate-limit bucket');
   return transaction(db, () => {
@@ -36,10 +38,16 @@ export function consumeBounded(db, prefix, bucket, now, window, maximum, capacit
     const count = db.prepare('SELECT COUNT(*) AS count FROM team_auth_limits WHERE substr(bucket,1,length(?))=?')
       .get(prefix, prefix).count;
     // Never evict an active source bucket: doing so would reset that source's rate limit.
-    // At capacity, reject only a new source until an expired bucket is reclaimed.
-    if (!exists && count >= capacity) tooMany();
+    // A full anonymous pool must not stop a new source proving a real ticket.
+    // No bucket is inserted, evicted or reset on this capacity-only path.
+    if (!exists && count >= capacity) return false;
     consume(db, bucket, now, window, maximum);
+    return true;
   });
+}
+/** Callers without a credential-validation fallback retain fail-closed admission. */
+export function consumeBounded(db, prefix, bucket, now, window, maximum, capacity = 10_000) {
+  if (!tryConsumeBounded(db, prefix, bucket, now, window, maximum, capacity)) tooMany();
 }
 export function accountView(db, identity, expiresAt) {
   const row = db.prepare('SELECT display_name FROM team_credentials WHERE user_id=?').get(identity.userId);

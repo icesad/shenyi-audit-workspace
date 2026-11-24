@@ -1,6 +1,6 @@
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {isIP} from 'node:net';
-import {authenticated,consume,consumeBounded,assertRateLimitAvailable,limitedPasswordWork} from './auth-api.mjs';
+import {authenticated,consume,tryConsumeBounded,assertRateLimitAvailable,limitedPasswordWork} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
 import {verifyRecoveryRequestChallenge} from './phone-api.mjs';
 import {canReviewRecovery,recoveryAuthority,recoveryTarget,recoveryReviewView,recoveryOwner,reviewedRecovery,reviewedRecoveryAvailable} from './recovery-review-policy.mjs';
@@ -23,7 +23,10 @@ export async function handleRecoveryReviewRequest(request,{db,now=Date.now,ident
     // The edge proxy overwrites this header with the observed client address.
     const suppliedAddress=request.headers.get('x-shenyi-client-ip')||'local';
     const clientAddress=isIP(suppliedAddress)?suppliedAddress.toLowerCase():'local';
-    consumeBounded(db,'recovery-request:ip:','recovery-request:ip:'+digest(clientAddress),now(),60000,60);
+    // A full source pool must not deny a new legitimate source before SMS proof
+    // validation. Existing sources still enforce their 60-request limit; an
+    // unstored source must pass the same proof and transactional business budget.
+    tryConsumeBounded(db,'recovery-request:ip:','recovery-request:ip:'+digest(clientAddress),now(),60000,60);
 
     // First verify the SMS proof without spending an attempt. If the code itself
     // is wrong, reserve one attempt and preserve that counter before returning.
