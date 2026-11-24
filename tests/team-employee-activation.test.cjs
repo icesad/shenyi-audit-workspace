@@ -247,8 +247,8 @@ test('employee onboarding accepts valid tickets from new sources when anonymous 
       const route='/api/auth/onboarding/'+action;
       const request=(address,value)=>call(f,route,{body:value,headers:{'X-Shenyi-Client-IP':address}});
       const businessBudget=()=>JSON.stringify(f.db.prepare(
-        'SELECT bucket,window_start,attempts FROM team_auth_limits WHERE substr(bucket,1,length(?))<>? ORDER BY bucket'
-      ).all(prefix,prefix));
+        'SELECT bucket,window_start,attempts FROM team_auth_limits WHERE substr(bucket,1,length(?))<>? AND bucket<>? ORDER BY bucket'
+      ).all(prefix,prefix,'onboarding:'+action+':overflow'));
       const beforeBudget=businessBudget(),beforeMessages=f.sent.length;
       const invalid=await request(pool.invalidAddress,{...body,invitationCode:randomBytes(32).toString('base64url')});
       assert.ok([404,429].includes(invalid.status),invalid.raw);
