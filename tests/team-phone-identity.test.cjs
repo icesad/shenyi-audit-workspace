@@ -331,34 +331,28 @@ test('per-source SMS limit prevents one source exhausting global budget; another
 });
 
 test('full SMS source bucket pool rejects anonymous reset challenges without spending shared budget or evicting active sources',async t=>{
-  const f=await fixture(t),prefix='sms:source:',insert=f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)');
-  f.db.exec('BEGIN IMMEDIATE');
-  try { for(let n=0;n<10000;n++)insert.run(prefix+hash('synthetic-source-'+n),f.now,1); f.db.exec('COMMIT'); }
-  catch(error){f.db.exec('ROLLBACK');throw error;}
-  const before=f.db.prepare('SELECT bucket,window_start,attempts FROM team_auth_limits WHERE substr(bucket,1,length(?))=? ORDER BY bucket').all(prefix,prefix);
+  const f=await fixture(t),prefix='sms:source:';
+  const {fullSourcePool}=require('./helpers/onboarding-rate-limit-capacity.cjs');
+  const pool=fullSourcePool(f.db,prefix,f.now);
   const other=await call(f,'/api/auth/phone/challenges',{clientIp:'198.51.100.50',body:{phone:OTHER_PHONE,purpose:'reset'}});
   assert.equal(other.status,429,other.raw);
-  const after=f.db.prepare('SELECT bucket,window_start,attempts FROM team_auth_limits WHERE substr(bucket,1,length(?))=? ORDER BY bucket').all(prefix,prefix);
-  assert.deepEqual(after,before);
   assert.equal(f.db.prepare("SELECT 1 FROM team_auth_limits WHERE bucket='sms:global'").get(),undefined);
   assert.equal(f.db.prepare('SELECT 1 FROM team_auth_limits WHERE bucket=?').get('sms:phone:'+hash(OTHER_PHONE)),undefined);
   assert.equal(f.sent.length,0);
+  pool.assertUnchanged();
 });
 
 test('full SMS source bucket pool still permits an authenticated bind under per-user limits',async t=>{
-  const f=await fixture(t),user=await login(f),prefix='sms:source:',insert=f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)');
-  f.db.exec('BEGIN IMMEDIATE');
-  try { for(let n=0;n<10000;n++)insert.run(prefix+hash('synthetic-source-'+n),f.now,1); f.db.exec('COMMIT'); }
-  catch(error){f.db.exec('ROLLBACK');throw error;}
-  const before=f.db.prepare('SELECT bucket,window_start,attempts FROM team_auth_limits WHERE substr(bucket,1,length(?))=? ORDER BY bucket').all(prefix,prefix);
+  const f=await fixture(t),user=await login(f),prefix='sms:source:';
+  const {fullSourcePool}=require('./helpers/onboarding-rate-limit-capacity.cjs');
+  const pool=fullSourcePool(f.db,prefix,f.now);
   const result=await call(f,'/api/auth/phone/challenges',{token:user.token,clientIp:'198.51.100.51',body:{phone:PHONE,purpose:'bind'}});
   assert.equal(result.status,202,result.raw);
   assert.equal(f.sent.length,1);
   assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='sms:global'").get().attempts,1);
   assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get('sms:user:'+hash(user.account.id)).attempts,1);
   assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get('sms:phone:'+hash(PHONE)).attempts,1);
-  const after=f.db.prepare('SELECT bucket,window_start,attempts FROM team_auth_limits WHERE substr(bucket,1,length(?))=? ORDER BY bucket').all(prefix,prefix);
-  assert.deepEqual(after,before);
+  pool.assertUnchanged();
 });
 
 test('a full shared SMS budget rejects before spending the phone-specific allowance',async t=>{
