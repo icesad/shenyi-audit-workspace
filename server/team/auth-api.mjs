@@ -11,6 +11,13 @@ export const normalizeUsername = value => typeof value === 'string' && /^[a-z0-9
 const signInRequired = () => { throw new ApiError(401, 'SIGN_IN_REQUIRED', '账号或密码无效，请重新登录。'); };
 const tooMany = () => { throw new ApiError(429, 'TOO_MANY_ATTEMPTS', '操作过于频繁，请稍后重试。'); };
 
+/** Check a shared budget without spending it. Call inside the same write transaction as the later consume(). */
+export function assertRateLimitAvailable(db, bucket, now, window, maximum) {
+  const row = db.prepare('SELECT window_start,attempts FROM team_auth_limits WHERE bucket=?').get(bucket);
+  const start = !row || now < row.window_start || now - row.window_start >= window ? now : row.window_start;
+  const attempts = start === row?.window_start ? row.attempts : 0;
+  if (attempts >= maximum) tooMany();
+}
 export function consume(db, bucket, now, window, maximum) {
   const row = db.prepare('SELECT window_start,attempts FROM team_auth_limits WHERE bucket=?').get(bucket);
   const start = !row || now < row.window_start || now - row.window_start >= window ? now : row.window_start;
