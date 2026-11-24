@@ -46,13 +46,13 @@ export async function handleRecoveryReviewRequest(request,{db,now=Date.now,ident
       // Check shared capacity before reserving the SMS attempt. Since this and
       // the later consume() run in one IMMEDIATE transaction, another writer
       // cannot fill the budget between the check and the consume.
-      assertRateLimitAvailable(db,'recovery-request:global',now(),60000,60);
+      const at=now();
+      assertRateLimitAvailable(db,'recovery-request:global',at,60000,60);
 
       // Reserve the valid proof attempt only after capacity is known to exist.
-      const reserved=verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now());
-      const at=now();
-      // Recheck expiry and binding at the insert boundary. A proof expiring
-      // between the preflight and this transaction must not create a request.
+      const reserved=verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,at);
+      // Recheck expiry and binding at the insert boundary using the same
+      // server timestamp as the shared-budget check and consume().
       const {row,eligible}=verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,at,{reserve:false});
       if(row.challenge_id!==reserved.row.challenge_id)throw new ApiError(400,'INVALID_CHALLENGE','验证请求无效或已失效，请重新验证。');
 
