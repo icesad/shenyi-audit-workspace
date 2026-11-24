@@ -20,7 +20,7 @@ function fullSourcePool(db, prefix, now) {
       insert.run(prefix + digest(address), now, 1);
     }
     const poolRows=db.prepare(`SELECT bucket,window_start FROM team_auth_limits
-      WHERE bucket>=? AND bucket<? ORDER BY bucket`).all(prefix,prefix+'\\u{10FFFF}');
+      WHERE bucket>=? AND bucket<? ORDER BY bucket`).all(prefix,prefix+'\uFFFF');
     const insertMembership=db.prepare('INSERT INTO team_auth_limit_pool_buckets(prefix,bucket,window_start) VALUES (?,?,?)');
     for(const row of poolRows)insertMembership.run(prefix,row.bucket,row.window_start);
     db.prepare(`INSERT INTO team_auth_limit_pools(prefix,active_count) VALUES (?,?)
