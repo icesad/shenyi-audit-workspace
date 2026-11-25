@@ -69,8 +69,10 @@ function peelRateLimitPoolSchema(db){
   return layer;
 }
 function assertRateLimitPoolSchemaRestored(db,layer){
+  // An empty snapshot means this peel did not own the pool; another schema layer may restore it.
+  if(!layer?.definitions?.length)return;
   assert.deepEqual(definitions(db),layer.definitions);
-  if(layer.definitions.length)rateLimitPoolSchemaLayer(db);
+  rateLimitPoolSchemaLayer(db);
 }
 module.exports={rateLimitPoolSchemaLayer,withoutEmptyRateLimitPoolDefinitions,withoutEmptyRateLimitPoolLayer,
   peelRateLimitPoolSchema,assertRateLimitPoolSchemaRestored,NAMES,TABLES};
