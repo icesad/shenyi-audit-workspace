@@ -109,8 +109,13 @@ function currentChallengeForBind(db, request, row, now) {
 
 /** Server-only SMS proof, including unknown-owner challenges. Public approval
  * requests return an indistinguishable receipt for unroutable verified phones. */
-export function verifyRecoveryRequestChallenge(db,challengeId,code,pepper,at,{reserve=true}={}){
-  const row=reserve?reserveAttempt(db,challengeId,'reset',at):liveChallenge(db,challengeId,'reset',at);if(!validMac(row,code,pepper))genericChallengeError();
+export function verifyRecoveryRequestChallenge(db,challengeId,code,pepper,at,{reserve=true,requireRemainingAttempt=false}={}){
+  const row=reserve?reserveAttempt(db,challengeId,'reset',at):liveChallenge(db,challengeId,'reset',at);
+  // The preflight must reject an exhausted challenge so an unrecorded source
+  // enters the bounded overflow path. The post-reservation recheck deliberately
+  // keeps the default false: a valid fifth reservation has attempts===5.
+  if(!reserve&&requireRemainingAttempt&&row.attempts>=5)genericChallengeError();
+  if(!validMac(row,code,pepper))genericChallengeError();
   return {row,eligible:!!row.user_id&&samePhoneOwner(db,row,at)&&sameCredential(row,credential(db,row.user_id))};
 }
 

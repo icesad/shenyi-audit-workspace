@@ -34,7 +34,7 @@ export async function handleRecoveryReviewRequest(request,{db,now=Date.now,ident
     // shared overflow budget. A valid proof remains usable even after that
     // budget is exhausted; invalid/unknown proofs are charged before returning.
     try {
-      verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now(),{reserve:false});
+      verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now(),{reserve:false,requireRemainingAttempt:true});
     } catch (error) {
       // Even when the shared overflow budget is exhausted, a wrong SMS code
       // must consume one of the challenge's five proof attempts. Reserve the

@@ -261,11 +261,40 @@ test('full recovery overflow rejection still charges wrong SMS proof attempts be
     assert.equal(attempts(),i,'wrong proof must consume its challenge attempt before overflow returns 429');
   }
   const correct=await post(pool.validAddress,{challengeId:proof.challengeId,code:proof.code});
-  assert.equal(correct.status,400,correct.raw,'a proof with five failed attempts must remain unusable');
+  assert.equal(correct.status,429,correct.raw,'an exhausted proof from an unrecorded source must enter the overflow gate');
   assert.equal(attempts(),5);
   assert.equal(global(),undefined);
   assert.equal(requests(),0);
   assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:overflow'").get().attempts,300);
+  pool.assertUnchanged();
+});
+
+test('full recovery overflow charges an exhausted correct proof before rejecting it',async t=>{
+  const {f,proof,pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  f.db.prepare('UPDATE team_phone_challenges SET attempts=5 WHERE challenge_id=?').run(proof.challengeId);
+  f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)')
+    .run('recovery-request:overflow',f.now,299);
+  const overflow=()=>f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:overflow'").get()?.attempts;
+  const rejected=await post(pool.validAddress);
+  assert.equal(rejected.status,400,rejected.raw);
+  assert.equal(attempts(),5);
+  assert.equal(overflow(),300);
+  assert.equal(global(),undefined);
+  assert.equal(requests(),0);
+  const blocked=await post('203.0.113.243');
+  assert.equal(blocked.status,429,blocked.raw);
+  assert.equal(overflow(),300);
+  pool.assertUnchanged();
+});
+
+test('full recovery source pool permits the final correct proof attempt from attempts four',async t=>{
+  const {f,proof,pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  f.db.prepare('UPDATE team_phone_challenges SET attempts=4 WHERE challenge_id=?').run(proof.challengeId);
+  const accepted=await post(pool.validAddress);
+  assert.equal(accepted.status,201,accepted.raw);
+  assert.equal(attempts(),5);
+  assert.equal(global().attempts,1);
+  assert.equal(requests(),1);
   pool.assertUnchanged();
 });
 
