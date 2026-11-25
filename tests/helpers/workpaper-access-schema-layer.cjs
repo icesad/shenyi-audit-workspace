@@ -11,8 +11,7 @@ const {refundIntakeSchemaLayer,withoutEmptyRefundIntakeDefinitions,peelRefundInt
  assertRefundIntakeSchemaRestored}=require('./billing-refund-intake-schema-layer.cjs');
 const {peelLedgerCheckSchema,assertLedgerCheckSchemaRestored}=require('./ledger-check-schema-peel.cjs');
 const {workpaperDataSchemaLayer,peelWorkpaperDataSchema,dataDefinitions,DATA_TABLES}=require('./workpaper-data-schema-layer.cjs');
-const {rateLimitPoolSchemaLayer,withoutEmptyRateLimitPoolLayer,peelRateLimitPoolSchema,
- assertRateLimitPoolSchemaRestored}=require('./rate-limit-pool-schema-layer.cjs');
+const {rateLimitPoolSchemaLayer,withoutEmptyRateLimitPoolLayer}=require('./rate-limit-pool-schema-layer.cjs');
 const TABLES=Object.freeze(['team_workpaper_access_events','team_workpaper_access_grants']);
 const definitions=db=>withoutEmptyRefundIntakeDefinitions(db,db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name GLOB 'workpaper_access_*' OR name GLOB 'team_workpaper_access_*' ORDER BY type,name").all().map(x=>({...x})));
 function workpaperAccessSchemaLayer(db){
@@ -23,11 +22,11 @@ function workpaperAccessSchemaLayer(db){
 function laterTeamSchemaLayers(db){const ledger=ledgerCheckSchemaLayer(db),workpaper=workpaperAccessSchemaLayer(db),data=workpaperDataSchemaLayer(db),subscription=subscriptionSchemaLayer(db,{allowAbsent:true}),billing=billingSchemaLayer(db,{allowAbsent:true}),seats=seatCapacitySchemaLayer(db,{allowAbsent:true}),orders=seatOrderSchemaLayer(db,{allowAbsent:true}),plans=annualSeatPlanSchemaLayer(db,{allowAbsent:true}),exceptions=paymentExceptionSchemaLayer(db,{allowAbsent:true}),refundIntake=refundIntakeSchemaLayer(db,{allowAbsent:true}),orderClosure=orderClosureSchemaLayer(db,{allowAbsent:true}),rateLimitPool=rateLimitPoolSchemaLayer(db);return{tables:ledger.tables+workpaper.tables+data.tables+subscription.tables+billing.tables+seats.tables+orders.tables+plans.tables+exceptions.tables+refundIntake.tables+orderClosure.tables+rateLimitPool.tables,objects:ledger.objects+workpaper.objects+data.objects+subscription.objects+billing.objects+seats.objects+orders.objects+plans.objects+exceptions.objects+refundIntake.objects+orderClosure.objects+rateLimitPool.objects};}
 function peelLedgerAndWorkpaperSchema(db){
  // Validate every complete empty later layer before the first DROP. Refuse active data.
- laterTeamSchemaLayers(db);const rateLimitPool=peelRateLimitPoolSchema(db),refundIntake=peelRefundIntakeSchema(db),data=peelWorkpaperDataSchema(db),workpaper=definitions(db);
+ laterTeamSchemaLayers(db);const refundIntake=peelRefundIntakeSchema(db),rateLimitPool=refundIntake.orderClosure.rateLimitPool,data=peelWorkpaperDataSchema(db),workpaper=definitions(db);
  for(const row of workpaper.filter(x=>x.type!=='table'))db.exec('DROP '+row.type+' "'+row.name+'"');for(const name of TABLES)db.exec('DROP TABLE "'+name+'"');assert.deepEqual(definitions(db),[]);
  const ledger=peelLedgerCheckSchema(db);return{...ledger,tables:[...ledger.tables,...TABLES,...DATA_TABLES,...rateLimitPool.tableNames],names:[...ledger.names,...workpaper.map(x=>x.name),...data.map(x=>x.name),...rateLimitPool.names],workpaper,data,refundIntake,rateLimitPool};
 }
-function assertLedgerAndWorkpaperSchemaRestored(db,layer){assertRefundIntakeSchemaRestored(db,layer.refundIntake);assertLedgerCheckSchemaRestored(db,layer);assert.deepEqual(definitions(db),layer.workpaper);workpaperAccessSchemaLayer(db);assert.deepEqual(dataDefinitions(db),layer.data);workpaperDataSchemaLayer(db);assertRateLimitPoolSchemaRestored(db,layer.rateLimitPool);}
+function assertLedgerAndWorkpaperSchemaRestored(db,layer){assertRefundIntakeSchemaRestored(db,layer.refundIntake);assertLedgerCheckSchemaRestored(db,layer);assert.deepEqual(definitions(db),layer.workpaper);workpaperAccessSchemaLayer(db);assert.deepEqual(dataDefinitions(db),layer.data);workpaperDataSchemaLayer(db);}
 function withoutEmptyWorkpaperLayer(db,state){
  state=withoutEmptySubscriptionLayer(db,state);
  state=withoutEmptyRateLimitPoolLayer(db,state);
