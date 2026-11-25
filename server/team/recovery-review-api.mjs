@@ -36,9 +36,17 @@ export async function handleRecoveryReviewRequest(request,{db,now=Date.now,ident
     try {
       verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now(),{reserve:false});
     } catch (error) {
+      // Even when the shared overflow budget is exhausted, a wrong SMS code
+      // must consume one of the challenge's five proof attempts. Reserve the
+      // attempt first; only then charge the overflow gate for an unrecorded IP.
+      let proofError=error;
+      try {
+        verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now());
+      } catch (attemptError) {
+        proofError=attemptError;
+      }
       if(!sourceRecorded)transaction(db,()=>consume(db,'recovery-request:overflow',sourceAt,60000,300));
-      verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now());
-      throw error;
+      throw proofError;
     }
 
     return transaction(db,()=>{
