@@ -29,13 +29,14 @@ export async function handleRecoveryReviewRequest(request,{db,now=Date.now,ident
     // sources use a separate small overflow budget so invalid proofs cannot create
     // unbounded database work while the source table is at capacity.
     const sourceRecorded=tryConsumeBounded(db,'recovery-request:ip:','recovery-request:ip:'+digest(clientAddress),sourceAt,60000,60);
-    if(!sourceRecorded)transaction(db,()=>consume(db,'recovery-request:overflow',sourceAt,60000,300));
 
-    // First verify the SMS proof without spending an attempt. If the code itself
-    // is wrong, reserve one attempt and preserve that counter before returning.
+    // Verify the inexpensive, account-bound SMS proof before charging the
+    // shared overflow budget. A valid proof remains usable even after that
+    // budget is exhausted; invalid/unknown proofs are charged before returning.
     try {
       verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now(),{reserve:false});
     } catch (error) {
+      if(!sourceRecorded)transaction(db,()=>consume(db,'recovery-request:overflow',sourceAt,60000,300));
       verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now());
       throw error;
     }
