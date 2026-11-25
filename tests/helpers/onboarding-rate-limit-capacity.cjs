@@ -32,10 +32,14 @@ function fullSourcePool(db, prefix, now) {
   }
   const rows = () => db.prepare(
     'SELECT bucket,window_start,attempts FROM team_auth_limits WHERE bucket>=? AND bucket<? ORDER BY bucket'
-  ).all(prefix, prefix+'\\uFFFF');
+  ).all(prefix, prefix+String.fromCharCode(0xFFFF));
   const before = rows();
   assert.equal(before.length, 10000);
   const fingerprint = digest(JSON.stringify(before));
+  const poolCount=()=>db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix)?.active_count;
+  const memberCount=()=>db.prepare('SELECT COUNT(*) AS n FROM team_auth_limit_pool_buckets WHERE prefix=?').get(prefix).n;
+  assert.equal(poolCount(),10000);
+  assert.equal(memberCount(),10000);
   return {
     blockedAddress, invalidAddress, validAddress,
     assertUnchanged() {
@@ -43,6 +47,8 @@ function fullSourcePool(db, prefix, now) {
       assert.equal(after.length, 10000, 'the active source pool must remain bounded');
       assert.equal(digest(JSON.stringify(after)), fingerprint,
         'full capacity must not evict or reset any active source');
+      assert.equal(poolCount(),10000,'the indexed counter must remain consistent');
+      assert.equal(memberCount(),10000,'pool membership must remain consistent');
     },
   };
 }
