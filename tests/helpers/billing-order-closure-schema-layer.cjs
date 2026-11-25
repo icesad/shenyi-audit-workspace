@@ -1,6 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {createHash}=require('node:crypto');
+const {withoutEmptyRateLimitPoolLayer,peelRateLimitPoolSchema,assertRateLimitPoolSchemaRestored}=
+  require('./rate-limit-pool-schema-layer.cjs');
 
 const TABLES=Object.freeze(['team_billing_annual_close_windows','team_billing_order_closures']);
 const DDL_SHA='396c8542d22201ba43e19324913f67296940a57a8764ef282ca5b324fe94b491';
@@ -35,6 +37,7 @@ function orderClosureSchemaLayer(db,options){
 }
 
 function withoutEmptyOrderClosureLayer(db,state){
+  state=withoutEmptyRateLimitPoolLayer(db,state);
   const layer=assertOrderClosureSchema(db,{allowAbsent:true});
   if(!layer.length)return state;
   const names=new Set(layer.map(row=>row.name));
@@ -44,16 +47,18 @@ function withoutEmptyOrderClosureLayer(db,state){
 }
 
 function peelOrderClosureSchema(db){
+  const rateLimitPool=peelRateLimitPoolSchema(db);
   const layer=assertOrderClosureSchema(db,{allowAbsent:true});
-  if(!layer.length)return {definitions:[],tables:[]};
+  if(!layer.length)return {definitions:[],tables:[...rateLimitPool.tableNames],rateLimitPool};
   for(const row of layer.filter(row=>row.type==='trigger'))db.exec('DROP TRIGGER main."'+row.name+'"');
   for(const name of [...TABLES].reverse())db.exec('DROP TABLE main."'+name+'"');
   assert.deepEqual(definitions(db),[]);
-  return {definitions:layer,tables:[...TABLES]};
+  return {definitions:layer,tables:[...TABLES,...rateLimitPool.tableNames],rateLimitPool};
 }
 
 function assertOrderClosureSchemaRestored(db,layer){
   if(layer?.definitions.length)assert.deepEqual(assertOrderClosureSchema(db),layer.definitions);
+  if(layer?.rateLimitPool)assertRateLimitPoolSchemaRestored(db,layer.rateLimitPool);
 }
 
 module.exports={assertOrderClosureSchema,orderClosureSchemaLayer,withoutEmptyOrderClosureLayer,
