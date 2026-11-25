@@ -204,7 +204,7 @@ test('managed request readiness avoids scanning bounded source-pool members',asy
   const serverId=deviceServerId(db);
   const originalPrepare=db.prepare.bind(db),seen=[];
   db.prepare=function(sql){
-    const normalized=String(sql).replace(/\\s+/g,' ').trim();
+    const normalized=String(sql).replace(/\s+/g,' ').trim();
     seen.push(normalized);
     if(/COUNT\s*\(/i.test(normalized))throw new Error('request readiness must not count source-pool rows');
     if(normalized.includes('team_auth_limit_pool_buckets')&&!normalized.startsWith('PRAGMA')&&!/LIMIT 0$/i.test(normalized))
@@ -212,7 +212,7 @@ test('managed request readiness avoids scanning bounded source-pool members',asy
     return originalPrepare(sql);
   };
   assertManagedDatabaseRequestReady(db,serverId,{reviewedRecovery:true});
-  assert.equal(seen.some(sql=>/COUNT\\s*\\(/i.test(sql)),false);
+  assert.equal(seen.some(sql=>/COUNT\s*\(/i.test(sql)),false);
   db.prepare=originalPrepare;
   assertManagedDatabaseReady(db,serverId,{reviewedRecovery:true});
 });
