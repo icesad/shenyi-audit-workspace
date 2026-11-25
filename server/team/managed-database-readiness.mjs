@@ -90,46 +90,69 @@ export function assertDatabaseIdentity(db, serverId) {
   }
 }
 
-/** Check an already provisioned database without initializing or mutating it. */
-export function assertManagedDatabaseReady(db, serverId, {reviewedRecovery = false, wechatEnabled = false} = {}) {
-  try {
-    if (typeof reviewedRecovery !== 'boolean' || typeof wechatEnabled !== 'boolean' || typeof serverId !== 'string' || !uuid.test(serverId) || db.isTransaction ||
-        db.prepare('PRAGMA foreign_keys').get()?.foreign_keys !== 1) fail();
-    assertDatabaseIdentity(db, serverId);
-    const tables = new Set(db.prepare("SELECT name FROM main.sqlite_schema WHERE type = 'table'").all().map(row => row.name));
-    const requiredColumns = {...essentialColumns, ...(reviewedRecovery ? reviewedRecoveryColumns : {}), ...(wechatEnabled ? wechatColumns : {})};
-    for (const [table, columns] of Object.entries(requiredColumns)) {
-      if (!tables.has(table)) fail();
-      db.prepare(`SELECT ${columns} FROM main.${table} LIMIT 0`).get();
+function assertBoundedPoolExpiryIndex(db) {
+  const indexes=db.prepare('PRAGMA main.index_list(team_auth_limit_pool_buckets)').all();
+  const index=indexes.find(row=>row.name==='team_auth_limit_pool_expiry');
+  if(!index||index.unique!==0||index.partial!==0)fail();
+  const columns=db.prepare('PRAGMA main.index_xinfo(team_auth_limit_pool_expiry)').all()
+    .filter(row=>row.key===1);
+  if(columns.length!==3||columns.map(row=>row.name).join(',')!=='prefix,window_start,bucket'||
+    columns.some(row=>row.desc!==0||row.coll!=='BINARY'))fail();
+}
+
+function assertManagedDatabaseSchemaReady(db, serverId, {reviewedRecovery = false, wechatEnabled = false} = {}) {
+  if (typeof reviewedRecovery !== 'boolean' || typeof wechatEnabled !== 'boolean' ||
+      typeof serverId !== 'string' || !uuid.test(serverId) || db.isTransaction ||
+      db.prepare('PRAGMA foreign_keys').get()?.foreign_keys !== 1) fail();
+  assertDatabaseIdentity(db, serverId);
+  const tables = new Set(db.prepare("SELECT name FROM main.sqlite_schema WHERE type = 'table'").all().map(row => row.name));
+  const requiredColumns = {...essentialColumns, ...(reviewedRecovery ? reviewedRecoveryColumns : {}), ...(wechatEnabled ? wechatColumns : {})};
+  for (const [table, columns] of Object.entries(requiredColumns)) {
+    if (!tables.has(table)) fail();
+    db.prepare(`SELECT ${columns} FROM main.${table} LIMIT 0`).get();
+  }
+
+  // This schema is used by every anonymous identity entry point. Managed
+  // startup is read-only, so reject missing/partial metadata before traffic.
+  assertBoundedPoolExpiryIndex(db);
+  const pools=db.prepare('SELECT prefix,active_count FROM main.team_auth_limit_pools ORDER BY prefix').all();
+  if(pools.length!==BOUNDED_SOURCE_PREFIXES.length)fail();
+  for(let i=0;i<BOUNDED_SOURCE_PREFIXES.length;i++){
+    const prefix=BOUNDED_SOURCE_PREFIXES[i],pool=pools[i];
+    if(pool.prefix!==prefix||!Number.isSafeInteger(pool.active_count)||pool.active_count<0||pool.active_count>10_000)fail();
+  }
+
+  if (reviewedRecovery) {
+    const triggers = new Map(db.prepare("SELECT name, tbl_name FROM main.sqlite_schema WHERE type = 'trigger'").all().map(row => [row.name,row.tbl_name]));
+    for (const [name, table] of Object.entries(reviewedRecoveryTriggers)) {
+      if (triggers.get(name) !== table) fail();
     }
-    // Bounded source admission is used by recovery, SMS, employee onboarding
-    // and first-administrator routes. Managed startup is read-only, so refuse
-    // an old or partially migrated database before accepting any traffic.
-    const expiryIndex=db.prepare(`SELECT 1 FROM main.sqlite_schema
-      WHERE type='index' AND name='team_auth_limit_pool_expiry'
-        AND tbl_name='team_auth_limit_pool_buckets'`).get();
-    if(!expiryIndex)fail();
-    const expiryColumns=db.prepare('PRAGMA main.index_info(team_auth_limit_pool_expiry)').all().map(row=>row.name);
-    if(expiryColumns.join(',')!=='prefix,window_start,bucket')fail();
-    const pools=db.prepare('SELECT prefix,active_count FROM main.team_auth_limit_pools ORDER BY prefix').all();
-    if(pools.length!==BOUNDED_SOURCE_PREFIXES.length)fail();
-    for(let i=0;i<BOUNDED_SOURCE_PREFIXES.length;i++){
-      const prefix=BOUNDED_SOURCE_PREFIXES[i],pool=pools[i];
-      if(pool.prefix!==prefix||!Number.isSafeInteger(pool.active_count)||pool.active_count<0)fail();
+  }
+}
+
+/** Full integrity audit for startup and explicit operator verification only. */
+export function assertManagedDatabaseReady(db, serverId, options = {}) {
+  try {
+    assertManagedDatabaseSchemaReady(db,serverId,options);
+    for(const prefix of BOUNDED_SOURCE_PREFIXES){
+      const upper=prefix+String.fromCharCode(0xFFFF);
+      const pool=db.prepare('SELECT active_count FROM main.team_auth_limit_pools WHERE prefix=?').get(prefix);
       const members=db.prepare('SELECT COUNT(*) AS count FROM main.team_auth_limit_pool_buckets WHERE prefix=?').get(prefix).count;
-      const sourceBuckets=db.prepare('SELECT COUNT(*) AS count FROM main.team_auth_limits WHERE bucket>=? AND bucket<?')
-        .get(prefix,prefix+String.fromCharCode(0xFFFF)).count;
-      if(members!==pool.active_count||sourceBuckets!==pool.active_count)fail();
+      const sourceBuckets=db.prepare('SELECT COUNT(*) AS count FROM main.team_auth_limits WHERE bucket COLLATE BINARY>=? AND bucket COLLATE BINARY<?')
+        .get(prefix,upper).count;
+      const invalidMembers=db.prepare(`SELECT COUNT(*) AS count FROM main.team_auth_limit_pool_buckets
+        WHERE prefix=? AND (bucket COLLATE BINARY<? OR bucket COLLATE BINARY>=?)`).get(prefix,prefix,upper).count;
       const stale=db.prepare(`SELECT COUNT(*) AS count FROM main.team_auth_limit_pool_buckets AS pool
         LEFT JOIN main.team_auth_limits AS limits ON limits.bucket=pool.bucket
         WHERE pool.prefix=? AND (limits.bucket IS NULL OR limits.window_start<>pool.window_start)`).get(prefix).count;
-      if(stale!==0)fail();
+      if(members!==pool.active_count||sourceBuckets!==pool.active_count||invalidMembers!==0||stale!==0)fail();
     }
-    if (reviewedRecovery) {
-      const triggers = new Map(db.prepare("SELECT name, tbl_name FROM main.sqlite_schema WHERE type = 'trigger'").all().map(row => [row.name,row.tbl_name]));
-      for (const [name, table] of Object.entries(reviewedRecoveryTriggers)) {
-        if (triggers.get(name) !== table) fail();
-      }
-    }
+  } catch { fail(); }
+}
+
+/** Constant-size request guard. Full membership reconciliation ran at startup. */
+export function assertManagedDatabaseRequestReady(db, serverId, options = {}) {
+  try {
+    assertManagedDatabaseSchemaReady(db,serverId,options);
   } catch { fail(); }
 }
