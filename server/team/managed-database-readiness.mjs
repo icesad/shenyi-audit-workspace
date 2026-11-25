@@ -60,7 +60,7 @@ const BOUNDED_SOURCE_PREFIXES = Object.freeze([
   'first-administrator:preview:ip:',
   'first-administrator:challenges:ip:',
   'first-administrator:activate:ip:',
-]);
+].sort());
 const wechatColumns = {
   team_wechat_identities: 'app_id, open_id, user_id, created_at',
   team_wechat_transactions: 'transaction_id, state_hash, poll_hash, code_challenge, app_id, redirect_uri, status, expires_at, open_id, user_id, credential_revision',
