@@ -1,5 +1,6 @@
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
-import {authenticated,consume,limitedPasswordWork} from './auth-api.mjs';
+import {isIP} from 'node:net';
+import {authenticated,consume,tryConsumeBounded,assertRateLimitAvailable,limitedPasswordWork} from './auth-api.mjs';
 import {verifyPassword} from './passwords.mjs';
 import {verifyRecoveryRequestChallenge} from './phone-api.mjs';
 import {canReviewRecovery,recoveryAuthority,recoveryTarget,recoveryReviewView,recoveryOwner,reviewedRecovery,reviewedRecoveryAvailable} from './recovery-review-policy.mjs';
@@ -16,14 +17,61 @@ export async function handleRecoveryReviewRequest(request,{db,now=Date.now,ident
   if(capability){if(request.method!=='GET')return method('GET');return json({reviewed:reviewedRecovery(identityProviders),available:reviewedRecoveryAvailable(identityProviders)});}
   if(create){
     if(request.method!=='POST')return method('POST');if(!reviewedRecoveryAvailable(identityProviders))unavailable();
-    consume(db,'recovery-request:global',now(),60000,60);
-    const body=await readJson(request,['challengeId','code']);if(typeof body.challengeId!=='string'||!ID.test(body.challengeId)||typeof body.code!=='string'||!/^\d{6}$/.test(body.code))invalid();
-    verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now());
+    // Reject malformed bodies before consuming any anonymous rate-limit budget.
+    const body=await readJson(request,['challengeId','code']);
+    if(typeof body.challengeId!=='string'||!ID.test(body.challengeId)||typeof body.code!=='string'||!/^\d{6}$/.test(body.code))invalid();
+    // The edge proxy overwrites this header with the observed client address.
+    const suppliedAddress=request.headers.get('x-shenyi-client-ip')||'local';
+    const clientAddress=isIP(suppliedAddress)?suppliedAddress.toLowerCase():'local';
+    const sourceAt=now();
+    // A full source pool must not deny a new legitimate source before SMS proof
+    // validation. Existing sources still enforce their 60-request limit. Unstored
+    // sources use a separate small overflow budget so invalid proofs cannot create
+    // unbounded database work while the source table is at capacity.
+    const sourceRecorded=tryConsumeBounded(db,'recovery-request:ip:','recovery-request:ip:'+digest(clientAddress),sourceAt,60000,60);
+
+    // Verify the inexpensive, account-bound SMS proof before charging the
+    // shared overflow budget. A valid proof remains usable even after that
+    // budget is exhausted; invalid/unknown proofs are charged before returning.
+    try {
+      verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now(),{reserve:false,requireRemainingAttempt:true});
+    } catch (error) {
+      // Even when the shared overflow budget is exhausted, a wrong SMS code
+      // must consume one of the challenge's five proof attempts. Reserve the
+      // attempt first; only then charge the overflow gate for an unrecorded IP.
+      let proofError=error;
+      try {
+        verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now());
+      } catch (attemptError) {
+        proofError=attemptError;
+      }
+      if(!sourceRecorded)transaction(db,()=>consume(db,'recovery-request:overflow',sourceAt,60000,300));
+      throw proofError;
+    }
+
     return transaction(db,()=>{
-      // Verification reserves an attempt outside the write transaction. Recheck
-      // the live challenge at the actual insert time without spending it twice.
-      const at=now(),{row,eligible}=verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,at,{reserve:false});
-      const existing=db.prepare('SELECT * FROM team_recovery_requests WHERE challenge_id=?').get(row.challenge_id);if(existing)return json(receipt(existing),201);
+      const existing=db.prepare('SELECT * FROM team_recovery_requests WHERE challenge_id=?').get(body.challengeId);
+      if(existing){
+        // Keep the historical behavior for an idempotent repeat: validate the
+        // same proof and account for an attempt, but do not spend global budget.
+        verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,now());
+        return json(receipt(existing),201);
+      }
+
+      // Check shared capacity before reserving the SMS attempt. Since this and
+      // the later consume() run in one IMMEDIATE transaction, another writer
+      // cannot fill the budget between the check and the consume.
+      const at=now();
+      assertRateLimitAvailable(db,'recovery-request:global',at,60000,60);
+
+      // Reserve the valid proof attempt only after capacity is known to exist.
+      const reserved=verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,at);
+      // Recheck expiry and binding at the insert boundary using the same
+      // server timestamp as the shared-budget check and consume().
+      const {row,eligible}=verifyRecoveryRequestChallenge(db,body.challengeId,body.code,identityProviders.phonePepper,at,{reserve:false});
+      if(row.challenge_id!==reserved.row.challenge_id)throw new ApiError(400,'INVALID_CHALLENGE','验证请求无效或已失效，请重新验证。');
+
+      consume(db,'recovery-request:global',at,60000,60);
       const target=eligible?recoveryTarget(db,row.user_id,at):null,id=randomUUID();
       db.prepare(`INSERT INTO team_recovery_requests(request_id,challenge_id,target_user_id,team_id,target_kind,target_stamp,status,created_at,expires_at)
         VALUES (?,?,?,?,?,?,'pending',?,?)`).run(id,row.challenge_id,target?.userId??null,target?.teamId??null,target?.kind??null,target?.stamp??null,at,row.expires_at);

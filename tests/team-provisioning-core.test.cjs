@@ -193,6 +193,8 @@ test('invalid anonymous first-administrator requests cannot exhaust another sour
       const r=await call(f,FIRST+'/'+action,{token:null,body:{invitationCode:invalidCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[0]}});
       assert.equal(r.status,404,action+': '+r.raw);
     }
+    const limited=await call(f,FIRST+'/'+action,{body:{invitationCode:invalidCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[0]}});
+    assert.equal(limited.status,429,action+': '+limited.raw);
     assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limits WHERE bucket=?').get('first-administrator:'+action+':global').n,0);
     if(action==='preview'){
       const valid=await call(f,FIRST+'/preview',{token:null,body:{invitationCode:ticket.invitationCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[1]}});
@@ -208,27 +210,110 @@ test('invalid anonymous first-administrator requests cannot exhaust another sour
     const r=await call(f,FIRST+'/activate',{token:null,body:{...activationBody,invitationCode:invalidCode},headers:{'X-Shenyi-Client-IP':sources[0]}});
     assert.equal(r.status,404);
   }
+  const limited=await call(f,FIRST+'/'+'activate',{body:{...activationBody,invitationCode:invalidCode},headers:{'X-Shenyi-Client-IP':sources[0]}});
+  assert.equal(limited.status,429,limited.raw);
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limits WHERE bucket=?').get('first-administrator:activate:global').n,0);
   const valid=await call(f,FIRST+'/activate',{token:null,body:activationBody,headers:{'X-Shenyi-Client-IP':sources[1]}});
   assert.equal(valid.status,200,valid.raw);
 });
 
 
-test('anonymous onboarding source buckets reclaim expired rows and enforce a hard capacity',async t=>{
+test('anonymous onboarding source buckets reclaim expired rows in bounded indexed batches and enforce a hard capacity',async t=>{
   const f=await fixture(t),{consumeBounded}=await load('auth-api.mjs');
   const prefix='first-administrator:challenges:ip:',now=f.now;
   const insert=f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)');
-  for(let i=0;i<10000;i++)insert.run(prefix+'old-'+String(i).padStart(5,'0'),i===0?now-60000:now-120000,1);
-  consumeBounded(f.db,prefix,prefix+'fresh-source',now,60000,60,10000);
-  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM team_auth_limits WHERE substr(bucket,1,length(?))=?').get(prefix,prefix).n,1);
-  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(prefix+'fresh-source').attempts,1);
-  for(let i=0;i<9999;i++)insert.run(prefix+'active-'+String(i).padStart(5,'0'),now,1);
+  const membership=f.db.prepare('INSERT INTO team_auth_limit_pool_buckets(prefix,bucket,window_start) VALUES (?,?,?)');
+  for(let i=0;i<10000;i++){
+    const bucket=prefix+'old-'+String(i).padStart(5,'0'),windowStart=i===0?now-60000:now-120000;
+    insert.run(bucket,windowStart,1);membership.run(prefix,bucket,windowStart);
+  }
+  f.db.prepare('UPDATE team_auth_limit_pools SET active_count=10000 WHERE prefix=?').run(prefix);
+  for(let i=0;i<40;i++)consumeBounded(f.db,prefix,prefix+'fresh-source-'+i,now,60000,60,10000);
+  const sourceCount=()=>f.db.prepare('SELECT COUNT(*) AS n FROM team_auth_limits WHERE bucket>=? AND bucket<?').get(prefix,prefix+String.fromCharCode(0xFFFF)).n;
+  assert.equal(sourceCount(),40,'bounded cleanup drains expired entries over multiple requests');
+  assert.equal(f.db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count,40);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(prefix+'fresh-source-39').attempts,1);
+  for(let i=0;i<9960;i++){
+    const bucket=prefix+'active-'+String(i).padStart(5,'0');
+    insert.run(bucket,now,1);membership.run(prefix,bucket,now);
+  }
+  f.db.prepare('UPDATE team_auth_limit_pools SET active_count=10000 WHERE prefix=?').run(prefix);
   const protectedBucket=prefix+'active-00000';
   f.db.prepare('UPDATE team_auth_limits SET attempts=59 WHERE bucket=?').run(protectedBucket);
   consumeBounded(f.db,prefix,protectedBucket,now,60000,60,10000);
   assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(protectedBucket).attempts,60);
-  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM team_auth_limits WHERE substr(bucket,1,length(?))=?').get(prefix,prefix).n,10000);
+  assert.equal(sourceCount(),10000);
   assert.throws(()=>consumeBounded(f.db,prefix,prefix+'new-source-at-capacity',now,60000,60,10000));
   assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(protectedBucket).attempts,60);
-  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM team_auth_limits WHERE substr(bucket,1,length(?))=?').get(prefix,prefix).n,10000);
+  assert.equal(sourceCount(),10000);
+  assert.equal(f.db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count,10000);
+});
+
+test('first-administrator onboarding accepts valid tickets from new sources when anonymous source storage is full',async t=>{
+  const {fullSourcePool}=require('./helpers/onboarding-rate-limit-capacity.cjs');
+  for(const action of ['preview','challenges','activate']){
+    await t.test(action,async t=>{
+      const f=await fixture(t);
+      const approved=await approve(f),invitation={invitationCode:approved.invitationCode};
+      const proof=action==='activate'?await challenge(f,invitation):null;
+      const body=proof?payload(invitation,proof):{invitationCode:invitation.invitationCode,phone:PHONE};
+      const prefix='first-administrator:'+action+':ip:',global='first-administrator:'+action+':global';
+      const pool=fullSourcePool(f.db,prefix,f.now);
+      const route=FIRST+'/'+action;
+      const request=(address,value)=>call(f,route,{body:value,headers:{'X-Shenyi-Client-IP':address}});
+      const businessBudget=()=>JSON.stringify(f.db.prepare(
+        'SELECT bucket,window_start,attempts FROM team_auth_limits WHERE substr(bucket,1,length(?))<>? AND bucket<>? ORDER BY bucket'
+      ).all(prefix,prefix,'first-administrator:'+action+':overflow'));
+      const beforeBudget=businessBudget(),beforeMessages=f.sent.length;
+      const invalid=await request(pool.invalidAddress,{...body,invitationCode:randomBytes(32).toString('base64url')});
+      assert.ok([404,429].includes(invalid.status),invalid.raw);
+      assert.equal(businessBudget(),beforeBudget,'invalid tickets must not spend shared business or SMS budgets');
+      assert.equal(f.sent.length,beforeMessages,'invalid tickets must not send SMS');
+      pool.assertUnchanged();
+
+      // A source that has already spent its 60 attempts must not acquire a
+      // fresh allowance by presenting a valid ticket at the capacity boundary.
+      const limited=await request(pool.blockedAddress,body);
+      assert.equal(limited.status,429,limited.raw);
+      assert.equal(businessBudget(),beforeBudget);
+      pool.assertUnchanged();
+
+      const valid=await request(pool.validAddress,body);
+      assert.equal(valid.status,action==='challenges'?202:200,valid.raw);
+      assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(global).attempts,1);
+      assert.equal(f.sent.length,beforeMessages+(action==='challenges'?1:0));
+      pool.assertUnchanged();
+    });
+  }
+});
+
+
+test('first-administrator onboarding bounds invalid ticket validation but preserves valid tickets after overflow exhaustion',async t=>{
+  const {fullSourcePool}=require('./helpers/onboarding-rate-limit-capacity.cjs');
+  const f=await fixture(t),approved=await approve(f),prefix='first-administrator:preview:ip:';
+  const pool=fullSourcePool(f.db,prefix,f.now),invalidCode=randomBytes(32).toString('base64url');
+  for(let i=0;i<300;i++){
+    const address='198.51.'+Math.floor(i/250)+'.'+(i%250+1);
+    const response=await call(f,FIRST+'/preview',{
+      body:{invitationCode:invalidCode,phone:PHONE},
+      headers:{'X-Shenyi-Client-IP':address},
+    });
+    assert.equal(response.status,404,response.raw);
+  }
+  const blocked=await call(f,FIRST+'/preview',{
+    body:{invitationCode:invalidCode,phone:PHONE},
+    headers:{'X-Shenyi-Client-IP':'198.51.2.1'},
+  });
+  assert.equal(blocked.status,429,blocked.raw);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='first-administrator:preview:overflow'").get().attempts,300);
+  assert.equal(f.db.prepare("SELECT 1 FROM team_auth_limits WHERE bucket='first-administrator:preview:global'").get(),undefined);
+  assert.equal(f.sent.length,0);
+  const valid=await call(f,FIRST+'/preview',{
+    body:{invitationCode:approved.invitationCode,phone:PHONE},
+    headers:{'X-Shenyi-Client-IP':'198.51.2.2'},
+  });
+  assert.equal(valid.status,200,valid.raw);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='first-administrator:preview:global'").get().attempts,1);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='first-administrator:preview:overflow'").get().attempts,300);
+  pool.assertUnchanged();
 });

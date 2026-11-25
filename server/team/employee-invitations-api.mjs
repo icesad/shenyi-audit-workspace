@@ -5,7 +5,7 @@ import {captureSeatAdmission} from './seat-capacity-policy.mjs';
 /** Invite-only activation experiment. SMS adapters are explicit, server-side
  * injections; no real sending, public signup or team creation is bundled. */
 import {createHash,createHmac,randomBytes,randomInt,randomUUID,timingSafeEqual} from 'node:crypto';
-import {authenticated,consume,consumeBounded,limitedPasswordWork} from './auth-api.mjs';
+import {authenticated,consume,tryConsumeBounded,limitedPasswordWork} from './auth-api.mjs';
 import {normalizePhone} from './phone-api.mjs';
 import {hashPassword,verifyPassword,validPassword} from './passwords.mjs';
 import {canOperateTeam,hasAffiliation} from './administration-policy.mjs';
@@ -190,12 +190,20 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
   if(request.method!=='POST')return json({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'POST'});
   const fields=action==='activate'?['invitationCode','phone','challengeId','code','password','displayName','accept']:['invitationCode','phone'];
   const body=await readJson(request,fields),phone=normalizePhone(body.phone);
-  // Anonymous traffic is isolated by the trusted edge address before checking the invitation.
-  // The shared business budget is spent only after a live invitation is proven.
+  // Existing source quotas still reject before ticket validation. At storage
+  // capacity only, allow the bounded read-only liveInvitation lookup below;
+  // it must succeed before global/SMS/KDF work. The edge also limits in-flight
+  // validation and per-IP bursts without a shared anonymous minute budget.
   const suppliedAddress=request.headers.get('x-shenyi-client-ip')||'local';
   const clientAddress=isIP(suppliedAddress)?suppliedAddress.toLowerCase():'local';
-  consumeBounded(db,'onboarding:'+action+':ip:','onboarding:'+action+':ip:'+digest(clientAddress),now(),60000,60);
-  const invitation=liveInvitation(db,body.invitationCode,phone,now());
+  const sourceAt=now();
+  const sourceRecorded=tryConsumeBounded(db,'onboarding:'+action+':ip:','onboarding:'+action+':ip:'+digest(clientAddress),sourceAt,60000,60);
+  let invitation;
+  try { invitation=liveInvitation(db,body.invitationCode,phone,now()); }
+  catch(error) {
+    if(!sourceRecorded)transaction(db,()=>consume(db,'onboarding:'+action+':overflow',sourceAt,60000,300));
+    throw error;
+  }
   consume(db,'onboarding:'+action+':global',now(),60000,60);
   if(action==='preview')return json(publicInvitation(invitation));
   const {sms,pepper}=smsProvider(identityProviders);
