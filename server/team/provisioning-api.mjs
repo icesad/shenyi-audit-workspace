@@ -156,8 +156,12 @@ export async function handleTeamProvisioningRequest(request,{db,now=Date.now,ide
   const clientAddress=isIP(suppliedAddress)?suppliedAddress.toLowerCase():'local';
   const sourceAt=now();
   const sourceRecorded=tryConsumeBounded(db,'first-administrator:'+action+':ip:','first-administrator:'+action+':ip:'+digest(clientAddress),sourceAt,60000,60);
-  if(!sourceRecorded)transaction(db,()=>consume(db,'first-administrator:'+action+':overflow',sourceAt,60000,300));
-  const ticket=liveTicket(db,body.invitationCode,phone,now());
+  let ticket;
+  try { ticket=liveTicket(db,body.invitationCode,phone,now()); }
+  catch(error) {
+    if(!sourceRecorded)transaction(db,()=>consume(db,'first-administrator:'+action+':overflow',sourceAt,60000,300));
+    throw error;
+  }
   consume(db,'first-administrator:'+action+':global',now(),60000,60);
   if(action==='preview')return json({teamId:ticket.team_id,teamName:ticket.team_name,phoneMasked:mask(phone),expiresAt:ticket.expires_at});
   if(!onboardingAvailable(identityProviders))throw new ApiError(503,'SMS_UNAVAILABLE','手机号验证服务尚未开通。');
