@@ -229,7 +229,7 @@ test('anonymous onboarding source buckets reclaim expired rows in bounded indexe
   }
   f.db.prepare('UPDATE team_auth_limit_pools SET active_count=10000 WHERE prefix=?').run(prefix);
   for(let i=0;i<40;i++)consumeBounded(f.db,prefix,prefix+'fresh-source-'+i,now,60000,60,10000);
-  const sourceCount=()=>f.db.prepare('SELECT COUNT(*) AS n FROM team_auth_limits WHERE bucket>=? AND bucket<?').get(prefix,prefix+'\\uFFFF').n;
+  const sourceCount=()=>f.db.prepare('SELECT COUNT(*) AS n FROM team_auth_limits WHERE bucket>=? AND bucket<?').get(prefix,prefix+String.fromCharCode(0xFFFF)).n;
   assert.equal(sourceCount(),40,'bounded cleanup drains expired entries over multiple requests');
   assert.equal(f.db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count,40);
   assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(prefix+'fresh-source-39').attempts,1);
