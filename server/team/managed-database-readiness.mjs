@@ -105,13 +105,21 @@ export function assertManagedDatabaseReady(db, serverId, {reviewedRecovery = fal
     // Bounded source admission is used by recovery, SMS, employee onboarding
     // and first-administrator routes. Managed startup is read-only, so refuse
     // an old or partially migrated database before accepting any traffic.
+    const expiryIndex=db.prepare(`SELECT 1 FROM main.sqlite_schema
+      WHERE type='index' AND name='team_auth_limit_pool_expiry'
+        AND tbl_name='team_auth_limit_pool_buckets'`).get();
+    if(!expiryIndex)fail();
+    const expiryColumns=db.prepare('PRAGMA main.index_info(team_auth_limit_pool_expiry)').all().map(row=>row.name);
+    if(expiryColumns.join(',')!=='prefix,window_start,bucket')fail();
     const pools=db.prepare('SELECT prefix,active_count FROM main.team_auth_limit_pools ORDER BY prefix').all();
     if(pools.length!==BOUNDED_SOURCE_PREFIXES.length)fail();
     for(let i=0;i<BOUNDED_SOURCE_PREFIXES.length;i++){
       const prefix=BOUNDED_SOURCE_PREFIXES[i],pool=pools[i];
       if(pool.prefix!==prefix||!Number.isSafeInteger(pool.active_count)||pool.active_count<0)fail();
       const members=db.prepare('SELECT COUNT(*) AS count FROM main.team_auth_limit_pool_buckets WHERE prefix=?').get(prefix).count;
-      if(members!==pool.active_count)fail();
+      const sourceBuckets=db.prepare('SELECT COUNT(*) AS count FROM main.team_auth_limits WHERE bucket>=? AND bucket<?')
+        .get(prefix,prefix+String.fromCharCode(0xFFFF)).count;
+      if(members!==pool.active_count||sourceBuckets!==pool.active_count)fail();
       const stale=db.prepare(`SELECT COUNT(*) AS count FROM main.team_auth_limit_pool_buckets AS pool
         LEFT JOIN main.team_auth_limits AS limits ON limits.bucket=pool.bucket
         WHERE pool.prefix=? AND (limits.bucket IS NULL OR limits.window_start<>pool.window_start)`).get(prefix).count;
