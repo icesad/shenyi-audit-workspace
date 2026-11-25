@@ -19,7 +19,8 @@ const excludedRoutes = ['/api/auth/methods',
   '/api/billing/simulation/notifications', '/api/billing/simulation/payment-exceptions', '/api/billing/simulation/order-closures',
   '/api/website-checkout/context', '/api/website-checkout/orders', '/api/website-checkout/seat-context',
   '/api/website-checkout/seat-quote', '/api/website-checkout/seat-orders',
-  '/ready', '/health', '/index.html', '/download', '/download/Shenyi.exe'];
+  '/ready', '/health', '/index.html', '/download', '/download/Shenyi.exe', '/downloads/shenyi-windows-x64.msi',
+  '/downloads/shenyi-windows-setup.exe'];
 const assets = [
   {route:'/', file:'index.html', contentType:'text/html; charset=utf-8', source:'website/index.html'},
   {route:'/styles.css', file:'styles.css', contentType:'text/css; charset=utf-8', source:'website/styles.css'},
@@ -195,6 +196,29 @@ test('a baseline generated from staged files verifies the same publication over 
   assert.equal(result.verdict.status, 'verified');
   assert.equal(result.verdict.sourceCommit, sourceCommit);
   assert.deepEqual(f.requests.map(request => request.route).sort(), routes);
+});
+
+for (const [route, mode] of [
+  ['/downloads/shenyi-windows-x64.msi', 'windows-managed-download'],
+  ['/downloads/shenyi-windows-setup.exe', 'windows-customer-download'],
+]) test(mode + ' verifies installer bytes and forbids redirects and altered downloads', async t => {
+  const f = await fixture(t);
+  const bytes = Buffer.from('test managed release');
+  const manifest = { ...f.baselineData, mode, assets:[...f.baselineData.assets,
+    {route, file:route.slice(1), sha256:sha256(bytes), bytes:bytes.length}] };
+  const encoded = Buffer.from(JSON.stringify(manifest));
+  const baseline = await f.write('download-baseline.json', encoded);
+  const options = {baseline, digest:sha256(encoded)};
+  const response = {status:200, contentType:'application/octet-stream', bytes};
+  f.changes.set(route, response);
+  const verified = await run(f, options);
+  assert.equal(verified.verdict.mode, mode);
+  assert.equal(verified.exitCode, 0);
+  f.changes.set(route, {...response, bytes:Buffer.alloc(bytes.length)});
+  checkFailure(await run(f, options), {route, code:'BODY_DIGEST_MISMATCH'});
+  f.changes.set(route, {...response, status:302, location:'/redirected-installer'});
+  checkFailure(await run(f, options), {route, code:'ASSET_STATUS_MISMATCH'});
+  assert.ok(!f.requests.some(row => row.route === '/redirected-installer'));
 });
 
 test('baseline generation refuses invalid commit IDs', async t => {

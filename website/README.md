@@ -2,6 +2,8 @@
 
 官网展示资料采集流程、团队权限、已确认的年订阅与席位规则、桌面版本状态和常见问题。工作台画面是页面原生排版的合成界面示意。品牌标识使用桌面版沿用的原始文件。
 
+首发官网为 `shenji.vip`。Windows 优先，macOS 属于后续阶段。备案在审时用下方本机预览。正式开站、启用客户下载与回退的操作见[阿里云官网上线手册](../docs/SHENJI_VIP_WINDOWS_LAUNCH.md)。
+
 ## 本机查看
 
 Windows 可双击根目录的 [Start-Website-Preview.cmd](../Start-Website-Preview.cmd)。打开终端显示的 `http://127.0.0.1:<port>/`。关闭命令窗口或按 `Ctrl+C` 即停止服务。使用仓库源码时，也可在仓库根目录运行下列命令。
@@ -56,4 +58,4 @@ Windows 双人评审包完整解压后，双击 [Start-Team-Website-Checkout-Can
 
 本机审阅时，可对照四角色采集演练和合成账务验收核对官网说法。 [采集演练](../docs/TEAM_PILOT_REHEARSAL.md) · [账务验收](../docs/M5_LOCAL_ACCEPTANCE.md)
 
-正式订单与付款集中在官网，客户端打开对应订单页。正式发布前，仍须核对 macOS 实机、签名安装、账号及订单入口、价格与退款条款、运营主体及国内上线手续。试点条件以及双方负责的评审事项见随包评审单。 [双人评审单](../docs/PILOT_OWNER_REVIEW.md)
+正式订单与付款集中在官网，客户端打开对应订单页。Windows 正式下载前须核对签名安装、升级及数据恢复。正式收款另行核对订单入口、价格与退款条款；macOS 实机验收归后续 macOS 发布。试点条件以及双方负责的评审事项见随包评审单。 [双人评审单](../docs/PILOT_OWNER_REVIEW.md)

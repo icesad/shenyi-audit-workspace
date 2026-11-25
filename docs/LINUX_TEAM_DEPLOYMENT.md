@@ -84,7 +84,7 @@ node scripts/linux-release-signature.mjs sign \
 
 ### 官网静态站与团队 API 并行部署
 
-在官网发布范围和 HTTPS 主机名获准后，把 `www.shenyi.example` 换成已批准的官网域名。团队 API 使用独立的 `team.shenyi.example` 和证书。两处模板均核对 TLS SNI 和 HTTP Host，请求使用各自的规范域名和默认 HTTPS 端口。两份配置在同一 `http` 块中加载，保留团队模板中的一个默认 443 虚拟主机。 [官网 Nginx 配置](../deploy/linux/nginx-shenyi-website.conf) · [Nginx 虚拟主机选择](https://nginx.org/en/docs/http/server_names.html#virtual_server_selection)
+首发官网域名为 `shenji.vip`。[阿里云官网上线手册](SHENJI_VIP_WINDOWS_LAUNCH.md)给出备案后开站、开放客户下载和回退步骤。下文的三文件示例用于隔离的静态站演练。团队 API 使用独立的 `team.shenyi.example` 和证书。两处模板均核对 TLS SNI 和 HTTP Host，请求使用各自的规范域名和默认 HTTPS 端口。两份配置在同一 `http` 块中加载，保留团队模板中的一个默认 443 虚拟主机。 [官网 Nginx 配置](../deploy/linux/nginx-shenyi-website.conf) · [Nginx 虚拟主机选择](https://nginx.org/en/docs/http/server_names.html#virtual_server_selection)
 
 在内容与获准提交一致的干净工作区中，用 Node 24 构建官网。`$release` 使用完整的 Git 提交 ID，`$release_dir` 使用仓库外发布目录的绝对真实路径，路径各级均使用实际目录。将静态目录、安装校验清单和 HTTPS 核验基线作为同一批候选交接，两份清单均放在站点根之外。
 
@@ -133,7 +133,7 @@ check_status=0
 printf "Exit status %s\n" "$check_status"
 ```
 
-退出码为 0 且 JSON 的 `status` 为 `verified` 表示三个静态文件通过内容与响应校验，17 个匿名 GET 检查均返回 404。检查包括三个合成下单页面路径、下文的八个支付演练 API、`/api/auth/methods`、`/ready`、`/health`、`/index.html`、`/download` 和 `/download/Shenyi.exe`。拒绝路径的回执只记录状态及 TLS 证书指纹等元数据。`CHECKOUT_STATUS_MISMATCH` 表示下单页面响应异常，`EXCLUDED_ROUTE_STATUS_MISMATCH` 表示其他受限路径的响应异常。20 项检查分四批，每批最多并行六次请求，每次请求最长等待五秒。
+无安装包模式下，退出码为 0 且 JSON 的 `status` 为 `verified` 表示三个静态文件通过内容与响应校验，受限路径均返回 404。检查包括三个合成下单页面路径、下文的八个支付演练 API、`/api/auth/methods`、`/ready`、`/health`、`/index.html`、`/download` 和 `/download/Shenyi.exe`。拒绝路径的回执只记录状态及 TLS 证书指纹等元数据。`CHECKOUT_STATUS_MISMATCH` 表示下单页面响应异常，`EXCLUDED_ROUTE_STATUS_MISMATCH` 表示其他受限路径的响应异常。核验另覆盖受控下载路径，按发布模式检查拒绝或回读文件。
 
 在实际环境按[一次性上线检查](#一次性上线检查)核对团队 API 的边缘和后端 HTTPS 及实例标识，并记录工作站的页面资源加载结果。官网不缓存当前文件，访问日志只含时间、请求编号、方法、状态、响应字节数和耗时。错误日志按团队部署的读取权限和保留规则管理。静态模板上线的许可与商户、登录和下载入口另行验收。
 
