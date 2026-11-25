@@ -179,6 +179,9 @@ test('managed readiness rejects missing or inconsistent bounded source-pool meta
   // row, but swap the membership rows across prefixes. Prefix reconciliation
   // must reject this or recovery expiry could delete a live SMS source row.
   const at=Date.now(),recoveryPrefix='recovery-request:ip:',smsPrefix='sms:source:';
+  db.prepare('DELETE FROM team_auth_limits WHERE bucket=?').run(recoveryPrefix+'orphan');
+  db.prepare('DELETE FROM team_auth_limit_pool_buckets WHERE prefix=?').run(recoveryPrefix);
+  db.prepare('UPDATE team_auth_limit_pools SET active_count=0 WHERE prefix=?').run(recoveryPrefix);
   const recoveryBucket=recoveryPrefix+'real-source',smsBucket=smsPrefix+'real-source';
   const insertLimit=db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)');
   insertLimit.run(recoveryBucket,at,1);insertLimit.run(smsBucket,at,1);
