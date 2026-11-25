@@ -11,7 +11,8 @@ const {refundIntakeSchemaLayer,withoutEmptyRefundIntakeDefinitions,peelRefundInt
  assertRefundIntakeSchemaRestored}=require('./billing-refund-intake-schema-layer.cjs');
 const {peelLedgerCheckSchema,assertLedgerCheckSchemaRestored}=require('./ledger-check-schema-peel.cjs');
 const {workpaperDataSchemaLayer,peelWorkpaperDataSchema,dataDefinitions,DATA_TABLES}=require('./workpaper-data-schema-layer.cjs');
-const {rateLimitPoolSchemaLayer,peelRateLimitPoolSchema,assertRateLimitPoolSchemaRestored}=require('./rate-limit-pool-schema-layer.cjs');
+const {rateLimitPoolSchemaLayer,withoutEmptyRateLimitPoolLayer,peelRateLimitPoolSchema,
+ assertRateLimitPoolSchemaRestored}=require('./rate-limit-pool-schema-layer.cjs');
 const TABLES=Object.freeze(['team_workpaper_access_events','team_workpaper_access_grants']);
 const definitions=db=>withoutEmptyRefundIntakeDefinitions(db,db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name GLOB 'workpaper_access_*' OR name GLOB 'team_workpaper_access_*' ORDER BY type,name").all().map(x=>({...x})));
 function workpaperAccessSchemaLayer(db){
@@ -29,10 +30,11 @@ function peelLedgerAndWorkpaperSchema(db){
 function assertLedgerAndWorkpaperSchemaRestored(db,layer){assertRefundIntakeSchemaRestored(db,layer.refundIntake);assertLedgerCheckSchemaRestored(db,layer);assert.deepEqual(definitions(db),layer.workpaper);workpaperAccessSchemaLayer(db);assert.deepEqual(dataDefinitions(db),layer.data);workpaperDataSchemaLayer(db);assertRateLimitPoolSchemaRestored(db,layer.rateLimitPool);}
 function withoutEmptyWorkpaperLayer(db,state){
  state=withoutEmptySubscriptionLayer(db,state);
- const rows=definitions(db),data=dataDefinitions(db),rateLimitPool=rateLimitPoolSchemaLayer(db);
- if(!rows.length&&!data.length&&!rateLimitPool.definitions.length)return state;
+ state=withoutEmptyRateLimitPoolLayer(db,state);
+ const rows=definitions(db),data=dataDefinitions(db);
+ if(!rows.length&&!data.length)return state;
  workpaperAccessSchemaLayer(db);workpaperDataSchemaLayer(db);
- const names=new Set([...rows,...data,...rateLimitPool.definitions].map(x=>x.name));
- return{...state,definitions:state.definitions.filter(x=>!names.has(x.name)),tables:state.tables.filter(x=>![...TABLES,...DATA_TABLES,...rateLimitPool.tableNames].includes(x.name))};
+ const names=new Set([...rows,...data].map(x=>x.name));
+ return{...state,definitions:state.definitions.filter(x=>!names.has(x.name)),tables:state.tables.filter(x=>![...TABLES,...DATA_TABLES].includes(x.name))};
 }
 module.exports={withoutEmptyWorkpaperLayer,workpaperAccessSchemaLayer,laterTeamSchemaLayers,peelLedgerAndWorkpaperSchema,assertLedgerAndWorkpaperSchemaRestored};
