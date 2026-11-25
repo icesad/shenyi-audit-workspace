@@ -47,8 +47,8 @@ function withoutEmptyOrderClosureLayer(db,state){
 }
 
 function peelOrderClosureSchema(db){
-  const rateLimitPool=peelRateLimitPoolSchema(db);
   const layer=assertOrderClosureSchema(db,{allowAbsent:true});
+  const rateLimitPool=peelRateLimitPoolSchema(db);
   if(!layer.length)return {definitions:[],tables:[...rateLimitPool.tableNames],rateLimitPool};
   for(const row of layer.filter(row=>row.type==='trigger'))db.exec('DROP TRIGGER main."'+row.name+'"');
   for(const name of [...TABLES].reverse())db.exec('DROP TABLE main."'+name+'"');
