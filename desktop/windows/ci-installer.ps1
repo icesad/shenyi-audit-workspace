@@ -8,9 +8,23 @@ function Assert-That($Condition, [string] $Message) {
     if (-not $Condition) { throw $Message }
 }
 
+function Write-Step([string] $Message) {
+    [IO.File]::AppendAllText($script:acceptanceLog, ([DateTime]::UtcNow.ToString('u') + ' ' + $Message + [Environment]::NewLine))
+}
+
+function Wait-Child($Process, [int] $Seconds, [string] $Stage) {
+    $null = $Process.Handle
+    if (-not $Process.WaitForExit($Seconds * 1000)) {
+        & "$env:SystemRoot\System32\taskkill.exe" /PID $Process.Id /T /F | Out-Null
+        throw "$Stage exceeded $Seconds seconds."
+    }
+    Assert-That ($Process.ExitCode -eq 0) "$Stage exited $($Process.ExitCode)."
+}
+
 function Invoke-Setup([string] $Exe) {
-    $process = Start-Process -FilePath $Exe -ArgumentList '/S' -WindowStyle Hidden -PassThru -Wait
-    Assert-That ($process.ExitCode -eq 0) "Installer exited $($process.ExitCode): $Exe"
+    Write-Step "Running $Exe /S"
+    $process = Start-Process -FilePath $Exe -ArgumentList '/S' -WindowStyle Hidden -PassThru
+    Wait-Child $process 100 $Exe
 }
 
 function Wait-For([scriptblock] $Check, [string] $Message) {
@@ -23,11 +37,12 @@ function Wait-For([scriptblock] $Check, [string] $Message) {
 
 function Get-Install($Build) {
     $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\ShenyiWorkbenchPreview-' + $Build.Id
-    $folder = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) ('Programs\ShenyiWorkbenchPreview\' + $Build.Id)
+    $folder = Join-Path $env:LOCALAPPDATA ('Programs\ShenyiWorkbenchPreview\' + $Build.Id)
     return @{ Key=$key; Folder=$folder; Exe=(Join-Path $folder 'ShenyiWorkbench.exe'); Uninstall=(Join-Path $folder 'Uninstall.exe') }
 }
 
 function Assert-Installed($Build, $Installed) {
+    Write-Step "Checking registered version $($Build.Version), install location and executables."
     $record = Get-ItemProperty -LiteralPath $Installed.Key
     Assert-That ($record.DisplayVersion -eq $Build.Version) 'Incorrect registered release version.'
     Assert-That ($record.InstallLocation.TrimEnd('\') -eq $Installed.Folder) 'Unexpected per-user install folder.'
@@ -36,7 +51,7 @@ function Assert-Installed($Build, $Installed) {
 }
 
 function Get-StartShortcut([string] $Target, [string] $BuildId='') {
-    $programs = [Environment]::GetFolderPath('Programs')
+    $programs = [Environment]::GetFolderPath('Programs','Create')
     $shell = New-Object -ComObject WScript.Shell
     $links = Get-ChildItem -LiteralPath $programs -File -Filter '*.lnk' -Recurse:([bool]$BuildId)
     foreach ($entry in $links) {
@@ -49,24 +64,31 @@ function Get-StartShortcut([string] $Target, [string] $BuildId='') {
 
 function Test-Workspace($Share, $Installed, $Build, [string] $Mode, [string] $WorkspacePath) {
     $clientProbe = Join-Path $Share 'ci-installed-workspace.cjs'
-    & (Join-Path $Share 'node.exe') $clientProbe $Installed.Exe $Mode $Build.Version $WorkspacePath
-    if ($LASTEXITCODE -ne 0) { throw "Installed application workspace check failed: $Mode $($Build.Version)" }
+    $arguments = @($clientProbe, $Installed.Exe, $Mode, $Build.Version, $WorkspacePath) | ForEach-Object { '"' + $_ + '"' }
+    $stage = "$Mode $($Build.Version) in $WorkspacePath"
+    Write-Step "Opening installed client for $stage"
+    $probe = Start-Process -FilePath (Join-Path $Share 'node.exe') -ArgumentList $arguments -WorkingDirectory $Share -WindowStyle Hidden -PassThru
+    Wait-Child $probe 105 $stage
 }
 
 function Test-AsStandardUser([string] $Share) {
     $plan = Get-Content -Raw -LiteralPath (Join-Path $Share 'plan.json') | ConvertFrom-Json
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+    Write-Step "Worker started as $($identity.Name), SID $($identity.User.Value), session $([Diagnostics.Process]::GetCurrentProcess().SessionId)."
     Assert-That ($identity.User.Value -eq $plan.Sid) 'Unexpected acceptance account.'
     Assert-That ($identity.Name.Split('\')[-1] -match '^ShenyiCI[0-9a-f]{8}$') 'Worker requires the disposable CI account.'
     Assert-That (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) 'Installer test must use a non-administrator token.'
     $env:USERPROFILE = [Environment]::GetFolderPath('UserProfile')
-    $env:APPDATA = [Environment]::GetFolderPath('ApplicationData')
-    $env:LOCALAPPDATA = [Environment]::GetFolderPath('LocalApplicationData')
+    $expectedProfile = Get-ItemPropertyValue -LiteralPath ('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\' + $plan.Sid) -Name ProfileImagePath
+    Assert-That ($env:USERPROFILE -eq [Environment]::ExpandEnvironmentVariables($expectedProfile)) 'Loaded profile does not belong to the CI user.'
+    $env:APPDATA = [Environment]::GetFolderPath('ApplicationData','Create')
+    $env:LOCALAPPDATA = [Environment]::GetFolderPath('LocalApplicationData','Create')
     $env:TEMP = Join-Path $env:LOCALAPPDATA 'Temp'
     $env:TMP = $env:TEMP
     [IO.Directory]::CreateDirectory($env:TEMP) | Out-Null
     $workspacePath = Join-Path $env:APPDATA 'Shenyi-Workbench-LocalReview'
+    Write-Step "Confirmed standard token and profile $workspacePath"
     Assert-That (-not (Test-Path -LiteralPath $workspacePath)) 'Standard user profile was not fresh.'
     $old = Get-Install $plan.Old
     $new = Get-Install $plan.New
@@ -94,13 +116,14 @@ function Test-AsStandardUser([string] $Share) {
     Test-Workspace $Share $new $plan.New 'read' $workspacePath
     Invoke-Setup $new.Uninstall
     Wait-For { -not (Test-Path -LiteralPath $new.Folder) -and -not (Test-Path -LiteralPath $new.Key) -and -not (Test-Path -LiteralPath $link) } 'Reinstalled release cleanup was incomplete.'
-    Write-Output "Passed standard-user silent install, Start menu, native launch, upgrade $($plan.Old.Version) -> $($plan.New.Version), old/new uninstall and workspace recovery."
+    Write-Step "Passed standard-user silent install, Start menu, native launch, upgrade $($plan.Old.Version) -> $($plan.New.Version), old/new uninstall and workspace recovery."
 }
 
 if ($StandardUserStage) {
-    $log = Join-Path $StandardUserStage 'results\acceptance.txt'
-    try { Test-AsStandardUser $StandardUserStage *> $log; exit 0 }
-    catch { Add-Content -LiteralPath $log -Value ($_ | Out-String); exit 1 }
+    $script:acceptanceLog = Join-Path $StandardUserStage 'results\acceptance.txt'
+    $env:SHENYI_INSTALL_ACCEPTANCE_LOG = $script:acceptanceLog
+    try { Test-AsStandardUser $StandardUserStage; exit 0 }
+    catch { Write-Step ("FAIL " + $_.Exception.Message + [Environment]::NewLine + $_.ScriptStackTrace); exit 1 }
 }
 
 Assert-That ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_ENVIRONMENT -eq 'github-hosted' -and $env:RUNNER_OS -eq 'Windows') 'Run on a disposable GitHub-hosted Windows runner.'
@@ -168,24 +191,32 @@ try {
     $credential = [PSCredential]::new(($env:COMPUTERNAME + '\' + $login),$password)
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $argsForTest = '-NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "' + (Join-Path $share 'ci-installer.ps1') + '" -StandardUserStage "' + $share + '"'
-    $task = New-ScheduledTaskAction -Execute $powershell -Argument $argsForTest -WorkingDirectory $share
-    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
-    Register-ScheduledTask -TaskName $login -Action $task -Settings $settings -User $credential.UserName -Password $credential.GetNetworkCredential().Password -RunLevel Limited | Out-Null
-    try {
-        Start-ScheduledTask -TaskName $login
-        $until = [DateTime]::UtcNow.AddMinutes(11)
-        do {
-            Start-Sleep -Seconds 2
-            $info = Get-ScheduledTaskInfo -TaskName $login
-            if ([DateTime]::UtcNow -gt $until) { throw 'Standard-user acceptance timed out.' }
-        } while ($info.LastRunTime.Year -lt 2000 -or (Get-ScheduledTask -TaskName $login).State -in @('Running','Queued'))
-    } finally {
-        Unregister-ScheduledTask -TaskName $login -Confirm:$false
+    $secondaryLogon = Get-Service -Name seclogon
+    if ($secondaryLogon.StartType -eq [System.ServiceProcess.ServiceStartMode]::Disabled) {
+        Set-Service -Name seclogon -StartupType Manual
     }
+    Start-Service -Name seclogon
     $log = Join-Path $results.FullName 'acceptance.txt'
-    $lines = if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log }
-    $lines | Write-Output
-    Assert-That ($info.LastTaskResult -eq 0 -and @($lines -like 'Passed standard-user silent install,*').Count -eq 1) "Standard-user installer acceptance failed ($($info.LastTaskResult))."
+    Write-Host "Starting worker with a loaded profile for $login. Progress log: $log"
+    $worker = Start-Process -FilePath $powershell -Credential $credential -LoadUserProfile -WorkingDirectory $share -ArgumentList $argsForTest -WindowStyle Hidden -PassThru
+    $null = $worker.Handle
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $seen = 0
+    try {
+        do {
+            $exited = $worker.WaitForExit(1000)
+            if (Test-Path -LiteralPath $log) {
+                $lines = @(Get-Content -LiteralPath $log -Encoding UTF8)
+                while ($seen -lt $lines.Count) { Write-Host $lines[$seen]; $seen++ }
+            }
+            if ($timer.Elapsed.TotalSeconds -gt 50 -and $seen -eq 0) { throw "Worker $($worker.Id) did not reach its first stage. Log: $log" }
+            if ($timer.Elapsed.TotalMinutes -ge 9) { throw "Worker $($worker.Id) timed out. See the last recorded stage in $log" }
+        } until ($exited)
+        Assert-That ($worker.ExitCode -eq 0) "Worker $($worker.Id) exited $($worker.ExitCode). Log: $log"
+        Assert-That ($seen -gt 0 -and @($lines -match ' Passed standard-user silent install,').Count -eq 1) "Worker did not complete the full acceptance. Log: $log"
+    } finally {
+        if (-not $worker.HasExited) { $worker.Kill($true); $null = $worker.WaitForExit(5000) }
+    }
 } finally {
     Remove-LocalUser -SID $user.SID
     $password.Dispose()
