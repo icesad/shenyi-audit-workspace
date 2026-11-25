@@ -4,7 +4,7 @@ import {isIP} from 'node:net';
 import {createSecureContext} from 'node:tls';
 import {handleTeamApplicationRequest} from './application-api.mjs';
 import {json} from './http-utils.mjs';
-import {assertDatabaseIdentity, assertManagedDatabaseReady} from './managed-database-readiness.mjs';
+import {assertDatabaseIdentity, assertManagedDatabaseReady, assertManagedDatabaseRequestReady} from './managed-database-readiness.mjs';
 import {isWechatConfigured} from './wechat-api.mjs';
 import {serviceUnavailable, startLoopbackTeamListener} from './team-http-listener.mjs';
 import {handleWechatNativeCallback, WECHAT_NATIVE_NOTIFY_PATH} from './wechat-native-callback.mjs';
@@ -151,7 +151,7 @@ export async function startManagedTeamServer({db, apiBase, port = 0, serverId, k
         if (incoming.method === 'GET' && incoming.url === '/health') return json({status:'ok'});
         if (incoming.method === 'GET' && incoming.url === '/ready') {
           try {
-            assertManagedDatabaseReady(db, serverId, readinessOptions);
+            assertManagedDatabaseRequestReady(db, serverId, readinessOptions);
             if (receiveWechatNativeNotification) assertWechatNativeBillingReady(db);
           }
           catch { return json({status:'not-ready'}, 503); }
@@ -185,7 +185,7 @@ export async function startManagedTeamServer({db, apiBase, port = 0, serverId, k
           const pathname = new URL(request.url).pathname;
           if ((reviewedRecovery && (recoveryRoutes.has(pathname) || recoveryDecisionRoute.test(pathname))) ||
             (wechatEnabled && pathname.startsWith('/api/auth/wechat/'))) {
-            try { assertManagedDatabaseReady(db, serverId, readinessOptions); }
+            try { assertManagedDatabaseRequestReady(db, serverId, readinessOptions); }
             catch {
               const denied = serviceUnavailable();
               denied.headers.set('X-Shenyi-Server-Id', serverId);
