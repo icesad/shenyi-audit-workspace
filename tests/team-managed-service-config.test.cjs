@@ -157,6 +157,9 @@ test('managed readiness rejects missing or inconsistent bounded source-pool meta
   const serverId=deviceServerId(db),ready=()=>assertManagedDatabaseReady(db,serverId);
   ready();
   const original=db.prepare("SELECT name,sql FROM sqlite_schema WHERE name LIKE 'team_auth_limit_pool_%' ORDER BY name").all();
+  db.exec('DROP INDEX team_auth_limit_pool_expiry');
+  assert.throws(ready,{code:'MANAGED_DATABASE_NOT_READY'});
+  initializeTeamDatabase(db);ready();
   db.exec('DROP TABLE team_auth_limit_pool_buckets');
   const missing=db.prepare("SELECT name,sql FROM sqlite_schema WHERE name LIKE 'team_auth_limit_pool_%' ORDER BY name").all();
   assert.throws(ready,{code:'MANAGED_DATABASE_NOT_READY'});
@@ -165,7 +168,9 @@ test('managed readiness rejects missing or inconsistent bounded source-pool meta
   db.prepare("UPDATE team_auth_limit_pools SET active_count=1 WHERE prefix='recovery-request:ip:'").run();
   assert.throws(ready,{code:'MANAGED_DATABASE_NOT_READY'});
   db.prepare("UPDATE team_auth_limit_pools SET active_count=0 WHERE prefix='recovery-request:ip:'").run();
-  ready();
+  db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)').run('recovery-request:ip:orphan',Date.now(),1);
+  assert.throws(ready,{code:'MANAGED_DATABASE_NOT_READY'});
+  initializeTeamDatabase(db);ready();
   assert.equal(original.length,3);
 });
 
