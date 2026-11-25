@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string] $StandardUserStage)
+param([string] $StandardUserStage, [switch] $ShellReady)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -71,6 +71,46 @@ function Test-Workspace($Share, $Installed, $Build, [string] $Mode, [string] $Wo
     Wait-Child $probe 105 $stage
 }
 
+function Initialize-UserShell([string] $Sid, [string] $Root) {
+    # Prove HKCU points to this token's loaded hive before configuring any known folders.
+    $check = 'Software\ShenyiCiHive-' + [Guid]::NewGuid().ToString('N')
+    $hive = [Microsoft.Win32.Registry]::Users.OpenSubKey($Sid, $true)
+    Assert-That ($null -ne $hive) "No loaded registry hive for $Sid."
+    try {
+        $proof = $hive.CreateSubKey($check)
+        try { $proof.SetValue('Owner', $Sid) } finally { $proof.Dispose() }
+        $same = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($check)
+        Assert-That ($null -ne $same) 'HKCU does not resolve to the disposable account hive.'
+        try { Assert-That ($same.GetValue('Owner') -eq $Sid) 'Incorrect HKCU owner.' } finally { $same.Dispose() }
+    } finally {
+        $hive.DeleteSubKey($check, $false)
+        $hive.Dispose()
+    }
+
+    # A secondary logon loads NTUSER.DAT without Explorer's first interactive sign-in.
+    # Populate the standard user folder registrations for this new profile only.
+    $menu = 'AppData\Roaming\Microsoft\Windows\Start Menu'
+    $relativeFolders = [ordered]@{
+        'AppData'='AppData\Roaming'; 'Local AppData'='AppData\Local'; 'Start Menu'=$menu
+        'Programs'=($menu + '\Programs'); 'Personal'='Documents'; 'Desktop'='Desktop'
+    }
+    $explorer = 'Software\Microsoft\Windows\CurrentVersion\Explorer\'
+    $expandable = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($explorer + 'User Shell Folders')
+    $resolved = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($explorer + 'Shell Folders')
+    try {
+        foreach ($name in $relativeFolders.Keys) {
+            $relative = $relativeFolders[$name]
+            $full = Join-Path $Root $relative
+            [void][IO.Directory]::CreateDirectory($full)
+            $expandable.SetValue($name, ('%USERPROFILE%\' + $relative), [Microsoft.Win32.RegistryValueKind]::ExpandString)
+            $resolved.SetValue($name, $full, [Microsoft.Win32.RegistryValueKind]::String)
+        }
+    } finally {
+        $expandable.Dispose()
+        $resolved.Dispose()
+    }
+}
+
 function Test-AsStandardUser([string] $Share) {
     $plan = Get-Content -Raw -LiteralPath (Join-Path $Share 'plan.json') | ConvertFrom-Json
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -79,14 +119,35 @@ function Test-AsStandardUser([string] $Share) {
     Assert-That ($identity.User.Value -eq $plan.Sid) 'Unexpected acceptance account.'
     Assert-That ($identity.Name.Split('\')[-1] -match '^ShenyiCI[0-9a-f]{8}$') 'Worker requires the disposable CI account.'
     Assert-That (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) 'Installer test must use a non-administrator token.'
-    $env:USERPROFILE = [Environment]::GetFolderPath('UserProfile')
-    $expectedProfile = Get-ItemPropertyValue -LiteralPath ('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\' + $plan.Sid) -Name ProfileImagePath
-    Assert-That ($env:USERPROFILE -eq [Environment]::ExpandEnvironmentVariables($expectedProfile)) 'Loaded profile does not belong to the CI user.'
-    $env:APPDATA = [Environment]::GetFolderPath('ApplicationData','Create')
-    $env:LOCALAPPDATA = [Environment]::GetFolderPath('LocalApplicationData','Create')
+    $registered = Get-ItemPropertyValue -LiteralPath ('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\' + $plan.Sid) -Name ProfileImagePath
+    $root = [Environment]::ExpandEnvironmentVariables($registered)
+    Assert-That ($root -match '^[a-z]:\\.+' -and (Test-Path -LiteralPath $root -PathType Container)) 'SID lacks a valid local profile directory.'
+    Assert-That ($root -eq [Environment]::GetFolderPath('UserProfile')) 'Loaded profile does not belong to the CI user.'
+    $env:USERPROFILE = $root
+    $env:USERNAME = $identity.Name.Split('\')[1]
+    $env:USERDOMAIN = $identity.Name.Split('\')[0]
+    $env:HOMEDRIVE = [IO.Path]::GetPathRoot($root).TrimEnd('\')
+    $env:HOMEPATH = $root.Substring($env:HOMEDRIVE.Length)
+    $env:APPDATA = Join-Path $root 'AppData\Roaming'
+    $env:LOCALAPPDATA = Join-Path $root 'AppData\Local'
     $env:TEMP = Join-Path $env:LOCALAPPDATA 'Temp'
     $env:TMP = $env:TEMP
-    [IO.Directory]::CreateDirectory($env:TEMP) | Out-Null
+    if (-not $ShellReady) {
+        Write-Step "Initializing Windows shell folders in the verified standard-user profile $root."
+        Initialize-UserShell $plan.Sid $root
+        [void][IO.Directory]::CreateDirectory($env:TEMP)
+        # Start a fresh process so Shell32 resolves the new registrations with this user's environment.
+        $nativePowerShell = Join-Path $PSHOME 'powershell.exe'
+        $argsForShell = '-NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "' + $PSCommandPath + '" -StandardUserStage "' + $Share + '" -ShellReady'
+        $ready = Start-Process -FilePath $nativePowerShell -ArgumentList $argsForShell -WorkingDirectory $Share -WindowStyle Hidden -PassThru
+        Wait-Child $ready 480 'Initialized standard-user acceptance'
+        return
+    }
+    $expectedPrograms = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+    foreach ($entry in @{ApplicationData=$env:APPDATA; LocalApplicationData=$env:LOCALAPPDATA; Programs=$expectedPrograms}.GetEnumerator()) {
+        $actual = [Environment]::GetFolderPath($entry.Key)
+        Assert-That ($actual -eq $entry.Value) "Windows shell folder $($entry.Key) resolved to '$actual', expected '$($entry.Value)'."
+    }
     $workspacePath = Join-Path $env:APPDATA 'Shenyi-Workbench-LocalReview'
     Write-Step "Confirmed standard token and profile $workspacePath"
     Assert-That (-not (Test-Path -LiteralPath $workspacePath)) 'Standard user profile was not fresh.'
