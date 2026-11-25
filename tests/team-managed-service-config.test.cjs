@@ -149,6 +149,26 @@ test('managed readiness requires WeChat tables only when that provider is enable
   assert.throws(() => assertManagedDatabaseReady(db,serverId,{wechatEnabled:true}), {code:'MANAGED_DATABASE_NOT_READY'});
 });
 
+test('managed readiness rejects missing or inconsistent bounded source-pool metadata without mutating the database',async t=>{
+  const {initializeTeamDatabase}=await import('../server/team/database.mjs');
+  const {deviceServerId}=await import('../server/team/device-policy.mjs');
+  const {assertManagedDatabaseReady}=await import('../server/team/managed-database-readiness.mjs');
+  const db=new DatabaseSync(':memory:');t.after(()=>db.close());initializeTeamDatabase(db);
+  const serverId=deviceServerId(db),ready=()=>assertManagedDatabaseReady(db,serverId);
+  ready();
+  const original=db.prepare("SELECT name,sql FROM sqlite_schema WHERE name LIKE 'team_auth_limit_pool_%' ORDER BY name").all();
+  db.exec('DROP TABLE team_auth_limit_pool_buckets');
+  const missing=db.prepare("SELECT name,sql FROM sqlite_schema WHERE name LIKE 'team_auth_limit_pool_%' ORDER BY name").all();
+  assert.throws(ready,{code:'MANAGED_DATABASE_NOT_READY'});
+  assert.deepEqual(db.prepare("SELECT name,sql FROM sqlite_schema WHERE name LIKE 'team_auth_limit_pool_%' ORDER BY name").all(),missing,'readiness must not auto-migrate an old managed database');
+  initializeTeamDatabase(db);ready();
+  db.prepare("UPDATE team_auth_limit_pools SET active_count=1 WHERE prefix='recovery-request:ip:'").run();
+  assert.throws(ready,{code:'MANAGED_DATABASE_NOT_READY'});
+  db.prepare("UPDATE team_auth_limit_pools SET active_count=0 WHERE prefix='recovery-request:ip:'").run();
+  ready();
+  assert.equal(original.length,3);
+});
+
 test('managed readiness requires recovery epoch triggers and challenge bindings only when reviewed recovery is enabled', async t => {
   const { initializeTeamDatabase } = await import('../server/team/database.mjs');
   const { deviceServerId } = await import('../server/team/device-policy.mjs');
