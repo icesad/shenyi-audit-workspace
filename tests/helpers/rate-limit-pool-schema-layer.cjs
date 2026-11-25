@@ -16,7 +16,7 @@ const PREFIXES=Object.freeze([
 const NAMES=Object.freeze([...TABLES,INDEX]);
 function definitions(db){
   return db.prepare(`SELECT type,name,tbl_name,sql FROM sqlite_schema
-    WHERE name IN (?,?,?) ORDER BY type,name`).all(...NAMES).map(row=>({...row}));
+    WHERE name IN (?,?,?) OR tbl_name IN (?,?) ORDER BY type,name`).all(...NAMES,...TABLES).map(row=>({...row}));
 }
 function rateLimitPoolSchemaLayer(db){
   const rows=definitions(db);
@@ -42,11 +42,26 @@ function rateLimitPoolSchemaLayer(db){
   }
   return {tables:2,objects:3,definitions:rows,names:NAMES,tableNames:TABLES};
 }
-function peelRateLimitPoolSchema(db){
-  const layer=rateLimitPoolSchemaLayer(db);
-  if(layer.definitions.length===0)return layer;
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM team_auth_limit_pool_buckets').get().count,0,
+function assertRateLimitPoolEmpty(db,layer=rateLimitPoolSchemaLayer(db)){
+  if(layer.definitions.length)assert.equal(db.prepare('SELECT COUNT(*) AS count FROM team_auth_limit_pool_buckets').get().count,0,
     'Historical schema projection must not delete active source buckets');
+  return layer;
+}
+function withoutEmptyRateLimitPoolDefinitions(db,rows){
+  const layer=assertRateLimitPoolEmpty(db);
+  const names=new Set(layer.names);
+  return rows.filter(row=>!names.has(row.name));
+}
+function withoutEmptyRateLimitPoolLayer(db,state){
+  const layer=assertRateLimitPoolEmpty(db);
+  if(!layer.names.length)return state;
+  const names=new Set(layer.names),without=rows=>rows.filter(row=>!names.has(typeof row==='string'?row:row.name));
+  return {...state,...(state.definitions?{definitions:without(state.definitions)}:{}),
+    ...(state.schema?{schema:without(state.schema)}:{}),...(state.tables?{tables:without(state.tables)}:{})};
+}
+function peelRateLimitPoolSchema(db){
+  const layer=assertRateLimitPoolEmpty(db);
+  if(layer.definitions.length===0)return layer;
   assert.ok(layer.definitions.every(row=>row.type==='table'||row.type==='index'));
   db.exec('DROP INDEX '+INDEX);
   for(const name of TABLES)db.exec('DROP TABLE '+name);
@@ -57,4 +72,5 @@ function assertRateLimitPoolSchemaRestored(db,layer){
   assert.deepEqual(definitions(db),layer.definitions);
   if(layer.definitions.length)rateLimitPoolSchemaLayer(db);
 }
-module.exports={rateLimitPoolSchemaLayer,peelRateLimitPoolSchema,assertRateLimitPoolSchemaRestored,NAMES,TABLES};
+module.exports={rateLimitPoolSchemaLayer,withoutEmptyRateLimitPoolDefinitions,withoutEmptyRateLimitPoolLayer,
+  peelRateLimitPoolSchema,assertRateLimitPoolSchemaRestored,NAMES,TABLES};
