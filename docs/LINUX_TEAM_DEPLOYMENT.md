@@ -1,0 +1,349 @@
+# 审易团队服务 Linux 单机部署候选
+
+## 2026-11-21 隔离 Ubuntu 与 Nginx 的微信 Native 上线验收
+
+将 `98a5a38` 的 610 文件归档验签并离线暂存 37 个生产依赖，在无网卡 Ubuntu 24.04 上经真实 systemd 从 `e28ae2a` 激活。在 nginx/1.24.0 (Ubuntu) 上使用已签包中的配置，核对全部关闭、仅回调、付款页与回调同时启用三种模式。通过两路共 120 项原始路由回读。模拟 Nginx 漏转关单接口或丢失禁止索引响应头时，仅公共侧报告对应路径的失败。恢复后双路重新通过。
+
+客体只收匿名 GET 和 HEAD。停服复核 SQLite 文件及 105 张表、2 KiB 合成原件均保持，试验前的 Nginx 配置也已恢复。虚拟机正常关机，14 个父盘摘要一致。 首轮核实历史 Nginx 模板与当前签包存在一处主机名守卫差异。第二轮停在旧后端就绪等待，停机只读提取连接拒绝和启动日志后延长等待，第三轮旧后端在 25 秒时报告就绪。
+
+已验签的应用切换与 Nginx 独立安装按各自步骤执行。真实商户和生产主机留待验收。回执 `D:/codex-temp/shenyi-linux-native-payment-surface-20261121/verification.json`。
+
+## 2026-11-21 微信 Native 双路上线检查
+
+一次性上线检查和定时探针都能核对微信 Native 付款页、静态资源、动作接口与商户回调。在实际受管服务和本机 HTTPS 转发上，全部关闭、仅回调、付款页和回调同时启用三种配置均通过。模拟公共入口漏转关单路径或丢失禁止索引响应头时，仅公共入口检查失败，并报告具体路径与诊断码。
+
+探针只发匿名 `GET` 和 `HEAD`。三份合成库各 105 张表及文件字节不变，供应商调用为零。两种故障报告写入监控转换记录后，上一版监控均成功读取并记录恢复。相关 Node.js 检查 134 项通过，Python 发布与回滚检查 27 项通过。此次边缘转发用本机 Node HTTPS 代理，Nginx 部署和真实商户实测待验。 [检查命令与预期结果](#一次性上线检查)
+
+部署目标为经授权的单台国内 Linux 主机。Nginx 在 443 接入桌面请求，向 `127.0.0.1:9443` 发起独立 TLS 连接。Node 以专用系统账号运行，SQLite 和配置放在应用发布目录之外。域名、云资源、证书和生产账号由实际开通流程提供。[国内上线时点](COMMERCIALIZATION_ROADMAP.md#4-国内上线手续与时点)
+
+## 2026-11-21 当前协作提交的 Ubuntu 发布、恢复与回滚
+
+从与 Windows、macOS 候选相同的协作提交 [`704959f`](https://github.com/icesad/shenyi-audit-workspace/commit/704959f6284c961ebda48d386f88c1d6e4883a71) 构建 Linux 服务 TAR。610 个文件与 Git 对象逐字节一致。临时签名复验拒绝错误提交、篡改签名及跨包签名。 TAR SHA-256 为 `e5b4e9cb9e2452b8aacb0919865d1463293884d4cfa2ea9460cda784a37e2b1d`，本机路径与回执见 `D:/codex-temp/shenyi-linux-704959f-20261121/verification.json`。
+
+无网卡 Ubuntu 24.04 离线暂存 37 个生产依赖，实际签名激活 `e28ae2a → 704959f → e28ae2a`。6 次双路 HTTPS 检查各通过 9 项。加密备份还原后，微信账本、合成原件和业务数据一致。在线库及 2 KiB 原件的摘要保持，离线恢复副本以 `MANAGED_DATABASE_NOT_READY` 拒绝在线启动。 后端与 Nginx 两路均以 `401 SIGN_IN_REQUIRED` 拒绝未登录的微信订单历史请求。已签发布树中的账务模块与 Git 源码一致。真实商户联调和启用该功能后的业务验收仍待外部条件。 Ubuntu 操作在独立子盘中完成，13 层父盘摘要保持。国内云、正式证书、生产监控和正式发布仍按部署验收推进。
+
+## 构件和目录
+
+在私有工作区以已审定的 Git 提交生成服务构件。归档保留 `dist/` 中的原有解析器、受管微信付款页、首位负责人初始化入口、离线备份和上线检查工具。先选定仓库外且仅发布人员可写的 `$release_dir`。交接时提供归档、独立签名和对应的完整提交，通过独立可信渠道提供验签公钥。 [Git 归档说明](https://git-scm.com/docs/git-archive)
+
+```sh
+release=$(git rev-parse --verify HEAD)
+git archive --format=tar --output="$release_dir/shenyi-team-${release}.tar" "$release" -- \
+  package.json package-lock.json dist shared server/team deploy/linux \
+  website/native-payment.html website/native-payment.css website/native-payment.js website/styles.css \
+  scripts/start-team-service.mjs scripts/bootstrap-managed-team.mjs scripts/team-database-backup.mjs \
+  scripts/check-team-service.mjs scripts/team-monitor-state.mjs scripts/check-linux-team-file-permissions.py \
+  docs/LINUX_TEAM_DEPLOYMENT.md docs/MANAGED_TEAM_SERVICE.md docs/TEAM_OFFLINE_BACKUP.md docs/PAYMENT_CHANNEL_PREPARATION.md
+sha256sum "$release_dir/shenyi-team-${release}.tar"
+```
+
+微信 Native 启用预检依赖归档中的受管付款页和根锁文件中的二维码库。按本次锁文件准备离线 npm 缓存。启用超时关单前按微信账本迁移步骤停机并备份。 [支付准备及账本升级](PAYMENT_CHANNEL_PREPARATION.md#超时未付原单)
+
+### 发布归档签发与部署验签
+
+发布人员使用独立保存的服务归档 Ed25519 私钥。签发命令核对未压缩 Git TAR 首部的 40 位完整提交标记，并签署发行类型、完整提交、字节数和整包 SHA-256。签名为独立的 64 字节文件。目标路径已存在时保留原文件。 [Git 提交标记](https://git-scm.com/docs/git-get-tar-commit-id) · [Node.js 签名接口](https://nodejs.org/docs/latest-v24.x/api/crypto.html#cryptosignalgorithm-data-key-callback)
+
+```sh
+node scripts/linux-release-signature.mjs sign \
+  --archive "$release_dir/shenyi-team-${release}.tar" --revision "$release" \
+  --private-key "$release_private_key" --output "$release_dir/shenyi-team-${release}.ed25519"
+```
+
+在 Linux 部署机上，通过已审定渠道把 `scripts/stage-linux-release.py`、`scripts/linux-release-tree.py`、`scripts/linux-release-signature.mjs` 和 `scripts/detached-release-signature.mjs` 预置在同一目录。使用 Python 3.11 或更新版及配有 npm 的受信 Node 24.15 或更新的 24.x。按获准的发行记录设置 `$release`，将独立取得的公钥放在归档目录之外。npm 内容缓存放在发布树之外。归档和缓存各限 256 MiB、8,192 个条目，发布卷须为输入副本、解包目录和依赖预留空间。发布人员拥有 `/opt/shenyi-team`，普通用户对该目录和父目录没有写权限。
+
+```sh
+/usr/bin/python3 -I /opt/shenyi-team/release-tools/scripts/stage-linux-release.py \
+  --node /opt/shenyi-team/node/bin/node --release-root /opt/shenyi-team \
+  --archive "$release_dir/shenyi-team-${release}.tar" --revision "$release" \
+  --public-key "$release_public_key" --signature "$release_dir/shenyi-team-${release}.ed25519" \
+  --npm-cache "$npm_cache"
+```
+
+工具将归档复制到权限受控的私有目录，验签后解包同一副本。用独立复制的 `_cacache` 执行离线 `npm ci --omit=dev --ignore-scripts`，回读已安装生产依赖和源文件摘要。转为只读后，按实际路径、权限和文件内容计算整个候选目录的 SHA-256，包含生产依赖、空目录和回执文件的权限，回执正文另行验证。所有步骤完成后，才发布只读的 `/opt/shenyi-team/staged-$release`，保留已有同名目录。单独核对标准输出和目录内的 `.shenyi-stage-receipt.json`，回执包含提交、整包和锁文件摘要、公钥指纹、文件数量及 `stagedTree`。失败时无新的候选目录，按错误修正后可重试。进程被强制终止时可能留下 `.shenyi-preparation-*` 工作目录，发布人员可在确认没有暂存任务运行后检查。 [npm 锁定依赖安装](https://docs.npmjs.com/cli/v11/commands/npm-ci/) · [npm 离线模式](https://docs.npmjs.com/cli/v11/using-npm/config/#offline)
+
+发布人员在获准的切换窗口，按下文流程单独停止服务、保留上一版并切换到已核对的候选目录。`current` 及服务配置的各级路径使用实际目录和文件。暂存回执与双路 HTTPS、业务读取和回滚的结果分别归档。 [受管启动约束](MANAGED_TEAM_SERVICE.md)
+
+隔离 Ubuntu 已验证暂存工具拒绝已改动的包、空缓存和重复暂存。补齐缓存后可重试，成功候选的 581 个源文件和 36 个生产依赖一致。输入缓存、SQLite 及运行中的 systemd 和 Nginx 保持，五次双路 HTTPS 检查通过。
+
+先前的独立切换演练用同一签名包启动新的 systemd 进程，后端和 Nginx 边缘 HTTPS 检查通过。原设备继续登录并签名读取同一 2 KiB 原件，SQLite 文件和 21 张业务表摘要保持。两项演练均使用临时签名密钥及合成资料。
+
+| 位置 | 用途与权限 |
+| --- | --- |
+| `/opt/shenyi-team/node/bin/node` | 由运维固定并校验的 Node 可执行文件 |
+| `/opt/shenyi-team/current` | 归 root 管理的当前发布目录，`shenyi-team` 只读 |
+| `/etc/shenyi-team` | 配置、后端私钥及可选供应商配置建议 `0640 root:shenyi-team`，目录 `0750` |
+| `/var/lib/shenyi-team` | `shenyi-team:shenyi-team` 私有状态目录，模式 `0700`，数据库 `0600`，允许 SQLite 创建附属文件 |
+| `/etc/nginx/shenyi-team` | 对外 TLS 证书和私钥、专用于后端的 CA 信任文件。私钥由运维和 Nginx 主进程持有 |
+
+## 受管配置与启动
+
+1. 建立无交互登录的系统账号和同名组 `shenyi-team`。已有受管库按获准的迁移或备份恢复流程单独准备。新环境按受管初始化说明，以 `shenyi-team` 运行离线初始化 CLI，经标准输入传入核验后的数据。使用实际数据库回执中的 `serverId`，将库放到示例指定的文件路径。 [首位产品负责人](MANAGED_TEAM_SERVICE.md#首位产品负责人)
+2. 复制 [服务配置示例](../deploy/linux/service.json.example)到 `/etc/shenyi-team/service.json`，替换示例域名和 UUID。将后端证书链和私钥放在示例指定的实际文件。后端叶子证书的 DNS SAN 必须匹配公共域名，Nginx 配置中的后端 CA 必须能验证该链。边缘证书与后端证书使用各自的私钥。短信与恢复按已批准范围另行配置。 [TLS 与短信配置](MANAGED_TEAM_SERVICE.md)
+3. 将 [systemd 单元](../deploy/linux/shenyi-team.service)装到 `/etc/systemd/system/shenyi-team.service`。在目标主机先核对下方的文件权限，再运行 `systemd-analyze verify /etc/systemd/system/shenyi-team.service`、`systemctl daemon-reload` 和 `systemctl start shenyi-team`。就绪核对通过后，用 `systemctl enable shenyi-team.service` 设置开机启动。下次开机后先观察自动启动状态，再核对 HTTPS 和实例标识。 [systemd 服务与停止](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html) · [systemd 私有状态目录](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)
+4. 使用支持 `ssl_reject_handshake` 和 TLS 1.3 的受支持 Nginx 构建。将 [Nginx 配置](../deploy/linux/nginx-shenyi-team.conf)纳入目标主机的 `http` 配置，统一替换保留示例域名和证书路径。已有默认 443 虚拟主机时，先核对并合并其未知域名拒绝行为，确保同一监听地址只有一个默认虚拟主机。运行 `nginx -t`，通过后按已授权的环境流程加载。安全组及主机防火墙仅开放所需边缘端口，管理入口限授权来源，`9443` 保持仅回环。 [Nginx TLS](https://nginx.org/en/docs/http/ngx_http_ssl_module.html) · [阿里云安全组](https://help.aliyun.com/en/ecs/user-guide/security-groups-for-different-use-cases)
+
+### 官网静态站与团队 API 并行部署
+
+在官网发布范围和 HTTPS 主机名获准后，把 `www.shenyi.example` 换成已批准的官网域名。团队 API 使用独立的 `team.shenyi.example` 和证书。两处模板均核对 TLS SNI 和 HTTP Host，请求使用各自的规范域名和默认 HTTPS 端口。两份配置在同一 `http` 块中加载，保留团队模板中的一个默认 443 虚拟主机。 [官网 Nginx 配置](../deploy/linux/nginx-shenyi-website.conf) · [Nginx 虚拟主机选择](https://nginx.org/en/docs/http/server_names.html#virtual_server_selection)
+
+在内容与获准提交一致的干净工作区中，用 Node 24 构建官网。`$release` 使用完整的 Git 提交 ID，`$release_dir` 使用仓库外发布目录的绝对真实路径，路径各级均使用实际目录。将静态目录、安装校验清单和 HTTPS 核验基线作为同一批候选交接，两份清单均放在站点根之外。
+
+```sh
+node scripts/website-preview.mjs --build "$release_dir/website-$release" && \
+  (cd "$release_dir/website-$release" && sha256sum index.html styles.css assets/brand-shenyi.png) \
+  > "$release_dir/website-$release.sha256" && \
+node scripts/check-website-release.mjs --make-baseline "$release_dir/website-$release" \
+  --source-commit "$release" > "$release_dir/website-$release.baseline.json" && \
+sha256sum "$release_dir/website-$release.baseline.json"
+```
+
+在获准的发布记录中保存完整 Git 提交、官网 HTTPS origin 和 JSON 基线的 SHA-256。验证人员从批准记录获取 `$website_origin` 和 `$website_baseline_sha256`。官网 origin 使用小写主机名，省略路径和默认端口。
+
+部署人员通过已批准的交接渠道接收构件，以受控账号安装文件。网站目录由部署管理员管理，Nginx 只读。确认 `$release` 对应的目标目录尚不存在，再逐条执行。`current` 应尚未创建或为指向已核对上一版的管理员管控符号链接，切换前记录其目标。发布目录内使用实际文件和目录。
+
+```sh
+(
+  set -eu
+  site_root=/srv/shenyi-website
+  site_release="$site_root/releases/$release"
+  site_source="$release_dir/website-$release"
+  install -d -m 0755 "$site_root/releases"
+  mkdir -m 0755 -- "$site_release"
+  install -d -m 0755 "$site_release/assets"
+  install -m 0644 "$site_source/index.html" "$site_source/styles.css" "$site_release/"
+  install -m 0644 "$site_source/assets/brand-shenyi.png" "$site_release/assets/"
+  (cd "$site_release" && sha256sum --check "$release_dir/website-$release.sha256")
+  ln -s -- "$site_release" "$site_root/.current-next"
+  mv -Tf -- "$site_root/.current-next" "$site_root/current"
+)
+```
+
+将官网证书链和对应私钥安装到 `/etc/nginx/shenyi-website/` 所示位置。在使用独立 include 的 Ubuntu 上，放置到 `/etc/nginx/conf.d/shenyi-website.conf`，同时更新使用同一版本的团队 API 模板。运行 `nginx -t`，通过后再以 `systemctl reload nginx` 加载。官网 `GET` 和 `HEAD` 只提供 `/`、`/styles.css` 及 `/assets/brand-shenyi.png`，可带查询参数。直接访问 `/index.html`、业务 API、健康探针、合成下单页及下载路径均应返回 404。对有效路径使用其他方法返回 405。通过握手后发送不匹配的 HTTP Host 返回 421，未知 TLS 名称拒绝握手。 [Nginx 静态路径与符号链接](https://nginx.org/en/docs/http/ngx_http_core_module.html#disable_symlinks)
+
+重载 Nginx 后，从实际访问网络回读公开官网。`$release_tools_dir` 指向获准发布源码中的 `scripts` 目录。每次核验用 `$website_check_receipt` 指定一个新的 JSON 文件绝对路径，保留首次发布、复测和回退的各次结果及退出码。
+
+```sh
+check_status=0
+(
+  set -C
+  node "$release_tools_dir/check-website-release.mjs" \
+    --origin "$website_origin" --baseline "$release_dir/website-$release.baseline.json" \
+    --baseline-sha256 "$website_baseline_sha256" > "$website_check_receipt"
+) || check_status=$?
+printf "Exit status %s\n" "$check_status"
+```
+
+退出码为 0 且 JSON 的 `status` 为 `verified` 表示三个静态文件通过内容与响应校验，17 个匿名 GET 检查均返回 404。检查包括三个合成下单页面路径、下文的八个支付演练 API、`/api/auth/methods`、`/ready`、`/health`、`/index.html`、`/download` 和 `/download/Shenyi.exe`。拒绝路径的回执只记录状态及 TLS 证书指纹等元数据。`CHECKOUT_STATUS_MISMATCH` 表示下单页面响应异常，`EXCLUDED_ROUTE_STATUS_MISMATCH` 表示其他受限路径的响应异常。20 项检查分四批，每批最多并行六次请求，每次请求最长等待五秒。
+
+在实际环境按[一次性上线检查](#一次性上线检查)核对团队 API 的边缘和后端 HTTPS 及实例标识，并记录工作站的页面资源加载结果。官网不缓存当前文件，访问日志只含时间、请求编号、方法、状态、响应字节数和耗时。错误日志按团队部署的读取权限和保留规则管理。静态模板上线的许可与商户、登录和下载入口另行验收。
+
+官网内容需回退时，把 `current` 用同样的原子替换步骤指回先前已验证的发布目录，再用上一版获准的基线、摘要和同一官网 origin 回读验证。首次启用出现故障时，将官网 include 移到 `conf.d` 匹配范围之外，校验并重新加载 Nginx，确认官网入口关闭且团队 API 健康。两种回退均使用原团队服务和数据库。
+
+隔离 Ubuntu 已执行本节的 HTTPS 核验。在真实 Nginx 上发布原版、切换到长度相同但摘要不同的合成首页，再原子回退。官网核验依次退出 0、1、0，错误基线摘要在请求前被拒绝，重复使用已有回执路径时原文件保持。预置合成团队 API 的三次健康核验均通过。证据见 `D:/codex-temp/shenyi-website-release-live-20261120/verification.json`。
+
+### 启动前检查文件权限
+
+在服务文件及 SQLite 已安装后，发布管理员可用 root 执行权限检查。它按随包的 `shenyi-team.service`、`/etc/shenyi-team/service.json` 和 `/var/lib/shenyi-team` 布局核对。
+
+```sh
+/usr/bin/python3 -I /opt/shenyi-team/current/scripts/check-linux-team-file-permissions.py
+```
+
+命令读取主配置以定位数据库、后端证书与私钥，以及可选的短信和微信配置。其余文件只查归属、权限位、链接和 POSIX ACL。后端私钥、主配置和供应商配置使用 `root:shenyi-team`、`0640` 或 `0440`，所在目录为同一属主和组，且仅允许 root 和服务组访问。公开证书由 root 管理并允许服务读取。SQLite 和已存在的 `-journal`、`-wal`、`-shm` 由 `shenyi-team:shenyi-team` 持有，模式 `0600`，状态目录及其中通往该库的目录模式 `0700`。
+
+退出码 `0` 表示检查的文件及目录符合该布局。退出码 `1` 在 JSON 中给出项目和错误码，例如 `database` 的 `FILE_PERMISSIONS` 或 `tlsKey` 的 `EXTENDED_ACL`。按实际文件归属和部署路径处理后复查。服务组成员、证书内容、SQLite 结构和 HTTPS 就绪分别沿用部署和启动检查。
+
+隔离 Ubuntu 按默认布局运行了 29 次检查，覆盖错误归属、组和其他用户权限、软硬链接、同一权限位下的扩展和默认 ACL，以及 SQLite WAL 文件。逐项恢复后再次通过，服务状态和文件内容保持一致。部署时按实际启用的供应商配置再核对对应文件。证据见 `D:/codex-temp/shenyi-m7-linux-file-permissions-20261119/verification.json`。
+
+## 端到端验收
+
+从主机直连后端就绪探针。使用实际域名和后端 CA 验证名称及信任链，预期 HTTP 200 和 `{"status":"ready"}`。
+
+```sh
+api_host=team.shenyi.example
+curl --fail-with-body --silent --show-error \
+  --cacert /etc/nginx/shenyi-team/backend-ca.pem \
+  --connect-to "${api_host}:443:127.0.0.1:9443" "https://${api_host}/ready"
+curl --fail-with-body --silent --show-error --include "https://${api_host}/api/auth/methods"
+```
+
+- 公共探针应返回受管实例对应的 `X-Shenyi-Server-Id`，并声明设备绑定必需。公共 `/ready`、`/health` 返回 404，未知域名和非规范 Host 被拒绝。桌面配置须填写同一 HTTPS origin 及 UUID。
+- 合成低权限账户经公共入口登录、完成设备证明并读取指派任务，验证其他项目拒绝。覆盖包含百分号编码的查询及有正文的持钥请求。Nginx `proxy_pass` 无 URI 部分，原始路径和查询、应用凭证、请求正文以及服务端签名相关响应头直接通过。 [Nginx 转发语义](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)
+- 代理请求上限为 67,125,248 字节，为账表快照的外层 JSON 请求预留编码空间。账表快照原文上限为 32 MiB。底稿导出继续走流式响应，核对下载长度、SHA-256 和中途终止；上传和下载均关闭代理缓冲。运行层按目标主机再验证大文件和并发。
+- 使用本机探针和对外诊断分别监测可用性，观察受管进程重启次数、代理 5xx、磁盘空间和证书到期时间。访问日志仅记录时间、请求编号、方法、状态、响应长度和耗时。错误日志可能附带请求上下文，限制读取权限和保留时间。
+
+### 一次性上线检查
+
+在受管主机上使用已部署的配置和 Nginx 验证后端所用的 CA 文件运行以下命令。磁盘阈值和证书到期阈值可省略，默认分别为 10 GiB 和 30 天。
+
+```sh
+/opt/shenyi-team/node/bin/node /opt/shenyi-team/current/scripts/check-team-service.mjs \
+  --config /etc/shenyi-team/service.json \
+  --backend-ca /etc/nginx/shenyi-team/backend-ca.pem \
+  --disk-warning-bytes 10737418240 \
+  --certificate-warning-days 30
+```
+
+探针直连后端回环地址，以配置中的公共主机名和指定后端 CA 校验 TLS，再读取 `/ready` 及 `/api/auth/methods`。它通过运行主机的名称解析和 Node 默认 TLS 信任连接配置中的边缘入口。两侧的 `/api/auth/methods` 均须返回配置的实例 ID 和受管设备登录声明。公共 `/ready` 和 `/health` 均须返回 404。探针分别检查两侧在线叶证书的有效期，确认两侧使用不同的公钥，并从文件系统元数据取得数据库所在卷的可用字节数。每个网络检查最长等待 5 秒。另从实际办公网络验收客户端访问。
+
+后端与公共团队 API 各使用匿名 GET 确认八个支付演练接口返回 404。路径包括 `/api/billing/simulation/` 下的 `notifications`、`payment-exceptions`、`order-closures`，以及 `/api/website-checkout/` 下的 `context`、`orders`、`seat-context`、`seat-quote`、`seat-orders`。这些地址只供本机合成演练。受管服务在分派请求方法和读取正文之前拒绝访问，保留已授权团队的订阅与席位查询。首次从旧版本切换时，激活流程使用上版受信探针。切换后再运行本节命令，确认 `backendIdentity` 与 `publicIdentity` 均报告 `rehearsalRoutesHidden: 8` 后完成上线验收。
+
+两路身份与演练接口通过后，分别核对微信 Native 支付。探针按主配置里的商户回调和官网付款配置路径确定预期状态，并在 `backendIdentity` 和 `publicIdentity` 报告 `nativeWebsiteMode` 与 `nativeCallbackMode`。
+
+| 配置路径 | 未配置时 | 已配置时 |
+| --- | --- | --- |
+| `wechatNativeWebsiteProfile` | 付款页、资源和动作接口均返回 `404`。 | 对 `/api/website-pay/` 及四个静态资源发 `HEAD`，预期 `200`、正确的内容类型、`no-store` 和 `noindex, nofollow`。对报价、确认、原单、出码、查单和关单接口发 `GET`，预期 `405` 和 `Allow: POST`。 |
+| `wechatNativeCallbackProfile` | 对 `/api/billing/wechat-native/notify` 发 `GET`，预期 `404`。 | 同一路径预期 `405` 和 `Allow: POST`。允许先只配置回调。 |
+
+返回 `NATIVE_PAYMENT_ROUTE_STATUS_MISMATCH` 或 `NATIVE_PAYMENT_ROUTE_HEADERS_MISMATCH` 时，按失败的后端或公共入口及回执中的路径核对部署。后端通过、公共入口失败时，先核对边缘转发、响应头及实际接入的版本。部署前后复验记录两路的实际状态。探针检查付款页可达及接口方法约束。真实商户配置、报价、签名通知、付款与到账仍需单独验收。 [商户验收](PAYMENT_CHANNEL_PREPARATION.md#负责人确认及验收证据)
+
+| JSON `status` | 退出码 | 含义 |
+| --- | --- | --- |
+| `healthy` | `0` | 必需检查通过，剩余磁盘和证书有效期均未触发告警。 |
+| `warning` | `2` | 必需检查通过，剩余磁盘或证书有效期触发阈值。 |
+| `failed` | `1` | 配置、连接、服务实例、路由或其他必要检查失败。 |
+
+输出的 `checks` 可定位具体检查和度量。参数、配置或后端 CA 在检查开始前被拒绝时，输出顶层 `code`。
+
+该命令只向固定路径发出无凭据、无请求正文的 `GET` 和 `HEAD`。它读取主配置、后端 CA 和文件系统元数据，商户配置文件、SQLite 内容和 TLS 私钥留在服务进程。这些请求无需访问支付供应商。该探针可在上线、变更或回滚后手动运行。定时检查的单次结果包含 Native 路由诊断，持久化转换仅记录对应身份检查项和失败状态，供回退后的旧版监控读取。
+
+## 定时健康检查
+
+使用同一探针的 [检查服务单元](../deploy/linux/shenyi-team-monitor.service) 和 [定时器](../deploy/linux/shenyi-team-monitor.timer)。定时器每五分钟触发一个单次检查，诊断写入 journal。告警退出码 2 保留在日志和进程结果中，systemd 将其作为本次完成处理。必需检查失败时退出码为 1，下一个周期继续观察。监控单元与业务服务分别管理。 [systemd 定时器](https://www.freedesktop.org/software/systemd/man/latest/systemd.timer.html) · [临时用户及运行目录](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)
+
+按示例部署路径安装两个文件。数据库保持 `0600 shenyi-team:shenyi-team`，由独立于监控的业务账号持有。检查进程通过私有配置与 CA 副本读取所需输入。调整数据库、配置或 CA 路径时，对照正式部署调整监控单元的路径，保留原文件权限。私有证书链通过受控 drop-in 配置公开信任根。
+
+```sh
+install -m 0644 /opt/shenyi-team/current/deploy/linux/shenyi-team-monitor.service /etc/systemd/system/
+install -m 0644 /opt/shenyi-team/current/deploy/linux/shenyi-team-monitor.timer /etc/systemd/system/
+systemd-analyze verify /etc/systemd/system/shenyi-team-monitor.service /etc/systemd/system/shenyi-team-monitor.timer
+systemctl daemon-reload
+systemctl enable --now shenyi-team-monitor.timer
+systemctl list-timers shenyi-team-monitor.timer
+journalctl -u shenyi-team-monitor.service -n 30 --no-pager
+```
+
+通过服务单元的 drop-in 覆盖 `SHENYI_MONITOR_DISK_WARNING_BYTES` 和 `SHENYI_MONITOR_CERTIFICATE_WARNING_DAYS`。默认分别为 10 GiB 和 30 天。生产监控验收应核对实际阈值、journal 保留和授权告警接收渠道。
+
+定时服务通过 `SHENYI_MONITOR_TRANSITIONS=1` 启用本地状态，使用 systemd 分配的专用 `STATE_DIRECTORY`。目录权限为 `0700`，状态文件权限为 `0600`。每次仍向 journal 写入一行检查 JSON。附加的 `monitor` 字段用于识别告警与恢复。 [systemd 持久目录与 DynamicUser](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#RuntimeDirectory=)
+
+| `monitor.event` | 对应变化 |
+| --- | --- |
+| `initialized` | 初次观察健康状态 |
+| `opened` | 初次观察异常或从健康进入告警、失败 |
+| `changed` | 已有异常的级别或原因改变，包括失败降至告警 |
+| `recovered` | 告警或失败之后重新观察到健康 |
+
+状态与原因均相同时，保留同一 `transitionId` 和 `changedAt`，`changed` 为 false。原因只采用检查项名称、等级和已知诊断代码。运维读取 journal 时，可按 `transitionId` 合并重复采样，按 `changedAt` 定位观察时刻。观察间隔内的实际故障起止仍以其他服务证据为准。状态文件损坏或校验失败时，保留原文件与本次探针详情。状态写入或持久化失败时，日志增加 `MONITOR_STATE_UNAVAILABLE`，该次退出码为 1。收到该代码后，按日志中的探针结果排查，再核对本地状态的可读性。
+
+状态目录由一个监控单元独占。手工探针与发布回退验证继续使用原命令。已配置的新定时服务切回早期发布时，旧探针继续输出周期健康结果，状态时间戳表示新版探针最近确认的状态变化。生产告警接收渠道在获准后接入。
+
+## 续期 Nginx 对外证书
+
+对外证书到期告警出现后，按实际域名准备待更新的证书链与配套私钥。先核对证书的主机名、有效期、完整信任链和私钥匹配情况。把两份文件放在管理员可写的新目录内，私钥限制为 `0600 root:root`。保留当前仍有效的一对证书和私钥，便于在同一窗口回退。后端回环 HTTPS 使用独立证书和 CA。 [Nginx 证书链配置](https://nginx.org/en/docs/http/configuring_https_servers.html#chains)
+
+首次采用这套流程时，可将 Nginx 站点中直接配置的 `ssl_certificate` 和 `ssl_certificate_key` 替换成同一 `include`，先用旧文件路径验证一次。让 `include` 文件同时引用待切换的两份文件。在同一目录准备新配置，再原子替换 `include` 文件，避免调用方看到只改了一条路径的中间状态。证书变更期间协调此站点的配置写入与重载。 [Nginx 配置重载](https://nginx.org/en/docs/control.html#reconfiguration)
+
+1. 运行 `nginx -t`。失败时立即把配置文件恢复至上一版，再核对线上当前证书和服务实例。
+2. 预检通过后运行 `systemctl reload nginx`。建立新的 TLS 连接，验证实际送出的叶证书摘要、主机名、信任链与有效期。执行一次[上线检查](#一次性上线检查)，核对两路 HTTPS、实例标识和健康探针隔离，再用获准试点账号读取已分配任务。记录新证书的到期时间。
+3. 重载或验收失败时，将引用文件原子恢复到上一版。运行 `nginx -t` 后重载，并通过新连接复核旧证书和业务读取。仍失败时保留日志和两套证书文件，按主机故障流程处置。
+
+此次流程适用于对外叶证书与配套私钥续期。后端证书和密钥由受管服务启动时加载。涉及后端证书、后端 CA 或桌面信任链的变更时，安排独立窗口核对所有受影响方的信任与服务恢复。
+
+隔离 Ubuntu 使用同一测试 CA 签发两张叶证书，验证旧证书告警、错配私钥拒绝、续期生效、回退及再次续期。新证书有效期超过演练设定的七天阈值。三次重载均换代 Nginx worker，主进程及后端服务调用标识保持一致。63 次全新 TLS 连接成功，采集合成账号保持同一持钥会话完成 10 次签名任务请求，正常注销后撤销会话和租约。该演练运行于已准备的 Ubuntu 服务候选，使用当前客户端协议和检查器。生产域名、正式证书和办公网络留待目标环境核对。证据见 `D:/codex-temp/shenyi-m7-linux-edge-tls-20261119/verification.json`。
+
+## Linux 虚拟机演练
+
+2026-11-19 从提交 `600d603` 生成本页白名单归档，在隔离的 QEMU Ubuntu 24.04.5 LTS 虚拟机运行 Node 24.22.1。原 systemd 单元和 Nginx 配置逐字节部署。16 项检查覆盖配置解析、专用账号及文件权限、回环就绪、边缘 HTTPS 实例标识、健康路由 404、部署自检、手动重启、下线与复启。 [QEMU 下载来源](https://www.qemu.org/download/) · [Ubuntu 云镜像校验](https://ubuntu.com/docs/public-images/public-images-how-to/verify-image-checksum/)
+
+另从演练磁盘的只读父层启动独立副本，读取服务进程的真实、有效、保存及文件系统 UID，核对四者均对应专用账号，`CapEff` 为零且 `NoNewPrivs` 为 1。两个虚拟机均完成正常关机并保持各自父盘摘要一致。
+
+在独立磁盘副本中进一步用现有客户端传输代码完成 Linux HTTPS 持钥采集。单件 12 MiB 达到采集文件上限，另有两个独立账号各上传 2 MiB，实际请求重叠。原有正文格式和客户端超时保持，三次上传均返回 201。上传回执、下载字节及服务重启后 SQLite 原件的 SHA-256 一致，每个任务各保留一条提交和相应的授权、活动记录。演练采用合成设备密钥，测试环境和父盘可独立保留核对。
+
+原桌面客户端使用 15 秒全程期限时，Linux 合成大件演练在收到导入响应前结束连接。Nginx 记为 499，关机后只读检查确认该操作未入库。候选客户端为已验证的账表导入及快照下载使用 90 秒，身份探针、授权、分页和回执等仍用 15 秒。在独立 Ubuntu 副本使用原 systemd 与 Nginx 配置复验，合成账表包含 20,000 行序时账，达到该表行数上限，原文 30,973,981 字节，请求 JSON 32,976,190 字节。两次显式导入均返回 201，其中大件在 Nginx 记录 30.834 秒。分页、原始下载字节、回执和重启后 SQLite 摘要核对一致。
+
+在独立 Ubuntu 副本沿用原 systemd 和 Nginx 配置。用原包校验器审核合成完整包，并在该副本的 SQLite 内准备已保存底稿版本。项目负责人经 HTTPS 持钥验证密码，获得明确查阅和导出权。首次导出在临时文件写入 8,398,028 字节后取消，代理侧也记录到不完整响应。取消未产生最终文件或遗留临时文件。同账号随后正常导出，保存 50,364,569 字节的 ZIP，含 7 件原件。完整请求在该虚拟机约 73.4 秒收到响应头。正常客户端和独立 ZIP 读取器分别核对最终文件大小、SHA-256、成员 CRC 及原件摘要。重启后只读核对底稿业务表保持一致。
+
+在独立 Ubuntu 副本沿用原 systemd 和 Nginx 配置。合成账号正常登录、绑机并提交一件 2 KiB 原件。在首次开机的已就绪实例中，核实服务主进程身份后仅向其发送一次 SIGKILL。systemd 日志记录异常退出和计划自动重启，重启计数增加一次，主进程和调用 ID 更换。从同一磁盘正常关机后冷启动，得到不同的开机 ID，受管服务和 Nginx 由开机流程启动。故障前后及冷启动后的双路 HTTPS 自检均通过。两次恢复后使用原已绑定密钥重新登录并读取提交和原件，服务实例、设备绑定、21 张业务表和原件摘要保持。
+
+新增独立 systemd 定时器和单次检查单元，复用现有双路 HTTPS 探针。探针以临时系统用户运行，读取隔离配置副本和公开后端 CA。数据库路径保留卷元数据检查，原文件权限仍拒绝读取正文。默认每五分钟检查，结果写入 journal。隔离 Ubuntu 用 15 秒周期、合成告警阈值及仅验收使用的退出观察，核对健康、低空间告警、后端停服和恢复。实测记录 6 次不同的定时调用，业务服务由独立操作控制。检查过程中未自动启动业务服务。
+
+在目标云主机上仍需实测防火墙和对外访问、正式证书及 DNS、持钥业务操作、大文件与并发、开机自启及崩溃重启、定时监控。
+
+### Windows 客户端连接 Linux 的验收
+
+在 Windows 本机运行实际 x64 候选客户端，通过仅绑定本机回环地址的端口连接隔离 Ubuntu。Nginx 和后端使用各自的测试证书，客户端仅在自身测试进程加载公开边缘 CA，校验配置中的实例标识。合成实习生首次绑机，只见获指派的任务，并提交 2 KiB 原件。连续两个客户端进程用同一设备和公钥指纹完成登录和下载，两份原件均与源字节一致。两次正常注销后，停服读取 SQLite，确认一次绑定、一次提交和相关会话均已撤销，并检查数据库完整性和外键。文件选取及保存由验收驱动提供合成路径。 [QEMU 回环端口映射说明](https://www.qemu.org/docs/master/system/invocation.html)
+
+首次登录轮次的认证能力探针出现 8 次响应头前的连接拒绝，随后观察到四次额外的同设备持钥验证成功。被标为错误的其余 47 条探针已收到 HTTP 200 和预期实例头。持钥提交、两次下载和两次注销均收到了成功响应。此次覆盖单台 Windows 主机和本机 Linux 虚拟机之间的连接，实际办公网络仍需单独验证。
+
+新版 Windows 候选随后通过可切断的本机回环 TCP 中继连接同一类隔离 Ubuntu 服务。合成提交确认后关闭中继，真实请求未收到响应头而中止，客户端心跳将业务置为暂停并拒绝查阅。恢复中继后通过原设备密钥自动复核，再读回同一提交和原件。两次启动各正常注销，服务停机时核对一个绑定、一次提交、三条已撤销业务租约和两个已撤销的登录会话。本次断链约 3.9 秒后显示暂停，恢复网络约 6.0 秒后恢复业务。本轮覆盖已确认提交后的断链和续接。办公网络和正式签名发行仍需相应验收。提交响应丢失的后续验证见下节。
+
+### 采集提交响应丢失后的核对
+
+隔离演练在服务端返回 201 后截断一笔 Windows 客户端的采集响应。客户端进入暂停状态。恢复持钥业务后，使用正常界面刷新任务并打开提交记录，确认原件和提交号。重启 Windows 客户端后复查同一历史，再由 Linux 服务重启后的离线读库核对。此次只产生一次提交和一份原件，接收回执丢失不会触发自动重传。详细证据见 `D:/codex-temp/shenyi-m7-submit-response-loss-20261119/verification.json`。
+
+### 小团队并发实测基线
+
+隔离 Ubuntu 使用 4 vCPU 和 3,072 MiB 客机内存。四笔各 2 MiB 的持钥上传共同在途 0.82 秒，从发送请求到收到响应头为 0.93 至 2.79 秒。使用两名实习生和两名助理的合成身份，保留现有客户端 15 秒采集期限。各账号只读取获指派任务和本人原件。Nginx 记录四次对应的大体积响应，客户端解码后核对四件原件的大小和 SHA-256。八次读取其他账号任务及原件均返回 404。重启停服后，原件 SHA-256 与 SQLite 的持久记录一致。
+
+200 毫秒采样的 Node 峰值 RSS 为 240.2 MiB，正常重启和关闭后 SQLite 文件净增长 8.04 MiB。内存采样范围包含登录、绑机、上传、下载和退出。在试点资源核算时，补入实际团队数和同时在线人数、平均与高位附件大小、月新增资料量、保留周期及备份副本，再按目标主机和办公网络复验。本次原始报告见 `D:/codex-temp/shenyi-m7-linux-capacity-20261119/verification.json`。
+
+## 变更与回滚
+
+停机变更前先停止接入新业务并等待进行中的上传和导出完成。备份代码版本、配置和数据库，核对候选与上一版本均兼容当前库。候选签名和暂存完成后，在获准窗口用同一可信渠道预置 `scripts/activate-linux-release.py` 及同目录的 `scripts/linux-release-tree.py`，以发布管理员身份执行。激活使用 `/usr/bin/openssl` 3.0 或支持相同参数的更新版本。`current` 和候选使用支持 `renameat2` 原子目录交换的同一文件系统。 [Linux 目录交换](https://man7.org/linux/man-pages/man2/rename.2.html)
+
+```sh
+/usr/bin/python3 -I /opt/shenyi-team/release-tools/scripts/activate-linux-release.py \
+  --revision "$release" --archive-sha256 "$approved_archive_sha256" --same-schema
+```
+
+`--same-schema` 确认本次切换已核对数据库兼容性。命令沿用暂存锁，核对审批归档摘要、候选回执和完整目录摘要。旧版暂存回执缺少 `stagedTree` 时，保全该目录并使用新工具重新暂存签名归档。候选目录变化时，在执行候选或停服前拒绝。
+
+停服前以 `shenyi-team` 运行候选的 `start-team-service.mjs --check-startup --config /etc/shenyi-team/service.json`。它以只读模式检查 SQLite 实例和所需库结构，包括已启用的审核式恢复或微信结构，并复用正式启动的证书、私钥和短信／微信配置校验。预检完成即退出，端口监听和双路 HTTPS 仍在切换后检查，供应商联调需使用相应授权环境。激活工具在停服前再次核对候选目录及预检所用配置文件状态。失败时保留当前服务与候选。发布人员可在候选目录以服务账号重跑同一命令，查看固定错误码。只核对库结构时可继续使用 `--check-database`。涉及迁移时，单独验证新旧版兼容性。
+
+候选预检的进程时限为 30 秒，计入冷加载正式服务依赖的时间，超时在停服前退出。SQLite 使用 WAL 模式时，只读连接可能创建 `-wal` 和 `-shm` 旁文件。 [SQLite WAL 文档](https://sqlite.org/wal.html#read_only_databases)
+
+候选启动预检通过后，激活工具通过回环 TLS 核验后端域名或 IP，并使用部署的后端 CA。比较运行中后端发送的有序证书链与配置文件中链的证书摘要，PEM 行折叠差异不影响比较。握手失败、证书链不一致，或预检期间配置、证书、CA 与 systemd 调用发生变化，都会在写入切换日志和停止现有服务之前退出。正常进入切换的回执包含 `backendTlsPreflight: unchanged`。若有待生效的后端证书或信任链变更，先在独立窗口完成该变更并复核双路 HTTPS，再启用代码候选。 [OpenSSL 证书链与身份核验](https://docs.openssl.org/3.0/man1/openssl-s_client/#options)
+
+2026-11-21 在隔离 Ubuntu 24.04 上以同一个签名候选复验。配置分别改用另一 CA 签发的新密钥证书和原密钥证书，两次候选启动预检均返回 0，激活均在停服前返回 1。运行中的 systemd 调用、Nginx、发布目录、SQLite 及 2 KiB 合成原件保持。恢复原配置后，候选成功激活，保留旧发布目录。六次双路 HTTPS 检查各通过九项。验收回执见 `D:/codex-temp/shenyi-linux-activation-tls-20261121/run-4/verification.json`。
+
+隔离 Ubuntu 中，要求不存在的表和忽略退出信号的候选均在停服前被拒绝，原服务调用标识及 SQLite 字节一致。兼容候选的独立预检用时约 1.1 秒，随后切换通过双路 HTTPS 检查。此轮使用已准备的演练目录核验激活流程。证据见 `D:/codex-temp/shenyi-m7-db-preflight-20261119/verification.json`。
+
+新版工具在隔离 Ubuntu 实际验签并离线暂存 36 个生产依赖包。服务代码和依赖的同长度改动、增加文件、缺少文件均在运行候选和停服前被拒绝。恢复原样后，候选通过实际服务切换及双路 HTTPS，停服复核的数据库与合成原件保持。 [演练记录](STATUS.md#2026-11-20-m7bg-linux-发布目录完整性复核)
+
+切换前用运行版本的探针建立基线。启动候选后，由已验签的候选探针检查两路 HTTPS、实例和进程。原有磁盘和证书临近阈值的提示可保留，新增提示或必要检查失败会停止变更。隔离环境可显式提供 `--edge-ca` 读取受信的边缘 CA，生产公有证书通常使用系统信任。 [systemd 服务状态与重启计数](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html)
+
+激活返回 `0` 时，旧版保存在 `previous-$release`。候选启动或探针失败且旧版已恢复时返回 `2`，候选保留在 `failed-$release`。两种结果均写入 `activation-$release.json`。返回 `1` 或进程意外退出时，先核对结案回执及 `/opt/shenyi-team/.shenyi-activation.json`。日志仍在且结案回执尚未生成时，使用原批准版本、归档 SHA-256 和原信任设置执行恢复。
+
+```sh
+/usr/bin/python3 -I /opt/shenyi-team/release-tools/scripts/activate-linux-release.py \
+  --recover --revision "$release" --archive-sha256 "$approved_archive_sha256" --same-schema
+```
+
+恢复沿用发布锁，核对日志、候选暂存回执、目录设备号和 inode、配置摘要及 SQLite 文件身份。新日志保存 `stagedTree`，恢复时同时核对日志、回执和实际目录。升级工具前已开始的切换，若原日志和暂存回执均无 `stagedTree`，仍可按原检查恢复。未结案的切换恢复上一版。上一版已正常运行时保留该调用；否则在确认候选已停止后，通过原子目录交换恢复并启动上一版。双路 HTTPS 校验通过后，候选保留在 `failed-$release`，结案状态为 `recovered`。日志若已写好 `activated`、`rolled-back` 或 `recovered` 终态，只在当前目录和服务重新核验通过后原样归档。恢复和归档成功均返回 `0`。
+
+遇到审批摘要不一致、目录或配置变化、SQLite 文件身份变化、systemd 仍有任务或双路 HTTPS 失败时，恢复返回 `1` 并保留可核验的目录和日志。排查完毕后可对同一日志再次执行恢复。SQLite 和配置保留在各自的原路径，候选已处理的业务仍留在当前库。结案回执已生成时以该回执及实时健康检查为准。 [目录持久化](https://man7.org/linux/man-pages/man2/fsync.2.html)
+
+隔离 Ubuntu 使用合成候选，在原子交换之前和之后分别终止实际激活进程。两次均恢复原目录、重启旧版、完成双路 HTTPS 复检及回执归档。使用错误归档摘要的恢复在任何变更前拒绝。停服后的 SQLite 哈希、文件身份、表结构和 2 KiB 合成原件与初始一致。虚拟机原有磁盘余量提示仍在默认探针报告内。 [演练记录](STATUS.md#2026-11-20-m7bf-linux-发布中断恢复)
+
+### 重新启用已签版本
+
+已启用过的版本可以作为一次新变更再次启用，例如从刚完成的发布回到上一个已审定版本。先确认目标版本能读写当前表结构，再用独立可信的原始归档、公钥和签名重新暂存目标版本。暂存路径仍为 `staged-$release`。使用部署审批记录中的变更编号运行原激活命令。
+
+```sh
+/usr/bin/python3 -I /opt/shenyi-team/release-tools/scripts/activate-linux-release.py \
+  --revision "$release" --archive-sha256 "$approved_archive_sha256" --same-schema \
+  --change-id "$approved_change_id"
+```
+
+编号为 1 至 32 位小写字母和数字，可包含中间的短横线。同一版本的同一编号只结案一次。结案记录与保留目录分别为 `activation-$release-$approved_change_id.json`、`previous-$release-$approved_change_id`，自动回退后的候选保留在 `failed-$release-$approved_change_id`。操作仍执行停服前预检、原子目录交换、双路 HTTPS 复检和异常自动回退。若此次变更在结案前中断，原 `--recover` 命令须同时传入相同的 `--change-id`。未使用编号的既有变更仍按原命令恢复。
+
+核对一条获准的正常业务操作后再恢复接入。若需变更后端证书，先在独立窗口验证后端已加载新证书并通过双路 HTTPS 探针。更换对外证书按[对外证书续期流程](#续期-nginx-对外证书)验收。
+
+隔离 Ubuntu 验证了错误审批摘要在停服前被拒绝。模拟 systemd 启动失败后，原目录恢复，旧版重新启动并通过双路 HTTPS，故障候选留存。另一份测试密钥签名的候选随后成功启用，旧版目录保留。三个 systemd 调用标识各异，Nginx、配置和 SQLite 文件身份及字节保持。
+
+在隔离 Ubuntu 中使用真实 `current` 目录演练 `705b159 → 0b7e1c8 → 705b159`。每次先停受管服务，确认边缘接口返回 502，移动实体目录后重新启动并复核两路 HTTPS。三个服务进程的启动标识各异，两版发布文件按各自归档逐一比对。已有技术管理员以同一设备绑定读取订阅，分别收到无提醒字段、7 天、无提醒字段。已有采集账号以原设备绑定读回 2 KiB 合成原件，原件 SHA-256、SQLite 文件标识和架构、21 张业务表摘要保持一致。最终离线检查通过，虚拟机正常关机。此轮保留现有数据库，覆盖同库架构的应用版本回滚。涉及架构或数据迁移时，先证明上一版本能读取并正确处理迁移后的库。
+
+隔离 Ubuntu 对已保存合成微信收款和权益的库执行 `e28ae2a → b53f334 → e28ae2a`。两版分别由 Git TAR 签发，均以 37 个锁定生产依赖离线暂存。三个 systemd 调用和五次内外两路 HTTPS 检查通过。停服加密备份、离线恢复与签名回退完成后，七张 Native 表、2 KiB 原件和权威库的文件身份及摘要保持。Ubuntu 正常关机，十二层复用母盘及归档摘要保持。该演练使用合成收款，部署环境关闭商户配置。 [演练记录](STATUS.md#2026-11-20-ubuntu-微信账本发布与回退)
+
+受管库可通过离线 CLI 加密封存，并在新目录演练恢复。演练副本仅供核对，受管服务会拒绝启动。回滚应用时可按[重新启用已签版本](#重新启用已签版本)重新暂存并启用上一个已审定的版本，再测服务实例、设备登录与业务持久状态。若需要回滚数据，停服后对当前权威库和拟恢复归档运行 `compare-managed-sealed`。返回 `2` 时先核对已发生变化，返回 `1` 时先查明核验失败原因。任何正式恢复仍须依据可信记录检查快照之后的凭据、设备、撤权、支付和业务状态，并按批准的切换流程处理。 [恢复前核对变化](TEAM_OFFLINE_BACKUP.md#恢复前核对变化)

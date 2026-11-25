@@ -3,6 +3,17 @@
   .pi-root .pi-status:empty {display:none}
   .pi-root .pi-status {margin:0 0 .8rem;padding:.65rem .8rem;border-radius:7px;background:#ebf4ee;color:#285645;overflow-wrap:anywhere}
   .pi-root .pi-status.error {background:#fbefeb;color:var(--red)}
+  .pi-summary-scroll {border:1px solid var(--line);border-radius:8px}
+  .pi-summary-tools {display:flex;justify-content:flex-end;margin-bottom:.7rem}
+  .pi-summary-table {width:100%;min-width:750px;text-align:left}
+  .pi-summary-table th {background:#edf3ed;color:#355143;white-space:nowrap}
+  .pi-summary-table :is(th,td) {padding:.65rem .7rem;vertical-align:top;overflow-wrap:anywhere}
+  .pi-summary-table td:nth-child(2) {min-width:136px;font-size:.8125rem}
+  .pi-summary-table .pi-initiation-status {white-space:nowrap}
+  .pi-summary-table td:nth-child(4) {min-width:160px}
+  .pi-summary-table a {color:var(--accent);text-underline-offset:2px}
+  .pi-summary-table tbody tr:last-child td {border-bottom:0}
+  .pi-summary-table .pi-summary-empty {padding:1rem;color:var(--muted)}
   .pi-head {display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
   .pi-head h2 {flex:1 0 11rem;font-size:19px}
   .pi-list h3 {font-size:14px;margin:1.25rem 0 .55rem}
@@ -20,4 +31,14 @@
   .pi-fields input[readonly],.pi-fields textarea[readonly] {color:var(--muted)}
   .pi-form-actions {display:flex;align-items:center;gap:.65rem .9rem;flex-wrap:wrap;margin:1rem 0 0}
   .pi-form-actions p {margin:0}
+  .pi-detail>.pi-head {margin-bottom:1.25rem}
+  .pi-project-meta {display:flex;flex:1 1 auto;flex-wrap:wrap;align-items:baseline;gap:.4rem 1rem;margin:0;overflow-wrap:anywhere}
+  .pi-project-meta code {color:var(--muted);font-size:.78rem}
+  .pi-detail-group {min-width:0;margin:0 0 1rem;padding:1rem;border:1px solid var(--line);border-radius:8px}
+  .pi-detail-group legend {padding-inline:.4rem;font-weight:600}
+  .pi-detail-group .pi-fields {margin:0}
+  .pi-contract-row {display:flex;flex-wrap:wrap;align-items:end;gap:.5rem 1rem;margin-top:1rem;overflow-wrap:anywhere}
+  .pi-contract-row label {display:grid;min-width:0;gap:.35rem}
+  .pi-contract-row input {max-width:100%}
+  .pi-contract-row span {color:var(--muted);font-size:.875rem}
 }

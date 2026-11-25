@@ -27,11 +27,14 @@
     return v;
   }
   function sourceShape(v){
-    exact(v,SOURCE_KEYS);
-    if(!Number.isSafeInteger(v.wonEventNo)||v.wonEventNo<1||!Number.isInteger(v.auditYear)||v.auditYear<1900||v.auditYear>9999||!Number.isSafeInteger(v.totalCents)||v.totalCents<0)throw Error(schemaMessage);
-    return {quoteId:id(v.quoteId),wonEventNo:v.wonEventNo,wonAt:iso(v.wonAt),projectName:text(v.projectName,300,'来源项目名称',true),
+    const estimate=v?.origin==='estimate';
+    exact(v,estimate?[...SOURCE_KEYS,'origin']:SOURCE_KEYS);
+    const validYear=estimate&&v.auditYear===null||Number.isInteger(v.auditYear)&&v.auditYear>=1900&&v.auditYear<=9999;
+    const validAmount=estimate&&v.totalCents===null||Number.isSafeInteger(v.totalCents)&&v.totalCents>=0;
+    if(!Number.isSafeInteger(v.wonEventNo)||v.wonEventNo<1||!validYear||!validAmount)throw Error(schemaMessage);
+    return {quoteId:id(v.quoteId),wonEventNo:v.wonEventNo,wonAt:iso(v.wonAt),projectName:text(v.projectName,300,'来源项目名称',!estimate),
       issuer:text(v.issuer,200,'发标单位'),customerName:text(v.customerName,200,'被审计单位'),firmName:text(v.firmName,200,'投标事务所'),
-      auditYear:v.auditYear,quoteDate:date(v.quoteDate),totalCents:v.totalCents,projectType:text(v.projectType,100,'项目类型')};
+      auditYear:v.auditYear,quoteDate:date(v.quoteDate),totalCents:v.totalCents,projectType:text(v.projectType,100,'项目类型'),...(estimate?{origin:'estimate'}:{})};
   }
   function sourceOf(input,quoteId){
     const entry=input?.entry||input,last=entry?.events?.at(-1),s=entry?.snapshot;
@@ -39,7 +42,7 @@
     if(last?.outcome!=='won')throw Error(wonMessage);
     if(last.eventNo!==entry.lastEventNo)throw Error(schemaMessage);
     return sourceShape({quoteId,wonEventNo:last.eventNo,wonAt:last.recordedAt,projectName:s.projectName,issuer:s.issuer,
-      customerName:s.customerName,firmName:s.firmName,auditYear:s.auditYear,quoteDate:s.quoteDate,totalCents:s.totalCents,projectType:s.projectType});
+      customerName:s.customerName,firmName:s.firmName,auditYear:s.auditYear,quoteDate:s.quoteDate,totalCents:s.totalCents,projectType:s.projectType,...(s.origin==='estimate'?{origin:'estimate'}:{})});
   }
   function formShape(v){
     exact(v,FORM_KEYS);
@@ -112,10 +115,11 @@
     return p.year+'-'+p.month+'-'+p.day;
   }
   function money(cents){
+    if(cents===null)return '待填写';
     const n=BigInt(cents),whole=String(n/100n).replace(/\B(?=(\d{3})+(?!\d))/g,',');
     return '¥ '+whole+'.'+String(n%100n).padStart(2,'0');
   }
-  function mount(container,{lookup,listWon,onBack}={}){
+  function mount(container,{lookup,listWon,onBack,onOpenDetails,summaryClearButton,summaryRecords=(records=>records),projectNameForDisplay=(name=>name)}={}){
     if(!container?.ownerDocument||typeof lookup!=='function')throw Error('立项入口未就绪。');
     const doc=container.ownerDocument;
     const el=(tag,content,cls)=>{const x=doc.createElement(tag);if(content!==undefined)x.textContent=content;if(cls)x.className=cls;return x;};
@@ -123,11 +127,14 @@
     const box=el('div',undefined,'pi-root'),status=el('p',undefined,'pi-status'),content=el('div');
     status.id='project-init-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
     box.append(status,content);container.replaceChildren(box);
-    let dbPromise,serial=0,editor=null,register=null,contract=null;
+    let dbPromise,serial=0,editor=null,register=null,contract=null,detailsEditor=null;
+    const useSummary=typeof onOpenDetails==='function'&&!!root.ProjectWorkspaceStore;
+    const summaryFilters=new Map();
     function clearRegister(){register?.destroy();register=null;contract?.destroy?.();contract=null;}
     function db(){return dbPromise||(dbPromise=openDb().catch(e=>{dbPromise=null;throw e;}));}
     function message(value='',error=false){status.textContent=value;status.classList.toggle('error',error);}
     function permit(){
+      if(detailsEditor&&!detailsEditor.canLeave())return false;
       if(register?.canLeave&&!register.canLeave())return false;
       if(contract?.canLeave&&!contract.canLeave())return false;
       if(editor?.saving)return false;
@@ -140,26 +147,127 @@
       const b=btn(record?'查看立项信息':'填写立项信息表',record?'btn':'btn primary');b.dataset.projectOpen=source.quoteId;
       b.onclick=()=>{void open(source.quoteId);};item.append(info,b);list.append(item);
     }
-    async function show(){
-      if(!permit())return false;
-      const ticket=++serial;clearRegister();editor=null;contract=null;message('正在读取本机立项信息…');
-      const panel=el('section',undefined,'panel pi-list'),head=el('div',undefined,'pi-head');
-      head.append(el('h2','项目立项'));panel.append(head,el('p','中标结果自动生成项目，可进入填写负责人、最终中标价并上传本项目合同模板。资料仅存当前浏览器。','muted'));
+    function quotedAuditees(source,entry){
+      return entry?.snapshot?.quoteRows?.map(row=>row.name).join('、') || entry?.snapshot?.auditees?.join('、') || source.customerName;
+    }
+    function initiationComplete(workspace,record,type){
+      const details=workspace?.projectInitiationDetails;
+      if(!details)return false;
+      const filled=value=>typeof value==='string'&&value.trim().length>0;
+      const {manager,riskLevel}=workspace.projectRegister||{};
+      return Object.keys(root.ProjectWorkspaceStore.INITIATION_FIELDS).every(key=>filled(details[key]))&&
+        filled(type)&&filled(riskLevel)&&filled(manager??record.form.manager)&&
+        Number.isSafeInteger(workspace.amountCents)&&workspace.amountCents>=0&&
+        filled(workspace.projectInvoice?.information)&&!!workspace.signedContract?.blob;
+    }
+    async function renderSummary(host,records,entries,ticket){
+      const S=root.ProjectWorkspaceStore;
+      const workspaces=await Promise.allSettled(records.map(record=>S.get(record.quoteId)));
+      if(ticket!==serial)return false;
+      const scroll=el('div',undefined,'table-scroll pi-summary-scroll'),table=el('table',undefined,'pi-summary-table');
+      scroll.tabIndex=0;scroll.setAttribute('role','region');scroll.setAttribute('aria-label','项目汇总表');
+      const head=el('thead'),headRow=el('tr'),body=el('tbody');
+      const columns=[['立项状态','initiationStatus'],['被审计单位','company'],['项目类型','type'],['当前步骤','stage'],
+        ['是否完结','completed'],['是否归档','archived'],['确认人','manager']];
+      const projects=[];
+      for(const [index,record] of records.entries()){
+        const {quoteId,source}=record,entry=entries.get(quoteId),workspace=workspaces[index].value;
+        const progress=workspace?.auditWorkflow;
+        const lifecycle=workspace?.projectLifecycle?.status;
+        const completed=progress?.completed || (lifecycle==='已完成'?'是':lifecycle==='进行中'?'否':'');
+        const company=workspace?.projectInitiationDetails?.companyName??quotedAuditees(source,entry);
+        const type=workspace?.projectClassification?.projectType??source.projectType;
+        const initiationStatus=initiationComplete(workspace,record,type)?'已完成':'立项中';
+        const stage=root.AuditWorkflow?.stageName(progress?.currentStage);
+        const manager=workspace?.projectRegister?.manager??record.form.manager;
+        projects.push({quoteId,number:index+1,initiationStatus,company,type,stage,completed,archived:progress?.archived,manager});
+      }
+      const clear=summaryClearButton||btn('清空筛选');
+      const display=value=>value||'—';
+      const filtersUI=root.WorkspaceTableFilters.create(scroll,summaryFilters,renderRows);
+      for(const [name,key] of [['序号'],['项目编号'],...columns]){
+        const cell=el('th');cell.scope='col';cell.append(el('span',name));headRow.append(cell);
+        if(!key)continue;
+        const values=new Set(projects.map(project=>display(project[key])));
+        if(summaryFilters.has(key))values.add(summaryFilters.get(key));
+        const choices=[...values].sort((a,b)=>a.localeCompare(b,'zh-CN',{numeric:true})).map(value=>[value,value==='—'?'未填写':value]);
+        cell.append(filtersUI.add(name,key,choices,key==='company'||key==='manager'));
+      }
+      head.append(headRow);table.append(head,body);scroll.append(table);
+      function renderRows(){
+        const filters=[...summaryFilters];
+        const visible=projects.filter(project=>filters.every(([key,value])=>display(project[key])===value));
+        const rows=visible.map(project=>{
+          const {quoteId,number}=project,row=el('tr'),code=el('td'),link=el('a',quoteId);
+          row.dataset.projectRegisterId=quoteId;
+          code.dataset.projectInternalId=quoteId;code.title='项目编号 '+quoteId;
+          link.href='#project-initiation';link.title='查看立项信息表';
+          link.onclick=event=>{event.preventDefault();void onOpenDetails(quoteId);};
+          code.append(link);row.append(el('td',String(number)),code);
+          for(const [,key] of columns)row.append(el('td',display(project[key]),key==='initiationStatus'?'pi-initiation-status':undefined));
+          return row;
+        });
+        if(!rows.length){
+          const row=el('tr'),cell=el('td',projects.length?'没有符合查询条件的项目。':'暂无已立项项目。','pi-summary-empty');
+          cell.colSpan=headRow.cells.length;row.append(cell);rows.push(row);
+        }
+        clear.disabled=!filters.length;
+        filtersUI.sync();
+        body.replaceChildren(...rows);
+      }
+      clear.onclick=()=>{filtersUI.close();summaryFilters.clear();renderRows();};
+      renderRows();host.replaceChildren(scroll,filtersUI.menu);
+      if(!summaryClearButton){
+        const toolbar=el('div',undefined,'pi-summary-tools');
+        toolbar.append(clear);host.prepend(toolbar);
+      }
+      return workspaces.every(result=>result.status==='fulfilled');
+    }
+    async function show({leaveApproved=false}={}){
+      if(!leaveApproved&&!permit())return false;
+      if(useSummary&&summaryClearButton)summaryClearButton.disabled=true;
+      const ticket=++serial;clearRegister();editor=null;detailsEditor=null;contract=null;message('正在读取本机立项信息…');
+      const panel=el('section',undefined,useSummary?'panel pi-summary':'panel pi-list');
+      if(!useSummary){
+        const head=el('div',undefined,'pi-head');
+        head.append(el('h2','项目立项'));panel.append(head,el('p','中标结果自动生成项目，可进入填写负责人、最终中标价并上传本项目合同模板。资料仅存当前浏览器。','muted'));
+      }
       const lists=el('div');lists.id='project-init-list';panel.append(lists);content.replaceChildren(panel);
       let autoError='';
       const [available]=await Promise.allSettled([typeof listWon==='function'?Promise.resolve().then(listWon):Promise.resolve([])]);
-      if(root.ProjectRegister&&available.status==='fulfilled'&&Array.isArray(available.value)){
+      if((useSummary||root.ProjectRegister)&&available.status==='fulfilled'&&Array.isArray(available.value)){
         try{for(const raw of available.value){const e=raw?.entry||raw;if(e?.events?.at(-1)?.outcome==='won')await ensureWon(e);}}catch(e){autoError='自动生成项目未完成：'+e.message;}
       }
       const [saved]=await Promise.allSettled([db().then(d=>read(d,s=>s.getAll(undefined,MAX_PROJECTS+1))).then(all=>{if(all.length>MAX_PROJECTS)throw Error(schemaMessage);return all.map(stored);})]);
       if(ticket!==serial)return false;
       if(saved.status!=='fulfilled'){message(saved.reason?.message||'无法读取本机立项信息。',true);return false;}
       const records=saved.value.sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)),savedIds=new Set(records.map(x=>x.quoteId));
+      const entries=new Map();
+      if(available.status==='fulfilled'&&Array.isArray(available.value)){
+        for(const raw of available.value){const entry=raw?.entry||raw;if(entry?.id)entries.set(entry.id,entry);}
+      }
+      if((useSummary||root.ProjectRegister)&&root.ProjectWorkspaceStore?.ensureProjectNumbers){
+        try{
+          const candidates=[];
+          for(const record of records){
+            const first=entries.get(record.quoteId)?.events?.find(event=>event.outcome==='won');
+            if(first)candidates.push({projectId:record.quoteId,firstWonAt:first.recordedAt});
+          }
+          await root.ProjectWorkspaceStore.ensureProjectNumbers(candidates,records.map(record=>record.quoteId));
+        }catch(error){if(!useSummary)autoError='固定项目编号待核对：'+error.message;}
+        if(ticket!==serial)return false;
+      }
+      if(useSummary){
+        const complete=await renderSummary(lists,summaryRecords(records,entries),entries,ticket);
+        if(ticket!==serial)return false;
+        const error=autoError||(!complete?'部分项目资料暂无法读取。':available.status==='rejected'?'暂无法核对报价来源，已保存项目仍可查看。':'');
+        message(error,!!error);
+        return true;
+      }
       if(root.ProjectRegister){
-        panel.querySelector('h2').textContent='项目登记表';
+        panel.querySelector('h2').textContent='项目汇总表';
         panel.querySelector('p.muted').textContent='编号年度按首次中标登记的北京时间，同年四位顺序固定不复用；风险或八类项目类型未填显示待补齐，非年审类型仅作项目分类、不套用年审计算规则。人工修改请保存本行，资料仅存当前浏览器。';
-        if(root.ProjectWorkspaceStore?.ensureProjectNumbers){try{const entries=new Map((available.status==='fulfilled'?available.value:[]).map(raw=>{const e=raw?.entry||raw;return[e.id,e];})),candidates=[];for(const r of records){const first=entries.get(r.quoteId)?.events?.find(e=>e.outcome==='won');if(first)candidates.push({projectId:r.quoteId,firstWonAt:first.recordedAt});}await root.ProjectWorkspaceStore.ensureProjectNumbers(candidates,records.map(r=>r.quoteId));}catch(e){autoError='固定项目编号待核对：'+e.message;}if(ticket!==serial)return false;}
-        register=root.ProjectRegister.mount(lists,{records,entries:available.status==='fulfilled'?available.value:[],lookup,onOpen:open,isCurrent:()=>ticket===serial});
+        register=root.ProjectRegister.mount(lists,{records,entries:available.status==='fulfilled'?available.value:[],lookup,onOpen:open,isCurrent:()=>ticket===serial,projectNameForDisplay});
         message(autoError||(available.status==='rejected'?'暂无法读取报价结果；已保存项目仍保留，无法核对的项目仅供查看。':''),!!autoError||available.status==='rejected');return true;
       }
       const candidates=[];
@@ -260,14 +368,174 @@
         panel.append(b);content.replaceChildren(panel);return false;
       }
     }
-    function capturePending(){if(register)return register.capturePending();const pendingEditor=editor&&!editor.readOnly&&editor.fields.some(x=>x.value!==editor.initial[x.name])?{revision:editor.revision,source:JSON.stringify(editor.source),fields:Object.fromEntries(editor.fields.map(x=>[x.name,x.value]))}:null,pendingContract=contract?.capturePending?.();return pendingEditor||pendingContract?{scope:{kind:'project-initiation',projectId:editor?.source.quoteId},values:{schemaVersion:1,editor:pendingEditor,contract:pendingContract||null}}:null;}
+    async function openDetails(quoteId,{onBack:backToQuote=onBack,backLabel='返回招投标'}={}){
+      if(detailsEditor?.scope.projectId===quoteId)return true;
+      if(!permit())return false;
+      const ticket=++serial;
+      clearRegister();editor=null;detailsEditor=null;
+      message('正在读取立项资料…');content.replaceChildren();
+      const S=root.ProjectWorkspaceStore,back=btn(backLabel);
+      back.onclick=()=>backToQuote?.();
+      try{
+        let entry,source,record,readOnlyReason='';
+        try{
+          const live=await lookup(quoteId);entry=live?.entry||live;
+          source=sourceOf(entry,quoteId);
+          record=await ensureWon(entry);
+        }catch(error){
+          const saved=await db().then(d=>read(d,store=>store.get(quoteId)));
+          if(!saved)throw error;
+          record=stored(saved);source=record.source;
+          readOnlyReason='中标来源当前不可核对，已打开保存的立项信息供查看。';
+        }
+        if(entry?.id!==quoteId)entry=null;
+        const workspace=await S.get(quoteId);
+        if(ticket!==serial)return false;
+        const frozen=JSON.stringify(source);
+        const saved=workspace.projectInitiationDetails;
+        if(saved)S.initiationDetails(saved);
+        const quote=entry?.snapshot||{};
+        const rate=/^\s*(\d{1,3}(?:\.\d{1,2})?)\s*%/.exec(quote.taxRateText||'');
+        const quoteCents=readOnlyReason?workspace.amountCents??source.totalCents:S.projectAmount(source,workspace,entry).amountCents;
+        const values={companyName:quotedAuditees(source,entry),contactName:quote.contactName||'',contactInfo:quote.contactInfo||'',
+          taxRate:rate&&Number(rate[1])<=100?rate[1]:'',...(saved||{}),
+          riskLevel:workspace.projectRegister?.riskLevel??quote.riskLevel??'',
+          manager:workspace.projectRegister?.manager??record.form.manager,
+          projectType:workspace.projectClassification?.projectType??source.projectType,
+          amount:quoteCents===null?'':money(quoteCents).replace(/[^\d.]/g,''),
+          invoice:workspace.projectInvoice?.information||''};
+        const panel=el('section',undefined,'panel pi-editor pi-detail'),head=el('div',undefined,'pi-head'),form=el('form');
+        const meta=el('p',undefined,'pi-project-meta');
+        meta.append(el('strong',projectNameForDisplay(source.projectName)||'项目名称待填写'),el('code',quoteId));
+        head.append(meta,back);
+        if(useSummary&&root.ProjectRegister){
+          const tools=btn('登记与附件');
+          tools.onclick=()=>{
+            if(!permit())return;
+            const toolsTicket=++serial;
+            clearRegister();detailsEditor=null;
+            const toolsPanel=el('section',undefined,'panel'),toolsHead=el('div',undefined,'pi-head'),registerHost=el('div');
+            const closeTools=btn('返回立项信息表');
+            const openForm=()=>{void openDetails(quoteId,{onBack:backToQuote,backLabel});};
+            closeTools.onclick=openForm;toolsHead.append(el('h2','登记与附件'),closeTools);
+            toolsPanel.append(toolsHead,registerHost);content.replaceChildren(toolsPanel);
+            register=root.ProjectRegister.mount(registerHost,{records:[record],entries:entry?[entry]:[],lookup,onOpen:openForm,
+              isCurrent:()=>toolsTicket===serial,projectNameForDisplay});
+            message();
+          };
+          head.append(tools);
+        }
+        panel.append(head,form);form.id='project-init-form';form.dataset.activityProjectId=quoteId;
+        const fields=new Map(),yesNo=['是','否'],riskLevels=['A类','B类','C类'];
+        function group(title,items){
+          const fieldset=el('fieldset',undefined,'pi-detail-group'),grid=el('div',undefined,'fields pi-fields');
+          fieldset.append(el('legend',title),grid);form.append(fieldset);
+          for(const [key,label,type,options] of items){
+            const field=el(options?'select':type==='textarea'?'textarea':'input'),wrapper=el('label',label);
+            field.name=key;field.id='project-info-'+key;wrapper.htmlFor=field.id;
+            if(options){
+              const prompt=el('option','请选择');prompt.value='';prompt.disabled=true;prompt.hidden=true;field.append(prompt);
+              for(const item of options){const option=el('option',item);option.value=item;field.append(option);}
+              if(values[key]&&!options.includes(values[key])){
+                const prior=el('option',values[key]);prior.value=values[key];field.append(prior);
+              }
+            }else if(type==='textarea'){field.rows=3;wrapper.classList.add('pi-wide');}
+            else {field.type=type==='date'?'date':'text';if(type==='decimal'||type==='numeric')field.inputMode=type;}
+            const max=S.INITIATION_FIELDS[key]||{manager:100,invoice:4000,amount:24}[key];
+            if(max&&!options&&type!=='date')field.maxLength=max;
+            if(readOnlyReason){if(options)field.disabled=true;else field.readOnly=true;}
+            field.value=values[key]||'';fields.set(key,field);wrapper.append(field);grid.append(wrapper);
+          }
+        }
+        group('项目资料',[
+          ['companyName','被审计单位'],['contactName','公司联系人'],['contactInfo','联系方式'],
+          ['projectType','项目类型',null,S.PROJECT_TYPES],['riskLevel','风险等级',null,riskLevels],
+          ['amount','项目价格（含税，元）','decimal'],['taxRate','税率（%）','decimal']
+        ]);
+        group('人员与交付',[
+          ['siteStart','现场开始日期','date'],['siteEnd','现场结束日期','date'],
+          ['manager','项目经理'],['teamMembers','项目组成员'],['reportDate','报告出具日期','date'],['reportCopies','报告份数','numeric'],
+          ['mailingAddress','邮寄地址','textarea']
+        ]);
+        group('选商与公司情况',[
+          ['procurementMethod','选商方式',null,S.PROCUREMENT_METHODS],['regulated','是否属于受监管行业',null,yesNo],
+          ['listed','是否上市',null,yesNo],['ipoPlan','是否有 IPO 计划',null,yesNo]
+        ]);
+        group('开票与合同',[['invoice','开票信息','textarea']]);
+        const contractRow=el('div',undefined,'pi-contract-row'),fileLabel=el('label','合同上传'),file=el('input'),filename=el('span'),download=btn('下载已保存合同');
+        file.type='file';file.accept='.pdf,.docx,.png,.jpg,.jpeg';file.id='project-info-contract';file.disabled=!!readOnlyReason;fileLabel.htmlFor=file.id;fileLabel.append(file);
+        contractRow.append(fileLabel,filename,download);form.lastElementChild.append(contractRow);
+        const save=btn('保存立项信息','btn primary'),foot=el('div',undefined,'pi-form-actions');
+        save.id='project-info-save';save.type='submit';save.disabled=!!readOnlyReason;foot.append(save);form.append(foot);content.replaceChildren(panel);
+        const readFields=()=>Object.fromEntries([...fields].map(([key,field])=>[key,field.value]));
+        let initial=readFields(),current=workspace,saving=false;
+        const scope={kind:'project-information',projectId:quoteId};
+        const dirty=()=>Object.entries(readFields()).some(([key,value])=>value!==initial[key]);
+        const updateFile=()=>{filename.textContent=file.files[0]?.name||current.signedContract?.name||'尚未上传合同';download.hidden=!current.signedContract;};
+        updateFile();file.onchange=updateFile;
+        download.onclick=async()=>{try{const item=current.signedContract;if(item){await S.validateSignedContract(item);S.download(item.blob,item.name);}}catch(error){message(error.message,true);}};
+        detailsEditor={
+          scope,
+          canLeave:()=>!saving&&(!dirty()&&!file.files.length||typeof root.confirm!=='function'||root.confirm('立项信息有未保存的修改，确定离开？')),
+          capturePending:()=>!readOnlyReason&&dirty()?{scope,values:{revision:current.rev,source:frozen,fields:readFields()}}:null,
+          async restorePending(draft){
+            if(readOnlyReason||dirty()||saving||draft?.revision!==current.rev||draft.source!==frozen||(await S.get(quoteId)).rev!==current.rev||Object.keys(draft.fields||{}).length!==fields.size||[...fields].some(([key,input])=>typeof draft.fields[key]!=='string'||input.maxLength>0&&draft.fields[key].length>input.maxLength))throw Error('立项信息的来源或版本已变化，未覆盖当前输入。');
+            for(const [key,input] of fields)input.value=draft.fields[key];
+            return {restored:1};
+          }
+        };
+        form.onsubmit=async event=>{
+          event.preventDefault();
+          if(readOnlyReason||saving||ticket!==serial)return;
+          const input=readFields(),selected=file.files[0];
+          saving=true;save.disabled=true;file.disabled=true;for(const field of fields.values())field.disabled=true;
+          try{
+            const details={schemaVersion:1};
+            for(const key of Object.keys(S.INITIATION_FIELDS))details[key]=input[key].trim();
+            S.initiationDetails(details);
+            const amount=input.amount.trim();
+            if(amount&&!/^\d+(?:\.\d{1,2})?$/.test(amount))throw Error('请填写非负项目价格，最多两位小数。');
+            const cents=amount?root.QuoteCalc.money(amount):null;
+            const oldRegister=current.projectRegister||{schemaVersion:1,siteTime:'',workpaperReportTime:'',preparationTime:'',preparer:'',reviewer:'',financialStatementDate:''};
+            const hasSite=details.siteStart||details.siteEnd||current.projectInitiationDetails?.siteStart||current.projectInitiationDetails?.siteEnd;
+            const siteTime=hasSite?[details.siteStart,details.siteEnd].filter(Boolean).join(' 至 '):oldRegister.siteTime;
+            const patch={projectInitiationDetails:details,amountCents:cents,projectRegister:{...oldRegister,manager:input.manager.trim(),riskLevel:input.riskLevel,siteTime}};
+            if(!input.projectType||S.PROJECT_TYPES.includes(input.projectType))patch.projectClassification={schemaVersion:1,projectType:input.projectType};
+            if(input.invoice.trim()!==initial.invoice)patch.projectInvoice={schemaVersion:1,information:input.invoice.trim(),file:current.projectInvoice?.file||null};
+            if(selected){
+              if(!selected.size||selected.size>12*1024*1024)throw Error('请选择 12 MiB 以内的合同文件。');
+              patch.signedContract={name:selected.name,hash:await S.hash(selected),blob:selected};
+              await S.validateSignedContract(patch.signedContract);
+            }
+            if(JSON.stringify(sourceOf(await lookup(quoteId),quoteId))!==frozen)throw Error('中标结果或来源已变化，请重新打开立项信息表。');
+            if(typeof root.confirm==='function'&&!root.confirm('确认保存立项信息？'))return;
+            current=await S.save(quoteId,current.rev,patch);
+            for(const key of Object.keys(S.INITIATION_FIELDS))fields.get(key).value=details[key];
+            fields.get('manager').value=patch.projectRegister.manager;fields.get('invoice').value=input.invoice.trim();
+            file.value='';updateFile();initial=readFields();message('立项信息已保存。');
+          }catch(error){message(error.message||'立项信息未保存。',true);}
+          finally{saving=false;save.disabled=false;file.disabled=false;for(const field of fields.values())field.disabled=false;}
+        };
+        message(readOnlyReason);return true;
+      }catch(error){
+        if(ticket!==serial)return false;
+        message(error.message||'立项信息表未能打开。',true);content.replaceChildren(back);return false;
+      }
+    }
+    function capturePending(){if(detailsEditor)return detailsEditor.capturePending();if(register)return register.capturePending();const pendingEditor=editor&&!editor.readOnly&&editor.fields.some(x=>x.value!==editor.initial[x.name])?{revision:editor.revision,source:JSON.stringify(editor.source),fields:Object.fromEntries(editor.fields.map(x=>[x.name,x.value]))}:null,pendingContract=contract?.capturePending?.();return pendingEditor||pendingContract?{scope:{kind:'project-initiation',projectId:editor?.source.quoteId},values:{schemaVersion:1,editor:pendingEditor,contract:pendingContract||null}}:null;}
     async function restorePending(values,{scope}={}){if(scope?.kind==='project-register'){if(!register)await show();return register.restorePending(values,{scope});}if(scope?.kind!=='project-initiation'||values?.schemaVersion!==1||!scope.projectId)throw Error('立项暂存范围无效。');if(root.ProjectRegister){if(!register)await show();throw Error('旧单项目页面的临时内容仍保留，未跨格式覆盖；当前使用原项目登记表，请核对原暂存。');}if(editor?.source.quoteId!==scope.projectId)await open(scope.projectId);if(!editor||editor.readOnly||editor.saving)throw Error('暂存项目当前不可编辑，原暂存保留。');if(values.editor){const v=values.editor;if(v.revision!==editor.revision||v.source!==JSON.stringify(editor.source)||!v.fields||Object.keys(v.fields).length!==FORM_KEYS.length||editor.fields.some(x=>typeof v.fields[x.name]!=='string'||v.fields[x.name].length>({projectName:300,initiationDate:10,manager:100,notes:2000}[x.name])||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(v.fields[x.name])))throw Error('立项暂存字段或版本已变化，未回填。');}if(values.contract)await contract.restorePending(values.contract.values,{scope:values.contract.scope});if(values.editor)for(const x of editor.fields)x.value=values.editor.fields[x.name];message('已恢复本项目未提交的临时内容，请完成正式保存。');return {restored:1};}
-    return Object.freeze({open,show,canLeave:permit,capturePending,restorePending,async savePending(){if(register)return register.savePending();if(editor?.saving)throw Error('立项正在保存，请稍后重试。');if(editor&&editor.fields.some(x=>x.value!==editor.initial[x.name])){const ok=await editor.savePending?.();if(!ok)throw Error(status.textContent||'立项暂存未完成。');}return contract?.savePending?contract.savePending():{saved:0};}});
+    return Object.freeze({open,openDetails,show,isDetailsOpen:()=>!!detailsEditor||useSummary&&!!register,detailsScope:()=>detailsEditor?.scope||register?.capturePending()?.scope,canLeave:permit,capturePending,
+      restorePending(values,meta){
+        if(meta?.scope?.kind!=='project-information')return restorePending(values,meta);
+        if(detailsEditor?.scope.projectId!==meta.scope.projectId)throw Error('暂存项目与当前立项表不符。');
+        return detailsEditor.restorePending(values);
+      },
+      async savePending(){if(register)return register.savePending();if(editor?.saving)throw Error('立项正在保存，请稍后重试。');if(editor&&editor.fields.some(x=>x.value!==editor.initial[x.name])){const ok=await editor.savePending?.();if(!ok)throw Error(status.textContent||'立项暂存未完成。');}return contract?.savePending?contract.savePending():{saved:0};}});
   }
   async function ensureWon(input){
     const e=input?.entry||input,source=sourceOf(e,e?.id),db=await openDb();
     try{const old=await read(db,s=>s.get(source.quoteId));if(old)return stored(old);
-      try{return await commit(db,source,{projectName:source.projectName,initiationDate:today(),manager:'',notes:''},0);}
+      try{return await commit(db,source,{projectName:source.projectName||'项目名称待填写',initiationDate:today(),manager:'',notes:''},0);}
       catch(e){const concurrent=await read(db,s=>s.get(source.quoteId));if(concurrent)return stored(concurrent);throw e;}
     }finally{db.close();}
   }
@@ -276,5 +544,6 @@
     try{return (await read(db,s=>s.getAll())).map(stored);}
     finally{db.close();}
   }
-  root.ProjectInitiation=Object.freeze({mount,listSaved,ensureWon});
+  root.ProjectInitiation=Object.freeze({mount,listSaved,ensureWon,validateRecord:stored});
+  if(typeof module==='object'&&module.exports)module.exports=root.ProjectInitiation;
 })(globalThis);

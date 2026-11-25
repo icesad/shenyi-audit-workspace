@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <title>订单付款 · 审易</title>
+  <link rel="icon" href="/api/website-pay/brand.png" type="image/png">
+  <link rel="stylesheet" href="/api/website-pay/payment.css">
+  <script src="/api/website-pay/payment.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <header class="site-header">
+    <div class="shell masthead">
+      <img src="/api/website-pay/brand.png" width="47" height="38" alt="">
+      <span>审易</span>
+    </div>
+  </header>
+
+  <main id="main" class="shell" tabindex="-1">
+    <h1 id="page-title">订单付款</h1>
+    <p id="page-lead" class="lead">核对原订单金额后，使用微信扫一扫付款。</p>
+
+    <section id="payment-status" class="payment-status" aria-labelledby="status-title" aria-busy="true">
+      <div role="status" aria-live="polite" aria-atomic="true">
+        <h2 id="status-title" tabindex="-1">正在核对订单页授权</h2>
+        <p id="status-detail">请稍候。</p>
+      </div>
+      <button type="button" class="button secondary" id="retry-order" hidden>重新核对订单</button>
+    </section>
+
+    <div id="checkout-content" class="payment-grid" hidden>
+      <section class="panel" aria-labelledby="checkout-title">
+        <h2 id="checkout-title"></h2>
+        <p id="checkout-team" class="team-name"></p>
+        <form id="seat-quote-form">
+          <label for="selected-seats" id="seat-label"></label>
+          <p id="seat-range" class="field-help"></p>
+          <input id="selected-seats" type="number" inputmode="numeric" autocomplete="off" step="1" required aria-describedby="seat-range seat-error">
+          <p id="seat-error" class="field-error" aria-live="polite" hidden></p>
+          <div class="payment-actions">
+            <button type="submit" class="button primary" id="get-quote">获取报价</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel scan-panel" aria-labelledby="quote-title">
+        <h2 id="quote-title">本次报价</h2>
+        <p id="quote-placeholder">输入席位数后获取报价。</p>
+        <div id="quote-preview" hidden>
+          <div class="total">
+            <span>应付金额</span>
+            <strong id="quote-amount"></strong>
+          </div>
+          <dl class="order-details">
+            <div><dt>席位数</dt><dd id="quote-seats"></dd></div>
+            <div id="quote-term-row" hidden><dt>席位有效期至（北京时间）</dt><dd id="quote-term"></dd></div>
+            <div><dt>报价有效期至（北京时间）</dt><dd id="quote-expires"></dd></div>
+          </dl>
+          <div class="payment-actions">
+            <button type="button" class="button primary" id="confirm-quote">确认订单</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div id="payment-content" class="payment-grid" hidden>
+      <section class="panel order-panel" aria-labelledby="order-title">
+        <h2 id="order-title" tabindex="-1"></h2>
+        <p id="team-name" class="team-name"></p>
+        <div class="total">
+          <span>订单金额</span>
+          <strong id="order-amount"></strong>
+        </div>
+        <dl class="order-details">
+          <div><dt>订单编号</dt><dd id="order-id"></dd></div>
+          <div><dt>席位数</dt><dd id="order-seats"></dd></div>
+          <div><dt>付款截止（北京时间）</dt><dd id="order-expires"></dd></div>
+        </dl>
+      </section>
+
+      <section class="panel scan-panel" aria-labelledby="scan-title">
+        <h2 id="scan-title">微信支付</h2>
+        <p id="scan-instructions">请先核对订单，再获取本单付款码。</p>
+        <figure id="payment-qr" hidden>
+          <img id="payment-qr-image" width="232" height="232" alt="当前订单的微信付款二维码">
+          <figcaption>用微信扫一扫，付款后点击查询付款结果。</figcaption>
+        </figure>
+        <div class="payment-actions">
+          <button type="button" class="button primary" id="show-qr">获取付款二维码</button>
+          <button type="button" class="button secondary" id="check-payment">查询付款结果</button>
+          <button type="button" class="button secondary" id="close-order" aria-describedby="scan-instructions" hidden>关闭未付款订单</button>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

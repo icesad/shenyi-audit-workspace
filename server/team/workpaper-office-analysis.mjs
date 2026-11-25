@@ -1,0 +1,27 @@
+import {officeRuntime} from './workpaper-office-runtime.mjs';
+import {cellPosition} from './workpaper-form-policy.mjs';
+const MIB=1024*1024,SHA=/^[a-f0-9]{64}$/;
+export async function analyzeOfficeTask(task){
+ if(!task||!SHA.test(task.fileSha256??'')||typeof task.path!=='string'||task.path.length>600||!/^.+\.(?:xlsx?|docx?)$/i.test(task.path)||typeof task.strictLayout!=='boolean'||!(task.bytes instanceof Uint8Array)||task.bytes.length<1||task.bytes.length>24*MIB)throw Error('Invalid original source');
+ const runtime=await officeRuntime(),root=runtime.root;try{
+  let bytes=task.bytes;
+  if(task.entry){if(!SHA.test(task.archiveSha256??'')||runtime.hash(bytes)!==task.archiveSha256)throw Error('Archive SHA mismatch');const archive=await root.BidderArchive.open(new File([bytes],'original.zip'),{entryLimit:2048});try{const e=archive.entries.find(e=>e.name===task.path);if(!e||e.size<1||e.size>16*MIB)throw Error('Office member absent or too large');bytes=(await archive.read([task.path])).get(task.path);}finally{archive.close();}}
+  if(bytes.length>16*MIB||runtime.hash(bytes)!==task.fileSha256)throw Error('Office SHA mismatch');const file=new File([bytes],task.path),ext=task.path.split('.').at(-1).toLowerCase();
+  async function layout(word=false){for(const n of word?['initial-word-layout-catalog.js','risk-word-layout-catalog.js','workpaper-word-manifest.js']:['initial-layout-catalog.js','risk-layout-catalog.js','workpaper-layout-manifest.js'])await runtime.load(n);const value=word?root.InitialWordLayoutCatalog?.[task.fileSha256]||root.RiskWordLayoutCatalog?.[task.fileSha256]:root.InitialLayoutCatalog?.[task.fileSha256]||root.RiskLayoutCatalog?.[task.fileSha256];if(value)return value;const path=(word?root.WorkpaperWordLayoutManifest:root.WorkpaperLayoutManifest)?.[task.fileSha256];if(path){await runtime.load(path);return (word?root.WorkpaperWordLayoutChunks:root.WorkpaperLayoutChunks)?.[task.fileSha256]||null;}return null;}
+  if(ext==='xls'||ext==='xlsx'){
+   if(ext==='xlsx'||bytes[0]===0x50&&bytes[1]===0x4b){const a=await root.BidderArchive.open(file,{entryLimit:2048});try{if(a.entries.reduce((n,e)=>n+e.size,0)>64*MIB)throw Error('Workbook expansion exceeds 64MiB');if(!a.entries.some(e=>e.name==='xl/workbook.xml'))throw Error('Workbook XML missing');for(let i=0;i<a.entries.length;){const names=[];let size=0;while(i<a.entries.length&&names.length<8&&(size+a.entries[i].size<=32*MIB||!names.length)){size+=a.entries[i].size;names.push(a.entries[i++].name);}await a.read(names);}}finally{a.close();}}
+   const parsed=await root.WorkpaperSheets.read(file),native=await layout(),workbook=runtime.workbook();if(task.strictLayout&&!native?.sheets)throw Error('Strict original layout missing');
+   const names=new Set();for(const sheet of parsed.sheets){if(typeof sheet.name!=='string'||!sheet.name||names.has(sheet.name))throw Error('Ambiguous original sheet identity');names.add(sheet.name);}
+   const sheets=parsed.sheets.map(sheet=>{const geometry=native?.sheets?.[sheet.name],raw=workbook.Sheets[sheet.name],arrays=[],hiddenRows=[],hiddenCols=[];
+    for(const [ref,cell]of Object.entries(sheet.cells)){if(!cellPosition(ref))throw Error('Invalid original cell');if(cell.array){const pair=cell.array.split(':'),s=cellPosition(pair[0]),e=cellPosition(pair[1]??pair[0]);if(!s||!e||e.r<s.r||e.c<s.c)throw Error('Invalid array range');arrays.push({s,e});}}
+    for(const [i,x]of (raw['!rows']||[]).entries())if(x?.hidden)hiddenRows.push(i);for(const [i,x]of (raw['!cols']||[]).entries())if(x?.hidden)hiddenCols.push(i);
+    const nativeAnchors=geometry?Object.fromEntries(root.WorkpaperOriginalSheet.plan(sheet,{...geometry,hiddenRows:[...new Set([...hiddenRows,...(geometry.hiddenRows||[])])],hiddenCols:[...new Set([...hiddenCols,...(geometry.hiddenCols||[])])]}).rows.flatMap(row=>row.cells.map(cell=>[cell.ref,true]))):null;
+    return{...sheet,visibility:Number(sheet.visibility||geometry?.visibility||0),readOnly:!!(geometry?.sheetType&&geometry.sheetType!=='worksheet'),hiddenRows:[...new Set([...hiddenRows,...(geometry?.hiddenRows||[])])],hiddenCols:[...new Set([...hiddenCols,...(geometry?.hiddenCols||[])])],arrayRanges:arrays,nativeAnchors,layout:geometry??null};
+   });return{kind:'excel',sha256:task.fileSha256,path:task.path,sheets,externalLinks:parsed.externalLinks,sourcePolicy:'original bytes; cached text only; no formula or macro execution'};
+  }
+  const native=ext==='doc'?await layout(true):null,holder=runtime.document.createElement('section');let result;
+  if(ext==='doc'&&!native){if(task.strictLayout)throw Error('Strict original Word layout missing');const text=await root.WorkpaperDocs.read(file),blocks=text.split(/\n+/).filter(s=>s.trim()).map((text,i)=>({type:'paragraph',text,id:'p'+i}));if(blocks.length>2000)throw Error('Legacy DOC paragraphs exceed 2000');result={kind:'word',sha256:task.fileSha256,path:task.path,mode:'legacy-text',blocks,editable:blocks.map(x=>x.id)};}
+  else{if(!await root.WorkpaperOriginalWord.render({container:holder,file,edits:{}}))throw Error('Original Word layout unavailable');const editable=[...holder.querySelectorAll('[data-native-word-id][contenteditable]')].filter(n=>!['false',''].includes(n.getAttribute('contenteditable'))).map(n=>'native:'+n.dataset.nativeWordId);result={kind:'word',sha256:task.fileSha256,path:task.path,mode:'native',model:holder.workpaperWordModel,editable};}
+  return{...result,sourcePolicy:'original bytes; plain text answers separate; no field, formula or macro execution'};
+ }finally{runtime.close();}
+}

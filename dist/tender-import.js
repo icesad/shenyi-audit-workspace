@@ -1,7 +1,7 @@
 /* Local-only invitation import: read the visible main Word body, never execute content or follow relationships. */
 (function (root) {
   'use strict';
-  const MiB = 1024 * 1024, MAX_FILE = 12 * MiB, MAX_XML = 4 * MiB;
+  const MiB = 1024 * 1024, MAX_FILE = 12 * MiB, MAX_TENDER_FILE = 100_000_000, MAX_XML = 4 * MiB;
   const WORD = ['http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'http://purl.oclc.org/ooxml/wordprocessingml/main'];
   const invalid = () => { throw new Error('无法读取 Word 正文：文件损坏、加密或格式不受支持，请另存为 .docx。'); };
   const tooLarge = () => { throw new Error('发标文件过大或结构过于复杂，请仅保留主函另存为 .docx。'); };
@@ -105,7 +105,11 @@
   const labels={
     issuer:['发标单位','发标方','招标单位','招标人名称','招标人','采购单位名称','采购单位','采购人名称','采购人','采购方','选商单位','邀请单位','征集人','比选人','询价单位','询价人'],
     projectName:['项目名称','采购项目名称','招标项目名称','标的名称','项目全称'],
-    contactName:['项目联系人','联系人员','联络人','联系人'],
+    customerName:['被审计单位名称','被审计单位','被审计方名称','被审计方'],
+    auditYear:['审计年度','审计年份'],
+    projectType:['项目类型','审计类型','业务类型'],
+    riskLevel:['项目风险等级','风险等级','风险级别'],
+    contactName:['公司联系人','项目联系人','联系人员','联络人','联系人'],
     phone:['联系电话','联系人电话','办公电话','固定电话','移动电话','手机号码','手机号','手机','电话','联系方式'],
     email:['电子邮箱','电子邮件','联系邮箱','邮箱','E-mail','Email']
   };
@@ -138,6 +142,18 @@
       }
       if(k==='issuer'&&(v.length>100||/[：:，,。<>]|联系人|电话|邮箱/.test(v)))return;
       if(k==='projectName'&&(v.length>160||/[<>]|详见附件/.test(v)))return;
+      if(k==='customerName'&&(v.length>100||/[<>]|详见附件/.test(v)||colKey(v)))return;
+      if(k==='auditYear'){
+        const year=/^((?:19|20)\d{2})(?:年|年度)?$/.exec(v);
+        if(!year)return;
+        v=year[1];
+      }
+      if(k==='projectType'&&(v.length>100||/[<>]|详见附件/.test(v)))return;
+      if(k==='riskLevel'){
+        const grade=/^([ABC])(?:类|级)?$/i.exec(v.replace(/\s/g,''));
+        if(!grade)return;
+        v=grade[1].toUpperCase()+'类';
+      }
       hits[k].push([priority,v]);
     };
     lines=lines.map(normal);
@@ -186,7 +202,7 @@
     for(const k of Object.keys(labels)){
       const max=Math.max(0,...hits[k].map(([p])=>p));
       const values=[...new Set(hits[k].filter(([p])=>p===max).map(([,v])=>v))];
-      out[k]=values.length===1?values[0]:'';
+      if(!['riskLevel','projectType','customerName','auditYear'].includes(k)||values.length===1)out[k]=values.length===1?values[0]:'';
     }
     return out;
   }
@@ -370,18 +386,17 @@
     }
     return {auditees,auditeeOverflow:overflow};
   }
-  async function readDocxBytes(file){
+  async function readDocxBytes(file,maxFile=MAX_FILE){
     if(!file||!(/\.docx$/i.test(file.name))||!Number.isSafeInteger(file.size)||file.size<22)
       throw new Error('请选择有效的 .docx 发标文件；不支持 .doc、扫描件或图片。');
-    if(file.size>MAX_FILE)tooLarge();
+    if(file.size>maxFile)tooLarge();
     let bytes;
     try {bytes=new Uint8Array(await file.arrayBuffer());}catch{invalid();}
     if(bytes.length!==file.size)invalid();
     return bytes;
   }
-  async function readVisibleText(file){
-    return paragraphs(await mainPart(await readDocxBytes(file)));
-  }
+  async function readBody(file,maxFile){return paragraphs(await mainPart(await readDocxBytes(file,maxFile)));}
+  async function readVisibleText(file){return readBody(file,MAX_FILE);}
   async function openBidTemplate(file){
     const bytes=await readDocxBytes(file);
     return Object.freeze({read(path){
@@ -390,7 +405,7 @@
     }});
   }
   async function read(file){
-    const body=await readVisibleText(file),fields=extract(body.lines);
+    const body=await readBody(file,MAX_TENDER_FILE),fields=extract(body.lines);
     return Object.assign(fields, readAuditees(body,fields.projectName));
   }
   const api=Object.freeze({read,readVisibleText,openBidTemplate});

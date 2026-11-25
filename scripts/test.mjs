@@ -15,7 +15,7 @@ const HELP = `Usage: node scripts/test.mjs [--unit] [--strict] [--list]\n\n` +
   `--strict  Fail if any selected test is skipped; use for full acceptance with browser dependencies installed.\n` +
   `--list    Print selected files without running them.\n` +
   `--help    Show this help.\n\n` +
-  `Runs Node --test --test-concurrency=1. Browser cases need Playwright and a supported browser.\n` +
+  `Runs Node --test --test-concurrency=2 (two isolated test-file processes). Cases within each file retain their normal sequential behavior. Browser cases need Playwright and a supported browser.\n` +
   `Default allows existing skips, but skipped browser tests are NOT verified. No dependencies are installed.\n` +
   `NODE_PATH prepends this repository's node_modules and preserves existing NODE_PATH.\n`;
 
@@ -61,7 +61,10 @@ async function main() {
       if (existsSync(browser)) env.QUOTE_LEDGER_CHROMIUM_EXECUTABLE = browser;
     } catch { /* Existing tests report missing browser dependencies explicitly. */ }
   }
-  const child = spawn(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', ...selected], {
+  // The child already runs in ROOT. Repeating an absolute prefix can exceed
+  // the Windows CreateProcess command-line limit for the full test suite.
+  const testPaths = selected.map(file => path.relative(ROOT, file));
+  const child = spawn(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=2', ...testPaths], {
     cwd: ROOT, env, stdio: ['inherit', 'pipe', 'inherit'], windowsHide: true,
   });
   let pending = '', skipped = false;

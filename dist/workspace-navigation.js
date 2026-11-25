@@ -1,24 +1,27 @@
 /* Presentation/navigation only. No storage keys, business writes or account requests. */
 (function(root){'use strict';
- function mount({document:D,setView,getView,notify=()=>{},onReportSection=null}){
+ function mount({document:D,setView,getView,notify=()=>{},onReportSection=null,onAuditStep=null}){
   if(!D||typeof setView!=='function'||typeof getView!=='function')throw Error('Navigation not ready');
   let selected=null;
   const nav=D.querySelector('.workspace-navigation');
-  const groups={quote:'quote',proposal:'quote',bid:'quote',ledger:'quote',project:'project',audit:'audit',report:'report',archive:'report',templates:'basics',accounting:'accounting',travel:'accounting',costs:'accounting',basics:'basics',bidders:'basics',rules:'basics'};
+  const groups={quote:'quote',proposal:'quote',bid:'quote',ledger:'quote',project:'quote',audit:'audit',report:'report',archive:'report',templates:'basics',travel:'accounting',costs:'accounting',basics:'basics',bidders:'basics',rules:'basics'};
   function sync(name,choice=null){
    selected=choice;
    for(const group of D.querySelectorAll('.nav-group')){
     const active=group.dataset.navGroup===groups[name];group.classList.toggle('is-current',active);
-    if(active)group.open=true;
+    if(active&&group.tagName==='DETAILS')group.open=true;
    }
    const native=D.querySelector('.pw-steps [data-audit-step][aria-pressed="true"]');
+   const overview=D.querySelector('#audit-flow:not([hidden])');
    for(const b of nav?.querySelectorAll('[data-view]')||[]){
     let active=b.dataset.view===name;
-    if(active&&b.hasAttribute('data-nav-audit-step'))active=b.dataset.navAuditStep===(native?.dataset.auditStep||'1');
+    if(active&&b.hasAttribute('data-nav-audit-step'))active=!overview&&b.dataset.navAuditStep===(native?.dataset.auditStep||'1');
+    else if(active&&b.hasAttribute('data-audit-overview'))active=!!overview;
     else if(active&&choice)active=b===choice;
     else if(active&&(b.hasAttribute('data-nav-section')||b.hasAttribute('data-report-section')))active=false;
     b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');
    }
+   if(name==='audit')onAuditStep?.();
   }
   function click(event){
    const b=event.target.closest?.('[data-nav-audit-step],[data-nav-section],[data-report-section]');if(!b||!nav?.contains(b))return;
@@ -36,7 +39,7 @@
     // or clear edits here; a cancelled native click leaves navigation unchanged.
     target.click();
     if(target.getAttribute('aria-pressed')!=='true')return;
-    setView('audit',{auditStepSelected:step!=='1'});sync('audit',b);
+    setView('audit',{auditStepSelected:step!=='1',auditDetail:true});sync('audit',b);
     D.querySelector('.pw-steps')?.scrollIntoView?.({block:'start'});
     return;
    }

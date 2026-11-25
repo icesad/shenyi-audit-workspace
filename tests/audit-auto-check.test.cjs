@@ -41,6 +41,25 @@ test('duplicate hashes deduplicate; ambiguous versions, entities and periods do 
  const foreign=fixtures();foreign[1].model.sheets[0].cells.A2.v='责任中心:123 合成乙有限公司本部';const grouped=A.analyze(foreign);assert.equal(grouped.checks.filter(c=>c.id==='ledger.trial.debit').length,0);assert.ok(grouped.checks.some(c=>c.id==='scope.groups'));
  const dates=fixtures();dates[2].model.sheets[2].cells.B2={v:'2014年01月'};assert.ok(A.analyze(dates).checks.some(c=>c.id==='scope.dates'&&c.status==='pending'));
 });
+test('a batch over 24 account ledgers checks original amounts and skips brought-forward and total rows',()=>{
+ const ledger=sheet('明细账',{
+  A1:'年',B1:'月',C1:'日',D1:'公司代码',E1:'凭证编号',F1:'摘要',G1:'借方',I1:'贷方',K1:'方向',L1:'余额',
+  G2:'数量',H2:'金额',I2:'数量',J2:'金额',L2:'数量',M2:'单价',N2:'金额',
+  D3:'合成公司',F3:'上期结转',K3:'贷',N3:100,
+  A4:2026,B4:1,C4:5,D4:'合成公司',E4:1,F4:'事项',H4:120,J4:0,K4:'借',N4:20,
+  F5:'本期合计',H5:120,J5:0,K5:'借',N5:20,
+  A6:2026,B6:2,C6:8,D6:'合成公司',E6:2,F6:'事项',H6:0,J6:20,K6:'平',N6:0,
+  A7:2026,B7:2,C7:9,D7:'合成公司',E7:3,F7:'事项',H7:50,K7:'借',N7:53,
+  A8:2026,B8:2,C8:10,D8:'合成公司',E8:4,F8:'事项',H8:0,J8:4,K8:'借',N8:50
+ },7,13);
+ const batch=Array.from({length:25},(_,i)=>wrap('明细账-'+i+'.xlsx',[ledger],String(i).padStart(64,'0')));
+ const result=A.analyze(batch);
+ assert.equal(result.sources.length,25);
+ assert.equal(result.models.filter(m=>m.type==='accountDetail'&&m.rowCount===4&&m.consistentRows===2).length,25);
+ assert.equal(result.checks.filter(c=>c.id==='detail.rollforward'&&c.status==='pending').length,25);
+ assert.equal(result.checks.filter(c=>c.id==='detail.rollforward'&&c.status==='difference'&&c.refs[0].cells.includes('N8')).length,25);
+});
+
 test('same-project attachment loading, hashes, stale revisions, cancellation and automatic UI',async t=>{
  let chromium;try{({chromium}=require('playwright'));}catch{return t.skip('Playwright unavailable');}const exe=process.env.QUOTE_LEDGER_CHROMIUM_EXECUTABLE||chromium.executablePath();if(!fs.existsSync(exe))return t.skip('Chromium unavailable');
  const browser=await chromium.launch({headless:true,executablePath:exe});

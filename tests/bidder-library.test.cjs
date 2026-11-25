@@ -20,7 +20,8 @@ test('real bidder directory: partial files, isolation, CAS and persistence',asyn
       const expected=(v,label)=>{if(!v)throw Error('bidder: '+label);};
       try{
         const one=await make('business_license','A'),two=await make('practice_certificate','B'),other=await make('business_license','C');
-        const A=await a.create(fields('Synthetic A'),[one,two]), B=await b.create(fields('Synthetic B','partner'),[other]), C=await b.create(fields('Synthetic draft'));
+        const A=await a.create(fields('Synthetic A'),[one,two]), B=await b.create(fields('Synthetic B','partner'),[other],
+          [{name:'合成基础资料.txt',blob:new Blob(['Synthetic original'])}]), C=await b.create(fields('Synthetic draft'));
         expected(A.id!==B.id&&A.version===1&&C.attachments.length===0,'identity and incomplete draft');
         expected((await a.list()).every(r=>r.id&&r.credentialKinds&&!Object.hasOwn(r,'attachments')),'metadata only');
         const obtained=await a.get(B.id);expected(obtained.attachments.length===1&&obtained.attachments[0].sha256===other.sha256,'per-firm bytes');
@@ -35,7 +36,11 @@ test('real bidder directory: partial files, isolation, CAS and persistence',asyn
         expected((await a.get(B.id)).attachments[0].sha256===other.sha256&&(await a.list()).length===2,'other firms intact');
         expected((await a.update(B.id,2,fields('B later','partner'),[])).attachments.length===0,'explicit removal');
         expected(await checked(a.create({...fields('invalid'),team:'nonprovince'}),'BIDDER_INVALID'),'invalid team');
-        const c=await BidderLibrary.open();try{return (await c.list()).length===2&&(await c.get(B.id)).version===3;}finally{c.close();}
+        const c=await BidderLibrary.open();try{
+          const list=await c.list(),saved=await c.get(B.id);
+          return list.length===2&&list.find(row=>row.id===B.id).materialCount===1&&saved.version===3&&
+            saved.materials[0].name==='合成基础资料.txt'&&await saved.materials[0].blob.text()==='Synthetic original';
+        }finally{c.close();}
       }finally{a.close();b.close();}
     });assert.equal(result,true);
   }finally{if(context)await context.close();await browser.close();}

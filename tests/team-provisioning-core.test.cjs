@@ -1,0 +1,319 @@
+'use strict';
+const {laterTeamSchemaLayers:ledgerCheckSchemaLayer}=require('./helpers/workpaper-access-schema-layer.cjs');
+const {sourceSchemaNames}=require('./helpers/workspace-source-schema-peel.cjs');
+// Real SQL/KDF and application boundary with an explicitly synthetic SMS sink.
+const test=require('node:test'),assert=require('node:assert/strict');
+const {DatabaseSync}=require('node:sqlite'),{randomBytes,randomUUID,createHash}=require('node:crypto');
+const {pathToFileURL}=require('node:url'),path=require('node:path');
+const {readFileSync}=require('node:fs');
+const load=name=>import(pathToFileURL(path.resolve(__dirname,'../server/team/'+name)).href);
+const ORIGIN='http://127.0.0.1:8774',PASSWORD='ShenyiDemo!2026',NEW_PASSWORD='SyntheticAdmin!2026',PHONE='+8613800000021',PHONE2='+8613800000022';
+const digest=value=>createHash('sha256').update(value).digest('hex');
+const BASE='/api/operations/team-requests',FIRST='/api/auth/first-administrator';
+let baseline;
+async function fixture(t){
+  baseline||=(async()=>{const {initializeTeamDatabase,seedDemoTeamData}=await load('database.mjs'),db=new DatabaseSync(':memory:');try{initializeTeamDatabase(db);await seedDemoTeamData(db);db.prepare("INSERT INTO team_users VALUES ('reviewer-test','active')").run();const hash=db.prepare("SELECT password_hash FROM team_credentials WHERE user_id='invitee-a'").get().password_hash;db.prepare("INSERT INTO team_credentials(user_id,username,display_name,password_hash) VALUES ('reviewer-test','reviewer-test','合成审核员',?)").run(hash);db.prepare("INSERT INTO team_platform_reviewers(user_id,permission,status) VALUES ('reviewer-test','team.provision','active')").run();return db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY rowid").all().map(({name})=>({name,rows:db.prepare('SELECT * FROM "'+name+'"').all()}));}finally{db.close();}})();
+  const db=new DatabaseSync(':memory:');(await load('database.mjs')).initializeTeamDatabase(db);db.exec('BEGIN;PRAGMA defer_foreign_keys=ON');for(const {name,rows} of await baseline)for(const row of rows){const keys=Object.keys(row);db.prepare('INSERT OR REPLACE INTO "'+name+'"('+keys.join(',')+') VALUES ('+keys.map(()=>'?').join(',')+')').run(...Object.values(row));}db.exec('COMMIT');t.after(()=>db.close());
+  const f={db,now:Date.parse('2026-11-15T09:00:00Z'),sent:[]};f.providers={phonePepper:randomBytes(32),sms:{send:async value=>f.sent.push({...value})}};
+  f.session=user=>{const token=randomBytes(32).toString('base64url');db.prepare('INSERT INTO team_sessions VALUES (?,?,?,NULL)').run(digest(token),user,f.now+48*60*60000);return token;};for(const [name,user] of Object.entries({reviewer:'reviewer-test',manager:'manager-a',partner:'partner-a',intern:'intern-a',foreign:'manager-b',orphan:'invitee-a'}))f[name]=f.session(user);return f;
+}
+async function call(f,route,{body,method='POST',token,providers=f.providers,headers={}}={}){
+  const response=await(await load('application-api.mjs')).handleTeamApplicationRequest(new Request(ORIGIN+route,{method,headers:{'Content-Type':'application/json',...headers,...(token?{Authorization:'Bearer '+token}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})}),{db:f.db,now:()=>f.now,identityProviders:providers});
+  const raw=await response.text();assert.match(response.headers.get('cache-control'),/private.*no-store/);assert.equal(response.headers.get('access-control-allow-origin'),null);return {status:response.status,data:JSON.parse(raw),raw};
+}
+async function create(f,{phone=PHONE,name='合成事务所',token=f.reviewer}={}){const r=await call(f,BASE,{token,body:{teamName:name,adminPhone:phone}});assert.equal(r.status,201,r.raw);return r.data.request;}
+async function review(f,r,decision='approve',password=PASSWORD){return call(f,BASE+'/'+r.id+'/review',{token:f.reviewer,body:{decision,revision:r.revision,currentPassword:password}});}
+async function approve(f,options){const r=await create(f,options),result=await review(f,r);assert.equal(result.status,200,result.raw);return result.data;}
+async function challenge(f,ticket,phone=PHONE){const r=await call(f,FIRST+'/challenges',{body:{invitationCode:ticket.invitationCode,phone}});assert.equal(r.status,202,r.raw);const sent=f.sent.find(row=>row.challengeId===r.data.challengeId);assert.equal(sent.purpose,'first-admin');assert.ok(!r.raw.includes(sent.code));return {...r.data,code:sent.code};}
+function payload(ticket,c,phone=PHONE,password=NEW_PASSWORD){return {invitationCode:ticket.invitationCode,phone,challengeId:c.challengeId,code:c.code,password,displayName:'合成首管理员',accept:true};}
+const activate=(f,body)=>call(f,FIRST+'/activate',{body});
+const count=(f,table)=>f.db.prepare('SELECT COUNT(*) AS n FROM '+table).get().n;
+async function open(f){const ticket=await approve(f),c=await challenge(f,ticket),r=await activate(f,payload(ticket,c));assert.equal(r.status,200,r.raw);const login=await call(f,'/api/auth/phone/login',{body:{phone:PHONE,password:NEW_PASSWORD}});assert.equal(login.status,200,login.raw);return {...ticket,login:login.data};}
+
+test('reviewer access is an explicit server permission, never audit role or caller supplied role',async t=>{
+  const f=await fixture(t);assert.deepEqual((await call(f,BASE+'/access',{method:'GET',token:f.reviewer})).data,{canReview:true});
+  for(const token of [f.manager,f.partner,f.intern,f.foreign,f.orphan]){assert.deepEqual((await call(f,BASE+'/access',{method:'GET',token})).data,{canReview:false});assert.equal((await call(f,BASE,{method:'GET',token})).status,404);assert.equal((await call(f,BASE,{token,body:{teamName:'合成',adminPhone:PHONE},headers:{'X-Role':'owner','X-User-Id':'reviewer-test'}})).status,404);}
+  assert.equal((await call(f,BASE+'/access',{method:'GET'})).status,401);assert.equal(count(f,'team_provisioning_requests'),0);
+});
+test('mistaken reviewer grants never elevate junior or disabled business identities',async t=>{
+  const f=await fixture(t);for(const [user,token] of [['intern-a',f.intern],['manager-a',f.manager]]){if(user==='manager-a')f.db.prepare("UPDATE team_memberships SET status='disabled' WHERE user_id=?").run(user);f.db.prepare("INSERT INTO team_platform_reviewers(user_id,permission,status) VALUES (?,'team.provision','active')").run(user);assert.deepEqual((await call(f,BASE+'/access',{method:'GET',token})).data,{canReview:false});assert.equal((await call(f,BASE,{token,body:{teamName:'合成',adminPhone:PHONE}})).status,404);}
+});
+test('intake remains pending without team, operator, audit membership or invitation token',async t=>{
+  const f=await fixture(t),r=await create(f);assert.deepEqual(Object.keys(r).sort(),['createdAt','expiresAt','id','phoneMasked','revision','status','teamId','teamName']);assert.equal(r.status,'pending');assert.equal(r.revision,1);assert.equal(r.expiresAt,null);assert.equal(r.createdAt,f.now);assert.equal(r.teamName,'合成事务所');assert.match(r.id,/^[a-f0-9-]{36}$/);assert.notEqual(r.id,r.teamId);
+  assert.equal(count(f,'teams'),2);assert.equal(count(f,'team_operators'),0);assert.equal(count(f,'team_memberships'),8);assert.equal(f.db.prepare('SELECT token_hash FROM team_provisioning_requests').get().token_hash,null);assert.equal(count(f,'team_provisioning_events'),1);
+});
+test('team name accepts exactly eighty normalized code points and rejects eighty-one without writing',async t=>{
+  const f=await fixture(t),name='审'.repeat(80),request=await create(f,{name});assert.equal(request.teamName,name);
+  assert.equal((await call(f,BASE,{token:f.reviewer,body:{teamName:'审'.repeat(81),adminPhone:PHONE2}})).status,400);
+  assert.equal(count(f,'team_provisioning_requests'),1);const normalized=await create(f,{name:'  Ａ审易  '});assert.equal(normalized.teamName,'A审易');
+});
+test('concurrent approvals have one CAS winner and one new single-use credential',async t=>{
+  const f=await fixture(t),request=await create(f),results=await Promise.all([review(f,request),review(f,request)]);
+  assert.deepEqual(results.map(row=>row.status).sort(),[200,409]);assert.equal(results.filter(row=>row.data.invitationCode).length,1);
+  assert.equal(f.db.prepare('SELECT revision FROM team_provisioning_requests').get().revision,2);assert.equal(count(f,'team_provisioning_events'),2);
+});
+test('approve requires current password and exact revision; raw code is returned only once and stored hashed',async t=>{
+  const f=await fixture(t),r=await create(f);assert.equal((await review(f,r,'approve','wrong')).status,403);assert.equal((await call(f,'/api/auth/session',{method:'GET',token:f.reviewer})).status,200);assert.equal((await review(f,{...r,revision:2})).status,409);
+  const approved=await review(f,r);assert.equal(approved.status,200,approved.raw);assert.equal(approved.data.request.status,'approved');assert.equal(approved.data.request.revision,2);assert.equal(approved.data.request.expiresAt,f.now+24*60*60000);assert.match(approved.data.invitationCode,/^[A-Za-z0-9_-]{43}$/);assert.equal(f.db.prepare('SELECT token_hash FROM team_provisioning_requests').get().token_hash,digest(approved.data.invitationCode));
+  assert.equal((await review(f,approved.data.request)).status,409);const listed=await call(f,BASE,{method:'GET',token:f.reviewer});for(const secret of [approved.data.invitationCode,PHONE,'token_hash','fingerprint','password_hash'])assert.ok(!listed.raw.includes(secret));assert.equal(count(f,'teams'),2);
+});
+test('rejection and revocation are terminal, current-password confirmed, and never erase an activated team',async t=>{
+  const f=await fixture(t),pending=await create(f);const rejected=await review(f,pending,'reject');assert.equal(rejected.status,200);assert.equal(rejected.data.request.status,'rejected');assert.ok(!('invitationCode' in rejected.data));assert.equal((await review(f,rejected.data.request)).status,409);
+  const ticket=await approve(f,{phone:PHONE2}),c=await challenge(f,ticket,PHONE2);assert.equal((await review(f,ticket.request,'revoke','bad')).status,403);const revoked=await review(f,ticket.request,'revoke');assert.equal(revoked.status,200);assert.equal(revoked.data.request.status,'revoked');assert.equal((await activate(f,payload(ticket,c,PHONE2))).status,404);assert.equal(f.db.prepare('SELECT delivery_state FROM team_first_administrator_challenges').get().delivery_state,'failed');assert.equal(count(f,'teams'),2);
+});
+test('default absent supplier disables first administrator SMS truthfully without a fake verification',async t=>{
+  const f=await fixture(t),ticket=await approve(f);assert.equal((await call(f,FIRST+'/preview',{providers:{},body:{invitationCode:ticket.invitationCode,phone:PHONE}})).status,200);assert.equal((await call(f,FIRST+'/challenges',{providers:{},body:{invitationCode:ticket.invitationCode,phone:PHONE}})).status,503);assert.equal(f.sent.length,0);assert.equal(count(f,'team_first_administrator_challenges'),0);
+});
+test('personal activation atomically creates a technical-only administrator and never logs them in',async t=>{
+  const f=await fixture(t),ticket=await approve(f),c=await challenge(f,ticket),sessions=count(f,'team_sessions');const preview=await call(f,FIRST+'/preview',{body:{invitationCode:ticket.invitationCode,phone:PHONE}});assert.deepEqual(preview.data,{teamId:ticket.request.teamId,teamName:'合成事务所',phoneMasked:ticket.request.phoneMasked,expiresAt:ticket.request.expiresAt});
+  const result=await activate(f,payload(ticket,c));assert.equal(result.status,200,result.raw);assert.deepEqual(result.data,{activated:true});assert.equal(count(f,'team_sessions'),sessions);assert.equal(count(f,'teams'),3);assert.equal(count(f,'team_users'),11);assert.equal(count(f,'team_memberships'),8);
+  const user=f.db.prepare('SELECT * FROM team_phone_credentials WHERE phone=?').get(PHONE).user_id;assert.equal(f.db.prepare('SELECT user_id FROM team_operators WHERE team_id=?').get(ticket.request.teamId).user_id,user);assert.equal(f.db.prepare('SELECT name FROM team_profiles WHERE team_id=?').get(ticket.request.teamId).name,'合成事务所');for(const table of ['team_memberships','team_task_assignments','team_project_grants','team_attachment_grants','team_admin_grants'])assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM '+table+' WHERE user_id=?').get(user).n,0);
+  const login=await call(f,'/api/auth/phone/login',{body:{phone:PHONE,password:NEW_PASSWORD}});assert.deepEqual(login.data.memberships,[]);assert.deepEqual((await call(f,'/api/auth/team-administration',{method:'GET',token:login.data.token})).data,{teams:[{teamId:ticket.request.teamId,teamName:'合成事务所'}]});for(const team of [ticket.request.teamId,'team-a','team-b'])assert.equal((await call(f,'/api/teams/'+team+'/collection/tasks',{method:'GET',token:login.data.token})).status,404);
+  assert.equal((await review(f,{...ticket.request,revision:3},'revoke')).status,409);assert.equal(count(f,'teams'),3);
+});
+test('existing verified unaffiliated account must prove its unchanged password and keeps the same identity',async t=>{
+  const f=await fixture(t);f.db.prepare('INSERT INTO team_phone_credentials(user_id,phone,verified_at) VALUES (?,?,?)').run('invitee-a',PHONE,f.now-1);const original=f.db.prepare("SELECT * FROM team_credentials WHERE user_id='invitee-a'").get(),ticket=await approve(f),c=await challenge(f,ticket);
+  assert.equal((await activate(f,payload(ticket,c))).status,404);assert.deepEqual(f.db.prepare("SELECT * FROM team_credentials WHERE user_id='invitee-a'").get(),original);assert.equal(count(f,'team_operators'),0);
+  assert.equal((await activate(f,payload(ticket,c,PHONE,PASSWORD))).status,200);assert.equal(count(f,'team_users'),10);assert.deepEqual(f.db.prepare("SELECT * FROM team_credentials WHERE user_id='invitee-a'").get(),original);assert.equal(f.db.prepare('SELECT user_id FROM team_operators').get().user_id,'invitee-a');
+});
+for(const status of ['active','disabled'])test('existing business '+status+' affiliation blocks technical opening without changing old membership',async t=>{
+  const f=await fixture(t);f.db.prepare('INSERT INTO team_phone_credentials(user_id,phone,verified_at) VALUES (?,?,?)').run('intern-a',PHONE,f.now-1);f.db.prepare("UPDATE team_memberships SET status=? WHERE user_id='intern-a'").run(status);const ticket=await approve(f),c=await challenge(f,ticket);assert.equal((await activate(f,payload(ticket,c,PHONE,PASSWORD))).status,409);assert.equal(count(f,'teams'),2);assert.equal(count(f,'team_operators'),0);
+});
+test('invitation, SMS challenge and all sibling challenges consume exactly once under concurrent activation',async t=>{
+  const f=await fixture(t),ticket=await approve(f),a=await challenge(f,ticket),b=await challenge(f,ticket);const results=await Promise.all([activate(f,payload(ticket,a)),activate(f,payload(ticket,a))]);assert.deepEqual(results.map(r=>r.status).sort(),[200,404]);assert.equal((await activate(f,payload(ticket,b))).status,404);assert.equal(count(f,'team_operators'),1);assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM team_first_administrator_challenges WHERE consumed_at IS NULL').get().n,0);
+});
+test('five wrong codes remain consumed, while expiry and different purpose cannot be bypassed',async t=>{
+  const f=await fixture(t),ticket=await approve(f),c=await challenge(f,ticket),wrong=c.code==='000000'?'000001':'000000';for(let i=0;i<5;i++)assert.equal((await activate(f,{...payload(ticket,c),code:wrong})).status,404);assert.equal((await activate(f,payload(ticket,c))).status,404);assert.equal(f.db.prepare('SELECT attempts FROM team_first_administrator_challenges').get().attempts,5);assert.equal(count(f,'teams'),2);
+  const d=await challenge(f,ticket);f.now=d.expiresAt;assert.equal((await activate(f,payload(ticket,d))).status,404);f.now=ticket.request.expiresAt;assert.equal((await call(f,FIRST+'/preview',{body:{invitationCode:ticket.invitationCode,phone:PHONE}})).status,404);
+});
+test('wrong phone, unknown ticket, rejected ticket and bad pepper expose no applicant existence',async t=>{
+  const f=await fixture(t),ticket=await approve(f),c=await challenge(f,ticket);const unknown=await call(f,FIRST+'/preview',{body:{invitationCode:randomBytes(32).toString('base64url'),phone:PHONE}});assert.equal(unknown.status,404);assert.equal((await call(f,FIRST+'/preview',{body:{invitationCode:ticket.invitationCode,phone:PHONE2}})).raw,unknown.raw);assert.equal((await call(f,FIRST+'/activate',{body:payload(ticket,c),providers:{...f.providers,phonePepper:randomBytes(32)}})).status,404);assert.equal(count(f,'teams'),2);
+});
+test('reviewer can normally log out after approval without destroying the approved personal ticket',async t=>{
+  const f=await fixture(t),ticket=await approve(f);assert.equal((await call(f,'/api/auth/logout',{token:f.reviewer,body:{}})).status,200);const c=await challenge(f,ticket);assert.equal((await activate(f,payload(ticket,c))).status,200);
+});
+test('provider exceptions are scrubbed and failed delivery never becomes a usable proof',async t=>{
+  const f=await fixture(t),ticket=await approve(f);f.providers.sms.send=async()=>{throw new Error('SYNTHETIC_PROVIDER_SECRET');};const r=await call(f,FIRST+'/challenges',{body:{invitationCode:ticket.invitationCode,phone:PHONE}});assert.equal(r.status,503);assert.ok(!r.raw.includes('SYNTHETIC_PROVIDER_SECRET'));assert.equal(f.db.prepare('SELECT delivery_state FROM team_first_administrator_challenges').get().delivery_state,'failed');
+});
+test('SMS limits are shared with employee onboarding and phone binding',async t=>{
+  const f=await fixture(t),ticket=await approve(f);for(let i=0;i<3;i++)await challenge(f,ticket);const employee=await call(f,'/api/teams/team-a/employee-invitations',{token:f.manager,body:{phone:PHONE,role:'intern'}});assert.equal(employee.status,201);assert.equal((await call(f,'/api/auth/onboarding/challenges',{body:{invitationCode:employee.data.invitationCode,phone:PHONE}})).status,429);assert.equal((await call(f,'/api/auth/phone/challenges',{token:f.orphan,body:{phone:PHONE,purpose:'bind'}})).status,429);assert.equal(f.sent.length,3);
+});
+test('technical-only administrator can invite/activate scoped junior staff without acquiring audit role',async t=>{
+  const f=await fixture(t),opened=await open(f),team=opened.request.teamId,token=opened.login.token,base='/api/teams/'+team+'/employee-invitations';assert.deepEqual((await call(f,base+'/access',{method:'GET',token})).data,{canInvite:true,creationLookup:true});const invitation=await call(f,base,{token,body:{phone:PHONE2,role:'assistant'}});assert.equal(invitation.status,201,invitation.raw);assert.equal(count(f,'team_employee_invitations'),0);assert.equal(count(f,'team_operator_employee_invitations'),1);assert.equal((await call(f,base,{method:'GET',token})).data.invitations.length,1);
+  const challenge=await call(f,'/api/auth/onboarding/challenges',{body:{invitationCode:invitation.data.invitationCode,phone:PHONE2}});assert.equal(challenge.status,202,challenge.raw);const code=f.sent.find(row=>row.challengeId===challenge.data.challengeId).code;const activated=await call(f,'/api/auth/onboarding/activate',{body:{invitationCode:invitation.data.invitationCode,phone:PHONE2,challengeId:challenge.data.challengeId,code,password:NEW_PASSWORD,displayName:'合成助理',accept:true}});assert.equal(activated.status,200,activated.raw);const staff=await call(f,'/api/auth/phone/login',{body:{phone:PHONE2,password:NEW_PASSWORD}});assert.deepEqual(staff.data.memberships,[{teamId:team,role:'assistant'}]);assert.deepEqual((await call(f,'/api/teams/'+team+'/collection/tasks',{method:'GET',token:staff.data.token})).data.tasks,[]);assert.equal((await call(f,base,{method:'GET',token:staff.data.token})).status,404);assert.equal((await call(f,base,{method:'GET',token:f.manager})).status,404);assert.equal(count(f,'team_operators'),1);
+});
+test('operator revocation and low-role contamination disable invitation redemption and administration',async t=>{
+  const f=await fixture(t),opened=await open(f),team=opened.request.teamId,token=opened.login.token,base='/api/teams/'+team+'/employee-invitations';const i=await call(f,base,{token,body:{phone:PHONE2,role:'intern'}});assert.equal(i.status,201);f.db.prepare("UPDATE team_operators SET status='revoked' WHERE team_id=?").run(team);assert.equal((await call(f,'/api/auth/onboarding/preview',{body:{invitationCode:i.data.invitationCode,phone:PHONE2}})).status,404);assert.deepEqual((await call(f,'/api/auth/team-administration',{method:'GET',token})).data,{teams:[]});
+  f.db.prepare("UPDATE team_operators SET status='active' WHERE team_id=?").run(team);f.db.prepare("INSERT INTO team_memberships VALUES (?,?,'intern','active')").run(team,opened.login.account.id);assert.equal((await call(f,base,{token,body:{phone:PHONE2,role:'intern'}})).status,404);assert.deepEqual((await call(f,base+'/access',{method:'GET',token})).data,{canInvite:false});assert.deepEqual((await call(f,'/api/auth/team-administration',{method:'GET',token})).data,{teams:[]});assert.equal((await call(f,'/api/auth/onboarding/preview',{body:{invitationCode:i.data.invitationCode,phone:PHONE2}})).status,404);
+});
+test('technical affiliation cannot be bypassed through existing employee or legacy username invitation',async t=>{
+  const f=await fixture(t),opened=await open(f);const employee=await call(f,'/api/teams/team-a/employee-invitations',{token:f.manager,body:{phone:PHONE,role:'intern'}});assert.equal(employee.status,201);const c=await call(f,'/api/auth/onboarding/challenges',{body:{invitationCode:employee.data.invitationCode,phone:PHONE}});assert.equal(c.status,202);const code=f.sent.find(row=>row.challengeId===c.data.challengeId).code;assert.equal((await call(f,'/api/auth/onboarding/activate',{body:{invitationCode:employee.data.invitationCode,phone:PHONE,challengeId:c.data.challengeId,code,password:NEW_PASSWORD,displayName:'ignored',accept:true}})).status,409);
+  const username=f.db.prepare('SELECT username FROM team_credentials WHERE user_id=?').get(opened.login.account.id).username;const legacy=await call(f,'/api/teams/team-a/invitations',{token:f.manager,body:{username,role:'intern'}});assert.equal(legacy.status,201);assert.equal((await call(f,'/api/auth/invitations/accept',{token:opened.login.token,body:{invitationToken:legacy.data.invitationToken}})).status,409);assert.equal(count(f,'team_memberships'),8);
+});
+test('business tickets never borrow new operator authority after their original business grant is revoked',async t=>{
+  const f=await fixture(t),i=await call(f,'/api/teams/team-a/employee-invitations',{token:f.manager,body:{phone:PHONE2,role:'intern'}});assert.equal(i.status,201);
+  f.db.prepare("INSERT INTO team_operators VALUES ('team-a','manager-a','administrator','active')").run();f.db.prepare("UPDATE team_admin_grants SET status='revoked' WHERE user_id='manager-a'").run();
+  assert.deepEqual((await call(f,'/api/teams/team-a/employee-invitations/access',{method:'GET',token:f.manager})).data,{canInvite:false});
+  // Trusted fixture publishes only a valid dual-role fact, keeping the old
+  // ticket intact so this still tests source binding rather than API cleanup.
+  f.db.prepare("INSERT INTO team_administrator_business_roles(team_id,user_id,role,status,member_role,reviewed_by,reviewed_at) VALUES ('team-a','manager-a','manager','active','manager','reviewer-test',?)").run(f.now);
+  assert.deepEqual((await call(f,'/api/teams/team-a/employee-invitations/access',{method:'GET',token:f.manager})).data,{canInvite:true,creationLookup:true});assert.equal((await call(f,'/api/auth/onboarding/preview',{body:{invitationCode:i.data.invitationCode,phone:PHONE2}})).status,404);
+});
+test('duplicated invitation token across the two trusted sources fails closed instead of selecting one',async t=>{
+  const f=await fixture(t),i=await call(f,'/api/teams/team-a/employee-invitations',{token:f.manager,body:{phone:PHONE,role:'intern'}});f.db.prepare("INSERT INTO team_operators VALUES ('team-a','manager-a','administrator','active')").run();const row=f.db.prepare('SELECT * FROM team_employee_invitations').get(),keys=Object.keys(row);f.db.prepare('INSERT INTO team_operator_employee_invitations('+keys.join(',')+') VALUES ('+keys.map(()=>'?').join(',')+')').run(...keys.map(key=>key==='invitation_id'?randomUUID():row[key]));assert.equal((await call(f,'/api/auth/onboarding/preview',{body:{invitationCode:i.data.invitationCode,phone:PHONE}})).status,404);
+});
+test('input/body/origin/method/query boundaries prevent extra privilege or unaccepted activation',async t=>{
+  const f=await fixture(t);for(const body of [{teamName:'',adminPhone:PHONE},{teamName:'a'.repeat(81),adminPhone:PHONE},{teamName:'\u202Ehidden',adminPhone:PHONE},{teamName:'合成',adminPhone:PHONE,role:'partner'}])assert.equal((await call(f,BASE,{token:f.reviewer,body})).status,400);const ticket=await approve(f),c=await challenge(f,ticket);for(const extra of [{accept:false},{role:'partner'},{teamId:'team-a'},{password:'short'},{displayName:'\u202Ehidden'}])assert.equal((await activate(f,{...payload(ticket,c),...extra})).status,400);assert.equal((await call(f,BASE+'?all=1',{method:'GET',token:f.reviewer})).status,400);assert.equal((await call(f,BASE,{method:'DELETE',token:f.reviewer})).status,405);assert.equal((await call(f,FIRST+'/preview',{method:'GET'})).status,405);assert.equal((await call(f,BASE,{method:'GET',token:f.reviewer,headers:{Origin:'https://foreign.invalid'}})).status,403);assert.equal(count(f,'team_operators'),0);
+});
+test('request list is bounded, ordered and private; team administration exposes only own operator teams',async t=>{
+  const f=await fixture(t);for(let n=0;n<55;n++)f.db.prepare("INSERT INTO team_provisioning_requests(request_id,team_id,team_name,admin_phone,status,created_by,created_at) VALUES (?,?,?,?,'pending','reviewer-test',?)").run(randomUUID(),randomUUID(),'合成'+n,PHONE,f.now+n);const r=await call(f,BASE,{method:'GET',token:f.reviewer});assert.equal(r.data.requests.length,50);assert.equal(r.data.requests[0].teamName,'合成54');assert.ok(!r.raw.includes(PHONE));assert.deepEqual((await call(f,'/api/auth/team-administration',{method:'GET',token:f.manager})).data,{teams:[]});assert.deepEqual((await call(f,'/api/auth/team-administration',{method:'GET',token:f.reviewer})).data,{teams:[]});
+});
+test('review queue continues across tied timestamps and ignores intervening newer applications',async t=>{
+  const f=await fixture(t);
+  const insert=f.db.prepare(`INSERT INTO team_provisioning_requests
+    (request_id,team_id,team_name,admin_phone,status,created_by,created_at,token_hash,credential_fingerprint)
+    VALUES(?,?,?,?,'pending','reviewer-test',?,?,?)`);
+  const ids=Array.from({length:105},(_,index)=>'request-'+String(index).padStart(3,'0'));
+  const privateHash=digest('synthetic review credential');
+  for(const id of ids)insert.run(id,randomUUID(),'合成'+id,PHONE,f.now,id===ids[0]?privateHash:null,id===ids[0]?privateHash:null);
+  const listing=after=>call(f,BASE+(after?'?after='+after:''),{method:'GET',token:f.reviewer});
+  const first=await listing();assert.equal(first.status,200);
+  const firstIds=first.data.requests.map(row=>row.id);
+  assert.deepEqual(firstIds,ids.slice(55).reverse());assert.equal(first.data.nextCursor,ids[55]);
+  insert.run('new-request',randomUUID(),'新合成申请',PHONE,f.now+1,null,null);
+  const before=f.db.prepare('SELECT * FROM team_provisioning_requests ORDER BY request_id').all();
+  const second=await listing(first.data.nextCursor);assert.equal(second.status,200);
+  const secondIds=second.data.requests.map(row=>row.id);
+  assert.deepEqual(secondIds,ids.slice(5,55).reverse());assert.equal(second.data.nextCursor,ids[5]);
+  const third=await listing(second.data.nextCursor);assert.equal(third.status,200);
+  assert.equal(third.data.nextCursor,null);assert.deepEqual([...firstIds,...secondIds,...third.data.requests.map(row=>row.id)],[...ids].reverse());
+  for(const page of [first,second,third])for(const value of [PHONE,privateHash,'token_hash','credential_fingerprint','invitationCode'])assert.ok(!page.raw.includes(value));
+  assert.equal((await listing()).data.requests[0].id,'new-request');
+  assert.deepEqual((await listing(ids[0])).data,{requests:[],nextCursor:null});
+  assert.deepEqual(f.db.prepare('SELECT * FROM team_provisioning_requests ORDER BY request_id').all(),before);
+  assert.equal(count(f,'team_provisioning_events'),0);
+});
+test('only authorized list reads accept a single known review cursor',async t=>{
+  const f=await fixture(t),request=await create(f);
+  const query='?after='+request.id;
+  for(const suffix of ['?after=','?after=%2F','?after=missing-id',query+'&after='+request.id,query+'&all=1','?all=1']){
+    const options={method:'GET'};
+    assert.equal((await call(f,BASE+suffix,{...options,token:f.reviewer})).status,400);
+    assert.equal((await call(f,BASE+suffix,{...options,token:f.manager})).status,404);
+    assert.equal((await call(f,BASE+suffix,options)).status,401);
+  }
+  assert.equal((await call(f,BASE+query,{method:'GET',token:f.manager})).status,404);
+  assert.deepEqual((await call(f,BASE,{method:'GET',token:f.reviewer})).data,{requests:[request]});
+  for(const route of [BASE,BASE+'/'+request.id+'/review',FIRST+'/preview'])assert.equal((await call(f,route+query,{token:f.reviewer,body:{}})).status,400);
+  for(const route of [BASE+'/access','/api/auth/team-administration'])assert.equal((await call(f,route+query,{method:'GET',token:f.reviewer})).status,400);
+  assert.equal(count(f,'team_provisioning_requests'),1);
+  assert.equal(count(f,'team_provisioning_events'),1);
+});
+test('additive initializer preserves original rows and SQL definitions and refuses unmarked customer data',async t=>{
+  const f=await fixture(t),ticket=await approve(f),{initializeTeamDatabase}=await load('database.mjs'),before=f.db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name").all(),requests=f.db.prepare('SELECT * FROM team_provisioning_requests').all();initializeTeamDatabase(f.db);initializeTeamDatabase(f.db);assert.deepEqual(f.db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name").all(),before);assert.deepEqual(f.db.prepare('SELECT * FROM team_provisioning_requests').all(),requests);assert.equal(f.db.prepare('SELECT token_hash FROM team_provisioning_requests').get().token_hash,digest(ticket.invitationCode));assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(),[]);
+  const other=new DatabaseSync(':memory:');try{other.exec('CREATE TABLE customer_data(original BLOB)');assert.throws(()=>initializeTeamDatabase(other),/isolated/);assert.deepEqual(other.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all().map(row=>row.name),['customer_data']);}finally{other.close();}
+});
+test('an existing marked prototype upgrades all additive auth tables atomically with its schema step',async t=>{
+  const {initializeTeamDatabase}=await load('database.mjs'),db=new DatabaseSync(':memory:');t.after(()=>db.close());
+  for(const name of ['schema.sql','identity-schema.sql','activation-schema.sql','session-schema.sql'])db.exec(readFileSync(path.resolve(__dirname,'../server/team',name),'utf8'));
+  db.prepare("INSERT INTO team_database_metadata VALUES ('prototype-version','2')").run();db.prepare("INSERT INTO team_users VALUES ('preserved','active')").run();
+  const usageNames=['team_device_usage','device_usage_insert_owned_active','device_usage_update_owned_monotonic','my_device_event_owner_time','my_device_replacement_owner_request','my_device_replacement_event_request_time'];
+  const before=db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name").all(),exec=db.exec;
+  db.exec=function(sql){if(sql.includes('CREATE TABLE IF NOT EXISTS team_session_metadata'))throw new Error('synthetic schema-step failure');return exec.call(this,sql);};
+  assert.throws(()=>initializeTeamDatabase(db),/synthetic schema-step failure/);db.exec=exec;
+  assert.deepEqual(db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name").all(),before);assert.equal(db.prepare("SELECT status FROM team_users WHERE user_id='preserved'").get().status,'active');for(const name of [...usageNames,...sourceSchemaNames])assert.equal(db.prepare('SELECT COUNT(*) n FROM sqlite_schema WHERE name=?').get(name).n,0);
+  initializeTeamDatabase(db);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_schema WHERE type='table' AND name LIKE 'team_%'").get().n-ledgerCheckSchemaLayer(db).tables,before.length+47);for(const name of ['team_access_reviewers','team_member_access_events','team_device_bindings','team_device_challenges','team_device_leases','team_device_request_replays','team_device_events','team_device_replacement_reviewers','team_device_replacement_requests','team_device_replacement_challenges','team_device_replacement_events','team_business_role_events','team_project_access_projects','team_project_access_grants','team_project_access_events','team_administrator_business_role_reviewers','team_administrator_business_roles','team_administrator_business_role_events','team_project_migration_reviewers','team_project_migration_provenance','team_project_migration_events','team_material_grants','team_material_records','team_material_files','team_material_events','team_material_imports','team_material_import_chunks','team_material_maintenance_grants','team_material_maintenance_events','team_collection_workspace_creations','team_workspace_formalizations','team_device_usage','team_workspace_source_events','team_workspace_source_grants'])assert.ok(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(name));const usageAfter=db.prepare("SELECT type,name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().filter(row=>usageNames.includes(row.name));assert.deepEqual(usageAfter.map(row=>row.type+':'+row.name).sort(),['table:team_device_usage','trigger:device_usage_insert_owned_active','trigger:device_usage_update_owned_monotonic','index:my_device_event_owner_time','index:my_device_replacement_owner_request','index:my_device_replacement_event_request_time'].sort());assert.equal(db.prepare('SELECT COUNT(*) n FROM team_device_usage').get().n,0);for(const name of ['team_workspace_source_events','team_workspace_source_grants'])assert.equal(db.prepare('SELECT COUNT(*) n FROM '+name).get().n,0);assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('invalid anonymous first-administrator requests cannot exhaust another source or the shared valid-ticket budget',async t=>{
+  const f=await fixture(t),approved=await approve(f),ticket={invitationCode:approved.invitationCode},invalidCode=randomBytes(32).toString('base64url');
+  const sources=['203.0.113.20','203.0.113.21'];
+  for(const action of ['preview','challenges']){
+    for(let i=0;i<60;i++){
+      const r=await call(f,FIRST+'/'+action,{token:null,body:{invitationCode:invalidCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[0]}});
+      assert.equal(r.status,404,action+': '+r.raw);
+    }
+    const limited=await call(f,FIRST+'/'+action,{body:{invitationCode:invalidCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[0]}});
+    assert.equal(limited.status,429,action+': '+limited.raw);
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limits WHERE bucket=?').get('first-administrator:'+action+':global').n,0);
+    if(action==='preview'){
+      const valid=await call(f,FIRST+'/preview',{token:null,body:{invitationCode:ticket.invitationCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[1]}});
+      assert.equal(valid.status,200,valid.raw);
+    }else{
+      const valid=await call(f,FIRST+'/challenges',{token:null,body:{invitationCode:ticket.invitationCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[1]}});
+      assert.equal(valid.status,202,valid.raw);
+      assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get('first-administrator:challenges:global').attempts,1);
+    }
+  }
+  const delivered=f.sent.at(-1),activationBody={invitationCode:ticket.invitationCode,phone:PHONE,challengeId:delivered.challengeId,code:delivered.code,password:NEW_PASSWORD,displayName:'合成首管理员',accept:true};
+  for(let i=0;i<60;i++){
+    const r=await call(f,FIRST+'/activate',{token:null,body:{...activationBody,invitationCode:invalidCode},headers:{'X-Shenyi-Client-IP':sources[0]}});
+    assert.equal(r.status,404);
+  }
+  const limited=await call(f,FIRST+'/'+'activate',{body:{...activationBody,invitationCode:invalidCode},headers:{'X-Shenyi-Client-IP':sources[0]}});
+  assert.equal(limited.status,429,limited.raw);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limits WHERE bucket=?').get('first-administrator:activate:global').n,0);
+  const valid=await call(f,FIRST+'/activate',{token:null,body:activationBody,headers:{'X-Shenyi-Client-IP':sources[1]}});
+  assert.equal(valid.status,200,valid.raw);
+});
+
+
+test('anonymous onboarding source buckets reclaim expired rows in bounded indexed batches and enforce a hard capacity',async t=>{
+  const f=await fixture(t),{consumeBounded}=await load('auth-api.mjs');
+  const prefix='first-administrator:challenges:ip:',now=f.now;
+  const insert=f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)');
+  const membership=f.db.prepare('INSERT INTO team_auth_limit_pool_buckets(prefix,bucket,window_start) VALUES (?,?,?)');
+  for(let i=0;i<10000;i++){
+    const bucket=prefix+'old-'+String(i).padStart(5,'0'),windowStart=i===0?now-60000:now-120000;
+    insert.run(bucket,windowStart,1);membership.run(prefix,bucket,windowStart);
+  }
+  f.db.prepare('UPDATE team_auth_limit_pools SET active_count=10000 WHERE prefix=?').run(prefix);
+  for(let i=0;i<40;i++)consumeBounded(f.db,prefix,prefix+'fresh-source-'+i,now,60000,60,10000);
+  const sourceCount=()=>f.db.prepare('SELECT COUNT(*) AS n FROM team_auth_limits WHERE bucket>=? AND bucket<?').get(prefix,prefix+String.fromCharCode(0xFFFF)).n;
+  assert.equal(sourceCount(),40,'bounded cleanup drains expired entries over multiple requests');
+  assert.equal(f.db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count,40);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(prefix+'fresh-source-39').attempts,1);
+  for(let i=0;i<9960;i++){
+    const bucket=prefix+'active-'+String(i).padStart(5,'0');
+    insert.run(bucket,now,1);membership.run(prefix,bucket,now);
+  }
+  f.db.prepare('UPDATE team_auth_limit_pools SET active_count=10000 WHERE prefix=?').run(prefix);
+  const protectedBucket=prefix+'active-00000';
+  f.db.prepare('UPDATE team_auth_limits SET attempts=59 WHERE bucket=?').run(protectedBucket);
+  consumeBounded(f.db,prefix,protectedBucket,now,60000,60,10000);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(protectedBucket).attempts,60);
+  assert.equal(sourceCount(),10000);
+  assert.throws(()=>consumeBounded(f.db,prefix,prefix+'new-source-at-capacity',now,60000,60,10000));
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(protectedBucket).attempts,60);
+  assert.equal(sourceCount(),10000);
+  assert.equal(f.db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count,10000);
+});
+
+test('first-administrator onboarding accepts valid tickets from new sources when anonymous source storage is full',async t=>{
+  const {fullSourcePool}=require('./helpers/onboarding-rate-limit-capacity.cjs');
+  for(const action of ['preview','challenges','activate']){
+    await t.test(action,async t=>{
+      const f=await fixture(t);
+      const approved=await approve(f),invitation={invitationCode:approved.invitationCode};
+      const proof=action==='activate'?await challenge(f,invitation):null;
+      const body=proof?payload(invitation,proof):{invitationCode:invitation.invitationCode,phone:PHONE};
+      const prefix='first-administrator:'+action+':ip:',global='first-administrator:'+action+':global';
+      const pool=fullSourcePool(f.db,prefix,f.now);
+      const route=FIRST+'/'+action;
+      const request=(address,value)=>call(f,route,{body:value,headers:{'X-Shenyi-Client-IP':address}});
+      const businessBudget=()=>JSON.stringify(f.db.prepare(
+        'SELECT bucket,window_start,attempts FROM team_auth_limits WHERE substr(bucket,1,length(?))<>? AND bucket<>? ORDER BY bucket'
+      ).all(prefix,prefix,'first-administrator:'+action+':overflow'));
+      const beforeBudget=businessBudget(),beforeMessages=f.sent.length;
+      const invalid=await request(pool.invalidAddress,{...body,invitationCode:randomBytes(32).toString('base64url')});
+      assert.ok([404,429].includes(invalid.status),invalid.raw);
+      assert.equal(businessBudget(),beforeBudget,'invalid tickets must not spend shared business or SMS budgets');
+      assert.equal(f.sent.length,beforeMessages,'invalid tickets must not send SMS');
+      pool.assertUnchanged();
+
+      // A source that has already spent its 60 attempts must not acquire a
+      // fresh allowance by presenting a valid ticket at the capacity boundary.
+      const limited=await request(pool.blockedAddress,body);
+      assert.equal(limited.status,429,limited.raw);
+      assert.equal(businessBudget(),beforeBudget);
+      pool.assertUnchanged();
+
+      const valid=await request(pool.validAddress,body);
+      assert.equal(valid.status,action==='challenges'?202:200,valid.raw);
+      assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(global).attempts,1);
+      assert.equal(f.sent.length,beforeMessages+(action==='challenges'?1:0));
+      pool.assertUnchanged();
+    });
+  }
+});
+
+
+test('first-administrator onboarding bounds invalid ticket validation but preserves valid tickets after overflow exhaustion',async t=>{
+  const {fullSourcePool}=require('./helpers/onboarding-rate-limit-capacity.cjs');
+  const f=await fixture(t),approved=await approve(f),prefix='first-administrator:preview:ip:';
+  const pool=fullSourcePool(f.db,prefix,f.now),invalidCode=randomBytes(32).toString('base64url');
+  for(let i=0;i<300;i++){
+    const address='198.51.'+Math.floor(i/250)+'.'+(i%250+1);
+    const response=await call(f,FIRST+'/preview',{
+      body:{invitationCode:invalidCode,phone:PHONE},
+      headers:{'X-Shenyi-Client-IP':address},
+    });
+    assert.equal(response.status,404,response.raw);
+  }
+  const blocked=await call(f,FIRST+'/preview',{
+    body:{invitationCode:invalidCode,phone:PHONE},
+    headers:{'X-Shenyi-Client-IP':'198.51.2.1'},
+  });
+  assert.equal(blocked.status,429,blocked.raw);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='first-administrator:preview:overflow'").get().attempts,300);
+  assert.equal(f.db.prepare("SELECT 1 FROM team_auth_limits WHERE bucket='first-administrator:preview:global'").get(),undefined);
+  assert.equal(f.sent.length,0);
+  const valid=await call(f,FIRST+'/preview',{
+    body:{invitationCode:approved.invitationCode,phone:PHONE},
+    headers:{'X-Shenyi-Client-IP':'198.51.2.2'},
+  });
+  assert.equal(valid.status,200,valid.raw);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='first-administrator:preview:global'").get().attempts,1);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='first-administrator:preview:overflow'").get().attempts,300);
+  pool.assertUnchanged();
+});

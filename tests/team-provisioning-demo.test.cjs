@@ -1,0 +1,17 @@
+'use strict';
+// Explicit developer fixture boundaries. No production account provisioning.
+const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),{pathToFileURL}=require('node:url'),{DatabaseSync}=require('node:sqlite');
+const source=name=>import(pathToFileURL(path.resolve(__dirname,'../server/team/'+name)).href);
+async function fixture(t){const {initializeTeamDatabase,seedDemoTeamData}=await source('database.mjs'),{seedProvisioningDemo}=await source('provisioning-demo.mjs');const db=new DatabaseSync(':memory:');t.after(()=>db.close());initializeTeamDatabase(db);await seedDemoTeamData(db);return {db,seedProvisioningDemo};}
+test('ordinary demo retains nine synthetic users and no platform review privileges',async t=>{
+  const {db}=await fixture(t);assert.equal(db.prepare('SELECT COUNT(*) n FROM team_users').get().n,9);assert.equal(db.prepare('SELECT COUNT(*) n FROM team_memberships').get().n,8);assert.equal(db.prepare('SELECT COUNT(*) n FROM team_platform_reviewers').get().n,0);
+});
+test('explicit review fixture adds only technical review account with a real salted password',async t=>{
+  const {db,seedProvisioningDemo}=await fixture(t),{verifyPassword}=await source('passwords.mjs');await seedProvisioningDemo(db);assert.equal(db.prepare('SELECT COUNT(*) n FROM team_users').get().n,10);assert.equal(db.prepare('SELECT COUNT(*) n FROM team_memberships').get().n,8);assert.equal(db.prepare('SELECT COUNT(*) n FROM team_operators').get().n,0);const row=db.prepare("SELECT * FROM team_credentials WHERE username='reviewer-demo'").get();assert.equal(await verifyPassword('ShenyiDemo!2026',row.password_hash),true);assert.equal(db.prepare("SELECT status FROM team_platform_reviewers WHERE user_id='reviewer-demo'").get().status,'active');assert.equal(db.prepare("SELECT COUNT(*) n FROM team_admin_grants WHERE user_id='reviewer-demo'").get().n,0);
+});
+test('relaunch never restores a revoked reviewer or disabled account and never resets password',async t=>{
+  const {db,seedProvisioningDemo}=await fixture(t);await seedProvisioningDemo(db);const before=db.prepare("SELECT password_hash FROM team_credentials WHERE user_id='reviewer-demo'").get().password_hash;db.prepare("UPDATE team_platform_reviewers SET status='revoked',revision=revision+1").run();db.prepare("UPDATE team_users SET status='disabled' WHERE user_id='reviewer-demo'").run();await seedProvisioningDemo(db);assert.equal(db.prepare("SELECT status FROM team_users WHERE user_id='reviewer-demo'").get().status,'disabled');assert.equal(db.prepare("SELECT status FROM team_platform_reviewers WHERE user_id='reviewer-demo'").get().status,'revoked');assert.equal(db.prepare("SELECT password_hash FROM team_credentials WHERE user_id='reviewer-demo'").get().password_hash,before);assert.equal(db.prepare('SELECT COUNT(*) n FROM team_users').get().n,10);
+});
+test('unmarked or colliding existing accounts never receive reviewer privilege',async t=>{
+  const {db,seedProvisioningDemo}=await fixture(t);db.prepare("INSERT INTO team_users VALUES ('reviewer-demo','active')").run();await assert.rejects(()=>seedProvisioningDemo(db),/existing account/);assert.equal(db.prepare('SELECT COUNT(*) n FROM team_platform_reviewers').get().n,0);db.prepare("DELETE FROM team_database_metadata WHERE name='demo'").run();await assert.rejects(()=>seedProvisioningDemo(db),/isolated synthetic/);assert.equal(db.prepare('SELECT COUNT(*) n FROM team_platform_reviewers').get().n,0);
+});

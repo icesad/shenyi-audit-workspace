@@ -1,0 +1,20 @@
+const {test,after}=require('node:test'),assert=require('node:assert/strict');
+const {createWorkpaperAccessFixture:fixture,good,source,restorePasswordWork}=require('./helpers/workpaper-access-fixture.cjs');
+const {workpaperAccessSchemaLayer,laterTeamSchemaLayers,peelLedgerAndWorkpaperSchema,assertLedgerAndWorkpaperSchemaRestored}=require('./helpers/workpaper-access-schema-layer.cjs');
+const {withoutDataLayerCounts}=require('./helpers/workpaper-data-schema-layer.cjs');
+const {subscriptionSchemaLayer,withoutEmptySubscriptionDefinitions}=require('./helpers/subscription-schema-layer.cjs');
+const {billingSchemaLayer}=require('./helpers/billing-schema-layer.cjs');
+const {seatCapacitySchemaLayer}=require('./helpers/seat-capacity-schema-layer.cjs');
+const {seatOrderSchemaLayer}=require('./helpers/seat-order-schema-layer.cjs');
+const {annualSeatPlanSchemaLayer}=require('./helpers/annual-seat-plan-schema-layer.cjs');
+const {paymentExceptionSchemaLayer}=require('./helpers/billing-payment-exception-schema-layer.cjs');
+const {refundIntakeSchemaLayer}=require('./helpers/billing-refund-intake-schema-layer.cjs');
+const {orderClosureSchemaLayer}=require('./helpers/billing-order-closure-schema-layer.cjs');
+const {rateLimitPoolSchemaLayer}=require('./helpers/rate-limit-pool-schema-layer.cjs');
+after(restorePasswordWork);
+const all=db=>withoutEmptySubscriptionDefinitions(db,db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().map(x=>({...x})));
+function historicalLayers(db){const all=laterTeamSchemaLayers(db),subscription=subscriptionSchemaLayer(db,{allowAbsent:true}),billing=billingSchemaLayer(db,{allowAbsent:true}),seats=seatCapacitySchemaLayer(db,{allowAbsent:true}),orders=seatOrderSchemaLayer(db,{allowAbsent:true}),plans=annualSeatPlanSchemaLayer(db,{allowAbsent:true}),exceptions=paymentExceptionSchemaLayer(db,{allowAbsent:true}),refundIntake=refundIntakeSchemaLayer(db,{allowAbsent:true}),orderClosure=orderClosureSchemaLayer(db,{allowAbsent:true}),rateLimitPool=rateLimitPoolSchemaLayer(db);return{tables:all.tables-subscription.tables-billing.tables-seats.tables-orders.tables-plans.tables-exceptions.tables-refundIntake.tables-orderClosure.tables-rateLimitPool.tables,objects:all.objects-subscription.objects-billing.objects-seats.objects-orders.objects-plans.objects-exceptions.objects-refundIntake.objects-orderClosure.objects-rateLimitPool.objects};}
+test('only the exact two empty workpaper tables and 29 definitions augment the original fixed baseline',async t=>{const f=await fixture(t);assert.deepEqual(workpaperAccessSchemaLayer(f.db),{tables:2,objects:29});assert.deepEqual(withoutDataLayerCounts(f.db,historicalLayers(f.db)),{tables:6,objects:67});});
+test('nonempty workpaper authorization is rejected before any historical-schema deletion',async t=>{const f=await fixture(t);good(await f.wpGrant());const before=all(f.db),rows=f.wpRows();assert.throws(()=>peelLedgerAndWorkpaperSchema(f.db),/No default workpaper/);assert.deepEqual(all(f.db),before);assert.deepEqual(f.wpRows(),rows);});
+for(const type of ['extra object','altered guard'])test('schema projection rejects '+type+' before any DROP',async t=>{const f=await fixture(t);if(type==='extra object')f.db.exec('CREATE TRIGGER workpaper_access_unexpected AFTER INSERT ON team_users BEGIN SELECT 1; END');else f.db.exec("DROP TRIGGER workpaper_access_grant_no_delete; CREATE TRIGGER workpaper_access_grant_no_delete BEFORE DELETE ON team_workpaper_access_grants BEGIN SELECT 1; END");const before=all(f.db);assert.throws(()=>peelLedgerAndWorkpaperSchema(f.db));assert.deepEqual(all(f.db),before);});
+test('both empty later layers peel to the original 73/252 and restore exact definitions',async t=>{const f=await fixture(t),{initializeTeamDatabase}=await source('database.mjs'),before=all(f.db),layer=peelLedgerAndWorkpaperSchema(f.db);assert.equal(all(f.db).length,252);assert.equal(all(f.db).filter(x=>x.type==='table').length,73);initializeTeamDatabase(f.db);assertLedgerAndWorkpaperSchemaRestored(f.db,layer);assert.deepEqual(all(f.db),before);});

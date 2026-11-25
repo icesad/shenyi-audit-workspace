@@ -1,0 +1,33 @@
+[Unit]
+Description=Check Shenyi team service readiness and TLS
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+StateDirectory=shenyi-team-monitor
+StateDirectoryMode=0700
+UMask=0077
+Environment=SHENYI_MONITOR_TRANSITIONS=1
+LoadCredential=service.json:/etc/shenyi-team/service.json
+LoadCredential=backend-ca.pem:/etc/nginx/shenyi-team/backend-ca.pem
+Environment=SHENYI_MONITOR_DISK_WARNING_BYTES=10737418240
+Environment=SHENYI_MONITOR_CERTIFICATE_WARNING_DAYS=30
+UnsetEnvironment=NODE_OPTIONS NODE_PATH NODE_TLS_REJECT_UNAUTHORIZED
+ExecStart=/opt/shenyi-team/node/bin/node /opt/shenyi-team/current/scripts/check-team-service.mjs --config ${CREDENTIALS_DIRECTORY}/service.json --backend-ca ${CREDENTIALS_DIRECTORY}/backend-ca.pem --disk-warning-bytes ${SHENYI_MONITOR_DISK_WARNING_BYTES} --certificate-warning-days ${SHENYI_MONITOR_CERTIFICATE_WARNING_DAYS}
+# The checker reports a threshold warning on exit 2.
+SuccessExitStatus=2
+TimeoutStartSec=30s
+StandardOutput=journal
+StandardError=journal
+
+# Keep the database path visible for statfs without granting access to its bytes.
+# The file must remain mode 0600 and owned by the separate shenyi-team user.
+TemporaryFileSystem=/var/lib/shenyi-team:ro
+BindReadOnlyPaths=-/var/lib/shenyi-team/team.sqlite
+ProtectSystem=strict
+ProtectHome=true
+PrivateDevices=true
+ProtectProc=invisible
+NoNewPrivileges=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

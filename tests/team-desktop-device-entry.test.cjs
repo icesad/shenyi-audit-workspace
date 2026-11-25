@@ -1,0 +1,42 @@
+'use strict';
+const {ledgerOldChannelNames}=require('./helpers/ledger-check-entry-layer.cjs');
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const {EventEmitter}=require('node:events');
+const {resolveDeviceVaultDirectory}=require('../desktop/device-key-directory.cjs');
+const {registerDesktopBridge,APP_URL}=require('../desktop/bridge.cjs');
+test('device vault stays outside roaming or business profiles and rejects ambiguous roots',()=>{
+  assert.equal(resolveDeviceVaultDirectory({platform:'win32',localAppData:'C:\\Users\\fixture\\AppData\\Local',home:'D:/business'}),'C:\\Users\\fixture\\AppData\\Local\\ShenyiTeamPreview\\device-vault');
+  assert.equal(resolveDeviceVaultDirectory({platform:'darwin',home:'/Users/fixture',localAppData:'D:/business'}),'/Users/fixture/Library/Application Support/ShenyiTeamPreview/device-vault');
+  for(const localAppData of [null,'','relative','C:relative','\\\\host\\share','//host/share','C:\\Users\\..\\Roaming','C:/bad\nroot'])assert.throws(()=>resolveDeviceVaultDirectory({platform:'win32',localAppData}),error=>error.code==='DEVICE_DIRECTORY_UNAVAILABLE'&&error.message==='无法确认本机设备密钥目录，请联系管理员检查系统配置。');
+  for(const home of ['relative','//server/home','/Users/../shared'])assert.throws(()=>resolveDeviceVaultDirectory({platform:'darwin',home}));
+  assert.throws(()=>resolveDeviceVaultDirectory({platform:'linux',home:'/tmp'}));
+});
+test('packaged vault uses its own product directory on Windows and macOS',()=>{
+  assert.equal(resolveDeviceVaultDirectory({platform:'win32',localAppData:'C:/Users/fixture/AppData/Local',isPackaged:true}),'C:\\Users\\fixture\\AppData\\Local\\ShenyiTeamDesktop\\device-vault');
+  assert.equal(resolveDeviceVaultDirectory({platform:'darwin',home:'/Users/fixture',isPackaged:true}),'/Users/fixture/Library/Application Support/ShenyiTeamDesktop/device-vault');
+  assert.throws(()=>resolveDeviceVaultDirectory({platform:'darwin',home:'/Users/fixture',isPackaged:'true'}),{code:'DEVICE_DIRECTORY_UNAVAILABLE'});
+});
+test('normal main always injects protected vault and owns heartbeat plus suspend/resume cleanup',async()=>{
+  const app=new EventEmitter(),power=new EventEmitter(),seen={};app.enableSandbox=()=>{};app.requestSingleInstanceLock=()=>true;app.whenReady=async()=>{};app.setPath=()=>{};app.quit=()=>{seen.quit=true;};
+  const webContents=new EventEmitter();webContents.setWindowOpenHandler=()=>{};
+  class Window extends EventEmitter{constructor(options){super();this.webContents=webContents;seen.window=this;seen.preferences=options.webPreferences;}async loadURL(url){seen.url=url;}show(){seen.shown=true;}}
+  const isolated=new EventEmitter();isolated.setPermissionRequestHandler=()=>{};isolated.setPermissionCheckHandler=()=>{};isolated.webRequest={onBeforeRequest(){}};isolated.protocol={handle(){}};
+  const vault={dispose(){seen.vaultDisposed=true;}},safeStorage={};const client={async checkDeviceConnection(){seen.checks=(seen.checks||0)+1;},pauseDeviceConnection(){seen.pauses=(seen.pauses||0)+1;}};
+  const deps={'electron':{app,BrowserWindow:Window,powerMonitor:power,safeStorage,session:{fromPartition:()=>isolated},protocol:{registerSchemesAsPrivileged(){}},ipcMain:{},dialog:{},Menu:{setApplicationMenu(){}},shell:{openExternal(){}}},'node:fs/promises':{async mkdir(){}},'node:path':path,'./team-client.cjs':{API_BASE:'http://127.0.0.1:8774',createTeamClient(options){seen.clientOptions=options;return client;}},'./bridge.cjs':{APP_URL,registerDesktopBridge(){return ()=>{seen.bridgeDisposed=true;};}},'./material-preview-window.cjs':{PREVIEW_SCHEME:'shenyi-preview'},'./device-key-directory.cjs':{resolveDeviceVaultDirectory(){seen.directoryResolved=true;return 'D:/isolated-new-vault';}},'./device-key-vault.cjs':{createDeviceKeyVault(options){seen.vaultOptions=options;return vault;}}};
+  deps['./team-service-config.cjs']=require('../desktop/team-service-config.cjs');
+  deps['./isolated-preview-config.cjs']=require('../desktop/isolated-preview-config.cjs');
+  const intents={};
+  deps['./native-checkout-intents.cjs']={createNativeCheckoutIntents(directory){seen.nativeCheckoutDirectory=directory;return intents;}};
+  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname,'../desktop/main.cjs'),'utf8'),{require:name=>{assert.ok(Object.hasOwn(deps,name),name);return deps[name];},__dirname:path.resolve(__dirname,'../desktop'),process:{platform:'win32',env:{SHENYI_DESKTOP_DATA_DIR:'D:/fixture-profile',SHENYI_DEVICE_PROOF_REQUIRED:'0'}},URL,Response,console:{error(){throw Error('main failed');}},setInterval(fn,ms){seen.timer=fn;seen.interval=ms;return {unref(){seen.unref=true;}};},clearInterval(){seen.timerCleared=true;}});
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(seen.shown,true);assert.equal(seen.interval,5000);assert.equal(seen.unref,true);assert.equal(seen.clientOptions.deviceIdentity.vault,vault);assert.equal(seen.clientOptions.deviceIdentity.platform,'win32');assert.equal(seen.vaultOptions.safeStorage,safeStorage);assert.equal(seen.vaultOptions.directory,'D:/isolated-new-vault');
+  assert.equal(seen.nativeCheckoutDirectory,'D:/fixture-profile');assert.equal(seen.clientOptions.nativeCheckoutIntents,intents);
+  seen.timer();await Promise.resolve();assert.equal(seen.checks,1);power.emit('suspend');assert.equal(seen.pauses,1);power.emit('resume');assert.equal(seen.pauses,2);assert.equal(seen.checks,2);
+  seen.window.emit('closed');assert.equal(seen.timerCleared,true);assert.equal(seen.vaultDisposed,true);assert.equal(seen.bridgeDisposed,true);assert.equal(power.listenerCount('suspend'),0);assert.equal(power.listenerCount('resume'),0);
+});
+test('three new device IPCs reject foreign frames and arbitrary network/path input',async()=>{
+  const handlers=new Map(),frame={url:APP_URL},webContents={mainFrame:frame};let calls=0;const client={clearSession(){},getDeviceStatus(){calls++;return {required:true,state:'signed_out'};},enrollDevice(input){calls++;return input;},reconnectDevice(){calls++;return {safe:true};}};
+  const dispose=registerDesktopBridge({ipcMain:{handle:(key,fn)=>handlers.set(key,fn),removeHandler:key=>handlers.delete(key)},window:{webContents},client,dialog:{}}),event={sender:webContents,senderFrame:frame};
+  for(const name of ['device-status','device-enroll','device-reconnect','device-replacement-status','device-replacement-request','device-replacement-withdraw','device-replacement-activate','device-replacement-review-access','device-replacement-reviews','device-replacement-review'])for(const foreign of [{sender:{},senderFrame:frame},{sender:webContents,senderFrame:{url:APP_URL}},{sender:webContents,senderFrame:{url:'https://evil.invalid'}}])assert.equal((await handlers.get('shenyi:'+name)(foreign,{})).error.code,'UNTRUSTED_SENDER');
+  assert.equal((await handlers.get('shenyi:device-status')(event,{token:'secret'})).ok,false);assert.equal((await handlers.get('shenyi:device-reconnect')(event,{url:'https://evil.invalid'})).ok,false);assert.equal((await handlers.get('shenyi:device-enroll')(event,{confirmed:true,currentPassword:'synthetic',displayName:'设备',path:'D:/private'})).ok,false);assert.equal(calls,0);
+  assert.equal((await handlers.get('shenyi:device-status')(event)).ok,true);assert.equal((await handlers.get('shenyi:device-reconnect')(event)).ok,true);assert.equal(calls,2);assert.equal(ledgerOldChannelNames(handlers).length,123);dispose();assert.equal(handlers.size,0);
+});

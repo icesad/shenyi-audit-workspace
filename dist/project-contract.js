@@ -1,14 +1,27 @@
 /* Per-project final award price, original contract templates and signed originals. */
 (function(root){'use strict';
  const SOURCE_KEYS=['projectName','issuer','customerName','firmName','auditYear','quoteDate','totalCents','projectType'];
- async function currentSource(source){if(!source?.quoteId||!root.QuoteLedger?.open)throw Error('无法核对项目中标来源，请刷新后重试。');const db=await root.QuoteLedger.open();try{const e=(await db.list()).find(e=>e.id===source.quoteId),last=e?.events?.at(-1);if(!e||last?.outcome!=='won'||last.eventNo!==e.lastEventNo||SOURCE_KEYS.some(k=>e.snapshot[k]!==source[k]))throw Error('项目中标结果或来源已变化，请重新打开立项核对，原资料未覆盖。');return e;}finally{db.close();}}
- async function uploadSigned(source,file,{expectedRevision}={}){await currentSource(source);const S=root.ProjectWorkspaceStore,r=await S.get(source.quoteId);if(expectedRevision!==undefined&&r.rev!==expectedRevision)throw Error('本项目资料已变化，请刷新后重试。');const value={name:file.name,hash:await S.hash(file),blob:file};await S.validateSignedContract(value);await currentSource(source);return S.save(source.quoteId,r.rev,{signedContract:value});}
+ async function currentSource(source,lookup){
+  if(!source?.quoteId)throw Error('无法核对项目中标来源，请刷新后重试。');
+  let entry;
+  if(typeof lookup==='function')entry=await lookup(source.quoteId);
+  else{
+   if(!root.QuoteLedger?.open)throw Error('无法核对项目中标来源，请刷新后重试。');
+   const db=await root.QuoteLedger.open();
+   try{entry=(await db.list()).find(e=>e.id===source.quoteId);}finally{db.close();}
+  }
+  entry=entry?.entry||entry;
+  const last=entry?.events?.at(-1);
+  if(!entry||entry.id!==source.quoteId||last?.outcome!=='won'||last.eventNo!==entry.lastEventNo||SOURCE_KEYS.some(k=>entry.snapshot?.[k]!==source[k]))throw Error('项目中标结果或来源已变化，请重新打开立项核对，原资料未覆盖。');
+  return entry;
+ }
+ async function uploadSigned(source,file,{expectedRevision,lookup}={}){await currentSource(source,lookup);const S=root.ProjectWorkspaceStore,r=await S.get(source.quoteId);if(expectedRevision!==undefined&&r.rev!==expectedRevision)throw Error('本项目资料已变化，请刷新后重试。');const value={name:file.name,hash:await S.hash(file),blob:file};await S.validateSignedContract(value);await currentSource(source,lookup);return S.save(source.quoteId,r.rev,{signedContract:value});}
  async function downloadSigned(source){const S=root.ProjectWorkspaceStore,r=await S.get(source.quoteId);if(!r.signedContract)throw Error('本项目尚未上传合同盖章版。');await S.validateSignedContract(r.signedContract);S.download(r.signedContract.blob,r.signedContract.name);return r;}
- async function uploadTemplate(source,file,{expectedRevision}={}){
-  await currentSource(source);const S=root.ProjectWorkspaceStore,r=await S.get(source.quoteId);
+ async function uploadTemplate(source,file,{expectedRevision,lookup}={}){
+  await currentSource(source,lookup);const S=root.ProjectWorkspaceStore,r=await S.get(source.quoteId);
   if(expectedRevision!==undefined&&expectedRevision!==r.rev)throw Error('本项目资料已变化，请刷新后重试。');
   if(!file||!Number.isSafeInteger(file.size)||!file.size||file.size>12*1024*1024||!/\.(?:docx|doc|rtf|odt)$/i.test(file.name||''))throw Error('请选择12MiB以内的DOCX、DOC、RTF或ODT合同模板。');
-  const value={name:file.name,hash:await S.hash(file),blob:file};await S.validateContractTemplate(value);await currentSource(source);
+  const value={name:file.name,hash:await S.hash(file),blob:file};await S.validateContractTemplate(value);await currentSource(source,lookup);
   return S.save(source.quoteId,r.rev,{contract:value});
  }
  async function directFields(source,record,live){
@@ -17,8 +30,8 @@
   if(record.firm)for(const key of Object.keys(values))if(Object.hasOwn(record.firm,key)&&typeof record.firm[key]==='string'&&record.firm[key].trim())values[key]=record.firm[key];
   const amount=root.ProjectWorkspaceStore.projectAmount(source,record,live).amountCents;if(amount===null)throw Error('未找到当前有效中标金额，请先保存本项目含税金额。');const cents=BigInt(amount),text=cents/100n+'.'+String(cents%100n).padStart(2,'0');return{...values,'中标金额':text,'合同金额':text,'中标金额大写':root.QuoteLayouts.upper(amount),'合同金额大写':root.QuoteLayouts.upper(amount)};
  }
- async function downloadFilled(source){
-  const live=await currentSource(source),S=root.ProjectWorkspaceStore,r=await S.get(source.quoteId);
+ async function downloadFilled(source,{lookup}={}){
+  const live=await currentSource(source,lookup),S=root.ProjectWorkspaceStore,r=await S.get(source.quoteId);
   if(!r.contract)throw Error('请先上传本项目空白合同模板。');const kind=await S.validateContractTemplate(r.contract);if(!kind.canFill){if(typeof root.confirm==='function'&&!root.confirm(kind.notice+'\n本次仅下载未填写原件，继续？'))throw Error('已取消原件下载；请另存DOCX后自动填写。');S.download(r.contract.blob,r.contract.name);return {count:0,original:true,notice:'已下载未填写原件。'+kind.notice};}
   if(r.amountCents!=null&&(!Number.isSafeInteger(r.amountCents)||r.amountCents<0))throw Error('项目含税金额无效，请重新填写保存。');
   if(await S.hash(r.contract.blob)!==r.contract.hash)throw Error('合同模板原件校验失败，请重新上传核对。');
@@ -27,12 +40,12 @@
   if(!matches.length)throw Error('未识别到可填标签空位；请打开项目核对合同字段，或在模板使用 {{事务所名称}} 等标记。');
   const missing=[...new Set(plan.missing)],seen=new Set(),summary=matches.filter(m=>!seen.has(m.field)&&seen.add(m.field)).map(m=>m.field+'：'+m.value).join('\n');
   if(typeof root.confirm!=='function'||!root.confirm('将填写以下合同资料，请核对后下载：\n'+summary+'\n'+S.projectAmount(source,r,live).origin+(missing.length?'\n缺少资料（保留空白）：'+missing.join('、'):'')+'\n\n原模板与条款不改，未识别空白仍保留。是否下载无章Word副本？'))throw Error('已取消合同下载。');
-  const made=await root.ContractTemplate.fill(file,fields,{selectedIds:matches.map(m=>m.id)});if((await S.get(source.quoteId)).rev!==r.rev)throw Error('项目资料已变化，请重新核对后下载。');await currentSource(source);
+  const made=await root.ContractTemplate.fill(file,fields,{selectedIds:matches.map(m=>m.id)});if((await S.get(source.quoteId)).rev!==r.rev)throw Error('项目资料已变化，请重新核对后下载。');await currentSource(source,lookup);
   S.download(new Blob([made.bytes],{type:root.QuoteLayouts.docxMime}),'合同-'+source.projectName.replace(/[\\/:*?"<>|]/g,'_').slice(0,60)+'-已填写无章待核对.docx');return{count:made.count,missing,notice:'合同下载已完成，已填 '+made.count+' 处；'+(missing.length?'缺少资料保持空白：'+missing.join('、')+'。':'')+'请在Word核对未识别空白及全部条款。'};
  }
- async function uploadInvoice(source,file,{expectedRevision}={}){
-  await currentSource(source);const S=root.ProjectWorkspaceStore,r=await S.get(source.quoteId);if(expectedRevision!==undefined&&r.rev!==expectedRevision)throw Error('本项目资料已变化，请刷新后重试。');
-  if(!/\.(?:pdf|png|jpe?g)$/i.test(file?.name||''))throw Error('请选择PDF、PNG或JPEG发票原件。');const value={name:file.name,hash:await S.hash(file),blob:file};await S.validateSignedContract(value);await currentSource(source);
+ async function uploadInvoice(source,file,{expectedRevision,lookup}={}){
+  await currentSource(source,lookup);const S=root.ProjectWorkspaceStore,r=await S.get(source.quoteId);if(expectedRevision!==undefined&&r.rev!==expectedRevision)throw Error('本项目资料已变化，请刷新后重试。');
+  if(!/\.(?:pdf|png|jpe?g)$/i.test(file?.name||''))throw Error('请选择PDF、PNG或JPEG发票原件。');const value={name:file.name,hash:await S.hash(file),blob:file};await S.validateSignedContract(value);await currentSource(source,lookup);
   return S.save(source.quoteId,r.rev,{projectInvoice:{schemaVersion:1,information:r.projectInvoice?.information||'',file:value}});
  }
  function mount(host,source,{readOnly=false}={}){

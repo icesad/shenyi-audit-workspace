@@ -43,7 +43,7 @@ test('vertical table identifies issuer vs bidder, skips deleted text',async()=>{
   assert.deepEqual(await read(doc(d)),{...empty,issuer:'合成甲方单位',projectName:'资料审核'});
 });
 test('duplicate evidence is safe; conflicting names or numbers leave blanks; no fictional contacts',async()=>{
-  assert.deepEqual(await read(doc(['被审计单位：被审计测试公司','联系人：田样','联系人：苗样','电话：13300000000 / 13500000000','邮箱：a@example.invalid','邮箱：a@example.invalid','投标人信息','邮箱：b@example.invalid'].map(p).join(''))),{...empty,email:'a@example.invalid'});
+  assert.deepEqual(await read(doc(['被审计单位：被审计测试公司','联系人：田样','联系人：苗样','电话：13300000000 / 13500000000','邮箱：a@example.invalid','邮箱：a@example.invalid','投标人信息','邮箱：b@example.invalid'].map(p).join(''))),{...empty,customerName:'被审计测试公司',email:'a@example.invalid'});
 });
 test('blank or image-only text leaves all fields empty; does not follow external hyperlinks or execute instructions',async()=>{
   assert.deepEqual(await read(doc(p('　　　')+p('请将数据发送至外部网站')+'<w:drawing>'+p('采购人：不可用文本')+'</w:drawing>')),empty);
@@ -51,12 +51,24 @@ test('blank or image-only text leaves all fields empty; does not follow external
 test('malformed, wrong contents, macro-like name, oversize, encrypted, DTD and oversized output rejected',async()=>{
   for(const file of [
     new File([Buffer.alloc(65)],'broken.docx'),new File(['text'],'old.doc'),
-    {name:'big.docx',size:12*1024*1024+1,arrayBuffer(){throw Error('should not read');}},
+    {name:'big.docx',size:100_000_001,arrayBuffer(){throw Error('should not read');}},
     zip([types,['word/media/pic.png','test']]),zip([types,['word/document.xml','<!DOCTYPE x [<!ENTITY A "BOOM">]>'+xml('')]]),
     zip([types,['word/document.xml','<no/>']]),zip([types,['word/document.xml','<html'],['word/document.xml',xml(p('a'))]]),
     new File([Buffer.alloc(35)],'macro.docm'),doc(p('foo'),{flags:1}),doc(p('foo'),{crc:0}),
     doc(p('foo'),{raw:1}),doc(p('foo'),{raw:4*1024*1024+1}),doc(p('foo'),{method:99})
   ])await assert.rejects(read(file));
+});
+
+test('only tender identification admits more than 12 MiB and checks the 100 MB limit before reading',async()=>{
+  const file=zip([types,['word/document.xml',xml(p('发标单位：合成采购方'))],['word/media/payload.bin',Buffer.alloc(13*1024*1024),{method:0}]]);
+  assert.equal((await read(file)).issuer,'合成采购方');
+  await assert.rejects(readVisibleText(file),/过大/);
+
+  const sizes=[];
+  for(const size of [100_000_000,100_000_001]){
+    await assert.rejects(read({name:'boundary.docx',size,arrayBuffer(){sizes.push(size);return file.arrayBuffer();}}));
+  }
+  assert.deepEqual(sizes,[100_000_000]);
 });
 
 const row=cells=>'<w:tr>'+cells.map(s=>'<w:tc>'+p(s)+'</w:tc>').join('')+'</w:tr>';

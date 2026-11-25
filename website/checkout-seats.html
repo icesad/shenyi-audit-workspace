@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="从审易桌面客户端核对团队增购席位的服务端报价，创建本地模拟订单。">
+  <title>增购团队席位 · 审易</title>
+  <link rel="icon" href="/assets/brand-shenyi.png" type="image/png">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/checkout/checkout.css">
+  <script src="/checkout/checkout-seats.js" defer></script>
+</head>
+<body class="checkout-page">
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <header class="site-header">
+    <div class="shell masthead">
+      <a class="brand" href="/" aria-label="审易，返回官网首页">
+        <img src="/assets/brand-shenyi.png" width="47" height="38" alt="">
+        <span>审易</span>
+      </a>
+      <nav aria-label="官网导航"><a href="/">返回官网 <span aria-hidden="true">↗</span></a></nav>
+    </div>
+  </header>
+
+  <main id="main" class="shell checkout-main" tabindex="-1">
+    <div class="checkout-heading">
+      <div>
+        <p class="eyebrow">官网订阅</p>
+        <h1>增购团队席位</h1>
+        <p class="checkout-lead">选择新增数量，核对服务端报价，再确认订单。</p>
+      </div>
+      <span class="checkout-badge">本地模拟</span>
+    </div>
+
+    <div class="checkout-notice">
+      <strong>当前为本地演练，不收取费用。</strong>
+      <p>页面显示本地演练账本中的订单状态。</p>
+    </div>
+
+    <section class="checkout-message" aria-labelledby="checkout-status-title" aria-busy="true" id="status-panel">
+      <h2 id="checkout-status-title">正在核对桌面授权</h2>
+      <p id="checkout-status" role="status" aria-live="polite" aria-atomic="true">请稍候。</p>
+      <button class="button secondary" id="recover-context" type="button" hidden>只读核对订单</button>
+    </section>
+
+    <div class="checkout-grid" id="checkout-content" hidden>
+      <section class="checkout-form-panel" aria-labelledby="team-title">
+        <div class="checkout-panel-heading">
+          <p class="eyebrow">订阅团队</p>
+          <h2 id="team-title"></h2>
+          <p class="checkout-muted">增购席位 · 沿用当前订阅期限</p>
+        </div>
+
+        <div class="checkout-receipt" id="subscription-unavailable" hidden>
+          <h3>当前不可增购</h3>
+          <p class="checkout-field-note">请先返回审易桌面客户端核对订阅并续费，再从“订阅与席位”重新打开官网增购页。</p>
+        </div>
+
+        <form id="seat-order-form" novalidate>
+          <fieldset id="checkout-fields" disabled>
+            <legend>确认新增席位</legend>
+            <label class="checkout-label" for="seat-quantity">本次新增席位</label>
+            <div class="checkout-seat-input">
+              <input id="seat-quantity" name="quantity" type="number" inputmode="numeric" min="1" max="1000" step="1" value="1" required aria-describedby="seat-guidance seat-error" autocomplete="off">
+              <span aria-hidden="true">席</span>
+            </div>
+            <p class="checkout-field-note" id="seat-guidance">每次可增购 1–1000 席。修改数量后，需要重新获取报价。</p>
+            <p class="checkout-field-error" id="seat-error" aria-live="polite"></p>
+
+            <dl class="checkout-pricing">
+              <div><dt>每席全年目录价</dt><dd id="seat-unit-amount">—</dd></div>
+              <div><dt>当前订阅到期</dt><dd id="current-term-ends-at">—</dd></div>
+            </dl>
+            <p class="checkout-field-note">增购金额按当前订阅剩余期限，由服务端计算。本页不自行估算金额。</p>
+            <button class="button secondary checkout-submit" id="request-quote" type="submit">查看服务端报价</button>
+
+            <div id="quote-panel" class="checkout-receipt" hidden>
+              <p class="checkout-receipt-state">请核对本次报价</p>
+              <h3 id="quote-title">服务端报价</h3>
+              <dl class="checkout-receipt-details">
+                <div><dt>新增席位</dt><dd id="quote-seats"></dd></div>
+                <div><dt>报价金额</dt><dd id="quote-amount"></dd></div>
+                <div><dt>席位有效至</dt><dd id="quote-ends-at"></dd></div>
+                <div><dt>报价确认截止</dt><dd id="quote-expires-at"></dd></div>
+              </dl>
+              <button class="button primary checkout-submit" id="confirm-seat-order" type="button" disabled>确认报价并创建模拟订单</button>
+              <p class="checkout-submit-note">确认后保存本次金额、数量和期限，订单内容不可在此修改。</p>
+            </div>
+          </fieldset>
+        </form>
+
+        <div id="receipt-panel" class="checkout-receipt" hidden>
+          <p class="checkout-receipt-state">模拟订单已创建</p>
+          <h3 id="receipt-title">订单回执</h3>
+          <dl class="checkout-receipt-details">
+            <div><dt>订单编号</dt><dd id="receipt-id" class="checkout-order-id"></dd></div>
+            <div><dt>订单状态</dt><dd id="receipt-status"></dd></div>
+            <div><dt>新增席位</dt><dd id="receipt-seats"></dd></div>
+            <div><dt>创建时间</dt><dd id="receipt-created"></dd></div>
+            <div><dt>订单金额</dt><dd id="receipt-amount"></dd></div>
+            <div><dt>席位有效至</dt><dd id="receipt-ends-at"></dd></div>
+            <div><dt>订单锁价截止</dt><dd id="receipt-quote-expires-at"></dd></div>
+          </dl>
+          <p class="checkout-field-note">此为已保存的原订单。页面不会重复建单，也不会发起收款。可返回桌面查看团队账务。</p>
+        </div>
+      </section>
+
+      <aside class="checkout-summary" aria-labelledby="summary-title">
+        <p class="eyebrow">本次确认</p>
+        <h2 id="summary-title">增购席位合计</h2>
+        <p class="checkout-total" id="order-total">—</p>
+        <p class="checkout-summary-currency">人民币 · CNY</p>
+        <dl class="checkout-summary-lines">
+          <div><dt>订阅项目</dt><dd>增购团队席位</dd></div>
+          <div><dt>新增席位</dt><dd id="summary-seats">—</dd></div>
+          <div><dt>环境</dt><dd>本地模拟</dd></div>
+        </dl>
+        <p class="checkout-summary-note" id="summary-note">获取服务端报价后显示金额，确认后以原订单回执为准。</p>
+        <a class="checkout-home-link" href="/">了解审易产品 <span aria-hidden="true">↗</span></a>
+      </aside>
+    </div>
+
+    <noscript><p class="checkout-notice">请启用 JavaScript，并从审易桌面客户端重新打开增购页。</p></noscript>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-inner">
+      <p><strong>审易</strong><span>官网本地候选</span></p>
+      <p>当前为合成下单演示，正式收款入口待发布。</p>
+    </div>
+  </footer>
+</body>
+</html>

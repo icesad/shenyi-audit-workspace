@@ -148,7 +148,8 @@
 
   // Schema 1 is deliberately not migrated on read. Schema 2 adds an immutable
   // outline generation and file versions; legacy is the exact pre-conversion record.
-  const FILE_STORE='materialFiles',FILE_MAX=12*1024*1024,PROJECT_MAX=150*1024*1024,TREE_RECORD_MAX=8*1024*1024;
+  const FILE_STORE='materialFiles',FILE_MAX=12*1024*1024,ARCHIVE_MAX=100*1024*1024,PROJECT_MAX=150*1024*1024,TREE_RECORD_MAX=8*1024*1024;
+  const fileLimit=name=>/\.(?:zip|rar)$/iu.test(name)?ARCHIVE_MAX:FILE_MAX;
   const uuid=()=>root.crypto.randomUUID(),isUuid=x=>typeof x==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(x);
   function treeNodes(input){
     if(!Array.isArray(input)||!input.length||input.length>MAX)fail('标题树须有 1–500 个节点。');
@@ -172,7 +173,7 @@
   const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
   function fileMeta(x){
     exact(x,['id','nodeId','generationId','name','size','type','sha256','at','reviewer']);
-    if(!isUuid(x.id)||!isUuid(x.generationId)||!/^n[1-9]\d{0,2}$/u.test(x.nodeId)||!Number.isSafeInteger(x.size)||x.size<1||x.size>FILE_MAX||typeof x.sha256!=='string'||!/^\b[0-9a-f]{64}$/u.test(x.sha256))fail('资料文件元数据无效。');
+    if(!isUuid(x.id)||!isUuid(x.generationId)||!/^n[1-9]\d{0,2}$/u.test(x.nodeId)||!Number.isSafeInteger(x.size)||x.size<1||typeof x.name!=='string'||x.size>fileLimit(x.name)||typeof x.sha256!=='string'||!/^\b[0-9a-f]{64}$/u.test(x.sha256))fail('资料文件元数据无效。');
     const name=str(x.name,180,true),type=str(x.type,100,true),reviewer=str(x.reviewer,100,true);iso(x.at);
     if(name!==x.name||type!==x.type||reviewer!==x.reviewer||/[\\/:*?"<>|\r\n\t]/u.test(name)||/^[. ]|[. ]$/u.test(name)||!Object.hasOwn(FILE_TYPES,name.split('.').at(-1).toLowerCase())||FILE_TYPES[name.split('.').at(-1).toLowerCase()]!==type)fail('资料文件名称或类型无效。');
     return x;
@@ -294,14 +295,14 @@
     if(!name||name.length>180)fail('资料文件名无效或过长。');return name;
   }
   function utf8(bytes){let value;try{value=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{fail('文本资料须为有效UTF-8编码，请另存UTF-8后上传，原文件未保存。');}if(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value))fail('文本资料含不支持的控制字符。');return value;}
-  function xmlDocument(bytes){const value=utf8(bytes);if(/<!DOCTYPE|<!ENTITY/iu.test(value))fail('XML/SVG/Office资料含DOCTYPE或实体声明，当前不接收外部实体，未保存。');const doc=new root.DOMParser().parseFromString(value,'application/xml');if(doc.querySelector('parsererror')||!doc.documentElement)fail('XML资料结构无效，文件内容与扩展名不符。');return doc;}
+  function xmlDocument(bytes,DOMParser=root.DOMParser){const value=utf8(bytes);if(/<!DOCTYPE|<!ENTITY/iu.test(value))fail('XML/SVG/Office资料含DOCTYPE或实体声明，当前不接收外部实体，未保存。');const doc=new DOMParser().parseFromString(value,'application/xml');if(doc.querySelector('parsererror')||!doc.documentElement)fail('XML资料结构无效，文件内容与扩展名不符。');return doc;}
   function matchingMime(ext,mime){
     if(typeof mime!=='string'||!mime.trim())return;const m=mime.toLowerCase().split(';')[0].trim();if(['application/octet-stream','binary/octet-stream','application/x-download'].includes(m)||m===FILE_TYPES[ext])return;
     const aliases={doc:['application/vnd.ms-word'],rtf:['text/rtf'],xls:['application/msexcel','application/x-msexcel'],ppt:['application/mspowerpoint'],csv:['application/csv','application/vnd.ms-excel','text/plain'],tsv:['text/plain'],md:['text/plain','text/x-markdown'],json:['text/json','text/plain'],html:['application/xhtml+xml'],xml:['text/xml'],rar:['application/x-rar-compressed'],zip:['application/x-zip-compressed']};
     if(aliases[ext]?.includes(m)||['docx','xlsx','pptx','odt','ods','odp'].includes(ext)&&['application/zip','application/x-zip-compressed'].includes(m))return;fail('所选文件MIME类型与扩展名不符，未保存。');
   }
   // Read only bounded ZIP metadata for Office identity. No entry is executed or extracted to disk.
-  async function officePackage(bytes,ext){
+  async function officePackage(bytes,ext,DOMParser=root.DOMParser){
     const d=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),u16=i=>d.getUint16(i,true),u32=i=>d.getUint32(i,true),bad=()=>fail('Office压缩容器损坏、加密或格式不受支持，未保存。');
     if(bytes.length<22)bad();const minimum=Math.max(0,bytes.length-65557);let end=bytes.length-22;for(;end>=minimum;end--)if(u32(end)===0x06054b50&&end+22+u16(end+20)===bytes.length)break;
     if(end<minimum||u16(end+4)||u16(end+6)||u16(end+8)!==u16(end+10))bad();const count=u16(end+10),start=u32(end+16),length=u32(end+12);if(!count||count>2048||start+length!==end)bad();
@@ -314,11 +315,11 @@
       if(out.length!==e.size)bad();let crc=0xffffffff;for(const b of out){crc^=b;for(let j=0;j<8;j++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}if(((crc^0xffffffff)>>>0)!==e.crc)bad();return out;
     }
     if(['docx','xlsx','pptx'].includes(ext)){
-      const main={docx:['word/document.xml','application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml','document'],xlsx:['xl/workbook.xml','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml','workbook'],pptx:['ppt/presentation.xml','application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml','presentation']}[ext],types=xmlDocument(await part('[Content_Types].xml'));
+      const main={docx:['word/document.xml','application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml','document'],xlsx:['xl/workbook.xml','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml','workbook'],pptx:['ppt/presentation.xml','application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml','presentation']}[ext],types=xmlDocument(await part('[Content_Types].xml'),DOMParser);
       if([...types.getElementsByTagName('*')].some(n=>/macroEnabled|vbaProject/iu.test(n.getAttribute('ContentType')||'')&&(n.localName==='Override'&&parts.has((n.getAttribute('PartName')||'').replace(/^\//,'').toLowerCase())||n.localName==='Default'&&[...parts.keys()].some(p=>p.endsWith('.'+(n.getAttribute('Extension')||'').toLowerCase())))))fail('Office内容声明含宏类型，当前不接收。');
-      if(![...types.getElementsByTagName('*')].some(n=>n.localName==='Override'&&n.getAttribute('PartName')==='/'+main[0]&&n.getAttribute('ContentType')===main[1]))bad();const document=xmlDocument(await part(main[0])),kind={docx:'wordprocessingml',xlsx:'spreadsheetml',pptx:'presentationml'}[ext],namespaces=['http://schemas.openxmlformats.org/'+kind+'/2006/main','http://purl.oclc.org/ooxml/'+kind+'/main'];if(types.documentElement.localName!=='Types'||types.documentElement.namespaceURI!=='http://schemas.openxmlformats.org/package/2006/content-types'||document.documentElement.localName!==main[2]||!namespaces.includes(document.documentElement.namespaceURI))bad();
+      if(![...types.getElementsByTagName('*')].some(n=>n.localName==='Override'&&n.getAttribute('PartName')==='/'+main[0]&&n.getAttribute('ContentType')===main[1]))bad();const document=xmlDocument(await part(main[0]),DOMParser),kind={docx:'wordprocessingml',xlsx:'spreadsheetml',pptx:'presentationml'}[ext],namespaces=['http://schemas.openxmlformats.org/'+kind+'/2006/main','http://purl.oclc.org/ooxml/'+kind+'/main'];if(types.documentElement.localName!=='Types'||types.documentElement.namespaceURI!=='http://schemas.openxmlformats.org/package/2006/content-types'||document.documentElement.localName!==main[2]||!namespaces.includes(document.documentElement.namespaceURI))bad();
     }else{
-      if(utf8(await part('mimetype'))!==FILE_TYPES[ext])bad();const content=xmlDocument(await part('content.xml')),manifest=xmlDocument(await part('META-INF/manifest.xml')),ns='urn:oasis:names:tc:opendocument:xmlns:office:1.0',body=content.getElementsByTagNameNS(ns,'body')[0],kind={odt:'text',ods:'spreadsheet',odp:'presentation'}[ext];if(content.documentElement.localName!=='document-content'||content.documentElement.namespaceURI!==ns||manifest.documentElement.localName!=='manifest'||manifest.documentElement.namespaceURI!=='urn:oasis:names:tc:opendocument:xmlns:manifest:1.0'||!body||![...body.children].some(n=>n.namespaceURI===ns&&n.localName===kind))bad();if([...manifest.getElementsByTagName('*')].some(n=>n.localName==='encryption-data'))fail('不接收加密ODF资料，请另存未加密副本后上传。');
+      if(utf8(await part('mimetype'))!==FILE_TYPES[ext])bad();const content=xmlDocument(await part('content.xml'),DOMParser),manifest=xmlDocument(await part('META-INF/manifest.xml'),DOMParser),ns='urn:oasis:names:tc:opendocument:xmlns:office:1.0',body=content.getElementsByTagNameNS(ns,'body')[0],kind={odt:'text',ods:'spreadsheet',odp:'presentation'}[ext];if(content.documentElement.localName!=='document-content'||content.documentElement.namespaceURI!==ns||manifest.documentElement.localName!=='manifest'||manifest.documentElement.namespaceURI!=='urn:oasis:names:tc:opendocument:xmlns:manifest:1.0'||!body||![...body.children].some(n=>n.namespaceURI===ns&&n.localName===kind))bad();if([...manifest.getElementsByTagName('*')].some(n=>n.localName==='encryption-data'))fail('不接收加密ODF资料，请另存未加密副本后上传。');
     }
   }
   function compoundOffice(bytes,ext){
@@ -326,13 +327,15 @@
     const names=[],dirs=new Set();next=u32(48);while(next!==0xfffffffe){if(dirs.has(next)||dirs.size>count)bad();dirs.add(next);const p=offset(next);for(let j=0;j<sector;j+=128){const len=u16(p+j+64),kind=bytes[p+j+66];if(!kind)continue;if(len<2||len>64||len%2)bad();if(kind===2)names.push(new TextDecoder('utf-16le',{fatal:true}).decode(bytes.subarray(p+j,p+j+len-2)));}next=fat[next];if(next===undefined)bad();}
     if(names.some(n=>/^(?:EncryptedPackage|EncryptionInfo)$/i.test(n)))fail('旧Office资料已加密，当前无法核验；请另存未加密文件。');const expected={doc:/^WordDocument$/i,xls:/^(?:Workbook|Book)$/i,ppt:/^PowerPoint Document$/i}[ext];if(!names.some(n=>expected.test(n)))bad();
   }
-  async function preparedFile(file){
-    if(!file||typeof file.arrayBuffer!=='function'||!Number.isSafeInteger(file.size)||file.size<1||file.size>FILE_MAX)fail('每份资料文件须为 1 字节至 12 MiB。');
+  async function preparedFile(file,{DOMParser=root.DOMParser}={}){
+    if(!file||typeof file.arrayBuffer!=='function'||!Number.isSafeInteger(file.size)||file.size<1)fail('请选择非空资料文件。');
+    const max=fileLimit(file.name);
+    if(file.size>max)fail('单份'+(max===ARCHIVE_MAX?'压缩包不超过 100 MiB。':'资料不超过 12 MiB。'));
     const name=safeName(file.name),ext=name.split('.').at(-1).toLowerCase(),type=FILE_TYPES[ext];if(!type){if(['tif','tiff','heic','heif'].includes(ext))fail('当前离线版没有TIFF/HEIC解码能力，暂不接收；请提供PNG、JPEG或PDF副本。');if(['docm','xlsm','pptm','dotm','xlam','ppam'].includes(ext))fail('当前不接收宏类型Office资料，请另存DOCX、XLSX或PPTX无宏副本。');fail('不支持的资料文件类型。');}matchingMime(ext,file.type);
     const bytes=new Uint8Array(await file.arrayBuffer());if(bytes.length!==file.size)fail('文件读取不完整，未保存。');const start=xs=>xs.every((v,i)=>bytes[i]===v),ascii=(a,b)=>new TextDecoder('ascii').decode(bytes.subarray(a,b)),d=new DataView(bytes.buffer),zip=()=>start([0x50,0x4b])&&[[3,4],[5,6],[7,8]].some(p=>bytes[2]===p[0]&&bytes[3]===p[1]),mismatch=()=>fail('文件内容与扩展名不符，未保存。');
     if(ext==='pdf'){if(!start([37,80,68,70,45]))mismatch();}
     else if(['doc','xls','ppt'].includes(ext)){if(!start([208,207,17,224,161,177,26,225]))mismatch();compoundOffice(bytes,ext);}
-    else if(['docx','xlsx','pptx','odt','ods','odp'].includes(ext)){if(!zip())mismatch();await officePackage(bytes,ext);}
+    else if(['docx','xlsx','pptx','odt','ods','odp'].includes(ext)){if(!zip())mismatch();await officePackage(bytes,ext,DOMParser);}
     else if(ext==='zip'){if(!zip())mismatch();}
     else if(ext==='rar'){if(!(start([82,97,114,33,26,7,0])||start([82,97,114,33,26,7,1,0])))mismatch();}
     else if(ext==='png'){if(bytes.length<45||!start([137,80,78,71,13,10,26,10])||ascii(12,16)!=='IHDR'||d.getUint32(8)!==13||!d.getUint32(16)||!d.getUint32(20)||ascii(bytes.length-8,bytes.length-4)!=='IEND')mismatch();}
@@ -342,12 +345,22 @@
     else if(ext==='bmp'){if(bytes.length<26||ascii(0,2)!=='BM'||d.getUint32(2,true)!==bytes.length||d.getUint32(10,true)<26||d.getUint32(10,true)>=bytes.length||![12,40,52,56,108,124].includes(d.getUint32(14,true)))mismatch();}
     else if(ext==='avif'){if(bytes.length<24||ascii(4,8)!=='ftyp'||d.getUint32(0)<16||d.getUint32(0)>bytes.length)mismatch();const end=d.getUint32(0),brands=[ascii(8,12)];for(let i=16;i+4<=end;i+=4)brands.push(ascii(i,i+4));if(!brands.some(x=>x==='avif'||x==='avis'))mismatch();}
     else if(ext==='rtf'){if(!/^\s*\{\\rtf[1-9]/u.test(ascii(0,96)))mismatch();}
-    else {const text=utf8(bytes);if(ext==='json'){try{JSON.parse(text);}catch{fail('JSON语法无效，未保存。');}}else if(ext==='html'){if(!/<(?:!doctype\s+html|html|head|body|div|p|table|script|h[1-6]|span|meta|section|article)(?:\s|>)/iu.test(text))mismatch();}else if(['xml','svg'].includes(ext)){const doc=xmlDocument(bytes);if(ext==='svg'&&(doc.documentElement.localName!=='svg'||doc.documentElement.namespaceURI!=='http://www.w3.org/2000/svg'))mismatch();}}
+    else {const text=utf8(bytes);if(ext==='json'){try{JSON.parse(text);}catch{fail('JSON语法无效，未保存。');}}else if(ext==='html'){if(!/<(?:!doctype\s+html|html|head|body|div|p|table|script|h[1-6]|span|meta|section|article)(?:\s|>)/iu.test(text))mismatch();}else if(['xml','svg'].includes(ext)){const doc=xmlDocument(bytes,DOMParser);if(ext==='svg'&&(doc.documentElement.localName!=='svg'||doc.documentElement.namespaceURI!=='http://www.w3.org/2000/svg'))mismatch();}}
     const digest=await root.crypto.subtle.digest('SHA-256',bytes),sha256=Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('');return {name,size:bytes.length,type,sha256,blob:new Blob([bytes],{type})};
   }
   function metadataIn(r,nodeId,fileId){
     validate(r);if(r.schema!==2)fail('旧版逐行记录没有标题附件。');
     const e=r.events.find(e=>e.type==='attachment-add'&&e.file.id===fileId&&e.nodeId===nodeId);if(!e)fail('本项目找不到该资料文件版本。');return e.file;
+  }
+  function storedMaterialFile(x,key,meta){exact(x,['id','quoteId','generationId','nodeId','metadata','blob']);if(x.id!==meta.id||x.quoteId!==key||x.nodeId!==meta.nodeId||x.generationId!==meta.generationId||!same(x.metadata,meta)||!(x.blob instanceof Blob)||x.blob.size!==meta.size||x.blob.type!==meta.type)fail('资料文件归属或内容损坏。');return {blob:x.blob,metadata:copy(meta)};}
+  function preservationCodec(){const api=typeof module==='object'&&module.exports?require('./material-preservation.js'):root.MaterialPreservation;if(!api||typeof api.create!=='function'||typeof api.inspect!=='function')fail('资料保全组件未载入，原数据未改变。');return api;}
+  function preservationOptions(value,restore=false){
+    if(!value||Object.getPrototypeOf(value)!==Object.prototype)fail('资料保全参数无效。');
+    const fields=Object.getOwnPropertyDescriptors(value),allowed=restore?['expectedSha256','assertContext']:['assertContext'];
+    if(Reflect.ownKeys(fields).some(key=>typeof key!=='string'||!allowed.includes(key)||!fields[key].enumerable||!Object.hasOwn(fields[key],'value')))fail('资料保全参数无效。');
+    const guard=fields.assertContext?.value,sha=fields.expectedSha256?.value;
+    if(guard!==undefined&&typeof guard!=='function'||restore&&(typeof sha!=='string'||!/^[a-f0-9]{64}$/.test(sha)))fail('请先完成保全包预检并核对摘要。');
+    return {sha,check:()=>{if(guard)guard();}};
   }
   function openDatabase(name,trialOnly=false){
     return new Promise((resolve,reject)=>{
@@ -371,6 +384,17 @@
             }catch(e){abort(e);}};
           });
         }
+        function preservationSnapshot(key,codec,check){return new Promise((ok,no)=>{
+          const t=db.transaction([STORE,FILE_STORE],'readonly'),s=t.objectStore(STORE),f=t.objectStore(FILE_STORE),files=new Map();let record,metas=[],reason;
+          const abort=e=>{reason=e;try{t.abort();}catch{}};
+          t.onabort=()=>no(reason||Error('无法读取完整资料快照，未生成保全包。'));t.onerror=()=>abort(reason||Error('读取资料快照失败，原数据未变。'));
+          t.oncomplete=()=>{try{check();if(!record||files.size!==metas.length)fail('资料原件不完整，未生成保全包。');ok({record,files});}catch(e){no(e);}};
+          const request=s.get(key);request.onsuccess=()=>{try{
+            check();const row=request.result;if(!row||row.quoteId!==key||row.record?.project.quoteId!==key)fail('当前项目尚无有效资料清单，未生成保全包。');record=copy(validate(row.record));metas=codec.filesFor(record);const expected=new Set(metas.map(meta=>meta.id));
+            for(const meta of metas){const q=f.get(meta.id);q.onsuccess=()=>{try{check();files.set(meta.id,storedMaterialFile(q.result,key,meta));}catch(e){abort(e);}};}
+            const cursor=f.openCursor();cursor.onsuccess=()=>{try{check();const row=cursor.result;if(row){if(row.value?.quoteId===key&&!expected.has(row.value.id))fail('本项目存在未关联的资料原件，请先核对；未生成不完整保全包。');row.continue();}}catch(e){abort(e);}};
+          }catch(e){abort(e);}};
+        });}
         const api={get:key=>transact(key),create:(p,xs,who)=>transact(p.quoteId,0,()=>create(p,xs,who)),
           change:(key,expected,cmd)=>transact(key,expected,old=>{if(!old)fail('资料清单尚未创建。');if(['attachment-add','attachment-remove'].includes(cmd?.type))fail('文件变更须通过原子附件接口。');return apply(old,cmd);}),
           importTree:(p,nodes,who,reason='',expected=0)=>transact(p.quoteId,expected,old=>{
@@ -382,18 +406,48 @@
             return transact(key,expected,old=>{if(old?.schema!==2)fail('请先导入标题层级清单。');return applyTree(old,{type:'attachment-add',nodeId,reviewer:who,file:{id,nodeId,generationId:old.generationId,name:f.name,size:f.size,type:f.type,sha256:f.sha256}});},{id,nodeId,blob:f.blob});
           },
           removeAttachment:(key,expected,nodeId,fileId,who,reason)=>transact(key,expected,old=>{if(old?.schema!==2)fail('请先导入标题层级清单。');return applyTree(old,{type:'attachment-remove',nodeId,fileId,reviewer:who,reason});}),
+          exportPreservation:async(key,options={})=>{
+            const {check}=preservationOptions(options);check();if(!isUuid(key)||trialOnly!==(key===TRIAL_ID))fail('保全来源须为当前正式项目或独立试用，不能混用。');
+            const codec=preservationCodec(),snapshot=await preservationSnapshot(key,codec,check);check();
+            const result=await codec.create({record:snapshot.record,readFile:async meta=>{check();const file=snapshot.files.get(meta.id);if(!file)fail('资料原件不完整，未生成保全包。');return file;},readCurrent:async()=>{check();const current=await api.get(key);check();return current;}});check();return result;
+          },
+          restorePreservation:async(key,blob,options={})=>{
+            const {sha,check}=preservationOptions(options,true);check();if(!isUuid(key)||trialOnly!==(key===TRIAL_ID))fail('恢复目标须为当前正式项目或独立试用，不能混用。');
+            const existing=await api.get(key);check();if(existing)fail('目标已有资料清单，未覆盖。请先核对当前记录。');
+            const parsed=await preservationCodec().inspect(blob);check();
+            if(parsed.sha256!==sha||parsed.summary.packageSha256!==sha)fail('保全包与已确认的摘要不一致，未恢复。');
+            if(parsed.manifest.projectId!==key||parsed.manifest.sourceNamespace!==name||parsed.record.project.quoteId!==key)fail('保全包与所选项目或正式／试用范围不一致，未恢复。');
+            const record=copy(validate(parsed.record)),files=[];
+            for(const file of parsed.files){
+              check();const meta=copy(file.metadata),source=file.blob;
+              const prepared=await preparedFile({name:meta.name,type:meta.type,size:source.size,arrayBuffer:()=>source.arrayBuffer()});check();
+              if(prepared.name!==meta.name||prepared.type!==meta.type||prepared.size!==meta.size||prepared.sha256!==meta.sha256)fail('资料原件不符合原上传校验或保全元数据，未恢复。');
+              files.push({metadata:meta,blob:prepared.blob});
+            }
+            return new Promise((ok,no)=>{
+              const t=db.transaction([STORE,FILE_STORE],'readwrite'),s=t.objectStore(STORE),f=t.objectStore(FILE_STORE);let result,reason;
+              const abort=e=>{reason=e;try{t.abort();}catch{}};
+              t.onabort=()=>no(reason||Error('恢复事务未完成，原有资料未覆盖；请刷新核对。'));t.oncomplete=()=>ok(result);t.onerror=()=>abort(reason||Error('恢复写入失败，事务已取消，原有资料未覆盖。'));
+              const write=()=>{try{check();s.add({quoteId:key,record});for(const file of files){const meta=file.metadata;f.add({id:meta.id,quoteId:key,generationId:meta.generationId,nodeId:meta.nodeId,metadata:meta,blob:file.blob});}result={record:copy(record),summary:copy(parsed.summary),sha256:parsed.sha256};}catch(e){abort(e);}};
+              const collisions=()=>{if(!files.length){write();return;}let remaining=files.length;for(const file of files){const request=f.get(file.metadata.id);request.onsuccess=()=>{try{check();if(request.result!==undefined)fail('保全包文件ID已存在，未覆盖任何项目资料。');if(--remaining===0)write();}catch(e){abort(e);}};}};
+              const request=s.get(key);request.onsuccess=()=>{try{
+                check();if(request.result!==undefined)fail('目标已有资料记录，未覆盖；请重新载入核对。');
+                const cursor=f.openCursor();cursor.onsuccess=()=>{try{check();const row=cursor.result;if(row){if(row.value?.quoteId===key)fail('目标存在未关联的资料原件，未覆盖；请先核对资料库。');row.continue();}else collisions();}catch(e){abort(e);}};
+              }catch(e){abort(e);}};
+            });
+          },
           downloadAttachment:(key,nodeId,fileId)=>new Promise((ok,no)=>{
             const t=db.transaction([STORE,FILE_STORE],'readonly');let result,reason;const abort=e=>{reason=e;try{t.abort();}catch{}};
             t.onabort=()=>no(reason||Error('无法读取资料文件，未改动原记录。'));t.oncomplete=async()=>{try{if(!result)fail('资料文件不存在。');const d=await root.crypto.subtle.digest('SHA-256',await result.blob.arrayBuffer());if(Array.from(new Uint8Array(d),x=>x.toString(16).padStart(2,'0')).join('')!==result.metadata.sha256)fail('资料文件完整性校验失败。');ok(result);}catch(e){no(e);}};
             const q=t.objectStore(STORE).get(key);q.onsuccess=()=>{try{
               if(trialOnly&&key!==TRIAL_ID)fail('试用与正式项目不能混用。');const row=q.result;if(!row||row.quoteId!==key||row.record?.project.quoteId!==key)fail('资料项目不存在。');const meta=metadataIn(row.record,nodeId,fileId);
-              const f=t.objectStore(FILE_STORE).get(fileId);f.onsuccess=()=>{try{const x=f.result;exact(x,['id','quoteId','generationId','nodeId','metadata','blob']);if(x.id!==fileId||x.quoteId!==key||x.nodeId!==nodeId||x.generationId!==meta.generationId||!same(x.metadata,meta)||!(x.blob instanceof Blob)||x.blob.size!==meta.size||x.blob.type!==meta.type)fail('资料文件归属或内容损坏。');result={blob:x.blob,metadata:copy(meta)};}catch(e){abort(e);}};
+              const f=t.objectStore(FILE_STORE).get(fileId);f.onsuccess=()=>{try{result=storedMaterialFile(f.result,key,meta);}catch(e){abort(e);}};
             }catch(e){abort(e);}};
           }),close:()=>db.close()};resolve(Object.freeze(api));
       };
     });
   }
   const open=()=>openDatabase(DB),openTrial=()=>openDatabase(TRIAL_DB,true);
-  const api=Object.freeze({parse,create,createTree,apply,gate,validate,open,openTrial,TRIAL_ID,STATES,FILE_TYPES,leafNodes:r=>r?.schema===2?copy(leafNodesOf(validateV2(r).nodes)):copy(validateV1(r).items)});
+  const api=Object.freeze({parse,create,createTree,apply,gate,validate,open,openTrial,TRIAL_ID,STATES,FILE_TYPES,fileLimit,prepareFile:preparedFile,leafNodes:r=>r?.schema===2?copy(leafNodesOf(validateV2(r).nodes)):copy(validateV1(r).items)});
   if(typeof module==='object'&&module.exports)module.exports=api;else root.AuditChecklist=api;
 })(globalThis);

@@ -1,0 +1,41 @@
+[Unit]
+Description=Shenyi managed team service
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60s
+StartLimitBurst=4
+
+[Service]
+Type=exec
+User=shenyi-team
+Group=shenyi-team
+# The managed CLI requires current to be a real release directory.
+WorkingDirectory=/opt/shenyi-team/current
+ExecStart=/opt/shenyi-team/node/bin/node /opt/shenyi-team/current/scripts/start-team-service.mjs --config /etc/shenyi-team/service.json
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGTERM
+TimeoutStopSec=60s
+
+StateDirectory=shenyi-team
+StateDirectoryMode=0700
+UMask=0077
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

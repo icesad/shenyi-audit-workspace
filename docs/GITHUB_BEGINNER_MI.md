@@ -1,10 +1,14 @@
 # 米老师的 GitHub 零基础协作教程
 
-适用：审易协作开发；苹果电脑优先，Windows 同样可用。更新：2026-11-14。
+适用审易协作开发，苹果电脑优先，Windows 同样可用。更新于 2026-11-21。
 
-**先读这句话：不会写代码，也可以参与。米老师先做「提需求、反馈问题、验收」即可，不需要先学终端命令。**
+米老师的 `mixue117` 已有私有仓库的读取和写入权限。用这个账号登录后就能看文档、下载代码或上传自己的业务分支，可以跳过下文的注册和邀请步骤。第一次同步时，用 GitHub Desktop 选 `codex/team-collaboration-handoff-20261120`。已有业务代码时，先按交接文档登记原版本和涉及文件，再确定导入方式。 [打开当前协作分支](https://github.com/icesad/shenyi-audit-workspace/tree/codex/team-collaboration-handoff-20261120) · [当前双人开发交接](COLLABORATION_HANDOFF.md)
 
-项目仓库：[审易协作仓库](https://github.com/icesad/shenyi-audit-workspace)。这是代码与开发文档的存放处，**不是审易软件的使用网址，也不是客户资料上传入口**。仓库地址、邀请及发布状态，以负责人实际通知为准。
+已经安装 GitHub Desktop 时，点 **Fetch origin → Current Branch → 协作分支**。如显示 **Pull origin**，先更新，再选 **New Branch**。在新分支上传一项业务修改，开 PR 时将目标分支选为 `codex/team-collaboration-handoff-20261120`。已有业务代码先保留原版本，并附上涉及的文件和验收样例。 [三步接手](COLLABORATION_HANDOFF.md#从同一版本开始) · [第一份业务提交](COLLABORATION_HANDOFF.md#分工和第一份业务提交)
+
+手头已有未上传成果时，先保留原目录和未提交修改。把原版本、文件范围、一份合成样例和预期结果填在同一条 Issue，再把确认纳入的一项业务改动带到自己的业务分支。若先做四来源报告，可从 PR #2 的文件差异核对候选改动。 [首项业务交付和文件地图](COLLABORATION_HANDOFF.md#米老师的第一份业务交付) · [四来源报告草稿](https://github.com/icesad/shenyi-audit-workspace/pull/2)
+
+审易私有仓库存放代码与开发文档。GitHub 可能默认显示 `main`。查看本次交接和最新进度时，先切到协作分支。 [审易协作仓库](https://github.com/icesad/shenyi-audit-workspace)
 
 ## 一、先分清三个东西
 
@@ -130,16 +134,16 @@ GitHub Desktop 下载完代码，并不会自动启动软件。请按仓库的 `
 | Pull origin | 把网上的新提交取到本机 | 否 |
 | Commit | 给本机这次改动留一份版本记录 | 否 |
 | Push origin | 把本机提交传到 GitHub | 否 |
-| Pull Request / PR | 请团队检查后，把分支改动并入主线 | 否 |
+| Pull Request / PR | 请团队检查后，把改动并入选定的目标分支 | 否 |
 | Merge | 把审核过的改动并入目标分支 | 不必然；还要实际发布 |
 
 ### 每次开始
 
 1. 在 Desktop 确认 **Current Repository** 是审易仓库。
 2. 检查 **Changes**：若还有上次未提交修改，先停下处理，不要丢弃，也不要覆盖。
-3. 切到 `main` 主分支，点击 **Fetch origin**；出现 **Pull origin** 时继续点击，等待完成。
-4. 点击 **Current Branch → New Branch**，以最新 `main` 为基础建自己的分支，例如 `docs/mi-feedback-20261114`。
-5. 按已讨论的 Issue 修改文件。**不要直接改 main，不要顺手改没被要求的页面。**
+3. 点击 **Fetch origin**，切到 [当前交接](COLLABORATION_HANDOFF.md) 约定的协作基线。如果出现 **Pull origin**，点击并等同步完成。
+4. 点击 **Current Branch → New Branch**，从当前基线建自己的分支。业务改动可以用 `work/mi-report-issue-123`，把 `123` 换成实际 Issue 编号。
+5. 按 Issue 约定修改文件。创建 PR 时，核对 GitHub 页面上 `base` 为 `codex/team-collaboration-handoff-20261120`，`compare` 为自己的分支。
 
 分支操作以 [官方 Desktop 分支说明](https://docs.github.com/en/desktop/making-changes-in-a-branch/managing-branches-in-github-desktop) 为准；Fetch 和 Pull 的区别见 [官方同步说明](https://docs.github.com/en/desktop/working-with-your-remote-repository-on-github-or-github-enterprise/syncing-your-branch-in-github-desktop)。
 
@@ -149,8 +153,8 @@ GitHub Desktop 下载完代码，并不会自动启动软件。请按仓库的 `
 2. 若看到客户账套、证照、公章、合同原件、导出包或 `.env`，**不要提交，先通知负责人**。
 3. 在 **Summary** 写清楚，例如 `docs: 补充立项验收步骤（#12）`，点击 **Commit to 当前分支**。
 4. 点击 **Publish branch**（首次发布分支）或 **Push origin**（已有远程分支）。仅 Commit 而没 Push，其他电脑和同事看不到。
-5. 点击 **Preview Pull Request / Create Pull Request**，检查目标是 `main`、来源是自己的分支。
-6. 在网页填写改动内容、关联 Issue、测试结果以及「未改哪些地方」，发起 PR。
+5. 点击 **Preview Pull Request / Create Pull Request**。目标选择 [当前交接](COLLABORATION_HANDOFF.md) 约定的协作基线，来源选择自己的分支。
+6. 在网页填写关联 Issue、改动文件、可复跑的合成样例、实际测试结果和待验收事项，再发起 PR。交接已有业务时也填原版本。 [可复制的提交说明](COLLABORATION_HANDOFF.md#提交验收和合并)
 7. 由负责人检查、测试后合并。米老师不确定时，不自行点击合并按钮。
 
 这是协作约定；仓库是否已启用强制保护和自动检查，以管理员实际设置为准。提交步骤见 [官方提交说明](https://docs.github.com/en/desktop/making-changes-in-a-branch/committing-and-reviewing-changes-to-your-project-in-github-desktop)，PR 步骤见 [官方发起 PR 说明](https://docs.github.com/en/desktop/working-with-your-remote-repository-on-github-or-github-enterprise/creating-an-issue-or-pull-request-from-github-desktop)。
@@ -169,7 +173,7 @@ GitHub Desktop 下载完代码，并不会自动启动软件。请按仓库的 `
 
 - 使用自己的同一 GitHub 账号登录；首次用 B 电脑时 Clone，已有仓库时 Fetch/Pull。
 - 如果继续自己尚未合并的工作，切到约定的同一工作分支再 Pull，不要误在 `main` 接着改。
-- 如果开始新任务，先更新 `main`，再建新分支。
+- 如果开始新任务，先更新 [当前交接](COLLABORATION_HANDOFF.md) 的协作基线，再建新分支。
 - 按开发文档安装环境；不搬 `node_modules`、浏览器缓存或整套旧电脑配置。
 - 不在 A、B 两台电脑同时改同一个工作分支。若确有并行工作，各建分支并约定文件范围。
 

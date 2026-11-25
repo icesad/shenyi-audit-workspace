@@ -27,7 +27,17 @@ function setup(raw){
   w.URL.createObjectURL=()=> 'blob:three-card-test';
   w.URL.revokeObjectURL=()=>{};
   if(raw!==undefined)w.localStorage.setItem(KEY,raw);
-  for(const file of ['calc.js','rule-catalog.js','regions.js','backup-restore.js','app.js'])w.eval(fs.readFileSync(path.join(DIR,file),'utf8'));
+  for(const file of ['calc.js','rule-catalog.js','regions.js','backup-restore.js','app.js']){
+    let source=fs.readFileSync(path.join(DIR,file),'utf8');
+    // The former selectors are gone. Set ordered historical fixtures without
+    // bringing back the old UI or adding a production test hook.
+    if(file==='app.js')source=source.replace('  sourceList();hydrate();',`  globalThis.legacyComparisonFixture = {
+      ids: comparisonIds,
+      set(index,id){const ids=comparisonIds();ids[index]=id;state.comparisonProvinceIds=ids;ensureRule(id,true);activeRule=id;update();}
+    };
+  sourceList();hydrate();`);
+    w.eval(source);
+  }
   return {dom,w,d:w.document};
 }
 function using(t,raw){const x=setup(raw);t.after(()=>x.dom.window.close());return x;}
@@ -36,8 +46,9 @@ function input(x,selector,value,event='input'){
   const el=x.d.querySelector(selector);assert.ok(el,selector);
   el.value=value;el.dispatchEvent(new x.w.Event(event,{bubbles:true}));
 }
-function selectSlot(x,index,id){input(x,`select[data-comparison-slot="${index}"]`,id,'change');}
-function displayedIds(x){return [...x.d.querySelectorAll('select[data-comparison-slot]')].map(el=>el.value);}
+function selectSlot(x,index,id){x.w.legacyComparisonFixture.set(index,id);}
+function displayedIds(x){return Array.from(x.w.legacyComparisonFixture.ids());}
+function estimate(x,province){input(x,'#quote-region',province);x.d.querySelector('#comparison').dispatchEvent(new x.w.Event('submit',{bubbles:true,cancelable:true}));}
 function load(x,id){assert.equal(x.d.querySelector('[data-view="history"]'),null);const button=x.d.querySelector(`#history-list [data-load="${id}"]`);assert.ok(button,'saved record can be restored');button.click();}
 function seed(edit){
   const x=setup();
@@ -117,15 +128,12 @@ test('legacy snapshots without the new field infer three ordered slots without r
     if(Object.hasOwn(c,'selectedProvince'))old.snapshot.selectedProvince=c.selectedProvince;
     const raw=JSON.stringify([old]),x=using(t,raw);load(x,old.id);
     assert.deepEqual(displayedIds(x),c.expected,c.name);
-    assert.equal(x.d.querySelectorAll('.region-card').length,3,c.name);
     assert.equal(x.w.localStorage.getItem(KEY),raw,c.name+' leaves old storage untouched');
     if(c.expected[0])assert.equal(x.d.querySelector('#restore-recalc-warning').hidden,true,c.name+' does not change any historical calculation');
     else{
       assert.match(x.d.querySelector('#client-error').textContent,/待确认/);
       assert.equal(x.d.querySelector('#save').disabled,true);
-      const first=x.d.querySelector('.region-card'),selected=first.querySelector('select').selectedOptions[0];
-      assert.equal(selected.value,'');assert.match(selected.textContent,/选择|待确认/);assert.doesNotMatch(selected.textContent,/广西/);
-      assert.equal(first.querySelector('[data-choose]')?.disabled??true,true);
+      assert.equal(x.d.querySelector('#quote-form [name=basis] option[value=gx]'),null);
     }
   }
 });
@@ -133,7 +141,7 @@ test('legacy snapshots without the new field infer three ordered slots without r
 test('an explicitly empty first slot is not overwritten by a known customer location on restore',t=>{
   const original=seed();original.snapshot.comparisonProvinceIds=['','hb','sh'];original.snapshot.selectedProvince='';
   const raw=JSON.stringify([original]),x=using(t,raw);load(x,original.id);
-  assert.deepEqual(displayedIds(x),['','hb','sh']);assert.equal(x.d.querySelectorAll('.region-card').length,3);
+  assert.deepEqual(displayedIds(x),['','hb','sh']);
   input(x,'#client-form [name="location"]','上海');assert.deepEqual(displayedIds(x),['sh','hb','sh']);
   assert.equal(x.w.localStorage.getItem(KEY),raw);
 });
@@ -190,17 +198,17 @@ test('hidden custom rules and their calculation snapshots survive switching card
   const y=using(t,raw);load(y,original.id);
   assert.equal(y.d.querySelector('#restore-recalc-warning').hidden,true,'non-visible historical outputs also reproduce exactly');
   assert.equal(y.w.localStorage.getItem(KEY),raw);
-  selectSlot(y,2,'110000');
-  const card=y.d.querySelectorAll('.region-card')[2];assert.match(card.textContent,/7,654\.00/);
-  assert.ok(card.textContent.includes(hidden.version));assert.ok(card.textContent.includes(hidden.document));
+  estimate(y,'北京');
+  const amount=y.d.querySelector('#quote-estimates-rows .quote-record-amount');assert.match(amount.textContent,/7,730\.54/);
+  assert.ok(amount.title.includes(hidden.version));assert.ok(amount.title.includes(hidden.document));
   y.d.querySelector('#save-revision').click();
   assert.deepEqual(records(y)[0].snapshot.rules.find(r=>r.id==='110000'),hidden);
   assert.equal(JSON.stringify(records(y)[1]),JSON.stringify(original));
 });
 
-test('duplicate selections retain three cards but use unique rule tabs and basis options',t=>{
+test('legacy duplicate selections use unique rule tabs and basis options',t=>{
   const x=using(t);selectSlot(x,0,'hb');selectSlot(x,2,'hb');
-  assert.deepEqual(displayedIds(x),['hb','hb','hb']);assert.equal(x.d.querySelectorAll('.region-card').length,3);
+  assert.deepEqual(displayedIds(x),['hb','hb','hb']);
   const basis=x.d.querySelector('#quote-form [name="basis"]'),values=[...basis.options].map(o=>o.value);
   assert.equal(values.filter(id=>id==='hb').length,1);assert.equal(new Set(values).size,values.length);
   x.d.querySelector('[data-view="rules"]').click();
@@ -216,10 +224,10 @@ test('historical recalculation warnings cannot be bypassed by card, customer, ba
     if(kind==='budget')original.snapshot.budget[0].hours='99';
     else original.calculation.regions.hb.lines[1].amountCents++;
     const raw=JSON.stringify([original]),x=using(t,raw);load(x,original.id);assertReviewLocked(x);
-    selectSlot(x,2,'gx');assertReviewLocked(x);
+    estimate(x,'广西');assertReviewLocked(x);assert.match(x.d.querySelector('#quote-region-message').textContent,/确认历史复算/);
     input(x,'#client-form [name="location"]','上海');assertReviewLocked(x);
     input(x,'#quote-form [name="basis"]','manual');input(x,'#quote-form [name="manual"]','12345');assertReviewLocked(x);
-    x.d.querySelector('[data-view="rules"]').click();x.d.querySelector('[data-rule="gx"]').click();
+    x.d.querySelector('[data-view="rules"]').click();input(x,'#rules-region-select','gx','change');
     input(x,'#rules-form [name="mode"]','fixed','change');input(x,'#rules-form [name="fixedYuan"]','8888');
     x.d.querySelector('#rules-form').dispatchEvent(new x.w.Event('submit',{bubbles:true,cancelable:true}));assertReviewLocked(x);
     x.d.querySelector('[data-view="quote"]').click();x.w.confirm=()=>false;x.d.querySelector('#accept-recalculation').click();assertReviewLocked(x);

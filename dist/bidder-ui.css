@@ -6,7 +6,8 @@
   .bidder-row {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.65rem;padding:.75rem 1rem;border:1px solid #dae5de;border-radius:8px}
   .bidder-row>div:first-child {min-width:0;overflow-wrap:anywhere}
   .bidder-row strong,.bidder-row span {display:block}.bidder-row span {margin:.3rem 0 0}
-  #bidder-editor-form {border-top:1px solid #dae5de;padding-top:1.2rem}
+  .bidder-name-field {display:block;max-width:34rem}
+  .bidder-directory-section {border-top:1px solid #dae5de;margin-top:1rem;padding-top:.75rem}
   .bidder-cert-grid>div {min-width:0}.bidder-cert-grid input[type=file] {max-width:100%}
   .bidder-cert-grid p,#bidder-picker-status,#bidder-editor-status {overflow-wrap:anywhere}
   #bidder-picker select,#bidder-editor-form select,#bidder-editor-form input:not([type=file]) {box-sizing:border-box;display:block;width:100%;min-width:0;height:40px;margin-top:.4rem;padding:0 .65rem;color:inherit;font:inherit;background:#fafcf9;border:1px solid #d8e2da;border-radius:6px}
@@ -28,7 +29,12 @@
 @media screen{
   .bidder-import-panel{margin:1rem 0 1.35rem;padding:1rem;background:#f6f9f7;border:1px solid #dae5de;border-radius:10px}
   .bidder-import-panel h3{margin:0;font-size:1rem}
-  .bidder-import-panel input[type=file]{display:block;width:min(100%,530px);margin-top:.5rem;border:1px dashed #9dbbb0;border-radius:6px;background:#fff;padding:.65rem}
+  .bidder-dropzone{position:relative;display:grid;justify-items:center;gap:.3rem;padding:1.5rem .8rem;border:1px dashed #82ac9b;border-radius:8px;background:#f1f7f4;color:var(--accent);cursor:pointer}
+  .bidder-dropzone:is(:hover,:focus-within,.is-dragover){background:#e3f1e8}
+  .bidder-dropzone input{position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}
+  .bidder-saved-files{padding-inline-start:1.3rem;overflow-wrap:anywhere}
+  .bidder-saved-files li :is(span,button){margin-inline-start:.6rem}
+  .bidder-firm-files {flex-basis:100%;margin:0;padding-block:.5rem;border-top:1px solid #dae5de}
   .bidder-import-panel [role=status]{overflow-wrap:anywhere}
   .bidder-import-rows{display:grid;gap:.6rem}
   .bidder-import-inventory{font-size:.86rem;overflow-wrap:anywhere}

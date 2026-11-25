@@ -1,0 +1,2054 @@
+'use strict';
+(() => {
+  const api=window.shenyiTeam, byId=id=>document.getElementById(id);
+  // Main-owned metadata is presentation only; requests stay behind the private bridge.
+  const serviceMode=document.querySelector('meta[name="shenyi-team-service-mode"]')?.content;
+  const serviceOrigin=document.querySelector('meta[name="shenyi-team-service-origin"]')?.content;
+  let remoteService=false;
+  if(serviceMode==='remote-https'&&typeof serviceOrigin==='string'){
+    try{const url=new URL(serviceOrigin);remoteService=url.protocol==='https:'&&serviceOrigin===url.origin;}catch{}
+  }
+  const serviceCaption=remoteService?'当前配置的HTTPS团队服务：'+serviceOrigin:'当前连接本机团队服务';
+  const labels={intern:'实习生',assistant:'助理',manager:'项目经理',partner:'合伙人'};
+  const statuses={open:'待提交',submitted:'已提交',returned:'已退回',closed:'已关闭'};
+  let session=null,teamId='',tasks=[],selected=null,revision=0,submissions=[],hasMore=false,busy=false,viewEpoch=0,busyEpoch=0;
+  let submissionAccessEpoch=0,submissionAccess=null,submissionAccessStatus='idle',taskUploadOperation=null;
+  const taskOriginalSelection=new Set(),projectOriginalSelection=new Set();
+  let originalsExportOperation=null,taskSubmissionPreview=null;
+  let projectMaterials=null,workspaceSource=null,ledgerChecks=null,workpapers=null,billing=null,refundIntake=null;
+  let identityServiceMode=remoteService?'pending':'local-preview';
+  const unavailableIdentityMethods=()=>({demoUsername:identityServiceMode==='local-preview',phonePassword:false,phoneVerification:false,wechat:false,recovery:false});
+  let methods=unavailableIdentityMethods(),challengeId='',challengeExpiresAt=0,challengePhone='',methodsReady=false,methodsEpoch=0;
+  let desktopWechatReady=false,wechatState='idle',wechatEpoch=0,wechatExpiresAt=0,wechatTimer=null,wechatWorking=false;
+  let onboardingAvailable=false,onboardingReady=false,onboardingStatusEpoch=0,activationEpoch=0,activationWorking=false,activationPreview=null,activationChallenge=null;
+  let invitationEpoch=0,invitationWorking=false,invitationAllowed=false,invitationPageRows=[],invitationCursors=[null],invitationNextCursor=null,invitationPageLoaded=false,invitationPanelOpen=false,invitationMutation=null;
+  let accountIdentityEpoch=0,accountSessionsEpoch=0,accountSessionRows=[],accountSessionsHasMore=false,accountSessionsLoaded=false,accountSessionsWorking=false,accountSessionsMutation=null;
+  let passwordChangeEpoch=0,passwordChangeMutation=null;
+  let firstAdminEpoch=0,firstAdminWorking=false,firstAdminPreview=null,firstAdminChallenge=null,firstAdminMutation=null;
+  let provisioningEpoch=0,provisioningAllowed=false,provisioningWorking=false,provisioningRows=[],provisioningMutation=null,provisioningPanelOpened=false;
+  let provisioningCursors=[null],provisioningNextCursor=null,provisioningRecovery=null;
+  let administrationTeams=[],invitationTeamId='',invitationCreationLookup=false,invitationRecoveryReceipt=null,invitationResumeTeam=null;
+  const invitationRecoveries=new Map();
+  let recoveryEpoch=0,recoveryWorking=false,recoveryChallenge=null,recoveryMutation=null,recoveryRequest=null;
+  let recoveryReviewMode=false,recoveryReviewAvailable=false,recoveryReviewStatusEpoch=0,recoveryReviewReceipt=null,recoveryReviewSubmission=null;
+  let recoveryReviewsEpoch=0,recoveryReviewsAllowed=false,recoveryReviewsRows=[],recoveryReviewsWorking=false,recoveryReviewsMutation=null,recoveryReviewsOpened=false;
+  let taskManagementEpoch=0,taskManagementState=null,taskManagementMembers=[],taskManagementHasMore=false,taskManagementQuery='',taskManagementChosen='',taskManagementWorking=false,taskManagementMutation=null,taskManagementNeedsRefresh=false,taskManagementMessage='',taskManagementError=false;
+  let memberManagementAccessEpoch=0,memberManagementEpoch=0,memberManagementTeams=[],memberManagementCanReview=false,memberManagementMode='business',memberManagementTeam='',memberManagementRows=[],memberManagementHasMore=false,memberManagementQuery='',memberManagementSelected=null,memberManagementWorking=false,memberManagementMutation=null,memberManagementNeedsRefresh=true,memberManagementOpened=false;
+  let deviceUiEpoch=0,deviceLastEpoch=-1,deviceSnapshot=null,deviceAccount=null,deviceLocalIssue='',deviceAction=null,devicePollOperation=null,deviceSessionRead=null,devicePollTimer=null,deviceUiClosed=false;
+  let replacementOwnEpoch=0,replacementAuthEpoch=0,replacementOwn=null,replacementCanRequest=false,replacementOwnLoaded=false,replacementOwnRead=null,replacementOwnMutation=null;
+  let replacementReviewEpoch=0,replacementReviewAllowed=false,replacementReviewRows=[],replacementReviewSelected=null,replacementReviewWorking=false,replacementReviewMutation=null,replacementReviewOpened=false;
+  let replacementReviewCursors=[null],replacementReviewNextCursor=null;
+  let businessRoleAccessEpoch=0,businessRoleEpoch=0,businessRoleTeams=[],businessRoleTeam='',businessRoleRows=[],businessRoleHasMore=false,businessRoleQuery='',businessRoleSelected=null,businessRoleWorking=false,businessRoleMutation=null,businessRoleNeedsRefresh=true,businessRoleOpened=false;
+  let projectAccessEpoch=0,projectAccessState=blankProjectAccess(),projectAccessMutation=null,projectDownloadOperation=null,projectAccessOpened=false;
+  let projectMigrationAccessEpoch=0,projectMigrationEpoch=0,projectMigrationState=blankProjectMigration(),projectMigrationSourceOperation=null,projectMigrationMutation=null,projectMigrationOpened=false;
+  const projectMigrationQueries=new Map(),collectionWorkspaceRequests=new Map(),collectionWorkspaceQueryIds=new Map();
+  let collectionWorkspaceEpoch=0,collectionWorkspaceOperation=null,collectionWorkspaceQuery=null,collectionWorkspaceReceiptView=null;
+  function el(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
+  function blankProjectMigration(){return {canReview:false,source:null,teams:[],team:null,owners:[],owner:null,teamQuery:'',ownerQuery:'',teamMore:false,ownerMore:false,teamTotal:0,ownerTotal:0,read:0,working:false};}
+  function projectMigrationApiReady(){return ['getProjectMigrationAccess','listProjectMigrationTeams','listProjectMigrationOwners','chooseProjectMigrationSource','approveProjectMigration','getProjectMigrationReceipt','discardProjectMigrationSource'].every(name=>typeof api?.[name]==='function');}
+  function projectMigrationReady(){return !!session&&session.device?.required===true&&session.device.state==='ready'&&deviceSnapshot?.state==='ready'&&!deviceUiClosed;}
+  function projectMigrationPending(){const actor=accountSessionsActor();return !!actor&&(!!projectMigrationSourceOperation&&sameAccountSessionsActor(projectMigrationSourceOperation.actor)||!!projectMigrationMutation&&sameAccountSessionsActor(projectMigrationMutation.actor));}
+  function projectMigrationContext(){return {actor:accountSessionsActor(),at:projectMigrationEpoch,device:deviceUiEpoch,main:session?.device?.epoch,state:projectMigrationState,read:projectMigrationState.read};}
+  function currentProjectMigration(c){return sameAccountSessionsActor(c.actor)&&c.at===projectMigrationEpoch&&c.device===deviceUiEpoch&&c.main===session?.device?.epoch&&c.state===projectMigrationState&&c.read===projectMigrationState.read&&projectMigrationReady()&&projectMigrationState.canReview&&byId('project-migration-panel').open&&!byId('project-migration-panel').hidden;}
+  function projectMigrationUuid(value){return typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);}
+  function discardMigrationHandle(handle){if(projectMigrationUuid(handle)&&typeof api?.discardProjectMigrationSource==='function')void api.discardProjectMigrationSource({handle}).catch(()=>{});}
+  function clearProjectMigrationProof(flags=true){byId('project-migration-password').value='';byId('project-migration-confirmed').checked=false;if(flags)for(const name of ['read','manage','review'])byId('project-migration-'+name).checked=false;}
+  function clearProjectMigrationSource(){const s=projectMigrationState,handle=s.source?.handle;discardMigrationHandle(handle);s.source=null;s.teams=[];s.team=null;s.owners=[];s.owner=null;s.teamMore=s.ownerMore=false;s.teamTotal=s.ownerTotal=0;clearProjectMigrationProof();byId('project-migration-source-summary').replaceChildren();byId('project-migration-source-preview').hidden=true;byId('project-migration-candidates').hidden=true;if(byId('project-migration-request-id').value===handle&&projectMigrationQueries.get(session?.account.id)!==handle)byId('project-migration-request-id').value='';}
+  function resetProjectMigration(close=true,hide=true){const allowed=projectMigrationState.canReview;projectMigrationEpoch++;if(hide)projectMigrationAccessEpoch++;clearProjectMigrationSource();projectMigrationState=blankProjectMigration();if(!hide)projectMigrationState.canReview=allowed;byId('project-migration-team-search').value='';byId('project-migration-owner-search').value='';byId('project-migration-request-id').value=projectMigrationQueries.get(session?.account.id)||'';byId('project-migration-receipt-summary').replaceChildren();byId('project-migration-receipt-summary').hidden=true;message('project-migration-message','');if(close){projectMigrationOpened=false;byId('project-migration-panel').open=false;}if(hide)byId('project-migration-panel').hidden=true;renderProjectMigration();}
+  function projectMigrationSummary(value){const keys=['projectId','title','businessNumber','legacyManagerName','initiationRevision','workspaceRevision','firstWonAt','initiationWonAt','latestWonAt'];return value&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key))&&projectMigrationUuid(value.projectId)&&typeof value.title==='string'&&value.title.isWellFormed()&&!!value.title.trim()&&[...value.title].length<=300&&typeof value.businessNumber==='string'&&typeof value.legacyManagerName==='string'&&Number.isSafeInteger(value.initiationRevision)&&value.initiationRevision>=1&&Number.isSafeInteger(value.workspaceRevision)&&value.workspaceRevision>=0&&['firstWonAt','initiationWonAt','latestWonAt'].every(key=>typeof value[key]==='string'&&Number.isFinite(Date.parse(value[key])));}
+  function renderProjectMigration(){
+    const s=projectMigrationState,list=byId('project-migration-teams'),owners=byId('project-migration-owners');list.replaceChildren();owners.replaceChildren();
+    for(const item of s.teams){const row=el('li'),description=el('div');row.dataset.teamId=item.id;description.append(el('strong',item.name),el('small','团队ID：'+item.id));const choose=el('button',s.team===item?'已选择此团队':'选择目标团队','button');choose.type='button';choose.addEventListener('click',()=>{if(!document.contains(choose)||projectMigrationState!==s||!s.teams.includes(item)||!projectMigrationAvailable()||s.working||projectMigrationPending()||busy)return;s.team=item;s.owners=[];s.owner=null;s.ownerMore=false;s.ownerTotal=0;s.ownerQuery='';byId('project-migration-owner-search').value='';clearProjectMigrationProof();renderProjectMigration();void loadProjectMigrationOwners();});row.append(description,choose);list.append(row);}
+    for(const item of s.owners){const row=el('li'),description=el('div');row.dataset.userId=item.id;description.append(el('strong',item.displayName+' · '+labels[item.role]),el('small','账号ID：'+item.id+(item.revision===Number.MAX_SAFE_INTEGER?' · 当前版本不可审核':'')));const choose=el('button',s.owner===item?'已选择此负责人':'选择首位负责人','button');choose.type='button';choose.dataset.selectable=String(item.revision<Number.MAX_SAFE_INTEGER);choose.addEventListener('click',()=>{if(!document.contains(choose)||projectMigrationState!==s||!s.owners.includes(item)||item.revision>=Number.MAX_SAFE_INTEGER||!projectMigrationAvailable()||s.working||projectMigrationPending()||busy)return;s.owner=item;clearProjectMigrationProof();renderProjectMigration();});row.append(description,choose);owners.append(row);}
+    byId('project-migration-team-count').textContent='已加载 '+s.teams.length+' 项／当前匹配 '+s.teamTotal+' 项';byId('project-migration-owner-count').textContent=s.team?'已加载 '+s.owners.length+' 项／当前匹配 '+s.ownerTotal+' 项':'请先明确选择目标团队。';byId('project-migration-target').textContent=s.source&&s.team&&s.owner?'待审核：'+s.source.summary.businessNumber+' · '+s.team.name+' · '+s.owner.displayName+'（'+labels[s.owner.role]+'）':'尚未完成来源、团队和首位负责人选择。';updateProjectMigrationControls();
+  }
+  function projectMigrationAvailable(){return projectMigrationReady()&&projectMigrationApiReady()&&projectMigrationState.canReview&&byId('project-migration-panel').open&&!byId('project-migration-panel').hidden;}
+  function updateProjectMigrationControls(){const s=projectMigrationState,ready=projectMigrationAvailable(),locked=busy||projectMigrationPending()||s.working,target=ready&&s.source&&s.team&&s.owner&&s.teams.includes(s.team)&&s.owners.includes(s.owner)&&s.owner.revision<Number.MAX_SAFE_INTEGER;byId('project-migration-source-open').disabled=!ready||locked;byId('project-migration-source-discard').disabled=!ready||locked||!s.source;for(const id of ['project-migration-team-search','project-migration-teams-refresh'])byId(id).disabled=!ready||locked||!s.source;for(const id of ['project-migration-owner-search','project-migration-owners-refresh'])byId(id).disabled=!ready||locked||!s.source||!s.team;for(const [key,more]of [['teams',s.teamMore],['owners',s.ownerMore]]){byId('project-migration-'+key+'-more').hidden=!more;byId('project-migration-'+key+'-more').disabled=!ready||locked||!more;for(const node of byId('project-migration-'+key).querySelectorAll('button'))node.disabled=!ready||locked||node.dataset.selectable==='false';}for(const id of ['read','manage','review','confirmed','password'])byId('project-migration-'+id).disabled=!target||locked;byId('project-migration-approve').disabled=!target||locked||!byId('project-migration-confirmed').checked||!byId('project-migration-password').value;byId('project-migration-request-id').disabled=!ready||locked;byId('project-migration-receipt-read').disabled=!ready||locked||!projectMigrationUuid(byId('project-migration-request-id').value);}
+  async function projectMigrationCall(name,input,current){const result=await api[name](input);if(!current())throw {code:'STALE_PROJECT_MIGRATION'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','当前登录已失效，请重新登录后按查询编号核对。',true);}throw result?.error||{code:'INVALID_RESPONSE'};}return result.value;}
+  async function loadProjectMigrationAccess(){resetProjectMigration();if(!projectMigrationReady()||!projectMigrationApiReady())return;const actor=accountSessionsActor(),at=projectMigrationAccessEpoch,device=deviceUiEpoch,main=session.device.epoch,current=()=>sameAccountSessionsActor(actor)&&at===projectMigrationAccessEpoch&&device===deviceUiEpoch&&main===session?.device?.epoch&&projectMigrationReady();try{const value=await projectMigrationCall('getProjectMigrationAccess',undefined,current);if(typeof value?.canReview!=='boolean'||Object.keys(value).length!==1)throw {code:'INVALID_RESPONSE'};projectMigrationState.canReview=value.canReview;byId('project-migration-panel').hidden=!value.canReview;updateProjectMigrationControls();}catch{if(current())resetProjectMigration();}}
+  async function chooseProjectMigrationSource(){
+    if(!projectMigrationAvailable()||busy||projectMigrationPending()||projectMigrationState.working)return;clearProjectMigrationSource();projectMigrationState.read++;const context=projectMigrationContext(),operation={actor:context.actor};projectMigrationSourceOperation=operation;updateProjectMigrationControls();message('project-migration-message','请选择从旧项目登记表导出的来源JSON；选择前后将核验审核权…');
+    try{const result=await api.chooseProjectMigrationSource();if(!currentProjectMigration(context)){if(result?.ok)discardMigrationHandle(result.value?.handle);return;}if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','当前登录已失效，请重新登录。',true);}throw result?.error||{code:'INVALID_RESPONSE'};}const value=result.value;if(value?.canceled===true&&Object.keys(value).length===1){message('project-migration-message','已取消文件选择，未预检或提交来源。');return;}if(!value||Object.keys(value).length!==3||!projectMigrationUuid(value.handle)||!/^[a-f0-9]{64}$/.test(value.sha256)||!projectMigrationSummary(value.summary)){discardMigrationHandle(value?.handle);throw {code:'INVALID_RESPONSE'};}projectMigrationState.source=value;const summary=byId('project-migration-source-summary');summary.replaceChildren();for(const [label,text]of [['项目名称',value.summary.title],['原项目UUID',value.summary.projectId],['原业务编号',value.summary.businessNumber],['历史登记经理（不映射账号）',value.summary.legacyManagerName||'未填写'],['立项／工作区版本',value.summary.initiationRevision+'／'+value.summary.workspaceRevision],['首次中标',value.summary.firstWonAt],['建档中标',value.summary.initiationWonAt],['最新中标',value.summary.latestWonAt],['来源SHA-256',value.sha256]])summary.append(el('p',label+'：'+text));byId('project-migration-source-preview').hidden=false;byId('project-migration-candidates').hidden=false;byId('project-migration-request-id').value=value.handle;message('project-migration-message','来源预检完成，尚未发送审批。请明确选择目标团队和真实账号负责人。');}
+    catch(error){if(currentProjectMigration(context))message('project-migration-message',error.message||'来源预检未完成，请重新选择受支持来源。',true);}
+    finally{if(projectMigrationSourceOperation===operation)projectMigrationSourceOperation=null;if(currentProjectMigration(context)){renderProjectMigration();if(projectMigrationState.source)void loadProjectMigrationTeams();}else if(sameAccountSessionsActor(context.actor))updateProjectMigrationControls();}
+  }
+  function validMigrationPage(value,owner){return value&&Array.isArray(value.items)&&Number.isSafeInteger(value.total)&&value.total>=value.items.length&&typeof value.hasMore==='boolean'&&value.items.every(item=>typeof item.id==='string'&&!!item.id&&(owner?typeof item.displayName==='string'&&['manager','partner'].includes(item.role)&&Number.isSafeInteger(item.revision)&&item.revision>=0:typeof item.name==='string'));}
+  async function loadProjectMigrationTeams(append=false){const s=projectMigrationState;if(!projectMigrationAvailable()||!s.source||busy||projectMigrationPending()||s.working||append&&!s.teamMore)return;s.read++;const context=projectMigrationContext();s.working=true;if(!append){s.teams=[];s.team=null;s.owners=[];s.owner=null;s.teamMore=s.ownerMore=false;s.teamTotal=s.ownerTotal=0;clearProjectMigrationProof();}renderProjectMigration();try{const value=await projectMigrationCall('listProjectMigrationTeams',{...(s.teamQuery?{q:s.teamQuery}:{}),...(append&&s.teams.length?{after:s.teams.at(-1).id}:{}),limit:20},()=>currentProjectMigration(context));if(!validMigrationPage(value,false))throw {code:'INVALID_RESPONSE'};const rows=append?s.teams.concat(value.items):value.items;if(new Set(rows.map(item=>item.id)).size!==rows.length)throw {code:'INVALID_RESPONSE'};s.teams=rows;s.teamMore=value.hasMore;s.teamTotal=value.total;renderProjectMigration();}catch(error){if(currentProjectMigration(context)){s.teams=[];s.team=null;s.owners=[];s.owner=null;s.teamMore=s.ownerMore=false;clearProjectMigrationProof();renderProjectMigration();message('project-migration-message',error.message||'团队列表无法确认，请刷新核对。',true);}}finally{if(currentProjectMigration(context)){s.working=false;updateProjectMigrationControls();}}}
+  async function loadProjectMigrationOwners(append=false){const s=projectMigrationState;if(!projectMigrationAvailable()||!s.source||!s.team||busy||projectMigrationPending()||s.working||append&&!s.ownerMore)return;s.read++;const context=projectMigrationContext(),team=s.team;s.working=true;if(!append){s.owners=[];s.owner=null;s.ownerMore=false;s.ownerTotal=0;clearProjectMigrationProof();}renderProjectMigration();try{const value=await projectMigrationCall('listProjectMigrationOwners',{teamId:team.id,...(s.ownerQuery?{q:s.ownerQuery}:{}),...(append&&s.owners.length?{after:s.owners.at(-1).id}:{}),limit:20},()=>currentProjectMigration(context)&&s.team===team);if(!validMigrationPage(value,true))throw {code:'INVALID_RESPONSE'};const rows=append?s.owners.concat(value.items):value.items;if(new Set(rows.map(item=>item.id)).size!==rows.length)throw {code:'INVALID_RESPONSE'};s.owners=rows;s.ownerMore=value.hasMore;s.ownerTotal=value.total;renderProjectMigration();}catch(error){if(currentProjectMigration(context)){s.owners=[];s.owner=null;s.ownerMore=false;clearProjectMigrationProof();renderProjectMigration();message('project-migration-message',error.message||'首位负责人候选无法确认，请刷新核对。',true);}}finally{if(currentProjectMigration(context)){s.working=false;updateProjectMigrationControls();}}}
+  function renderProjectMigrationReceipt(receipt){const target=byId('project-migration-receipt-summary');target.replaceChildren();for(const [label,key]of [['查询编号','requestId'],['项目UUID','projectId'],['原业务编号','businessNumber'],['目标团队ID','teamId'],['首位负责人账号ID','ownerUserId'],['来源SHA-256','sourceSha256']])target.append(el('p',label+'：'+receipt[key]));target.append(el('p','初始权限：'+[receipt.read?'读取':'无读取',receipt.manage?'管理':'无管理',receipt.review?'核对':'无核对'].join('／')),el('p','登记时间：'+new Date(receipt.registeredAt).toLocaleString('zh-CN')));target.hidden=false;}
+  function validProjectMigrationReceipt(value,requestId){return value&&value.requestId===requestId&&projectMigrationUuid(value.projectId)&&typeof value.teamId==='string'&&typeof value.ownerUserId==='string'&&typeof value.businessNumber==='string'&&/^[a-f0-9]{64}$/.test(value.sourceSha256)&&['read','manage','review'].every(key=>typeof value[key]==='boolean')&&Number.isSafeInteger(value.registeredAt)&&value.registeredAt>=0&&Object.keys(value).length===10;}
+  async function approveProjectMigration(event){
+    event.preventDefault();const s=projectMigrationState,source=s.source,team=s.team,owner=s.owner,currentPassword=byId('project-migration-password').value;if(!projectMigrationAvailable()||busy||projectMigrationPending()||s.working||!source||!s.teams.includes(team)||!s.owners.includes(owner)||owner.revision>=Number.MAX_SAFE_INTEGER||!byId('project-migration-confirmed').checked||!currentPassword||new TextEncoder().encode(currentPassword).length>512)return;const flags=Object.fromEntries(['read','manage','review'].map(key=>[key,byId('project-migration-'+key).checked]));if(!flags.read&&(flags.manage||flags.review))return;
+    const context=projectMigrationContext(),operation={actor:context.actor,requestId:source.handle};projectMigrationMutation=operation;projectMigrationQueries.set(session.account.id,source.handle);byId('project-migration-request-id').value=source.handle;const input={handle:source.handle,sourceSha256:source.sha256,teamId:team.id,ownerUserId:owner.id,ownerRevision:owner.revision,...flags,currentPassword,confirmed:true};clearProjectMigrationProof(false);updateProjectMigrationControls();message('project-migration-message','正在验证当前密码与完整来源，按明确团队、首位负责人和权限提交治理登记…');
+    try{const value=await projectMigrationCall('approveProjectMigration',input,()=>currentProjectMigration(context));if(value?.status==='registered'&&Object.keys(value).length===2&&validProjectMigrationReceipt(value.receipt,source.handle)){clearProjectMigrationSource();renderProjectMigration();renderProjectMigrationReceipt(value.receipt);message('project-migration-message','旧正式项目的团队治理已登记；未迁入客户原件或形成专业签审。');}else if(value?.status==='unknown'&&value.requestId===source.handle&&Object.keys(value).length===2){clearProjectMigrationSource();renderProjectMigration();message('project-migration-message','登记结果尚未确认，审批可能已完成。查询编号已保留，请只读核对回执；系统不会自动重新提交。',true);}else{clearProjectMigrationSource();renderProjectMigration();message('project-migration-message','无法确认审批回执，请按已保留的查询编号核对；不会自动重发。',true);}}
+    catch(error){if(currentProjectMigration(context)){clearProjectMigrationSource();renderProjectMigration();message('project-migration-message',error.message||'审批未完成，请按查询编号核对；请勿重复提交。',true);}}
+    finally{if(projectMigrationMutation===operation)projectMigrationMutation=null;if(sameAccountSessionsActor(context.actor)){byId('project-migration-password').value='';updateProjectMigrationControls();}}
+  }
+  async function readProjectMigrationReceipt(){const s=projectMigrationState,requestId=byId('project-migration-request-id').value;if(!projectMigrationAvailable()||busy||projectMigrationPending()||s.working||!projectMigrationUuid(requestId))return;s.read++;const context=projectMigrationContext();s.working=true;byId('project-migration-receipt-summary').replaceChildren();byId('project-migration-receipt-summary').hidden=true;updateProjectMigrationControls();try{const value=await projectMigrationCall('getProjectMigrationReceipt',{requestId},()=>currentProjectMigration(context));if(!validProjectMigrationReceipt(value,requestId))throw {code:'INVALID_RESPONSE'};renderProjectMigrationReceipt(value);projectMigrationQueries.set(session.account.id,requestId);message('project-migration-message','已读到服务端登记回执；这是治理归属登记，不代表客户原件已迁入。');}catch(error){if(currentProjectMigration(context))message('project-migration-message',error.code==='HTTP_404'?'当前未查到可访问回执，审批仍可能在途；保留编号后再只读核对，不会自动重新提交。':error.message||'回执暂无法核对，请保留查询编号。',true);}finally{if(currentProjectMigration(context)){s.working=false;updateProjectMigrationControls();}}}
+  function closeProjectMigration(){const pending=projectMigrationPending();projectMigrationOpened=false;resetProjectMigration(false,false);if(pending&&session)message('workspace-message','已清除旧项目来源和密码；已发送的审批仍可能完成，请按保留的查询编号核对。');}
+  byId('project-migration-panel').querySelector('summary').addEventListener('click',()=>{if(byId('project-migration-panel').open)closeProjectMigration();else projectMigrationOpened=true;});
+  byId('project-migration-panel').addEventListener('toggle',()=>{if(byId('project-migration-panel').open&&!byId('project-migration-panel').hidden&&projectMigrationAvailable()){projectMigrationOpened=true;byId('project-migration-request-id').value=projectMigrationQueries.get(session.account.id)||byId('project-migration-request-id').value;updateProjectMigrationControls();}else if(projectMigrationOpened)closeProjectMigration();});
+  byId('project-migration-source-open').addEventListener('click',()=>void chooseProjectMigrationSource());byId('project-migration-source-discard').addEventListener('click',()=>{if(!projectMigrationAvailable()||projectMigrationPending()||projectMigrationState.working||busy)return;projectMigrationState.read++;clearProjectMigrationSource();renderProjectMigration();message('project-migration-message','本次来源已清除，未因清除操作创建团队项目。');});
+  for(const [kind,load]of [['team',loadProjectMigrationTeams],['owner',loadProjectMigrationOwners]]){const search=byId('project-migration-'+kind+'-search');search.addEventListener('input',()=>{if(projectMigrationPending())return;const s=projectMigrationState;s.read++;s.working=false;s[kind+'Query']=search.value;if(kind==='team'){s.teams=[];s.team=null;s.teamMore=false;s.teamTotal=0;}s.owners=[];s.owner=null;s.ownerMore=false;s.ownerTotal=0;clearProjectMigrationProof();renderProjectMigration();});search.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();void load();}});byId('project-migration-'+kind+'s-refresh').addEventListener('click',()=>void load());byId('project-migration-'+kind+'s-more').addEventListener('click',()=>void load(true));}
+  for(const key of ['read','manage','review'])byId('project-migration-'+key).addEventListener('change',()=>{if(key==='read'&&!byId('project-migration-read').checked){byId('project-migration-manage').checked=false;byId('project-migration-review').checked=false;}else if(key!=='read'&&byId('project-migration-'+key).checked)byId('project-migration-read').checked=true;clearProjectMigrationProof(false);updateProjectMigrationControls();});
+  for(const [id,event]of [['project-migration-password','input'],['project-migration-confirmed','change'],['project-migration-request-id','input']])byId(id).addEventListener(event,updateProjectMigrationControls);byId('project-migration-form').addEventListener('submit',event=>void approveProjectMigration(event));byId('project-migration-receipt-read').addEventListener('click',()=>void readProjectMigrationReceipt());
+  function message(id,text,error=false){const node=byId(id);node.textContent=text||'';node.classList.toggle('error',error);}
+  const replacementWords={pending:'待审核',approved:'已获批，尚未激活',claimed:'已激活',rejected:'已拒绝',withdrawn:'已撤回',revoked:'批准已撤销',expired:'已过期',stale:'身份、绑定或授权已变化'};
+  function replacementOwnApiReady(){return ['getDeviceReplacementStatus','requestDeviceReplacement','withdrawDeviceReplacement','activateDeviceReplacement'].every(name=>typeof api?.[name]==='function');}
+  function replacementOwnEligible(){return !!deviceAccount&&!session&&!deviceLocalIssue&&['different_key','revoked'].includes(deviceSnapshot?.state);}
+  function replacementOwnPending(){return !!replacementOwnMutation&&replacementOwnMutation.auth===replacementAuthEpoch&&replacementOwnMutation.actor===deviceAccount?.id;}
+  function resetOwnReplacement(){replacementAuthEpoch++;replacementOwnEpoch++;replacementOwn=null;replacementCanRequest=false;replacementOwnLoaded=false;replacementOwnRead=null;byId('device-replacement-own-description').textContent='';message('device-replacement-message','');}
+  function ownReplacementContext(){return {auth:replacementAuthEpoch,actor:deviceAccount?.id,device:deviceUiEpoch,main:deviceSnapshot?.epoch,read:replacementOwnEpoch};}
+  function currentOwnReplacement(context){return context.auth===replacementAuthEpoch&&context.actor===deviceAccount?.id&&context.device===deviceUiEpoch&&context.main===deviceSnapshot?.epoch&&context.read===replacementOwnEpoch&&replacementOwnEligible();}
+  function ownReplacementMatches(){return !!replacementOwn&&replacementOwn.newDevice?.keyFingerprint===deviceSnapshot?.localFingerprint&&replacementOwn.oldDevice?.id===deviceSnapshot?.device?.id&&replacementOwn.oldDevice?.revision===deviceSnapshot?.device?.revision&&replacementOwn.oldDevice?.status===deviceSnapshot?.device?.status;}
+  function validReplacementView(value){return !!value&&typeof value.id==='string'&&typeof value.teamId==='string'&&typeof value.teamName==='string'&&typeof value.displayName==='string'&&['employee','administrator'].includes(value.targetKind)&&Object.hasOwn(replacementWords,value.status)&&Number.isSafeInteger(value.revision)&&value.revision>=1&&Number.isSafeInteger(value.expiresAt)&&value.oldDevice&&typeof value.oldDevice.id==='string'&&Number.isSafeInteger(value.oldDevice.revision)&&typeof value.oldDevice.keyFingerprint==='string'&&value.newDevice&&typeof value.newDevice.displayName==='string'&&/^[a-f0-9]{64}$/.test(value.newDevice.keyFingerprint);}
+  function updateReplacementControls(){
+    const visible=replacementOwnEligible(),ready=visible&&replacementOwnApiReady()&&replacementOwnLoaded,locked=busy||!!deviceAction||replacementOwnPending()||!!replacementOwnRead,canRequest=ready&&replacementCanRequest,canActivate=ready&&ownReplacementMatches()&&replacementOwn.status==='approved'&&replacementOwn.revision<Number.MAX_SAFE_INTEGER,canWithdraw=ready&&ownReplacementMatches()&&['pending','approved'].includes(replacementOwn.status)&&replacementOwn.revision<Number.MAX_SAFE_INTEGER;
+    byId('device-replacement-own').hidden=!visible;byId('device-replacement-refresh').disabled=!visible||!replacementOwnApiReady()||locked;byId('device-replacement-withdraw').hidden=!canWithdraw;byId('device-replacement-withdraw').disabled=!canWithdraw||locked;
+    byId('device-replacement-request').hidden=!canRequest;byId('device-replacement-activate').hidden=!canActivate;byId('device-replacement-request').disabled=!canRequest||locked||!byId('device-enroll-consent').checked||!byId('device-name').value.trim()||!byId('password').value;byId('device-replacement-activate').disabled=!canActivate||locked||!byId('device-enroll-consent').checked;
+    if(!visible){byId('device-consent-text').textContent='我已核对账号，确认首次绑定这台电脑。以后换机需审批。';return;}
+    byId('device-replacement-own-status').textContent=!replacementOwnApiReady()?'当前客户端换机接口尚未就绪，请更新客户端。':!replacementOwnLoaded?'请读取本人换机申请后继续。':replacementOwn?'本次申请：'+replacementWords[replacementOwn.status]:'本人当前没有换机申请。';
+    byId('device-replacement-own-description').textContent=replacementOwn?'申请编号 '+replacementOwn.id+' · 有效至 '+new Date(replacementOwn.expiresAt).toLocaleString('zh-CN')+'\n申请电脑：'+replacementOwn.newDevice.displayName+' · 指纹 '+replacementOwn.newDevice.keyFingerprint+(ownReplacementMatches()?'':'\n该申请与当前电脑不匹配，不能撤回或激活。'):'';
+    byId('device-enrollment-fields').hidden=!canRequest&&!canActivate;byId('device-name').disabled=!canRequest||locked;byId('device-name').required=canRequest;byId('device-enroll-consent').disabled=(!canRequest&&!canActivate)||locked;byId('device-enroll-consent').required=canRequest||canActivate;byId('ordinary-password-fields').hidden=!canRequest;byId('password').required=canRequest;byId('password').maxLength=512;byId('password').disabled=!canRequest||locked;byId('password-label').textContent='重新输入当前账号密码';byId('password').placeholder='输入当前密码验证本人并提交申请';byId('device-consent-text').textContent=canActivate?'我已核对申请编号和本机指纹，确认激活此电脑并收回旧电脑绑定和旧登录。':'我已核对账号和本机指纹，确认申请更换到当前电脑；批准后仍须本人明确激活。';
+    if(canActivate)byId('device-name').value=replacementOwn.newDevice.displayName;
+  }
+  async function loadOwnReplacement(){
+    if(!replacementOwnEligible()||!replacementOwnApiReady()||replacementOwnPending()||deviceAction&&deviceAction.kind!=='login')return;const read={...ownReplacementContext(),read:++replacementOwnEpoch};replacementOwnRead=read;replacementOwnLoaded=false;replacementCanRequest=false;byId('password').value='';byId('device-enroll-consent').checked=false;updateIdentityControls();
+    try{const result=await api.getDeviceReplacementStatus();if(!currentOwnReplacement(read)||replacementOwnRead!==read)return;if(!result?.ok)throw result?.error||{code:'INVALID_RESPONSE'};const value=result.value;if(typeof value?.canRequest!=='boolean'||value.request!==null&&!validReplacementView(value.request))throw {code:'INVALID_RESPONSE'};replacementOwn=value.request;replacementCanRequest=value.canRequest;replacementOwnLoaded=true;message('device-replacement-message',value.request?.status==='approved'?'申请已获批。请核对本机指纹并重新勾选确认，系统不会自动激活。':'本人申请状态已刷新。');}
+    catch(error){if(currentOwnReplacement(read)){if(error.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','登录已失效，请重新登录本人账号。',true);}else message('device-replacement-message',error.message||'本人换机申请无法确认，请手动刷新。',true);}}
+    finally{if(replacementOwnRead===read)replacementOwnRead=null;updateIdentityControls();}
+  }
+  async function mutateOwnReplacement(kind){
+    if(!replacementOwnEligible()||!replacementOwnApiReady()||!replacementOwnLoaded||deviceAction||replacementOwnPending()||replacementOwnRead)return;const item=replacementOwn,displayName=byId('device-name').value.trim(),currentPassword=byId('password').value,confirmed=byId('device-enroll-consent').checked;
+    if(kind==='request'&&(!replacementCanRequest||!confirmed||!displayName||[...displayName].length>80||/[\p{Cc}\p{Cf}]/u.test(displayName)||!currentPassword||new TextEncoder().encode(currentPassword).length>512)||kind!=='request'&&(!ownReplacementMatches()||!item||item.revision>=Number.MAX_SAFE_INTEGER||!(kind==='withdraw'?['pending','approved']:['approved']).includes(item.status)||kind==='activate'&&!confirmed))return;
+    const action=beginDeviceAction('replacement-'+kind),context=ownReplacementContext(),operation={...context};replacementOwnMutation=operation;replacementOwnEpoch++;context.read=replacementOwnEpoch;byId('password').value='';byId('device-enroll-consent').checked=false;updateIdentityControls();message('device-replacement-message',kind==='activate'?'正在验证本机并激活获批设备…':'正在提交本次换机操作…');let completed=false;
+    try{const input=kind==='request'?{displayName,currentPassword,confirmed:true}:{requestId:item.id,revision:item.revision,...(kind==='activate'?{confirmed:true}:{})},result=await api[{request:'requestDeviceReplacement',withdraw:'withdrawDeviceReplacement',activate:'activateDeviceReplacement'}[kind]](input);if(!currentDeviceAction(action)||!currentOwnReplacement(context))return;if(!result?.ok)throw result?.error||{code:'INVALID_RESPONSE'};completed=true;if(kind==='activate'){message('login-message','');await acceptAuthenticatedSession(result.value);return;}if(!validReplacementView(result.value?.request))throw {code:'INVALID_RESPONSE'};replacementOwn=result.value.request;replacementCanRequest=false;replacementOwnLoaded=true;message('device-replacement-message',kind==='request'?'换机申请已提交，当前电脑尚未获准进入。请联系相应审核人核对申请编号。':'本次换机申请已撤回，旧电脑绑定未因此改变。');}
+    catch(error){if(currentDeviceAction(action)&&currentOwnReplacement(context)){replacementOwnLoaded=false;replacementCanRequest=false;if(error.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','登录已失效，请重新登录本人账号后刷新核对。',true);}else message('device-replacement-message',completed?'操作已完成，但结果展示无法确认，请刷新本人申请核对。':error.code==='OPERATION_UNCONFIRMED'||passwordChangeUncertain(error)?'未能确认换机操作结果；请求可能已完成，请重新登录或刷新本人申请核对，系统不会自动重试。':error.message||'换机操作未通过，请刷新本人申请核对。',true);}}
+    finally{if(replacementOwnMutation===operation)replacementOwnMutation=null;if(currentDeviceAction(action)){deviceAction=null;updateIdentityControls();void pollDeviceStatus();}}
+  }
+  function replacementReviewApiReady(){return ['getDeviceReplacementReviewAccess','listDeviceReplacementReviews','reviewDeviceReplacement'].every(name=>typeof api?.[name]==='function');}
+  function replacementReviewReady(){return !!session&&session.device?.required===true&&session.device.state==='ready'&&deviceSnapshot?.state==='ready';}
+  function replacementReviewPending(){return !!replacementReviewMutation&&sameAccountSessionsActor(replacementReviewMutation.actor);}
+  function replacementReviewContext(){return {actor:accountSessionsActor(),at:replacementReviewEpoch,device:deviceUiEpoch,main:session?.device?.epoch};}
+  function currentReplacementReview(context){return sameAccountSessionsActor(context.actor)&&context.at===replacementReviewEpoch&&context.device===deviceUiEpoch&&context.main===session?.device?.epoch&&replacementReviewReady()&&replacementReviewAllowed&&byId('device-replacement-reviews-panel').open&&!byId('device-replacement-reviews-panel').hidden;}
+  function clearReplacementReviewSelection(){replacementReviewSelected=null;byId('device-replacement-reviews-password').value='';byId('device-replacement-reviews-target').textContent='尚未选择换机申请。';}
+  function clearReplacementReviewPage(){
+    replacementReviewRows=[];replacementReviewNextCursor=null;clearReplacementReviewSelection();
+    byId('device-replacement-reviews-list').replaceChildren();byId('device-replacement-reviews-page-status').textContent='';
+  }
+  function resetReplacementReviews(close=true,hide=true){replacementReviewEpoch++;replacementReviewWorking=false;replacementReviewCursors=[null];clearReplacementReviewPage();message('device-replacement-reviews-message','');if(hide){replacementReviewAllowed=false;byId('device-replacement-reviews-panel').hidden=true;}if(close){replacementReviewOpened=false;byId('device-replacement-reviews-panel').open=false;}updateReplacementReviewControls();}
+  function replacementReviewSelectable(item){return !!item&&['pending','approved'].includes(item.status)&&Number.isSafeInteger(item.revision)&&item.revision>=1&&item.revision<Number.MAX_SAFE_INTEGER;}
+  function updateReplacementReviewControls(){
+    const ready=replacementReviewReady()&&replacementReviewAllowed&&replacementReviewApiReady()&&byId('device-replacement-reviews-panel').open&&!byId('device-replacement-reviews-panel').hidden,locked=busy||replacementReviewWorking||replacementReviewPending(),target=ready&&!locked&&replacementReviewRows.includes(replacementReviewSelected)&&replacementReviewSelectable(replacementReviewSelected);
+    byId('device-replacement-reviews-refresh').disabled=!ready||locked;for(const button of byId('device-replacement-reviews-list').querySelectorAll('button'))button.disabled=!ready||locked||button.dataset.selectable!=='true';byId('device-replacement-reviews-password').disabled=!target;for(const decision of ['approve','reject','revoke'])byId('device-replacement-reviews-'+decision).disabled=!target||!byId('device-replacement-reviews-password').value||!(decision==='revoke'?replacementReviewSelected.status==='approved':replacementReviewSelected.status==='pending');
+    byId('device-replacement-reviews-prev').disabled=!ready||locked||replacementReviewCursors.length===1;
+    byId('device-replacement-reviews-next').disabled=!ready||locked||!replacementReviewNextCursor;
+    byId('device-replacement-reviews-pagination').hidden=replacementReviewCursors.length===1&&!replacementReviewNextCursor;
+  }
+  function renderReplacementReviews(){
+    const list=byId('device-replacement-reviews-list');list.replaceChildren();if(!replacementReviewRows.length)list.append(el('li','当前没有可显示的换机申请。','identity-note'));
+    for(const item of replacementReviewRows){const row=el('li'),description=el('div');row.dataset.requestId=item.id;description.append(el('strong',item.displayName+' · '+item.teamName+' · '+(item.targetKind==='administrator'?'团队管理员':'团队员工')),el('small','申请编号 '+item.id+' · '+replacementWords[item.status]+' · 有效至 '+new Date(item.expiresAt).toLocaleString('zh-CN')),el('small','旧电脑：'+item.oldDevice.displayName+' · '+item.oldDevice.keyFingerprint),el('small','申请电脑：'+item.newDevice.displayName+' · '+item.newDevice.keyFingerprint));const choose=el('button',replacementReviewSelected===item?'已选择此申请':'选择核对申请','button');choose.type='button';choose.dataset.selectable=String(replacementReviewSelectable(item));choose.addEventListener('click',()=>{if(busy||replacementReviewWorking||replacementReviewPending()||!replacementReviewReady()||!byId('device-replacement-reviews-panel').open||!replacementReviewRows.includes(item)||!replacementReviewSelectable(item))return;clearReplacementReviewSelection();replacementReviewSelected=item;byId('device-replacement-reviews-target').textContent='拟审核：'+item.displayName+' · '+item.teamName+' · 申请 '+item.id+' · 新电脑 '+item.newDevice.displayName+' · 指纹 '+item.newDevice.keyFingerprint;renderReplacementReviews();});row.append(description,choose);list.append(row);}updateReplacementReviewControls();
+  }
+  async function replacementReviewCall(name,input,current){const result=await api[name](input);if(!current())throw {code:'STALE_DEVICE_REPLACEMENT_REVIEW'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','审核登录已失效，请重新登录。',true);}throw result?.error||{code:'INVALID_RESPONSE'};}return result.value;}
+  async function loadReplacementReviewAccess(){
+    resetReplacementReviews();if(!replacementReviewReady()||!replacementReviewApiReady())return;const context=replacementReviewContext(),current=()=>sameAccountSessionsActor(context.actor)&&context.at===replacementReviewEpoch&&context.device===deviceUiEpoch&&replacementReviewReady();
+    try{const value=await replacementReviewCall('getDeviceReplacementReviewAccess',undefined,current);if(!current()||value?.canReview!==true)return;replacementReviewAllowed=true;byId('device-replacement-reviews-panel').hidden=false;updateReplacementReviewControls();}catch{if(current())resetReplacementReviews();}
+  }
+  async function refreshReplacementReviewRows(context,cursors=replacementReviewCursors){
+    const after=cursors.at(-1);
+    const value=await replacementReviewCall('listDeviceReplacementReviews',after===null?{}:{after},()=>currentReplacementReview(context));
+    if(!Array.isArray(value?.requests)||value.requests.length>50||typeof value.hasMore!=='boolean'||!value.requests.every(validReplacementView)||new Set(value.requests.map(item=>item.id)).size!==value.requests.length)throw {code:'INVALID_RESPONSE'};
+    const paged=Object.hasOwn(value,'nextCursor'),next=paged?value.nextCursor:null;
+    if(after!==null&&!paged||paged&&(value.hasMore!==(next!==null)||next!==null&&(next!==value.requests.at(-1)?.id||cursors.includes(next))))throw {code:'INVALID_RESPONSE'};
+    replacementReviewRows=value.requests;replacementReviewCursors=cursors;replacementReviewNextCursor=next;
+    clearReplacementReviewSelection();
+    byId('device-replacement-reviews-page-status').textContent='第 '+cursors.length+' 页 · 本页 '+replacementReviewRows.length+' 条';
+    renderReplacementReviews();return !paged&&value.hasMore;
+  }
+  async function loadReplacementReviews(cursors=[null]){
+    if(!replacementReviewReady()||!replacementReviewAllowed||!replacementReviewApiReady()||busy||replacementReviewWorking||replacementReviewPending()||!byId('device-replacement-reviews-panel').open)return;replacementReviewEpoch++;const context=replacementReviewContext();replacementReviewWorking=true;clearReplacementReviewPage();renderReplacementReviews();message('device-replacement-reviews-message','正在读取当前授权范围内的换机申请…');
+    try{const limited=await refreshReplacementReviewRows(context,cursors);if(currentReplacementReview(context))message('device-replacement-reviews-message',limited?'当前服务仅显示最近 50 条申请。请更新服务端后查找更早的申请。':'请核对申请人、申请编号及新电脑指纹，再选择申请并填写当前密码。');}
+    catch(error){if(currentReplacementReview(context)){clearReplacementReviewPage();renderReplacementReviews();message('device-replacement-reviews-message',error.message||'换机申请无法确认，请刷新核对。',true);}}
+    finally{if(currentReplacementReview(context)){replacementReviewWorking=false;updateReplacementReviewControls();}}
+  }
+  async function decideReplacementReview(decision){
+    const item=replacementReviewSelected,currentPassword=byId('device-replacement-reviews-password').value;if(!replacementReviewReady()||!replacementReviewAllowed||!replacementReviewApiReady()||!byId('device-replacement-reviews-panel').open||busy||replacementReviewWorking||replacementReviewPending()||!replacementReviewRows.includes(item)||!replacementReviewSelectable(item)||!currentPassword||!(decision==='revoke'?item.status==='approved':item.status==='pending')||!['approve','reject','revoke'].includes(decision))return;
+    const context=replacementReviewContext(),operation={actor:context.actor};replacementReviewMutation=operation;byId('device-replacement-reviews-password').value='';updateReplacementReviewControls();message('device-replacement-reviews-message','正在验证当前密码并提交本次审核…');let completed=false;
+    try{const value=await replacementReviewCall('reviewDeviceReplacement',{requestId:item.id,revision:item.revision,decision,currentPassword},()=>currentReplacementReview(context));completed=true;if(!validReplacementView(value?.request))throw {code:'INVALID_RESPONSE'};await refreshReplacementReviewRows(context);if(currentReplacementReview(context))message('device-replacement-reviews-message',decision==='approve'?'申请已批准，旧电脑尚未被替换。本人仍须在获批电脑上明确激活。':decision==='reject'?'申请已拒绝，旧电脑绑定未因此改变。':'未激活的换机批准已撤销，旧电脑绑定未因此改变。');}
+    catch(error){if(currentReplacementReview(context)){clearReplacementReviewPage();renderReplacementReviews();message('device-replacement-reviews-message',completed?'审核已完成，但列表刷新无法确认，请刷新核对。':error.code==='OPERATION_UNCONFIRMED'||passwordChangeUncertain(error)?'未能确认审核结果；请求可能已完成，请刷新换机申请核对，系统不会自动重试。':error.message||'审核未通过，请刷新申请后核对。',true);}}
+    finally{if(replacementReviewMutation===operation)replacementReviewMutation=null;if(sameAccountSessionsActor(context.actor)){byId('device-replacement-reviews-password').value='';updateReplacementReviewControls();if(context.at!==replacementReviewEpoch&&byId('device-replacement-reviews-panel').open)void loadReplacementReviews();}}
+  }
+  function closeReplacementReviews(){const pending=replacementReviewPending();replacementReviewOpened=false;resetReplacementReviews(false,false);if(pending&&session)message('workspace-message','已清除审核输入；已提交的审核仍可能完成，请刷新换机申请核对。');}
+  byId('device-replacement-reviews-panel').querySelector('summary').addEventListener('click',()=>{if(byId('device-replacement-reviews-panel').open)closeReplacementReviews();else replacementReviewOpened=true;});
+  byId('device-replacement-reviews-panel').addEventListener('toggle',()=>{if(byId('device-replacement-reviews-panel').open&&!byId('device-replacement-reviews-panel').hidden&&replacementReviewReady()){replacementReviewOpened=true;if(replacementReviewPending())message('device-replacement-reviews-message','换机审核仍在处理中；请稍候刷新核对。');else void loadReplacementReviews();updateReplacementReviewControls();}else if(replacementReviewOpened)closeReplacementReviews();});
+  byId('device-replacement-reviews-password').addEventListener('input',updateReplacementReviewControls);byId('device-replacement-reviews-password').addEventListener('keydown',event=>{if(event.key==='Enter')event.preventDefault();});byId('device-replacement-reviews-refresh').addEventListener('click',()=>void loadReplacementReviews());for(const decision of ['approve','reject','revoke'])byId('device-replacement-reviews-'+decision).addEventListener('click',()=>void decideReplacementReview(decision));
+  byId('device-replacement-reviews-prev').addEventListener('click',()=>{if(replacementReviewCursors.length>1)void loadReplacementReviews(replacementReviewCursors.slice(0,-1));});
+  byId('device-replacement-reviews-next').addEventListener('click',()=>{if(replacementReviewNextCursor)void loadReplacementReviews([...replacementReviewCursors,replacementReviewNextCursor]);});
+  byId('device-replacement-refresh').addEventListener('click',()=>void loadOwnReplacement());for(const kind of ['request','withdraw','activate'])byId('device-replacement-'+kind).addEventListener('click',()=>void mutateOwnReplacement(kind));
+  function deviceApiReady(){return ['getDeviceStatus','enrollDevice','reconnectDevice'].every(name=>typeof api?.[name]==='function');}
+  function validDeviceSnapshot(value){
+    if(!value||Object.keys(value).length!==6||!['required','state','epoch','device','localFingerprint','expiresAt'].every(key=>Object.hasOwn(value,key))||typeof value.required!=='boolean'||!Number.isSafeInteger(value.epoch)||value.epoch<0||!['signed_out','enrollment_required','different_key','revoked','ready','paused','vault_unavailable',...(value.required?[]:['diagnostic'])].includes(value.state)||value.localFingerprint!==null&&!/^[a-f0-9]{64}$/.test(value.localFingerprint)||value.expiresAt!==null&&(!Number.isSafeInteger(value.expiresAt)||value.expiresAt<0))return false;
+    if(value.device!==null&&(!value.device||typeof value.device.id!=='string'||typeof value.device.displayName!=='string'||!['win32','darwin'].includes(value.device.platform)||!/^[a-f0-9]{64}$/.test(value.device.keyFingerprint)||!['active','revoked'].includes(value.device.status)||!Number.isSafeInteger(value.device.revision)||value.device.revision<1))return false;
+    return value.state!=='ready'||value.required&&value.device?.status==='active'&&value.device.keyFingerprint===value.localFingerprint&&value.expiresAt!==null;
+  }
+  function deviceBusinessReady(value=deviceSnapshot){return !!value&&(value.required?value.state==='ready':value.state==='diagnostic');}
+  function deviceGateActive(){return !!deviceLocalIssue||!!deviceSnapshot&&deviceSnapshot.required&&!['signed_out','ready'].includes(deviceSnapshot.state);}
+  function resetDevicePresentation(){resetLedgerChecks();resetWorkpapers();clearRefundIntakePassword();resetOwnReplacement();resetReplacementReviews();deviceUiEpoch++;deviceSnapshot=null;deviceAccount=null;deviceLocalIssue='';deviceAction=null;devicePollOperation=null;deviceSessionRead=null;byId('password').value='';byId('device-name').value='';byId('device-enroll-consent').checked=false;}
+  function deviceGateWords(){if(deviceLocalIssue)return deviceLocalIssue;return {enrollment_required:'账号尚未绑定电脑。请核对账号与本机指纹，再重新输入当前密码确认首次绑定。',different_key:'此账号已绑定其他设备，当前电脑不能进入。员工换机请联系团队管理员；团队管理员本人请联系产品负责人。',revoked:'此账号的设备绑定已撤销，不能重新首次绑定。员工换机请联系团队管理员；团队管理员本人请联系产品负责人。',paused:'与团队服务的连接尚未通过核验，业务已暂停。联网后请重新连接并核验；若刚提交过操作，请恢复后手动核对，系统不会自动重试。',vault_unavailable:'系统安全存储暂不可用，无法核验当前电脑。请重试或退出。'}[deviceSnapshot?.state]||'正在核验当前电脑，请稍候。';}
+  function updateDeviceControls(){
+    const active=deviceGateActive(),enrolling=active&&!deviceLocalIssue&&deviceSnapshot?.state==='enrollment_required',working=!!deviceAction;
+    byId('login-view').classList.toggle('device-active',active);byId('device-gate').hidden=!active;byId('device-actions').hidden=!active;byId('device-enrollment-fields').hidden=!enrolling;byId('ordinary-username-fields').hidden=active;byId('username').required=!active;
+    byId('login-mode-label').hidden=active;byId('login-mode').hidden=active;byId('ordinary-password-fields').hidden=active&&!enrolling;byId('password').required=!active||enrolling;byId('password').maxLength=enrolling?512:1024;byId('password-label').textContent=enrolling?'重新输入当前账号密码':'密码';byId('password').placeholder=enrolling?'输入当前密码确认绑定这台电脑':'输入密码';byId('login-submit').hidden=active;byId('device-bind-confirm').hidden=!enrolling;
+    byId('login-form-title').textContent=active?(enrolling?'确认绑定当前电脑':'设备与连接核验'):'登录团队账号';byId('login-form-caption').textContent=active?(remoteService?serviceCaption+'；通过在线设备核验后才能进入团队工作空间':'通过在线设备核验后才能进入团队工作空间'):serviceCaption;
+    byId('device-account').textContent=deviceAccount?'当前账号：'+deviceAccount.displayName:'当前账号身份待核对。';byId('device-fingerprint').textContent=deviceSnapshot?.localFingerprint?'本机指纹：'+deviceSnapshot.localFingerprint:'';byId('device-gate-message').textContent=deviceGateWords();
+    for(const id of ['device-name','device-enroll-consent'])byId(id).disabled=!enrolling||busy||working;byId('device-name').required=enrolling;byId('device-enroll-consent').required=enrolling;
+    if(active){byId('ordinary-login-fields').hidden=false;byId('username').disabled=true;byId('login-mode').disabled=true;byId('login-submit').disabled=true;byId('wechat-login').disabled=true;byId('password').disabled=!enrolling||busy||working;}
+    byId('device-bind-confirm').disabled=!enrolling||busy||working||!byId('device-enroll-consent').checked||!byId('device-name').value.trim()||!byId('password').value;
+    byId('device-retry').hidden=!deviceLocalIssue&&!['paused','vault_unavailable'].includes(deviceSnapshot?.state);byId('device-retry').disabled=working;byId('device-exit').disabled=deviceAction?.kind==='exit';
+    updateReplacementControls();
+  }
+
+  function updateLoginIdentityField(){
+    const phone=byId('login-mode').value==='phone';
+    document.querySelector('label[for="username"]').textContent=phone?'手机号':'账号';
+    byId('username').placeholder=phone?'输入已验证绑定的手机号':'输入团队账号';
+    byId('username').inputMode=phone?'tel':'text';
+  }
+
+  function renderIdentityService(){
+    const preview=identityServiceMode==='local-preview',managed=identityServiceMode==='managed-service';
+    const mode=byId('login-mode'),demo=mode.querySelector('option[value="demo"]');
+    const helpTitle=byId('service-demo-help-title'),help=helpTitle.closest('details');
+    demo.hidden=!preview;
+    help.hidden=!preview;
+    if(!preview)help.open=false;
+    if(managed){mode.value='phone';updateLoginIdentityField();}
+    if(!remoteService&&!managed)return;
+    if(preview){
+      byId('service-preview-label').textContent='HTTPS连接 · 合成预览';
+      byId('service-mode-label').textContent='HTTPS预览';
+      helpTitle.textContent='合成演示账号说明';
+      byId('service-demo-help-description').textContent='仅用于当前明确启用的合成演示服务，不是正式用户账号。';
+      byId('service-preview-notice').textContent='使用配置的HTTPS服务验证合成账号和资料流程。请勿导入真实客户资料；本机设备须在线核验，设备登记与换机审批仅限合成验证，正式商用服务尚未完成。';
+      return;
+    }
+    byId('service-preview-label').textContent=managed&&remoteService?'受信 HTTPS 团队服务':remoteService?'HTTPS 团队服务':'团队服务';
+    byId('service-mode-label').textContent=managed?'团队服务 · 合成验收':'HTTPS 团队服务';
+    byId('service-preview-notice').textContent=managed?'使用已验证手机号和账号密码登录。当前电脑须在线核验。此环境用于合成验收，请勿导入真实客户资料。':'使用当前配置的 HTTPS 团队服务。此环境用于合成验收，请勿导入真实客户资料。';
+  }
+  function deviceAccountView(value){return value?.account&&typeof value.account.id==='string'&&typeof value.account.displayName==='string'?{id:value.account.id,displayName:value.account.displayName}:null;}
+  function suspendDeviceView(text=''){
+    resetReplacementReviews();
+    if(provisioningPending()&&provisioningMutation.recovery)provisioningRecovery=provisioningMutation.recovery;
+    if(session&&invitationTeamId&&invitationRecoveries.size)invitationResumeTeam={accountId:session.account.id,teamId:invitationTeamId};
+    if(session&&!deviceAccount)deviceAccount=deviceAccountView(session);if(text)deviceLocalIssue=text;showLogin({keepDevice:true});byId('password').value='';byId('device-enroll-consent').checked=false;updateIdentityControls();
+  }
+  async function acceptAuthenticatedSession(value){
+    const account=deviceAccountView(value),state=value?.device;
+    if(!deviceApiReady()||!account||!Array.isArray(value.memberships)||!validDeviceSnapshot(state)||state.epoch<deviceLastEpoch||!deviceBusinessReady(state)&&value.memberships.length){deviceLastEpoch=Math.max(deviceLastEpoch,validDeviceSnapshot(state)?state.epoch:0);deviceAccount=account;deviceLocalIssue='登录返回的设备状态无法核验，请更新客户端后重试。';suspendDeviceView();return false;}
+    const changed=!deviceAccount||deviceAccount.id!==account.id||deviceSnapshot?.epoch!==state.epoch;deviceAccount=account;deviceSnapshot=state;deviceLastEpoch=state.epoch;deviceLocalIssue='';
+    if(deviceBusinessReady(state)){await enter(value);return true;}
+    if(changed){resetOwnReplacement();byId('device-name').value='我的电脑';byId('device-enroll-consent').checked=false;}suspendDeviceView();if(replacementOwnEligible())void loadOwnReplacement();return false;
+  }
+  async function applyDeviceSnapshot(state,at){
+    if(at!==deviceUiEpoch||wechatActive()||!validDeviceSnapshot(state)||state.epoch<deviceLastEpoch||deviceLocalIssue&&state.epoch<=deviceLastEpoch)return;
+    // A local ready snapshot cannot deliver a pending/canceled authentication.
+    // Only an explicit auth result may establish the account later resumed here.
+    if(state.state!=='signed_out'&&state.state!=='diagnostic'&&!session&&!deviceAccount)return;
+    const previous=deviceSnapshot,hadIdentity=!!session||!!deviceAccount;deviceSnapshot=state;deviceLastEpoch=state.epoch;deviceLocalIssue='';
+    if(previous?.epoch!==state.epoch){resetMyDeviceOverview();updateMyDeviceControls();}
+    if(state.state==='signed_out'){if(hadIdentity){showLogin();deviceSnapshot=state;message('login-message','登录已失效，可能已在其他实例重新登录。请重新登录。',true);}updateIdentityControls();return;}
+    if(!state.required&&state.state==='diagnostic'){updateIdentityControls();return;}
+    if(deviceBusinessReady(state)&&session&&session.device?.epoch===state.epoch){updateIdentityControls();return;}
+    if(!deviceBusinessReady(state)&&session){deviceAccount=deviceAccountView(session);suspendDeviceView();}
+    if(deviceBusinessReady(state)||!deviceAccount){
+      if(typeof api?.getSession!=='function'){suspendDeviceView('当前客户端无法读取已核验会话，请更新后重试。');return;}
+      if(deviceSessionRead?.at===at&&deviceSessionRead.epoch===state.epoch)return;const read={at,epoch:state.epoch};deviceSessionRead=read;
+      try{const result=await api.getSession();if(deviceSessionRead!==read||at!==deviceUiEpoch||deviceSnapshot?.epoch!==state.epoch)return;
+        if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','登录已失效，请重新登录。',true);}else suspendDeviceView('当前设备会话无法核验，请重新连接后重试。');return;}
+        if(result.value){if(result.value.device?.epoch<state.epoch)return;await acceptAuthenticatedSession(result.value);}else if(deviceBusinessReady(state))suspendDeviceView('当前设备会话无法核验，请重新登录。');
+      }finally{if(deviceSessionRead===read)deviceSessionRead=null;}
+    }else if(previous?.epoch!==state.epoch){byId('password').value='';byId('device-enroll-consent').checked=false;}
+    updateIdentityControls();
+  }
+  async function pollDeviceStatus(){
+    if(deviceUiClosed||deviceAction||wechatActive()||devicePollOperation)return;if(!deviceApiReady()){suspendDeviceView('当前客户端设备接口未更新，请更新客户端后重试。');return;}const operation={at:deviceUiEpoch};devicePollOperation=operation;
+    try{const result=await api.getDeviceStatus();if(devicePollOperation!==operation||operation.at!==deviceUiEpoch)return;if(!result?.ok||!validDeviceSnapshot(result.value)){suspendDeviceView('当前设备状态无法核验，请更新客户端或重新连接后重试。');return;}void applyDeviceSnapshot(result.value,operation.at).catch(()=>{if(operation.at===deviceUiEpoch&&deviceSnapshot?.epoch===result.value.epoch)suspendDeviceView('当前设备会话无法核验，请重新连接后重试。');});}
+    catch{if(devicePollOperation===operation&&operation.at===deviceUiEpoch)suspendDeviceView('当前设备状态无法核验，请重新连接后重试。');}
+    finally{if(devicePollOperation===operation)devicePollOperation=null;}
+  }
+  function beginDeviceAction(kind){const operation={kind,at:++deviceUiEpoch};deviceAction=operation;devicePollOperation=null;return operation;}
+  const currentDeviceAction=operation=>deviceAction===operation&&operation.at===deviceUiEpoch;
+  async function enrollCurrentDevice(){
+    if(deviceAction||!deviceApiReady()||deviceSnapshot?.state!=='enrollment_required'||deviceLocalIssue)return;const displayName=byId('device-name').value.trim(),currentPassword=byId('password').value,confirmed=byId('device-enroll-consent').checked;
+    if(!confirmed||!displayName||[...displayName].length>80||/[\p{Cc}\p{Cf}]/u.test(displayName)||!currentPassword||new TextEncoder().encode(currentPassword).length>512){byId('password').value='';message('login-message','请核对电脑名称、勾选首次绑定确认，并重新输入当前密码（不超过512字节）。',true);updateIdentityControls();return;}
+    const operation=beginDeviceAction('enroll');byId('password').value='';setBusy(true);const owner=busyEpoch;message('login-message','正在验证密码并绑定当前电脑…');
+    try{const result=await api.enrollDevice({displayName,currentPassword,confirmed:true});if(!currentDeviceAction(operation))return;if(!result?.ok)throw result?.error||{code:'INVALID_RESPONSE'};message('login-message','');await acceptAuthenticatedSession(result.value);}
+    catch(error){if(currentDeviceAction(operation)){byId('device-enroll-consent').checked=false;if(error.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','登录已失效，请重新登录。',true);}else{message('login-message',passwordChangeUncertain(error)?'未能确认绑定结果；请求可能已完成，请重新核验设备状态，避免重复操作。':error.message||'绑定未完成，请重新核对设备状态。',true);}}}
+    finally{if(currentDeviceAction(operation)){deviceAction=null;if(busyEpoch===owner)setBusy(false);updateIdentityControls();void pollDeviceStatus();}}
+  }
+  async function reconnectCurrentDevice(){
+    if(deviceAction||!deviceApiReady())return;if(!deviceAccount){message('login-message','请先退出并重新登录，再核验当前电脑。',true);return;}const operation=beginDeviceAction('reconnect');byId('password').value='';byId('device-enroll-consent').checked=false;updateIdentityControls();message('login-message','正在重新连接并核验设备…');
+    try{const result=await api.reconnectDevice();if(!currentDeviceAction(operation))return;if(!result?.ok)throw result?.error||{code:'INVALID_RESPONSE'};message('login-message','');await acceptAuthenticatedSession(result.value);}
+    catch(error){if(currentDeviceAction(operation)){if(error.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','登录已失效，请重新登录。',true);}else message('login-message',error.message||'连接尚未恢复，业务仍暂停。',true);}}
+    finally{if(currentDeviceAction(operation)){deviceAction=null;updateIdentityControls();void pollDeviceStatus();}}
+  }
+  async function exitDeviceSession(){
+    if(deviceAction?.kind==='exit')return;showLogin();const operation=beginDeviceAction('exit');setBusy(true);message('login-message','正在退出账号…');
+    try{const result=await api.logout();if(!currentDeviceAction(operation))return;if(!result?.ok)throw result?.error||{};showLogin();message('login-message','已退出，当前窗口中的账号和任务资料已清除。');}
+    catch(error){if(currentDeviceAction(operation)){showLogin();message('login-message',error.message||'本窗口已退出，请重新登录核对。',true);}}
+  }
+  function wechatActive(){return ['starting','pending','binding_required','linking'].includes(wechatState);}
+  function updateIdentityControls(){updateMyDeviceControls();billing?.update();refundIntake?.update();const active=wechatActive(),ready=methodsReady&&methods.wechat&&desktopWechatReady;
+    const loginUnavailable=!api||(!methods.demoUsername&&!methods.phonePassword);
+    byId('ordinary-login-fields').hidden=active;byId('login-view').classList.toggle('wechat-active',active);for(const id of ['username','password','login-submit'])byId(id).disabled=busy||active||loginUnavailable;
+    byId('login-mode').disabled=busy||loginUnavailable;
+    byId('wechat-login').disabled=busy||!ready||wechatActive();byId('wechat-login').textContent=!methods.wechat?'微信扫码登录 · 未开通':!desktopWechatReady?'微信扫码登录 · 桌面配置未就绪':'微信扫码登录';byId('wechat-message').textContent=!methods.wechat?'尚未配置微信登录，当前不能扫码授权。':!desktopWechatReady?'服务端已配置微信能力，桌面授权配置未就绪，当前不能发起授权。':'将在系统浏览器中授权；完成后请返回此窗口。首次关联需确认本人现有员工账号。';byId('wechat-progress').hidden=wechatState==='idle';byId('wechat-link-fields').hidden=!['binding_required','linking'].includes(wechatState);byId('wechat-link-fields').disabled=busy||wechatWorking||wechatState!=='binding_required';byId('wechat-link-submit').disabled=busy||wechatWorking||wechatState!=='binding_required';byId('wechat-cancel').hidden=!wechatActive();byId('wechat-cancel').disabled=!wechatActive();for(const option of byId('login-mode').options)option.disabled=option.value==='phone'?!methods.phonePassword:!methods.demoUsername;byId('phone-bind-fields').disabled=busy||!methods.phoneVerification;byId('send-bind-code').disabled=busy||!methods.phoneVerification;byId('bind-phone-submit').disabled=busy||!methods.phoneVerification||!challengeId||challengeExpiresAt<=Date.now();byId('bind-code').disabled=busy||!methods.phoneVerification||!challengeId;byId('bind-current-password').disabled=busy||!methods.phoneVerification||!challengeId;byId('phone-service-status').textContent=methods.phoneVerification?'短信服务已配置；仍需完成本次验证码和当前账号密码验证。':'短信验证尚未开通，当前不能绑定手机号。';updateDeviceControls();}
+  function setBusy(value){busyEpoch++;busy=value;for(const node of document.querySelectorAll('button,input,select'))node.disabled=value;updateIdentityControls();updateOnboardingControls();updateAccountSessionsControls();updatePasswordChangeControls();updateFirstAdminControls();updateProvisioningControls();updateRecoveryControls();updateRecoveryReviewsControls();updateTaskManagementControls();updateTaskSubmissionControls();updateMemberManagementControls();updateReplacementReviewControls();updateBusinessRoleControls();updateProjectAccessControls();updateAdministratorBusinessRoleControls();updateDeviceControls();updateOriginalsExportControls();updateProjectMigrationControls();projectMaterials?.controls();updateTaskSubmissionPreviewControls();ledgerChecks?.update();workpapers?.update();}
+  function clearPhoneProof(clearPhone=true){challengeId='';challengeExpiresAt=0;challengePhone='';byId('bind-code').value='';byId('bind-current-password').value='';if(clearPhone)byId('bind-phone').value='';updateIdentityControls();}
+  function resetWechat(notify=true){const active=wechatActive();wechatEpoch++;clearTimeout(wechatTimer);wechatTimer=null;wechatState='idle';wechatWorking=false;wechatExpiresAt=0;byId('wechat-link-phone').value='';byId('wechat-link-password').value='';message('wechat-status','');if(notify&&active&&typeof api?.cancelWechatLogin==='function')void Promise.resolve().then(()=>api.cancelWechatLogin()).catch(()=>{});updateIdentityControls();}
+  function resetWorkpapers(){workpapers?.reset();for(const node of document.querySelectorAll('#workpaper-panel input[type=password]'))node.value='';}
+  function resetLedgerChecks(){ledgerChecks?.reset();for(const node of document.querySelectorAll('#ledger-check-panel input[type=password]'))node.value='';}
+  function clearRefundIntakePassword(){const input=byId('refund-intake-password');if(input)input.value='';}
+  function showLogin({keepDevice=false}={}){resetLedgerChecks();resetWorkpapers();stopTaskSubmissionPreview();if(keepDevice)clearRefundIntakePassword();else resetDevicePresentation();accountIdentityEpoch++;resetMyDeviceOverview();resetProjectMigration();resetAdministratorBusinessRole();resetProjectAccess();resetBusinessRole();resetMemberManagement();taskUploadOperation=null;resetTaskSubmissionAccess();resetTaskManagement();resetRecovery(true,true);resetAccountSessions();resetPasswordChange();resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);resetProvisioning(true,true,keepDevice);resetRecoveryReviews();if(!keepDevice)clearInvitationRecoveries();resetInvitations();administrationTeams=[];invitationTeamId='';byId('invitation-team').replaceChildren();session=null;if(!keepDevice){billing?.reset();refundIntake?.reset();}teamId='';tasks=[];selected=null;submissions=[];revision=0;hasMore=false;viewEpoch++;byId('workspace-view').hidden=true;byId('session-actions').hidden=true;byId('login-view').hidden=false;for(const id of ['username','password','search'])byId(id).value='';for(const id of ['account-name','role-label','task-count','workspace-message','phone-bind-message'])byId(id).textContent='';clearPhoneProof();byId('phone-bind-panel').open=false;byId('task-list').replaceChildren();byId('team-select').replaceChildren();byId('task-detail').replaceChildren();setBusy(false);}
+  async function call(name,arg){if(!api)throw {code:'DESKTOP_REQUIRED',message:'请使用审易桌面客户端打开此页面。'};const actorAt=accountIdentityEpoch,deviceAt=deviceUiEpoch,result=await api[name](arg);if(actorAt!==accountIdentityEpoch||deviceAt!==deviceUiEpoch)throw {code:'STALE_RESPONSE'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED')showLogin();throw result?.error||{message:'操作未完成，请重试。'};}return result.value;}
+  async function loadIdentityMethods(){
+    const at=++methodsEpoch;
+    try{
+      if(typeof api?.getAuthMethods!=='function')throw {code:'IDENTITY_INTERFACE_MISSING'};
+      const value=await call('getAuthMethods');
+      if(at!==methodsEpoch)return;
+      if(value.mode==='managed-service'){
+        if(value.methods?.demoUsername!==false||value.methods?.phonePassword!==true)throw {code:'INVALID_RESPONSE'};
+        identityServiceMode='managed-service';
+      }else{
+        const legacyLocal=!remoteService&&identityServiceMode==='local-preview'&&value.mode===undefined;
+        if((!legacyLocal&&value.mode!=='local-preview')||identityServiceMode==='managed-service')throw {code:'INVALID_RESPONSE'};
+        identityServiceMode='local-preview';
+      }
+      methods=value.methods;
+      methodsReady=true;
+      desktopWechatReady=value.desktopWechatReady===true&&['startWechatLogin','pollWechatLogin','cancelWechatLogin','linkWechatAccount'].every(name=>typeof api[name]==='function');
+      message('identity-methods-message',identityServiceMode==='managed-service'?'使用已验证绑定的手机号及账号密码。':methods.phonePassword?'正式方向：手机号＋密码。需先完成手机号验证绑定；合成演示账号保持独立。':'手机号登录尚未开放；合成演示账号不代表正式身份已验证。');
+    }catch(error){
+      if(at!==methodsEpoch)return;
+      methodsReady=false;
+      desktopWechatReady=false;
+      methods=unavailableIdentityMethods();
+      const missing=error?.code==='IDENTITY_INTERFACE_MISSING';
+      const status=missing?'当前桌面身份接口未更新。':'身份服务状态暂不可读取。';
+      const next=identityServiceMode==='local-preview'?(missing?'仍可使用明确标注的合成演示账号。':'未启用手机号验证或微信扫码。'):'请重新打开客户端后再试。';
+      message('identity-methods-message',status+next,!missing);
+    }
+    renderIdentityService();
+    if(!methodsReady||!methods.recovery)resetRecovery(false);
+    updateIdentityControls();updateRecoveryControls();
+  }
+  async function wechatCall(name,arg,at){const result=await api[name](arg);if(at!==wechatEpoch)throw {code:'STALE_WECHAT'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message',result.error.message||'登录已失效，请重新登录。',true);}throw result?.error||{message:'微信授权暂时无法完成，请重新开始。'};}return result.value;}
+  function terminalWechat(state,text,error=false){clearTimeout(wechatTimer);wechatTimer=null;wechatState=state;wechatWorking=false;byId('wechat-link-phone').value='';byId('wechat-link-password').value='';message('wechat-status',text,error);updateIdentityControls();}
+  async function applyWechatResult(result,at){if(at!==wechatEpoch)return;if(result.status==='signed_in'){resetWechat(false);message('login-message','');await acceptAuthenticatedSession(result.session);return;}if(Number.isSafeInteger(result.expiresAt))wechatExpiresAt=result.expiresAt;if(wechatExpiresAt&&wechatExpiresAt<=Date.now()){terminalWechat('expired','本次微信授权已过期，请重新开始。',true);return;}if(result.status==='binding_required'){wechatState='binding_required';wechatWorking=false;message('wechat-status','微信授权已收到。请核对并确认关联本人现有员工账号。');updateIdentityControls();byId('wechat-link-phone').focus();return;}if(result.status==='pending'){wechatState='pending';wechatWorking=false;message('wechat-status','等待浏览器中的微信授权。可随时取消本次操作。');updateIdentityControls();wechatTimer=setTimeout(()=>void pollWechat(at),2000);return;}const words={expired:'本次微信授权已过期，请重新开始。',canceled:'本次微信授权已取消，可重新开始。',failed:'微信授权未完成，请重新开始。',idle:'当前没有待完成的微信授权，请重新开始。'};terminalWechat(Object.hasOwn(words,result.status)?result.status:'failed',words[result.status]||'微信授权状态无效，请重新开始。',result.status!=='canceled');}
+  async function pollWechat(at){if(at!==wechatEpoch||wechatState!=='pending'||wechatWorking)return;wechatTimer=null;wechatWorking=true;try{await applyWechatResult(await wechatCall('pollWechatLogin',undefined,at),at);}catch(error){if(at===wechatEpoch){if(error.code==='WECHAT_BUSY'&&wechatExpiresAt>Date.now()){message('wechat-status','授权验证处理中，请稍候；也可取消本次操作。');wechatTimer=setTimeout(()=>void pollWechat(at),2000);}else if(['HTTP_410','TRANSACTION_EXPIRED'].includes(error.code))terminalWechat('expired','本次微信授权已过期，请重新开始。',true);else terminalWechat('failed',error.message||'无法读取微信授权状态，请重新开始。',true);}}finally{if(at===wechatEpoch){wechatWorking=false;updateIdentityControls();}}}
+  // Own-account security information has no team/project or role selector.
+  let myDeviceRead=0,myDeviceValue=null,myDeviceRows=[],myDeviceNext=null,myDeviceMore=false,myDeviceWorking=false,myDeviceOpened=false;
+  function myDeviceReady(){return !!session&&!deviceUiClosed&&session.device?.required===true&&session.device.state==='ready'&&deviceSnapshot?.state==='ready'&&session.device.epoch===deviceSnapshot.epoch;}
+  function updateMyDeviceControls(){const ready=myDeviceReady(),panel=byId('my-device-panel');panel.hidden=!ready;byId('my-device-refresh').disabled=!ready||!panel.open||typeof api?.getMyDeviceOverview!=='function'||busy;byId('my-device-more').hidden=!myDeviceMore;byId('my-device-more').disabled=!ready||!panel.open||typeof api?.getMyDeviceOverview!=='function'||busy||myDeviceWorking||!myDeviceMore;}
+  function resetMyDeviceOverview(close=true){myDeviceRead++;myDeviceValue=null;myDeviceRows=[];myDeviceNext=null;myDeviceMore=false;myDeviceWorking=false;byId('my-device-summary').replaceChildren();byId('my-device-events').replaceChildren();byId('my-device-count').textContent='';message('my-device-message','');if(close){myDeviceOpened=false;byId('my-device-panel').open=false;}updateMyDeviceControls();}
+  function myDeviceContext(){return {actor:accountSessionsActor(),device:deviceUiEpoch,main:deviceSnapshot?.epoch,read:myDeviceRead};}
+  function currentMyDevice(context){return sameAccountSessionsActor(context.actor)&&context.device===deviceUiEpoch&&context.main===deviceSnapshot?.epoch&&context.read===myDeviceRead&&myDeviceReady()&&byId('my-device-panel').open;}
+  const myDeviceUuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
+  const myDeviceFields=(value,keys)=>!!value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
+  const myDeviceTime=value=>Number.isSafeInteger(value)&&value>=0;
+  const myDeviceName=value=>typeof value==='string'&&value.isWellFormed()&&!!value.trim()&&[...value].length<=80&&!/[\p{Cc}\p{Cf}]/u.test(value);
+  function myDeviceBefore(a,b){return a.createdAt>b.createdAt||a.createdAt===b.createdAt&&(a.kind>b.kind||a.kind===b.kind&&a.id>b.id);}
+  function validMyDevicePage(value){
+    if(!myDeviceFields(value,['device','events','nextCursor','hasMore'])||!myDeviceFields(value.device,['id','displayName','platform','status','boundAt','lastUsedAt'])||!myDeviceUuid(value.device.id)||value.device.id!==deviceSnapshot?.device?.id||!myDeviceName(value.device.displayName)||!['win32','darwin'].includes(value.device.platform)||value.device.status!=='active'||!myDeviceTime(value.device.boundAt)||value.device.lastUsedAt!==null&&!myDeviceTime(value.device.lastUsedAt)||!Array.isArray(value.events)||value.events.length>25||typeof value.hasMore!=='boolean')return false;
+    const seen=new Set();
+    for(let i=0;i<value.events.length;i++){const item=value.events[i],actions=item?.kind==='device'?['bound','proved','revoked']:item?.kind==='replacement'?['request','approve','reject','revoke','withdraw','claim','expire','stale']:[];if(!myDeviceFields(item,['id','kind','action','displayName','platform','createdAt'])||typeof item.id!=='string'||item.id.slice(0,2)!==(item.kind==='device'?'D.':'R.')||!myDeviceUuid(item.id.slice(2))||!actions.includes(item.action)||!myDeviceName(item.displayName)||!['win32','darwin'].includes(item.platform)||!myDeviceTime(item.createdAt)||seen.has(item.id)||i>0&&!myDeviceBefore(value.events[i-1],item))return false;seen.add(item.id);}
+    return value.hasMore?value.events.length===25&&value.nextCursor===value.events.at(-1).id:value.nextCursor===null;
+  }
+  function myDeviceDate(value){if(value===null)return '未记录（早期版本未采集）';const date=new Date(value);return Number.isFinite(date.getTime())?date.toLocaleString('zh-CN'):'时间超出可显示范围（'+value+'）';}
+  function renderMyDeviceOverview(){
+    const summary=byId('my-device-summary');summary.replaceChildren();
+    if(myDeviceValue){for(const [label,key,text]of [['电脑名称','displayName',myDeviceValue.displayName],['系统','platform',myDeviceValue.platform==='win32'?'Windows':'macOS'],['绑定状态','status','当前绑定 · 本机'],['绑定时间','boundAt',myDeviceDate(myDeviceValue.boundAt)],['最近在线核验','lastUsedAt',myDeviceDate(myDeviceValue.lastUsedAt)]]){const row=el('p',label+'：','identity-note'),content=el('span',text);content.dataset.deviceField=key;row.append(content);summary.append(row);}}
+    const list=byId('my-device-events');list.replaceChildren();byId('my-device-count').textContent=myDeviceValue?'已加载 '+myDeviceRows.length+' 项本人电脑记录':'';
+    if(myDeviceValue&&!myDeviceRows.length)list.append(el('li','暂无可显示的电脑操作记录。','account-session-empty'));
+    const deviceWords={bound:'已绑定电脑',proved:'已完成持钥登录',revoked:'已撤销电脑绑定'},replacementWords={request:'已提交换机申请',approve:'换机申请已批准，尚须激活',reject:'换机申请已拒绝',revoke:'换机批准已撤销',withdraw:'换机申请已撤回',claim:'已激活获批的新电脑',expire:'系统已记录申请过期',stale:'系统已记录申请失效'};
+    for(const item of myDeviceRows){const row=el('li',undefined,'account-session-item'),description=el('div'),title=el('strong',item.kind==='device'?deviceWords[item.action]:replacementWords[item.action]);row.dataset.myDeviceEvent=item.id;description.append(title,el('small',(item.kind==='device'?'绑定电脑：':'拟更换电脑：')+item.displayName+' · '+(item.platform==='win32'?'Windows':'macOS')),el('small',myDeviceDate(item.createdAt)));row.append(description);list.append(row);}
+    updateMyDeviceControls();
+  }
+  async function loadMyDeviceOverview(append=false){
+    if(!myDeviceReady()||!byId('my-device-panel').open||busy||append&&(myDeviceWorking||!myDeviceMore||!myDeviceNext))return;
+    if(typeof api?.getMyDeviceOverview!=='function'){resetMyDeviceOverview(false);message('my-device-message','当前桌面电脑记录接口尚未就绪，请更新客户端后重试。',true);return;}
+    const before=append?myDeviceNext:null;
+    if(!append)resetMyDeviceOverview(false);myDeviceRead++;const context=myDeviceContext();myDeviceWorking=true;updateMyDeviceControls();message('my-device-message',append?'正在继续读取本人电脑记录…':'正在读取本人绑定电脑与记录…');
+    try{const result=await api.getMyDeviceOverview(before?{before}:{});if(!currentMyDevice(context))return;if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','登录已失效，请重新登录。',true);return;}throw result?.error||{code:'INVALID_RESPONSE'};}const value=result.value;if(!validMyDevicePage(value)||append&&(myDeviceRows.some(row=>value.events.some(item=>item.id===row.id))||value.events.length>0&&myDeviceRows.length>0&&!myDeviceBefore(myDeviceRows.at(-1),value.events[0])))throw {code:'INVALID_RESPONSE'};
+      myDeviceValue=value.device;myDeviceRows=append?myDeviceRows.concat(value.events):value.events.slice();myDeviceNext=value.nextCursor;myDeviceMore=value.hasMore;renderMyDeviceOverview();message('my-device-message','仅显示本账号的绑定及换机记录；查看不会改变电脑绑定或换机审批。');
+    }catch(error){if(currentMyDevice(context)){resetMyDeviceOverview(false);message('my-device-message',error.message||'电脑信息暂无法核对，请刷新重试。',true);}}
+    finally{if(currentMyDevice(context)){myDeviceWorking=false;updateMyDeviceControls();}}
+  }
+  function closeMyDeviceOverview(){myDeviceOpened=false;resetMyDeviceOverview(false);}
+  byId('my-device-panel').querySelector('summary').addEventListener('click',()=>{if(byId('my-device-panel').open)closeMyDeviceOverview();});
+  byId('my-device-panel').addEventListener('toggle',()=>{if(byId('my-device-panel').open&&!byId('my-device-panel').hidden&&myDeviceReady()){if(!myDeviceOpened){myDeviceOpened=true;void loadMyDeviceOverview();}}else if(myDeviceOpened)closeMyDeviceOverview();});
+  const myDeviceObserver=new MutationObserver(records=>{if(records.some(record=>record.oldValue!==null)){closeMyDeviceOverview();if(byId('my-device-panel').open&&myDeviceReady()){myDeviceOpened=true;void loadMyDeviceOverview();}}});
+  myDeviceObserver.observe(byId('my-device-panel'),{attributes:true,attributeFilter:['open'],attributeOldValue:true});
+  byId('my-device-refresh').addEventListener('click',()=>void loadMyDeviceOverview());byId('my-device-more').addEventListener('click',()=>void loadMyDeviceOverview(true));
+  function accountSessionsApiReady(){return ['listAccountSessions','revokeAccountSession','revokeOtherSessions','revokeAllSessions'].every(name=>typeof api?.[name]==='function');}
+  function accountSessionsActor(){return {id:session?.account.id,epoch:accountIdentityEpoch};}
+  function sameAccountSessionsActor(actor){return !!session&&actor.id===session.account.id&&actor.epoch===accountIdentityEpoch;}
+  function currentAccountSessionsView(at,actor){return at===accountSessionsEpoch&&sameAccountSessionsActor(actor)&&byId('account-sessions-panel').open;}
+  function accountSessionsPending(){return !!accountSessionsMutation&&sameAccountSessionsActor(accountSessionsMutation.actor);}
+  function updateAccountSessionsControls(){
+    const ready=!!session&&accountSessionsApiReady()&&byId('account-sessions-panel').open,locked=busy||accountSessionsWorking||accountSessionsPending();
+    byId('account-sessions-refresh').disabled=!ready||locked;
+    byId('account-sessions-password').disabled=!ready||locked||!accountSessionsLoaded;
+    const proof=ready&&!locked&&accountSessionsLoaded&&!!byId('account-sessions-password').value;
+    for(const id of ['account-sessions-revoke-others','account-sessions-revoke-all'])byId(id).disabled=!proof;
+    for(const button of byId('account-sessions-list').querySelectorAll('button'))button.disabled=!proof;
+    byId('account-sessions-more').hidden=!accountSessionsHasMore;
+    byId('account-sessions-more').disabled=!ready||locked||!accountSessionsHasMore;
+  }
+  function resetAccountSessions(close=true){
+    accountSessionsEpoch++;accountSessionRows=[];accountSessionsHasMore=false;accountSessionsLoaded=false;accountSessionsWorking=false;
+    if(!accountSessionsPending())accountSessionsMutation=null;
+    byId('account-sessions-password').value='';byId('account-sessions-count').textContent='';byId('account-sessions-list').replaceChildren();message('account-sessions-message','');
+    if(close)byId('account-sessions-panel').open=false;updateAccountSessionsControls();
+  }
+  async function accountSessionsCall(name,arg,actor,viewCurrent=null){
+    const result=await api[name](arg);
+    // A previous account's late 401 or signedOut must not clear a newer login.
+    if(!sameAccountSessionsActor(actor)||viewCurrent&&!viewCurrent())throw {code:'STALE_ACCOUNT_SESSIONS'};
+    if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message',result.error.message||'登录已失效，请重新登录。',true);}throw result?.error||{message:'登录会话操作未完成，请刷新后重试。'};}
+    return result.value;
+  }
+  function renderAccountSessions(){
+    const list=byId('account-sessions-list');list.replaceChildren();byId('account-sessions-count').textContent=accountSessionRows.length?'已加载 '+accountSessionRows.length+' 项有效登录':'';
+    if(!accountSessionRows.length)list.append(el('li',accountSessionsLoaded?'当前没有可显示的有效登录，请刷新核对。':'登录列表待刷新，请重新读取后核对。','account-session-empty'));
+    for(const item of accountSessionRows){
+      const row=el('li',undefined,'account-session-item'),description=el('div');row.dataset.sessionId=item.id;
+      const title=el('strong',item.createdAt===null?'登录时间未记录':'登录于 '+new Date(item.createdAt).toLocaleString('zh-CN'));
+      if(item.isCurrent)title.append(el('span','当前登录','account-session-current'));
+      description.append(title,el('small','有效至 '+new Date(item.expiresAt).toLocaleString('zh-CN')));
+      const button=el('button',item.isCurrent?'退出当前登录':'退出该登录','button');button.type='button';button.addEventListener('click',()=>void revokeAccountSessions('revokeAccountSession',item.id));
+      row.append(description,button);list.append(row);
+    }
+    updateAccountSessionsControls();
+  }
+  function acceptAccountSessionsPage(data,append){
+    const rows=data.sessions.map(item=>({id:item.id,isCurrent:item.isCurrent,createdAt:item.createdAt,expiresAt:item.expiresAt}));
+    accountSessionRows=append?[...new Map(accountSessionRows.concat(rows).map(item=>[item.id,item])).values()]:rows;
+    accountSessionsHasMore=data.hasMore;accountSessionsLoaded=true;renderAccountSessions();
+  }
+  async function loadAccountSessions(append=false){
+    if(!session||busy||accountSessionsWorking||accountSessionsPending()||!byId('account-sessions-panel').open)return;
+    if(!accountSessionsApiReady()){message('account-sessions-message','当前桌面会话接口尚未就绪，请更新后重试。',true);updateAccountSessionsControls();return;}
+    const at=accountSessionsEpoch,actor=accountSessionsActor();accountSessionsWorking=true;updateAccountSessionsControls();message('account-sessions-message','正在读取你的有效登录…');
+    try{const query={limit:30};if(append&&accountSessionRows.length)query.after=accountSessionRows.at(-1).id;const data=await accountSessionsCall('listAccountSessions',query,actor);if(!currentAccountSessionsView(at,actor))return;acceptAccountSessionsPage(data,append);message('account-sessions-message','仅显示你的有效登录；退出其他登录会保留当前登录。');}
+    catch(error){if(currentAccountSessionsView(at,actor))message('account-sessions-message',error.message||'登录列表读取失败，请刷新重试。',true);}
+    finally{if(currentAccountSessionsView(at,actor)){accountSessionsWorking=false;updateAccountSessionsControls();}}
+  }
+  async function revokeAccountSessions(method,sessionId){
+    if(!session||busy||accountSessionsWorking||accountSessionsPending()||!accountSessionsLoaded||!accountSessionsApiReady())return;
+    const currentPassword=byId('account-sessions-password').value;if(!currentPassword){message('account-sessions-message','请先填写当前账号密码，再选择退出操作。',true);return;}
+    const at=accountSessionsEpoch,actor=accountSessionsActor(),operation={actor};let committed=false;accountSessionsMutation=operation;updateAccountSessionsControls();message('account-sessions-message','正在验证密码并退出所选登录…');
+    try{
+      const result=await accountSessionsCall(method,{...(sessionId?{sessionId}:{}),currentPassword},actor);
+      committed=true;
+      if(result.signedOut){showLogin();message('login-message','当前登录已退出，请重新登录。');return;}
+      if(!currentAccountSessionsView(at,actor))return;
+      accountSessionRows=[];accountSessionsHasMore=false;accountSessionsLoaded=false;renderAccountSessions();
+      const data=await accountSessionsCall('listAccountSessions',{limit:30},actor);if(!currentAccountSessionsView(at,actor))return;
+      acceptAccountSessionsPage(data,false);message('account-sessions-message',method==='revokeOtherSessions'?'已退出 '+result.revokedCount+' 项其他登录，当前登录保留。':'所选登录已退出，列表已更新。');
+    }catch(error){if(currentAccountSessionsView(at,actor))message('account-sessions-message',committed?'退出操作已完成，但登录列表刷新失败，请刷新核对。':error.message||'未能确认退出结果，请刷新核对。',true);}
+    finally{
+      if(accountSessionsMutation===operation)accountSessionsMutation=null;
+      if(sameAccountSessionsActor(actor)){
+        byId('account-sessions-password').value='';updateAccountSessionsControls();
+        if(at!==accountSessionsEpoch&&byId('account-sessions-panel').open)void loadAccountSessions();
+      }
+    }
+  }
+  byId('account-sessions-panel').querySelector('summary').addEventListener('click',()=>{
+    if(byId('account-sessions-panel').open){const pending=accountSessionsPending();resetAccountSessions(false);if(pending)message('workspace-message','已清除密码与列表；已提交的退出请求仍可能完成。');}
+  });
+  byId('account-sessions-panel').addEventListener('toggle',()=>{
+    if(byId('account-sessions-panel').open){if(accountSessionsPending())message('account-sessions-message','退出请求仍在处理中，请稍候核对。');else void loadAccountSessions();}
+    else{const pending=accountSessionsPending();resetAccountSessions(false);if(pending&&session)message('workspace-message','已清除密码与列表；已提交的退出请求仍可能完成。');}
+  });
+  byId('account-sessions-password').addEventListener('input',updateAccountSessionsControls);
+  byId('account-sessions-password').addEventListener('keydown',event=>{if(event.key==='Enter')event.preventDefault();});
+  byId('account-sessions-refresh').addEventListener('click',()=>void loadAccountSessions());
+  byId('account-sessions-more').addEventListener('click',()=>void loadAccountSessions(true));
+  byId('account-sessions-revoke-others').addEventListener('click',()=>void revokeAccountSessions('revokeOtherSessions'));
+  byId('account-sessions-revoke-all').addEventListener('click',()=>void revokeAccountSessions('revokeAllSessions'));
+  function passwordChangeApiReady(){return typeof api?.changeOwnPassword==='function';}
+  function passwordChangePending(){return !!passwordChangeMutation&&sameAccountSessionsActor(passwordChangeMutation.actor);}
+  function currentPasswordChangeView(at,actor){return at===passwordChangeEpoch&&sameAccountSessionsActor(actor)&&byId('password-change-panel').open;}
+  function clearPasswordChangeInputs(){for(const id of ['password-change-current','password-change-new','password-change-confirm'])byId(id).value='';}
+  function updatePasswordChangeControls(){
+    const ready=!!session&&passwordChangeApiReady()&&byId('password-change-panel').open,locked=busy||passwordChangePending();
+    for(const id of ['password-change-current','password-change-new','password-change-confirm'])byId(id).disabled=!ready||locked;
+    byId('password-change-submit').disabled=!ready||locked||['password-change-current','password-change-new','password-change-confirm'].some(id=>!byId(id).value);
+    // Clearing the local form does not promise to cancel an already submitted write.
+    byId('password-change-clear').disabled=false;
+  }
+  function resetPasswordChange(close=true){
+    passwordChangeEpoch++;clearPasswordChangeInputs();message('password-change-message','');
+    if(!passwordChangePending())passwordChangeMutation=null;
+    if(close)byId('password-change-panel').open=false;updatePasswordChangeControls();
+  }
+  function passwordChangeUncertain(error){return !error?.code||['SERVICE_UNAVAILABLE','INVALID_RESPONSE','OPERATION_FAILED'].includes(error.code)||(typeof error.code==='string'&&error.code.startsWith('HTTP_5'));}
+  async function submitPasswordChange(event){
+    event.preventDefault();if(!session||busy||passwordChangePending()||!passwordChangeApiReady()||!byId('password-change-panel').open)return;
+    const currentPassword=byId('password-change-current').value,newPassword=byId('password-change-new').value,confirmation=byId('password-change-confirm').value;
+    let invalid='';
+    if(!currentPassword||!newPassword||!confirmation)invalid='请填写当前密码、新密码和确认新密码。';
+    else if([...newPassword].length<12||[...newPassword].length>128)invalid='新密码需12至128个字符，请重新填写。';
+    else if(newPassword!==confirmation)invalid='两次输入的新密码不一致，请重新填写。';
+    if(invalid){clearPasswordChangeInputs();message('password-change-message',invalid,true);updatePasswordChangeControls();return;}
+    const at=passwordChangeEpoch,actor=accountSessionsActor(),operation={actor};passwordChangeMutation=operation;updatePasswordChangeControls();message('password-change-message','正在验证当前密码并修改密码…');
+    let failureMessage='',failureUncertain=false;
+    try{
+      const result=await api.changeOwnPassword({currentPassword,newPassword});
+      // A prior login's 401 or success must not clear a newer account generation.
+      if(!sameAccountSessionsActor(actor))return;
+      if(!result?.ok){
+        if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message',result.error.message||'当前登录已失效，请重新登录。',true);return;}
+        throw result?.error||{code:'INVALID_RESPONSE'};
+      }
+      if(result.value?.signedOut!==true)throw {code:'INVALID_RESPONSE'};
+      // Even a closed panel must honor a confirmed password change for this login.
+      showLogin();message('login-message','密码已修改，全部旧登录已退出，请使用新密码重新登录。');
+    }catch(error){
+      if(!sameAccountSessionsActor(actor))return;
+      failureUncertain=passwordChangeUncertain(error);
+      failureMessage=failureUncertain?'未能确认改密结果；已提交的请求可能已完成，可用新密码重新登录核对。':error.message||'改密请求未通过，请核对后重试。';
+      if(currentPasswordChangeView(at,actor))message('password-change-message',failureMessage,true);
+    }finally{
+      if(passwordChangeMutation===operation)passwordChangeMutation=null;
+      if(sameAccountSessionsActor(actor)){
+        clearPasswordChangeInputs();updatePasswordChangeControls();
+        if(at!==passwordChangeEpoch&&failureMessage){
+          if(byId('password-change-panel').open)message('password-change-message',failureMessage,true);
+          else message('workspace-message',failureMessage,failureUncertain);
+        }
+      }
+    }
+  }
+  function closePasswordChange(close=true){const pending=passwordChangePending();resetPasswordChange(close);if(pending&&session)message('workspace-message','已清除改密输入；已提交的请求仍可能完成，可用新密码重新登录核对。');}
+  byId('password-change-panel').querySelector('summary').addEventListener('click',()=>{if(byId('password-change-panel').open)closePasswordChange(false);});
+  byId('password-change-panel').addEventListener('toggle',()=>{
+    if(byId('password-change-panel').open){
+      // Native opening is synchronous but toggle is queued: never erase new input.
+      if(passwordChangePending())message('password-change-message','改密请求仍在处理中，请稍候核对。');
+      else if(!passwordChangeApiReady())message('password-change-message','当前桌面改密接口尚未就绪，请更新后重试。',true);
+      updatePasswordChangeControls();
+    }else closePasswordChange(false);
+  });
+  for(const id of ['password-change-current','password-change-new','password-change-confirm'])byId(id).addEventListener('input',updatePasswordChangeControls);
+  byId('password-change-form').addEventListener('submit',event=>void submitPasswordChange(event));
+  byId('password-change-clear').addEventListener('click',()=>closePasswordChange());
+  // Recovery always requires the server's independent authorization strategy.
+  function recoveryApiReady(){return ['requestPasswordRecovery','recoverPassword'].every(name=>typeof api?.[name]==='function');}
+  function recoveryPending(){return !!recoveryMutation;}
+  function clearRecoverySecrets(){for(const id of ['recovery-code','recovery-proof','recovery-new','recovery-confirm'])byId(id).value='';}
+  function updateRecoveryControls(){
+    const ready=!!api&&recoveryApiReady()&&methodsReady&&methods.recovery&&!session&&byId('recovery-panel').open,locked=busy||recoveryWorking||recoveryPending()||!!recoveryRequest||!!recoveryReviewSubmission,valid=!!recoveryChallenge&&recoveryChallenge.expiresAt>Date.now();
+    byId('recovery-phone').disabled=!ready||locked;byId('recovery-send-code').disabled=!ready||locked;
+    byId('recovery-fields').hidden=!recoveryChallenge;byId('recovery-fields').disabled=!ready||locked||!valid;
+    for(const id of ['recovery-code','recovery-proof','recovery-new','recovery-confirm'])byId(id).disabled=!ready||locked||!valid;
+    byId('recovery-submit').disabled=!ready||locked||!valid||['recovery-code','recovery-proof','recovery-new','recovery-confirm'].some(id=>!byId(id).value);
+    byId('recovery-review-entry').hidden=!recoveryReviewMode;
+    byId('recovery-review-request').disabled=!ready||locked||!valid||!recoveryReviewAvailable||typeof api?.createRecoveryReviewRequest!=='function'||!/^\d{6}$/.test(byId('recovery-code').value)||!!recoveryReviewReceipt;
+    byId('recovery-cancel').disabled=false;
+    byId('recovery-status').textContent=!recoveryApiReady()?'当前桌面账号恢复接口尚未就绪。':!methodsReady?'账号恢复服务状态暂未确认，当前不能重设密码。':!methods.recovery?'账号恢复服务尚未开通；须同时具备短信验证与独立恢复授权，当前不能重设密码。':'账号恢复服务已配置；仍须本人短信验证和独立恢复授权凭据，短信单独不能重设密码。';
+  }
+  function resetRecovery(clearPhone=true,close=false){
+    recoveryEpoch++;recoveryWorking=false;recoveryChallenge=null;recoveryReviewReceipt=null;byId('recovery-review-receipt').textContent='';clearRecoverySecrets();if(clearPhone)byId('recovery-phone').value='';message('recovery-message','');if(close)byId('recovery-panel').open=false;
+    byId('login-view').classList.toggle('recovery-active',byId('recovery-panel').open);updateRecoveryControls();
+  }
+  function closeRecovery(close=false){const submitted=recoveryPending(),sending=!!recoveryRequest,reviewing=!!recoveryReviewSubmission;resetRecovery(true,close);if(!session&&submitted)message('login-message','已清除恢复输入；已提交的重设请求仍可能完成，请用新密码登录核对。');else if(!session&&sending)message('login-message','已清除恢复输入；验证码发送请求仍可能完成，尚未重设密码。');else if(!session&&reviewing)message('login-message','已清除恢复输入；审核申请仍可能已提交，请向管理员核对，密码尚未重设。');}
+  function sameRecoveryActor(actorEpoch){return actorEpoch===accountIdentityEpoch&&!session;}
+  function currentRecoveryView(at,actorEpoch){return at===recoveryEpoch&&sameRecoveryActor(actorEpoch)&&byId('recovery-panel').open;}
+  async function requestRecoveryCode(){
+    if(busy||session||recoveryWorking||recoveryPending()||recoveryRequest||recoveryReviewSubmission||!recoveryApiReady()||!methodsReady||!methods.recovery||!byId('recovery-panel').open)return;
+    const phone=byId('recovery-phone').value;if(!phone.trim()){message('recovery-message','请填写本人已绑定的手机号。',true);return;}
+    resetRecovery(false);const at=recoveryEpoch,actorEpoch=accountIdentityEpoch,operation={at,actorEpoch};recoveryRequest=operation;recoveryWorking=true;updateRecoveryControls();message('recovery-message','正在请求账号恢复验证码…');
+    try{const result=await api.requestPasswordRecovery({phone});if(!currentRecoveryView(at,actorEpoch))return;if(!result?.ok)throw result?.error||{code:'INVALID_RESPONSE'};recoveryChallenge=result.value;message('recovery-message','验证码发送请求已完成。请填写收到的验证码、独立恢复授权凭据及新密码。');}
+    catch(error){if(currentRecoveryView(at,actorEpoch))message('recovery-message',error.message||'恢复验证码请求未完成，请核对后重试。',true);}
+    finally{if(recoveryRequest===operation)recoveryRequest=null;if(sameRecoveryActor(actorEpoch))recoveryWorking=false;updateRecoveryControls();}
+  }
+  async function submitRecovery(event){
+    event.preventDefault();if(busy||session||recoveryWorking||recoveryPending()||recoveryRequest||recoveryReviewSubmission||!recoveryApiReady()||!methodsReady||!methods.recovery||!byId('recovery-panel').open||!recoveryChallenge)return;
+    if(recoveryChallenge.expiresAt<=Date.now()){resetRecovery(false);message('recovery-message','本次恢复验证已过期，请重新获取验证码。',true);return;}
+    const newPassword=byId('recovery-new').value,confirmation=byId('recovery-confirm').value,recoveryProof=byId('recovery-proof').value,code=byId('recovery-code').value;let invalid='';
+    if(!/^\d{6}$/.test(code)||!recoveryProof||!newPassword||!confirmation)invalid='请填写6位验证码、独立恢复授权凭据和两次新密码。';
+    else if([...newPassword].length<12||[...newPassword].length>128)invalid='新密码需12至128个字符，请重新填写。';
+    else if(newPassword!==confirmation)invalid='两次新密码不一致，请重新填写。';
+    if(invalid){clearRecoverySecrets();message('recovery-message',invalid,true);updateRecoveryControls();return;}
+    const at=recoveryEpoch,actorEpoch=accountIdentityEpoch,operation={at,actorEpoch};recoveryMutation=operation;updateRecoveryControls();message('recovery-message','正在验证本人身份和独立授权并重设密码…');
+    let outcome='',uncertain=false;
+    try{const result=await api.recoverPassword({challengeId:recoveryChallenge.challengeId,code,newPassword,recoveryProof});if(!sameRecoveryActor(actorEpoch))return;if(!result?.ok)throw result?.error||{code:'INVALID_RESPONSE'};if(result.value?.signedOut!==true)throw {code:'INVALID_RESPONSE'};
+      outcome='密码已重设，全部旧登录已退出，请使用新密码重新登录。';resetRecovery(true);if(methods.phonePassword){byId('login-mode').value='phone';updateLoginIdentityField();}message('login-message',outcome);if(byId('recovery-panel').open)message('recovery-message',outcome);
+    }catch(error){if(!sameRecoveryActor(actorEpoch))return;uncertain=passwordChangeUncertain(error);outcome=uncertain?'未能确认重设结果；已提交的请求可能已完成，请用新密码登录核对。':error.message||'恢复验证未通过，请重新核对验证码和独立授权。';if(currentRecoveryView(at,actorEpoch))message('recovery-message',outcome,true);else if(byId('recovery-panel').open)message('recovery-message',outcome,true);else message('login-message',outcome,true);}
+    finally{if(recoveryMutation===operation)recoveryMutation=null;if(sameRecoveryActor(actorEpoch))clearRecoverySecrets();updateRecoveryControls();}
+  }
+  byId('recovery-panel').querySelector('summary').addEventListener('click',()=>{if(byId('recovery-panel').open)closeRecovery();});
+  byId('recovery-panel').addEventListener('toggle',()=>{if(byId('recovery-panel').open){resetActivation(true,true);resetFirstAdmin(true,true);resetWechat();byId('username').value='';byId('password').value='';byId('login-view').classList.add('recovery-active');void loadIdentityMethods();void loadRecoveryReviewStatus();updateRecoveryControls();if(recoveryPending())message('recovery-message','恢复请求仍在处理中，请稍候核对。');}else closeRecovery();});
+  byId('recovery-phone').addEventListener('input',()=>{resetRecovery(false);message('recovery-message','手机号已改变，请重新获取恢复验证码。');});
+  for(const id of ['recovery-code','recovery-proof','recovery-new','recovery-confirm'])byId(id).addEventListener('input',updateRecoveryControls);
+  async function loadRecoveryReviewStatus(){
+    const at=++recoveryReviewStatusEpoch,actorEpoch=accountIdentityEpoch;
+    if(typeof api?.getRecoveryReviewStatus!=='function'){recoveryReviewMode=false;recoveryReviewAvailable=false;updateRecoveryControls();return;}
+    try{const result=await api.getRecoveryReviewStatus();if(at!==recoveryReviewStatusEpoch||!sameRecoveryActor(actorEpoch))return;if(!result?.ok)throw result?.error||{};recoveryReviewMode=result.value.reviewed===true;recoveryReviewAvailable=result.value.available===true;message('recovery-review-status',recoveryReviewAvailable?'填写本次验证码后提交审核。员工由团队管理员审核，管理员本人由产品负责人审核。批准凭据须核实后转交。':'恢复审核尚未开通，当前不能提交审核申请。');}
+    catch{if(at===recoveryReviewStatusEpoch&&sameRecoveryActor(actorEpoch)){recoveryReviewMode=true;recoveryReviewAvailable=false;message('recovery-review-status','恢复审核状态暂无法确认，当前不能提交审核申请。',true);}}
+    finally{updateRecoveryControls();}
+  }
+  async function submitRecoveryReview(){
+    if(busy||session||recoveryWorking||recoveryPending()||recoveryRequest||recoveryReviewSubmission||!recoveryReviewMode||!recoveryReviewAvailable||typeof api?.createRecoveryReviewRequest!=='function'||!methodsReady||!methods.recovery||!byId('recovery-panel').open||!recoveryChallenge||recoveryReviewReceipt)return;
+    if(recoveryChallenge.expiresAt<=Date.now()){resetRecovery(false);message('recovery-message','本次恢复验证已过期，请重新获取验证码。',true);return;}
+    const code=byId('recovery-code').value;if(!/^\d{6}$/.test(code)){message('recovery-message','请填写本次6位短信验证码后提交审核。',true);return;}
+    const at=recoveryEpoch,actorEpoch=accountIdentityEpoch,operation={at,actorEpoch};recoveryReviewSubmission=operation;updateRecoveryControls();message('recovery-message','正在验证本次短信并提交恢复审核…');
+    try{const result=await api.createRecoveryReviewRequest({challengeId:recoveryChallenge.challengeId,code});if(!currentRecoveryView(at,actorEpoch))return;if(!result?.ok)throw result?.error||{code:'INVALID_RESPONSE'};const value=result.value;if(typeof value?.requestId!=='string'||value.status!=='pending'||!Number.isSafeInteger(value.expiresAt))throw {code:'INVALID_RESPONSE'};recoveryReviewReceipt=value;byId('recovery-review-receipt').textContent='申请编号 '+value.requestId+' · 待审核 · 有效至 '+new Date(value.expiresAt).toLocaleString('zh-CN');message('recovery-message','已收到待审回执，密码尚未重设。请将申请编号交给相应审核人；获批后填写一次性恢复授权凭据。');}
+    catch(error){if(currentRecoveryView(at,actorEpoch))message('recovery-message',passwordChangeUncertain(error)?'未能确认申请结果；请求可能已提交，请核对申请，避免重复操作。':error.message||'恢复申请未通过，请核对本次验证码。',true);}
+    finally{if(recoveryReviewSubmission===operation)recoveryReviewSubmission=null;if(sameRecoveryActor(actorEpoch)){for(const id of ['recovery-proof','recovery-new','recovery-confirm'])byId(id).value='';}updateRecoveryControls();}
+  }
+  byId('recovery-review-request').addEventListener('click',()=>void submitRecoveryReview());
+  byId('recovery-send-code').addEventListener('click',()=>void requestRecoveryCode());byId('recovery-form').addEventListener('submit',event=>void submitRecovery(event));byId('recovery-cancel').addEventListener('click',()=>closeRecovery(true));
+  // Platform review and technical administration are independent of audit roles.
+  function firstAdminApiReady(){return ['previewFirstAdministrator','requestFirstAdministratorActivation','activateFirstAdministrator'].every(name=>typeof api?.[name]==='function');}
+  function firstAdminPending(){return !!firstAdminMutation;}
+  function updateFirstAdminControls(){
+    const ready=firstAdminApiReady(),proof=!!firstAdminChallenge&&firstAdminChallenge.expiresAt>Date.now(),locked=busy||firstAdminWorking||firstAdminPending();
+    for(const id of ['first-admin-invitation','first-admin-phone'])byId(id).disabled=locked;
+    byId('first-admin-preview').disabled=locked||!ready;
+    byId('first-admin-send-code').disabled=locked||!ready||!onboardingReady||!onboardingAvailable||!firstAdminPreview;
+    byId('first-admin-proof').hidden=!firstAdminChallenge;byId('first-admin-proof').disabled=locked||!ready||!onboardingReady||!onboardingAvailable||!proof;
+    for(const id of ['first-admin-code','first-admin-display-name','first-admin-password','first-admin-confirm','first-admin-accept'])byId(id).disabled=locked||!ready||!onboardingReady||!onboardingAvailable||!proof;
+    byId('first-admin-submit').disabled=locked||!ready||!onboardingReady||!onboardingAvailable||!proof||!byId('first-admin-accept').checked;
+    byId('first-admin-cancel').disabled=false;
+    byId('first-admin-service-status').textContent=!ready?'当前桌面首管理员激活接口尚未就绪。':onboardingReady&&onboardingAvailable?'手机号验证服务已配置；须完成审核凭据与本人验证。':'短信激活服务尚未开通，当前不能发送验证码或开通团队。';
+  }
+  function resetFirstAdmin(clearIdentity=true,close=false){
+    firstAdminEpoch++;firstAdminWorking=false;firstAdminPreview=null;firstAdminChallenge=null;
+    for(const id of ['first-admin-code','first-admin-display-name','first-admin-password','first-admin-confirm'])byId(id).value='';
+    byId('first-admin-accept').checked=false;byId('first-admin-target').hidden=true;byId('first-admin-target-description').textContent='';byId('first-admin-target-expiry').textContent='';
+    if(clearIdentity)for(const id of ['first-admin-invitation','first-admin-phone'])byId(id).value='';
+    message('first-admin-message','');if(close)byId('first-admin-panel').open=false;
+    byId('login-view').classList.toggle('first-admin-active',byId('first-admin-panel').open);updateFirstAdminControls();
+  }
+  function closeFirstAdmin(close=false){const submitted=firstAdminPending();resetFirstAdmin(true,close);if(submitted)message('login-message','已清除输入；已提交的团队激活仍可能完成，请用手机号登录核对。');}
+  function firstAdminIdentity(){return {invitationCode:byId('first-admin-invitation').value,phone:byId('first-admin-phone').value};}
+  async function firstAdminCall(name,arg,at,actorEpoch){
+    const result=await api[name](arg);if(at!==firstAdminEpoch||actorEpoch!==accountIdentityEpoch||session)throw {code:'STALE_FIRST_ADMIN'};
+    if(!result?.ok)throw result?.error||{code:'INVALID_RESPONSE',message:'暂时无法确认验证结果，请重新核对。'};return result.value;
+  }
+  async function previewFirstAdmin(){
+    if(busy||session||firstAdminWorking||firstAdminPending()||!firstAdminApiReady())return;
+    const identity=firstAdminIdentity();if(!identity.invitationCode.trim()||!identity.phone.trim()){message('first-admin-message','请填写首管理员邀请码和指定手机号。',true);return;}
+    resetFirstAdmin(false);const at=firstAdminEpoch,actorEpoch=accountIdentityEpoch;firstAdminWorking=true;updateFirstAdminControls();message('first-admin-message','正在核对审核凭据…');
+    try{const value=await firstAdminCall('previewFirstAdministrator',identity,at,actorEpoch);firstAdminPreview=value;byId('first-admin-target').hidden=false;byId('first-admin-target-description').textContent=value.teamName+' · 首管理员 · '+value.phoneMasked;byId('first-admin-target-expiry').textContent='激活凭据有效至 '+new Date(value.expiresAt).toLocaleString('zh-CN');message('first-admin-message','请核对团队和手机号，再完成本人验证。');}
+    catch(error){if(at===firstAdminEpoch&&actorEpoch===accountIdentityEpoch&&!session)message('first-admin-message',error.message||'审核凭据无法使用，请联系产品负责人。',true);}
+    finally{if(at===firstAdminEpoch){firstAdminWorking=false;updateFirstAdminControls();}}
+  }
+  async function requestFirstAdminCode(){
+    if(busy||session||firstAdminWorking||firstAdminPending()||!firstAdminPreview||!onboardingReady||!onboardingAvailable)return;
+    if(firstAdminPreview.expiresAt<=Date.now()){resetFirstAdmin(false);message('first-admin-message','审核凭据已过期，请联系产品负责人。',true);return;}
+    const at=firstAdminEpoch,actorEpoch=accountIdentityEpoch;firstAdminChallenge=null;for(const id of ['first-admin-code','first-admin-password','first-admin-confirm'])byId(id).value='';byId('first-admin-accept').checked=false;firstAdminWorking=true;updateFirstAdminControls();message('first-admin-message','正在请求本人手机号验证码…');
+    try{firstAdminChallenge=await firstAdminCall('requestFirstAdministratorActivation',firstAdminIdentity(),at,actorEpoch);message('first-admin-message','验证码发送请求已完成。请填写收到的验证码及账号密码，核对管理责任后确认。');}
+    catch(error){if(at===firstAdminEpoch&&actorEpoch===accountIdentityEpoch&&!session)message('first-admin-message',error.message||'验证码请求未完成。',true);}
+    finally{if(at===firstAdminEpoch){firstAdminWorking=false;updateFirstAdminControls();}}
+  }
+  async function submitFirstAdmin(event){
+    event.preventDefault();if(busy||session||firstAdminWorking||firstAdminPending()||!firstAdminPreview||!firstAdminChallenge||!onboardingReady||!onboardingAvailable)return;
+    if(firstAdminPreview.expiresAt<=Date.now()||firstAdminChallenge.expiresAt<=Date.now()){resetFirstAdmin(false);message('first-admin-message','验证或审核凭据已过期，请重新核对。',true);return;}
+    if(!byId('first-admin-accept').checked){message('first-admin-message','请核对并确认首管理员身份与管理责任。',true);return;}
+    const password=byId('first-admin-password').value,confirmation=byId('first-admin-confirm').value;
+    if(!password||password!==confirmation){byId('first-admin-password').value='';byId('first-admin-confirm').value='';message('first-admin-message',password?'两次密码不一致，请重新填写。':'请填写账号密码和确认密码。',true);return;}
+    const at=firstAdminEpoch,actorEpoch=accountIdentityEpoch,operation={at},proof={...firstAdminIdentity(),challengeId:firstAdminChallenge.challengeId,code:byId('first-admin-code').value,password,displayName:byId('first-admin-display-name').value,accept:true};
+    firstAdminMutation=operation;updateFirstAdminControls();message('first-admin-message','正在验证本人并开通团队管理…');
+    try{const value=await firstAdminCall('activateFirstAdministrator',proof,at,actorEpoch);if(value?.activated!==true)throw {code:'INVALID_RESPONSE'};resetFirstAdmin();if(methods.phonePassword){byId('login-mode').value='phone';updateLoginIdentityField();}message('first-admin-message','团队管理已开通，请返回使用手机号＋密码登录。审计资料权限须另行指派。');}
+    catch(error){if(at===firstAdminEpoch&&actorEpoch===accountIdentityEpoch&&!session)message('first-admin-message',passwordChangeUncertain(error)?'未能确认团队激活结果；请求可能已完成，请用手机号登录核对。':error.message||'验证未通过，请核对资料后重试。',true);}
+    finally{if(firstAdminMutation===operation)firstAdminMutation=null;if(actorEpoch===accountIdentityEpoch){for(const id of ['first-admin-code','first-admin-password','first-admin-confirm'])byId(id).value='';byId('first-admin-accept').checked=false;updateFirstAdminControls();}}
+  }
+  byId('first-admin-panel').querySelector('summary').addEventListener('click',()=>{if(byId('first-admin-panel').open)closeFirstAdmin();});
+  byId('first-admin-panel').addEventListener('toggle',()=>{if(byId('first-admin-panel').open){resetRecovery(true,true);resetActivation(true,true);resetWechat();byId('username').value='';byId('password').value='';byId('login-view').classList.add('first-admin-active');void loadOnboardingStatus();updateFirstAdminControls();if(firstAdminPending())message('first-admin-message','团队激活请求仍在处理中，请稍候核对。');}else closeFirstAdmin();});
+  for(const id of ['first-admin-invitation','first-admin-phone'])byId(id).addEventListener('input',()=>{resetFirstAdmin(false);message('first-admin-message','凭据或手机号已改变，请重新核对。');});
+  byId('first-admin-preview').addEventListener('click',()=>void previewFirstAdmin());byId('first-admin-send-code').addEventListener('click',()=>void requestFirstAdminCode());byId('first-admin-accept').addEventListener('change',updateFirstAdminControls);byId('first-admin-form').addEventListener('submit',event=>void submitFirstAdmin(event));byId('first-admin-cancel').addEventListener('click',()=>closeFirstAdmin(true));
+  function provisioningApiReady(){return ['getTeamProvisioningAccess','listTeamProvisioningRequests','createTeamProvisioningRequest','reviewTeamProvisioningRequest'].every(name=>typeof api?.[name]==='function');}
+  function provisioningPending(){return !!provisioningMutation&&sameAccountSessionsActor(provisioningMutation.actor);}
+  function activeProvisioningRecovery(){return session&&provisioningRecovery?.accountId===session.account.id?provisioningRecovery:null;}
+  function provisioningRecoveryTarget(recovery){return '申请 '+recovery.id+'（'+recovery.teamName+' · '+recovery.phoneMasked+'）';}
+  function provisioningPilotSummary(pilot){return '试点已批准，截止 '+provisioningPilotTime(pilot.endsAt)+'，员工席位 '+pilot.seats+' 个。';}
+  function provisioningRecoveryNotice(recovery,text){
+    const confirmed=recovery.confirmedPilot;
+    return (confirmed?provisioningPilotSummary(confirmed):'')+text;
+  }
+  function provisioningReviewAccessLost(error){return ['HTTP_401','HTTP_403','HTTP_404'].includes(error?.code);}
+  function explainProvisioningRecovery(recovery){
+    const pilot=recovery.decision==='approve-pilot';
+    const found=provisioningRows.find(item=>{
+      if(item.id!==recovery.id||item.teamId!==recovery.teamId||!(item.revision>=recovery.revision))return false;
+      if(!pilot)return true;
+      if(item.status!=='activated')return false;
+      const confirmed=recovery.confirmedPilot;
+      if(!item.pilot)return item.pilot===null&&item.revision===recovery.revision&&!confirmed;
+      return item.revision>recovery.revision&&(!confirmed||(
+        item.pilot.endsAt===confirmed.endsAt&&item.pilot.seats===confirmed.seats
+      ));
+    });
+    const target=provisioningRecoveryTarget(recovery);
+    if(!found){
+      message('team-provisioning-message',provisioningRecoveryNotice(recovery,'本页尚未核对到'+target+'的最新状态。请刷新审核记录或翻页查找，核对后才能继续。'),true);
+      return;
+    }
+    provisioningRecovery=null;
+    const row=[...byId('team-provisioning-list').children].find(node=>node.dataset.requestId===found.id);
+    row?.firstElementChild?.append(el('small','刚核对的申请 · 编号 '+found.id));
+    if(pilot){
+      const summary=found.pilot?provisioningPilotSummary(found.pilot):'本次读取显示试点尚未批准。重新核对期限和席位、填写当前密码后，可明确批准。';
+      message('team-provisioning-message','已刷新审核记录并核对'+target+'。'+summary);
+      return;
+    }
+    const guidance={
+      pending:'当前仍待审核。核对团队和指定手机号后，重新填写当前密码，可再明确审核一次。',
+      approved:'当前已批准、待本人激活。邀请码遗失时，请按该条记录的说明处理。',
+      activated:'团队已开通。请指定首管理员用现有手机号和密码登录本团队。',
+      revoked:'原激活凭据已撤销。如仍需开通，核对首管理员后可录入新申请。',
+      rejected:'申请已拒绝，请按当前审核记录处理。',
+    };
+    message('team-provisioning-message','已刷新'+target+'。'+(guidance[found.status]||'请核对当前记录状态。'));
+  }
+  function clearIssuedFirstAdmin(){byId('issued-first-admin').hidden=true;byId('issued-first-admin-description').textContent='';byId('issued-first-admin-code').value='';}
+  function provisioningPilotEnd(value){
+    const match=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+    if(!match)return null;const [year,month,day,hour,minute]=match.slice(1).map(Number),date=new Date(0);
+    if(year<1||month<1||month>12||day<1||day>31||hour>23||minute>59)return null;
+    date.setUTCFullYear(year,month-1,day);date.setUTCHours(hour,minute,0,0);
+    if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day||date.getUTCHours()!==hour||date.getUTCMinutes()!==minute)return null;
+    const endsAt=date.getTime()-8*60*60*1000;return Number.isSafeInteger(endsAt)&&endsAt>Date.now()?endsAt:null;
+  }
+  function provisioningPilotFields(item){
+    const row=[...byId('team-provisioning-list').children].find(node=>node.dataset.requestId===item.id),end=row?.querySelector('[data-pilot-ends]'),seats=row?.querySelector('[data-pilot-seats]');
+    const endsAt=end?provisioningPilotEnd(end.value):null,count=seats&&/^\d+$/.test(seats.value)?Number(seats.value):null;
+    return endsAt!==null&&Number.isSafeInteger(count)&&count>0?{endsAt,seats:count}:null;
+  }
+  function provisioningPilotTime(value){return new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hourCycle:'h23'})+'（北京时间）';}
+  function updateProvisioningControls(){
+    const ready=!!session&&provisioningAllowed&&provisioningApiReady()&&byId('team-provisioning-panel').open,locked=busy||provisioningWorking||provisioningPending();
+    const reviewLocked=!ready||locked||!!activeProvisioningRecovery();
+    for(const id of ['team-provisioning-name','team-provisioning-phone','team-provisioning-create','team-provisioning-password'])byId(id).disabled=reviewLocked;
+    byId('team-provisioning-refresh').disabled=!ready||locked;
+    byId('team-provisioning-prev').disabled=!ready||locked||provisioningCursors.length===1;
+    byId('team-provisioning-next').disabled=!ready||locked||!provisioningNextCursor;
+    byId('team-provisioning-pagination').hidden=provisioningCursors.length===1&&!provisioningNextCursor;
+    for(const input of byId('team-provisioning-list').querySelectorAll('input'))input.disabled=reviewLocked;
+    for(const button of byId('team-provisioning-list').querySelectorAll('button')){
+      const row=button.closest('[data-request-id]'),item=provisioningRows.find(value=>value.id===row?.dataset.requestId);
+      button.disabled=reviewLocked||!byId('team-provisioning-password').value||button.dataset.decision==='approve-pilot'&&(!item||!provisioningPilotFields(item));
+    }
+  }
+  function clearProvisioningPage(){
+    provisioningRows=[];provisioningNextCursor=null;
+    byId('team-provisioning-list').replaceChildren();byId('team-provisioning-page-status').textContent='';
+  }
+  function resetProvisioning(close=true,hide=true,preserveRecovery=false){
+    if(hide&&!preserveRecovery)provisioningRecovery=null;
+    provisioningEpoch++;provisioningWorking=false;provisioningCursors=[null];clearProvisioningPage();for(const id of ['team-provisioning-name','team-provisioning-phone','team-provisioning-password'])byId(id).value='';clearIssuedFirstAdmin();message('team-provisioning-message','');
+    if(hide){provisioningAllowed=false;byId('team-provisioning-panel').hidden=true;}if(close){provisioningPanelOpened=false;byId('team-provisioning-panel').open=false;}updateProvisioningControls();
+  }
+  function currentProvisioningView(at,actor){return at===provisioningEpoch&&sameAccountSessionsActor(actor)&&provisioningAllowed;}
+  function renderProvisioning(){
+    const list=byId('team-provisioning-list'),drafts=new Map([...list.children].filter(row=>row.querySelector('[data-pilot-ends]')).map(row=>[row.dataset.requestId,{revision:row.dataset.revision,ends:row.querySelector('[data-pilot-ends]').value,seats:row.querySelector('[data-pilot-seats]').value}]));list.replaceChildren();const words={pending:'待审核',approved:'已批准，待本人激活',rejected:'已拒绝',revoked:'已撤销',canceled:'已撤销',activated:'团队已开通',expired:'激活凭据已过期'};
+    if(!provisioningRows.length)list.append(el('li','暂无申请记录。'));
+    for(const item of provisioningRows){
+      const row=el('li'),description=el('div');row.dataset.requestId=item.id;row.dataset.revision=String(item.revision);
+      description.append(el('strong',item.teamName+' · '+item.phoneMasked),el('small',(words[item.status]||'状态待核对')+' · 录入于 '+new Date(item.createdAt).toLocaleString('zh-CN')));
+      if(item.expiresAt!==null)description.append(el('small','激活凭据有效至 '+new Date(item.expiresAt).toLocaleString('zh-CN')));
+      if(item.status==='approved')description.append(el('small','若邀请码遗失或过期，请先向指定首管理员确认尚未激活，且手上没有可用的原邀请码。填写审核账号当前密码，选择「撤销激活凭据」。刷新本条记录确认撤销后，再录入新申请。'));
+      if(item.status==='activated')description.append(el('small','请指定首管理员用现有手机号和密码登录，继续使用本团队。'));
+      if(item.status==='activated'&&item.pilot){description.append(el('small','试点已批准 · '+item.pilot.seats+' 个员工席位'),el('small','试点开始 '+provisioningPilotTime(item.pilot.startsAt)+' · 截止 '+provisioningPilotTime(item.pilot.endsAt)));}
+      if(item.status==='activated'&&Object.hasOwn(item,'pilot')&&item.pilot===null){
+        const controls=el('div',undefined,'provisioning-entry'),endField=el('div'),endLabel=el('label','试点截止时间（北京时间 UTC+8）'),end=el('input'),seatField=el('div'),seatLabel=el('label','试点员工席位'),seats=el('input'),approve=el('button','批准试点','button primary');
+        end.id='team-pilot-ends-'+item.id;end.type='datetime-local';end.step='60';end.required=true;end.dataset.pilotEnds='';endLabel.htmlFor=end.id;
+        seats.id='team-pilot-seats-'+item.id;seats.type='number';seats.min='1';seats.max=String(Number.MAX_SAFE_INTEGER);seats.step='1';seats.required=true;seats.dataset.pilotSeats='';seatLabel.htmlFor=seats.id;
+        const draft=drafts.get(item.id);if(draft?.revision===String(item.revision)){end.value=draft.ends;seats.value=draft.seats;}
+        for(const input of [end,seats]){input.addEventListener('input',updateProvisioningControls);input.addEventListener('keydown',event=>{if(event.key==='Enter')event.preventDefault();});}
+        approve.type='button';approve.dataset.decision='approve-pilot';approve.addEventListener('click',()=>void reviewProvisioning(item,'approve-pilot',approve));
+        endField.append(endLabel,end);seatField.append(seatLabel,seats);controls.append(endField,seatField,approve);description.append(el('small','核对试点截止时间和席位后，填写上方审核账号当前密码，再明确批准一次试点。'),controls);
+      }
+      row.append(description);const decisions=item.status==='pending'?[['approve','批准并生成凭据'],['reject','拒绝']]:item.status==='approved'?[['revoke','撤销激活凭据']]:[];
+      if(decisions.length){const actions=el('div',undefined,'provisioning-actions');for(const [decision,label] of decisions){const button=el('button',label,'button'+(decision==='approve'?' primary':''));button.type='button';button.dataset.decision=decision;button.addEventListener('click',()=>void reviewProvisioning(item,decision,button));actions.append(button);}row.append(actions);}list.append(row);
+    }
+    updateProvisioningControls();
+  }
+  async function refreshProvisioning(at,actor,cursors=provisioningCursors){
+    const after=cursors.at(-1),current=()=>currentProvisioningView(at,actor);
+    const value=await accountSessionsCall('listTeamProvisioningRequests',after===null?undefined:{after},actor,current);
+    if(!current())return;
+    const next=value.nextCursor??null;
+    if(next!==null&&(next!==value.requests.at(-1)?.id||cursors.includes(next)))throw {code:'INVALID_RESPONSE'};
+    provisioningRows=value.requests;provisioningCursors=cursors;provisioningNextCursor=next;
+    byId('team-provisioning-page-status').textContent='第 '+cursors.length+' 页 · 本页 '+provisioningRows.length+' 条';
+    renderProvisioning();
+  }
+  async function loadProvisioningAccess(){
+    resetProvisioning(true,true,!!activeProvisioningRecovery());if(!session||!provisioningApiReady())return;const at=provisioningEpoch,actor=accountSessionsActor();
+    provisioningWorking=true;updateProvisioningControls();
+    try{const value=await accountSessionsCall('getTeamProvisioningAccess',undefined,actor);if(at!==provisioningEpoch||!sameAccountSessionsActor(actor))return;if(value.canReview!==true){provisioningRecovery=null;return;}provisioningAllowed=true;byId('team-provisioning-panel').hidden=false;await refreshProvisioning(at,actor);}
+    catch(error){
+      if(at!==provisioningEpoch||!sameAccountSessionsActor(actor))return;
+      const recovery=activeProvisioningRecovery();
+      if(!recovery||provisioningReviewAccessLost(error))resetProvisioning();
+      else if(!provisioningAllowed)message('workspace-message','暂时无法核对审核权限。请使用工作区的刷新后，再核对上次提交的申请。',true);
+    }
+    finally{if(at===provisioningEpoch){provisioningWorking=false;updateProvisioningControls();}}
+  }
+  async function loadProvisioning(cursors=activeProvisioningRecovery()?.cursors??provisioningCursors,replacePage=false){
+    if(!session||!provisioningAllowed||busy||provisioningWorking||provisioningPending()||!byId('team-provisioning-panel').open)return;
+    const at=++provisioningEpoch,actor=accountSessionsActor(),recovery=activeProvisioningRecovery();provisioningWorking=true;
+    if(replacePage){byId('team-provisioning-password').value='';clearIssuedFirstAdmin();clearProvisioningPage();}
+    updateProvisioningControls();
+    try{
+      await refreshProvisioning(at,actor,cursors);if(!currentProvisioningView(at,actor))return;
+      if(recovery)explainProvisioningRecovery(recovery);
+      else message('team-provisioning-message','请核对申请和指定管理员手机号后，再填写当前密码选择审核操作。');
+    }
+    catch(error){
+      if(!currentProvisioningView(at,actor))return;
+      if(recovery&&!provisioningReviewAccessLost(error))message('team-provisioning-message',provisioningRecoveryNotice(recovery,'暂时无法刷新'+provisioningRecoveryTarget(recovery)+'。请稍后刷新核对，再继续录入或审核。'),true);
+      else{resetProvisioning();message('workspace-message',error.message||'审核权限或记录无法确认，请重新登录核对。',true);}
+    }
+    finally{if(currentProvisioningView(at,actor)){provisioningWorking=false;updateProvisioningControls();}}
+  }
+  async function createProvisioning(event){
+    event.preventDefault();if(!session||!provisioningAllowed||busy||provisioningWorking||provisioningPending()||activeProvisioningRecovery()||!byId('team-provisioning-panel').open)return;
+    const input={teamName:byId('team-provisioning-name').value,adminPhone:byId('team-provisioning-phone').value};if(!input.teamName.trim()||!input.adminPhone.trim()){message('team-provisioning-message','请填写团队名称和指定首管理员手机号。',true);return;}
+    const at=provisioningEpoch,actor=accountSessionsActor(),operation={actor};provisioningMutation=operation;clearIssuedFirstAdmin();updateProvisioningControls();message('team-provisioning-message','正在录入待审申请…');let committed=false;
+    try{await accountSessionsCall('createTeamProvisioningRequest',input,actor);committed=true;if(!currentProvisioningView(at,actor)||!byId('team-provisioning-panel').open)return;byId('team-provisioning-name').value='';byId('team-provisioning-phone').value='';await refreshProvisioning(at,actor,[null]);if(currentProvisioningView(at,actor))message('team-provisioning-message','待审申请已录入，尚未批准或开通团队。');}
+    catch(error){if(currentProvisioningView(at,actor))message('team-provisioning-message',committed?'申请已录入，但记录刷新失败，请刷新核对。':passwordChangeUncertain(error)?'未能确认录入结果，请刷新审核记录后核对，避免重复录入。':error.message||'录入未通过，请核对。',true);}
+    finally{if(provisioningMutation===operation)provisioningMutation=null;if(sameAccountSessionsActor(actor)){byId('team-provisioning-password').value='';updateProvisioningControls();if(at!==provisioningEpoch&&byId('team-provisioning-panel').open)void loadProvisioning();}}
+  }
+  async function reviewProvisioning(item,decision,button){
+    if(!session||!provisioningAllowed||busy||provisioningWorking||provisioningPending()||activeProvisioningRecovery()||!byId('team-provisioning-panel').open||!provisioningRows.includes(item))return;
+    const pilot=decision==='approve-pilot';if(pilot&&(item.status!=='activated'||!Object.hasOwn(item,'pilot')||item.pilot!==null))return;
+    const currentPassword=byId('team-provisioning-password').value;if(!currentPassword){message('team-provisioning-message','请先核对申请并填写审核账号当前密码。',true);return;}
+    const pilotFields=pilot?provisioningPilotFields(item):null;if(pilot&&!pilotFields){message('team-provisioning-message','请填写有效的北京时间试点截止时间和正整数员工席位；截止时间须晚于现在。',true);return;}
+    const firstAdminReview=decision==='approve'||decision==='revoke';
+    const trackFocus=(pilot||firstAdminReview)&&button===document.activeElement;
+    let focusMoved=false,retryPassword=false;
+    const noteFocus=event=>{if(event.target!==button&&event.target!==document.body)focusMoved=true;};
+    if(trackFocus)document.addEventListener('focusin',noteFocus,true);
+    const at=provisioningEpoch,actor=accountSessionsActor();
+    const recovery=pilot||firstAdminReview?{accountId:actor.id,id:item.id,teamId:item.teamId,teamName:item.teamName,phoneMasked:item.phoneMasked,revision:item.revision,cursors:provisioningCursors,decision}:null;
+    const operation={actor,recovery};provisioningMutation=operation;clearIssuedFirstAdmin();updateProvisioningControls();message('team-provisioning-message','正在验证当前密码并提交审核结果…');let committed=false;
+    try{
+      const value=await accountSessionsCall('reviewTeamProvisioningRequest',{requestId:item.id,decision,revision:item.revision,currentPassword,...(pilot?pilotFields:{})},actor);
+      if(pilot){
+        const reply=value?.request;
+        if(reply?.id!==item.id||reply.teamId!==item.teamId||reply.status!=='activated'||reply.revision!==item.revision+1||
+          reply.pilot?.endsAt!==pilotFields.endsAt||reply.pilot?.seats!==pilotFields.seats)throw {code:'INVALID_RESPONSE'};
+        recovery.confirmedPilot={endsAt:reply.pilot.endsAt,seats:reply.pilot.seats};
+      }else if(firstAdminReview){
+        const reply=value?.request,status=decision==='approve'?'approved':'revoked';
+        if(reply?.id!==item.id||reply.teamId!==item.teamId||reply.status!==status||!Number.isSafeInteger(reply.revision)||reply.revision<=item.revision||
+          decision==='approve'&&(typeof value.invitationCode!=='string'||!value.invitationCode))throw {code:'INVALID_RESPONSE'};
+        recovery.revision=reply.revision;
+      }
+      committed=true;
+      if(!currentProvisioningView(at,actor)||!byId('team-provisioning-panel').open){if(recovery)provisioningRecovery=recovery;return;}
+      if(decision==='approve'){byId('issued-first-admin-description').textContent=value.request.teamName+' · '+value.request.phoneMasked+' · 有效至 '+new Date(value.request.expiresAt).toLocaleString('zh-CN');byId('issued-first-admin-code').value=value.invitationCode;byId('issued-first-admin').hidden=false;}
+      if(pilot){provisioningRows=provisioningRows.map(row=>row===item?value.request:row);renderProvisioning();}
+      await refreshProvisioning(at,actor);
+      if(!currentProvisioningView(at,actor))return;
+      if(pilot){provisioningRecovery=recovery;explainProvisioningRecovery(recovery);}
+      else message('team-provisioning-message',decision==='approve'?'审核已批准，尚未开通团队。请自行转交本次凭据，首管理员本人激活后才可管理团队。':decision==='reject'?'申请已拒绝，未开通团队。':'未使用的首管理员激活凭据已撤销。');
+    }catch(error){
+      const uncertain=passwordChangeUncertain(error);
+      if(recovery&&sameAccountSessionsActor(actor)&&(committed||uncertain||error?.code==='HTTP_409')){
+        provisioningRecovery=recovery;
+        if(pilot&&!committed&&uncertain&&currentProvisioningView(at,actor)&&byId('team-provisioning-panel').open){
+          try{
+            await refreshProvisioning(at,actor);
+            if(currentProvisioningView(at,actor))explainProvisioningRecovery(recovery);
+            return;
+          }catch(refreshError){error=refreshError;}
+        }
+        if(currentProvisioningView(at,actor)){
+          if(provisioningReviewAccessLost(error)){
+            resetProvisioning();message('workspace-message','当前审核权限无法确认，请重新登录核对。',true);
+          }else{
+            const target=provisioningRecoveryTarget(recovery);
+            if(pilot){
+              const notice=committed?'记录刷新无法确认。':uncertain?'未能确认试点批准结果，操作可能已完成。':'申请状态已改变。';
+              message('team-provisioning-message',provisioningRecoveryNotice(recovery,notice+'继续录入或审核前，请刷新审核记录核对'+target+'。'),true);
+              return;
+            }
+            const hasCode=committed&&!byId('issued-first-admin').hidden;
+            const action=decision==='approve'?'批准':'撤销';
+            const notice=hasCode?'批准已完成，记录暂时未刷新。请先转交本次仍显示的邀请码。刷新时邀请码将清除。'
+              :committed?'审核已完成，记录暂时未刷新。'
+              :uncertain?'未能确认'+action+'结果，操作可能已完成。':'申请状态已改变。';
+            message('team-provisioning-message',notice+'继续录入或审核前，请刷新审核记录核对'+target+'。',true);
+          }
+        }
+        return;
+      }
+      if(currentProvisioningView(at,actor)){
+        retryPassword=pilot&&error?.code==='HTTP_403';
+        message('team-provisioning-message',committed?'审核请求已完成，但结果展示或刷新无法确认，请刷新记录核对。一次性凭据不会重新显示。':uncertain?'未能确认审核结果；请求可能已完成，请刷新记录核对，避免重复操作。':error?.message||'审核未通过，请核对当前密码及申请状态。',true);
+      }
+    }
+    finally{
+      if(trackFocus)document.removeEventListener('focusin',noteFocus,true);
+      const ownsReview=provisioningMutation===operation;
+      if(ownsReview)provisioningMutation=null;
+      if(sameAccountSessionsActor(actor)){
+        const password=byId('team-provisioning-password'),panel=byId('team-provisioning-panel');
+        password.value='';updateProvisioningControls();
+        if(at!==provisioningEpoch&&panel.open)void loadProvisioning();
+        if(ownsReview&&trackFocus&&!focusMoved&&currentProvisioningView(at,actor)&&panel.open&&!panel.hidden&&
+          (document.activeElement===button||document.activeElement===document.body)){
+          if(retryPassword&&!password.disabled&&provisioningRows.includes(item))password.focus();
+          else if(activeProvisioningRecovery()&&byId('issued-first-admin').hidden&&!byId('team-provisioning-refresh').disabled)byId('team-provisioning-refresh').focus();
+        }
+      }
+    }
+  }
+  function closeProvisioning(){provisioningPanelOpened=false;const submitted=provisioningPending();resetProvisioning(false,false);if(submitted&&session)message('workspace-message','已清除审核输入与凭据；已提交的请求仍可能完成，请刷新审核记录核对。');}
+  byId('team-provisioning-panel').querySelector('summary').addEventListener('click',()=>{if(byId('team-provisioning-panel').open)closeProvisioning();else provisioningPanelOpened=true;});
+  byId('team-provisioning-panel').addEventListener('toggle',()=>{if(byId('team-provisioning-panel').open){provisioningPanelOpened=true;if(provisioningPending())message('team-provisioning-message','审核请求仍在处理中，请稍候核对。');else void loadProvisioning();updateProvisioningControls();}else if(provisioningPanelOpened)closeProvisioning();});
+  byId('team-provisioning-password').addEventListener('input',updateProvisioningControls);byId('team-provisioning-password').addEventListener('keydown',event=>{if(event.key==='Enter')event.preventDefault();});byId('team-provisioning-form').addEventListener('submit',event=>void createProvisioning(event));byId('team-provisioning-refresh').addEventListener('click',()=>void loadProvisioning(activeProvisioningRecovery()?.cursors??[null],true));
+  byId('team-provisioning-prev').addEventListener('click',()=>{if(provisioningCursors.length>1)void loadProvisioning(provisioningCursors.slice(0,-1),true);});
+  byId('team-provisioning-next').addEventListener('click',()=>{if(provisioningNextCursor)void loadProvisioning([...provisioningCursors,provisioningNextCursor],true);});
+  function recoveryReviewsApiReady(){return ['getRecoveryReviewAccess','listRecoveryReviewRequests','reviewRecoveryReviewRequest'].every(name=>typeof api?.[name]==='function');}
+  function recoveryReviewsPending(){return !!recoveryReviewsMutation&&sameAccountSessionsActor(recoveryReviewsMutation.actor);}
+  function currentRecoveryReviews(at,actor){return at===recoveryReviewsEpoch&&sameAccountSessionsActor(actor)&&recoveryReviewsAllowed;}
+  function clearIssuedRecoveryProof(){byId('issued-recovery-proof').hidden=true;byId('issued-recovery-description').textContent='';byId('issued-recovery-value').value='';}
+  function updateRecoveryReviewsControls(){
+    const ready=!!session&&recoveryReviewsAllowed&&recoveryReviewsApiReady()&&byId('recovery-reviews-panel').open,locked=busy||recoveryReviewsWorking||recoveryReviewsPending();
+    for(const id of ['recovery-reviews-password','recovery-reviews-refresh'])byId(id).disabled=!ready||locked;
+    for(const button of byId('recovery-reviews-list').querySelectorAll('button'))button.disabled=!ready||locked||!byId('recovery-reviews-password').value;
+  }
+  function resetRecoveryReviews(close=true,hide=true){
+    recoveryReviewsEpoch++;recoveryReviewsWorking=false;recoveryReviewsRows=[];byId('recovery-reviews-password').value='';clearIssuedRecoveryProof();byId('recovery-reviews-list').replaceChildren();message('recovery-reviews-message','');
+    if(hide){recoveryReviewsAllowed=false;byId('recovery-reviews-panel').hidden=true;}if(close){recoveryReviewsOpened=false;byId('recovery-reviews-panel').open=false;}updateRecoveryReviewsControls();
+  }
+  function renderRecoveryReviews(){
+    const list=byId('recovery-reviews-list');list.replaceChildren();const words={pending:'待审核',approved:'已批准，待本人重设',rejected:'已拒绝',revoked:'已撤销',consumed:'已使用',expired:'已过期'};
+    if(!recoveryReviewsRows.length)list.append(el('li','暂无可审核的恢复申请。'));
+    for(const item of recoveryReviewsRows){const row=el('li'),description=el('div');row.dataset.requestId=item.id;description.append(el('strong',item.displayName+' · '+item.phoneMasked),el('small',item.teamName+' · '+(item.targetKind==='administrator'?'团队管理员':'团队员工')+' · '+(words[item.status]||'状态待核对')),el('small','申请编号 '+item.id+' · 有效至 '+new Date(item.expiresAt).toLocaleString('zh-CN')));row.append(description);const decisions=item.expiresAt<=Date.now()?[]:item.status==='pending'?[['approve','批准恢复'],['reject','拒绝恢复']]:item.status==='approved'?[['revoke','撤销恢复凭据']]:[];if(decisions.length){const actions=el('div',undefined,'provisioning-actions');for(const [decision,label]of decisions){const button=el('button',label,'button'+(decision==='approve'?' primary':''));button.type='button';button.dataset.decision=decision;button.addEventListener('click',()=>void decideRecoveryReview(item,decision));actions.append(button);}row.append(actions);}list.append(row);}updateRecoveryReviewsControls();
+  }
+  async function refreshRecoveryReviews(at,actor){const value=await accountSessionsCall('listRecoveryReviewRequests',undefined,actor);if(!currentRecoveryReviews(at,actor))return;recoveryReviewsRows=value.requests;renderRecoveryReviews();}
+  async function loadRecoveryReviewsAccess(){
+    resetRecoveryReviews();if(!session||!recoveryReviewsApiReady())return;const at=recoveryReviewsEpoch,actor=accountSessionsActor();
+    try{const value=await accountSessionsCall('getRecoveryReviewAccess',undefined,actor);if(at!==recoveryReviewsEpoch||!sameAccountSessionsActor(actor)||value.canReview!==true)return;recoveryReviewsAllowed=true;byId('recovery-reviews-panel').hidden=false;await refreshRecoveryReviews(at,actor);}
+    catch{if(at===recoveryReviewsEpoch&&sameAccountSessionsActor(actor))resetRecoveryReviews();}finally{updateRecoveryReviewsControls();}
+  }
+  async function loadRecoveryReviews(){
+    if(!session||!recoveryReviewsAllowed||busy||recoveryReviewsWorking||recoveryReviewsPending()||!byId('recovery-reviews-panel').open)return;const at=recoveryReviewsEpoch,actor=accountSessionsActor();recoveryReviewsWorking=true;updateRecoveryReviewsControls();
+    try{await refreshRecoveryReviews(at,actor);if(currentRecoveryReviews(at,actor))message('recovery-reviews-message','请核实本人和申请编号，填写当前密码后选择批准、拒绝或撤销。');}
+    catch(error){if(currentRecoveryReviews(at,actor)){resetRecoveryReviews();message('workspace-message',error.message||'恢复审核权限或记录无法确认，请重新登录核对。',true);}}
+    finally{if(currentRecoveryReviews(at,actor)){recoveryReviewsWorking=false;updateRecoveryReviewsControls();}}
+  }
+  async function decideRecoveryReview(item,decision){
+    if(!session||!recoveryReviewsAllowed||busy||recoveryReviewsWorking||recoveryReviewsPending()||!byId('recovery-reviews-panel').open)return;
+    const currentPassword=byId('recovery-reviews-password').value;if(!currentPassword){message('recovery-reviews-message','请先核实申请并填写审核账号当前密码。',true);return;}
+    if(item.expiresAt<=Date.now()){message('recovery-reviews-message','本次申请已过期，请刷新记录核对。',true);return;}
+    const at=recoveryReviewsEpoch,actor=accountSessionsActor(),operation={actor};recoveryReviewsMutation=operation;clearIssuedRecoveryProof();updateRecoveryReviewsControls();message('recovery-reviews-message','正在验证当前密码并提交恢复审核…');let committed=false;
+    try{const value=await accountSessionsCall('reviewRecoveryReviewRequest',{requestId:item.id,decision,revision:item.revision,currentPassword},actor);committed=true;if(!currentRecoveryReviews(at,actor)||!byId('recovery-reviews-panel').open)return;if(decision==='approve'){if(typeof value.recoveryProof!=='string'||!value.recoveryProof)throw {code:'INVALID_RESPONSE'};byId('issued-recovery-description').textContent=value.request.displayName+' · '+value.request.phoneMasked+' · 有效至 '+new Date(value.request.expiresAt).toLocaleString('zh-CN');byId('issued-recovery-value').value=value.recoveryProof;byId('issued-recovery-proof').hidden=false;}await refreshRecoveryReviews(at,actor);if(currentRecoveryReviews(at,actor))message('recovery-reviews-message',decision==='approve'?'恢复已批准，密码尚未重设。请核实后自行转交本次凭据，本人仍须完成手机号验证和新密码设置。':decision==='reject'?'恢复申请已拒绝，密码未因此改变。':'未使用的恢复授权已撤销。');}
+    catch(error){if(currentRecoveryReviews(at,actor))message('recovery-reviews-message',committed?'审核请求已完成，但结果展示或刷新无法确认，请刷新核对。一次性凭据不会重新显示。':passwordChangeUncertain(error)?'未能确认审核结果；请求可能已完成，请刷新核对，避免重复操作。':error.message||'审核未通过，请核对当前密码和申请状态。',true);}
+    finally{if(recoveryReviewsMutation===operation)recoveryReviewsMutation=null;if(sameAccountSessionsActor(actor)){byId('recovery-reviews-password').value='';updateRecoveryReviewsControls();if(at!==recoveryReviewsEpoch&&byId('recovery-reviews-panel').open)void loadRecoveryReviews();}}
+  }
+  function closeRecoveryReviews(){recoveryReviewsOpened=false;const pending=recoveryReviewsPending();resetRecoveryReviews(false,false);if(pending&&session)message('workspace-message','已清除审核输入；已提交的审核仍可能完成，请刷新恢复申请核对。');}
+  byId('recovery-reviews-panel').querySelector('summary').addEventListener('click',()=>{if(byId('recovery-reviews-panel').open)closeRecoveryReviews();else recoveryReviewsOpened=true;});
+  byId('recovery-reviews-panel').addEventListener('toggle',()=>{if(byId('recovery-reviews-panel').open){recoveryReviewsOpened=true;if(recoveryReviewsPending())message('recovery-reviews-message','恢复审核仍在处理中，请稍候核对。');else void loadRecoveryReviews();updateRecoveryReviewsControls();}else if(recoveryReviewsOpened)closeRecoveryReviews();});
+  byId('recovery-reviews-password').addEventListener('input',updateRecoveryReviewsControls);byId('recovery-reviews-password').addEventListener('keydown',event=>{if(event.key==='Enter')event.preventDefault();});byId('recovery-reviews-refresh').addEventListener('click',()=>void loadRecoveryReviews());
+  function clearWorkspaceSourceReceipt(){
+    workspaceFormalizationReceipt=null;
+    if(workspaceFormalizationContextValue?.confirmation)workspaceFormalizationContextValue={...workspaceFormalizationContextValue,confirmation:null};
+    byId('workspace-formalization-receipt-summary').replaceChildren();
+    if(projectAccessState.project?.businessConfirmed===true)byId('workspace-formalization-status').textContent='本工作区已有负责人业务确认；来源详情须另获查阅权，原查询编号可保留后只读核对。';
+    updateWorkspaceFormalizationControls();
+  }
+  function resetWorkspaceSource(){workspaceSource?.reset();}
+  function createWorkspaceSourceView(){
+    const by=name=>byId('workspace-source-'+name),panel=by('panel'),METHODS=['getWorkspaceSourceAccess','listWorkspaceSourceMembers','changeWorkspaceSourceAccess','getWorkspaceSource','exportWorkspaceSource','cancelWorkspaceSourceExport'];
+    const exact=(v,keys)=>!!v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length===keys.length&&keys.every(k=>Object.hasOwn(v,k));
+    const integer=(v,min=0)=>Number.isSafeInteger(v)&&v>=min,uuid=v=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(v),hash=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
+    const text=(v,max,empty=true)=>typeof v==='string'&&v.isWellFormed()&&Array.from(v).length<=max&&(empty||!!v.trim())&&!/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(v);
+    const iso=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))&&new Date(v).toISOString()===v,date=v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&!v.startsWith('0000')&&Number.isFinite(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v;
+    const supported=()=>METHODS.every(name=>typeof api?.[name]==='function');
+    let epoch=0,read=0,working=null,polling=null,access=null,members=[],member=null,more=false,opened=false,metadata=null,activeExport=null;
+    const jobs=new Set();
+    function scope(){const s=projectAccessState,a=accountSessionsActor();return s.project?{actor:a,actorKey:a.id+':'+a.epoch,state:s,parent:projectAccessEpoch,device:deviceUiEpoch+':'+session?.device?.epoch,teamId:s.team,projectId:s.projectId,projectRevision:s.project.revision,status:s.project.status,ready:projectAccessReady()&&byId('project-access-panel').open&&!byId('project-access-panel').hidden}:null;}
+    const key=s=>s?s.actorKey+'\0'+s.parent+'\0'+s.device+'\0'+s.teamId+'\0'+s.projectId:'',same=s=>!!s&&key(s)===key(scope())&&scope()?.ready;
+    const pending=()=>[...jobs].some(j=>j.scope.actorKey===scope()?.actorKey),context=(open=true)=>({epoch,read,scope:scope(),open});
+    const grantPending=()=>[...jobs].some(j=>j.kind==='grant'&&j.scope.actorKey===scope()?.actorKey);
+    function closeRecords(records){if(!records.some(r=>r.attributeName==='open'&&r.oldValue!==null))return false;clearView();opened=panel.open;if(opened&&scope()?.ready&&!panel.hidden)void loadAccess();return true;}
+    function closeBarrier(){return closeRecords(observer.takeRecords());}
+    function current(c){closeBarrier();return c.epoch===epoch&&c.read===read&&same(c.scope)&&!panel.hidden&&(!c.open||panel.open);}
+    function proof(){by('password').value='';by('confirmed').checked=false;}
+    function clearBody(){metadata=null;by('data').replaceChildren();by('data').hidden=true;by('export-confirmed').checked=false;by('export-message').textContent='';}
+    function clearMembers(){members=[];member=null;more=false;by('members').replaceChildren();by('member-more').hidden=true;by('target').textContent='尚未选择授权对象。';for(const f of ['read','export'])by(f).checked=false;proof();}
+    function clearView({clearAccess=false}={}){cancelExport(true);epoch++;read++;working=null;clearBody();clearMembers();by('member-search').value='';if(clearAccess)access=null;clearWorkspaceSourceReceipt();controls();}
+    function reset(){observer.takeRecords();clearView({clearAccess:true});panel.open=false;panel.hidden=true;opened=false;by('member-search').value='';by('status').textContent='';by('message').textContent='';observer.takeRecords();controls();}
+    function validAccess(v,c){return exact(v,['teamId','projectId','projectRevision','grantRevision','canManageAccess','sourceAvailable','read','export'])&&v.teamId===c.scope.teamId&&v.projectId===c.scope.projectId&&integer(v.projectRevision,1)&&integer(v.grantRevision)&&['canManageAccess','sourceAvailable','read','export'].every(k=>typeof v[k]==='boolean');}
+    function allowsRead(){const s=scope();return !!s?.ready&&supported()&&!!access?.read&&access.sourceAvailable&&access.teamId===s.teamId&&access.projectId===s.projectId&&access.projectRevision===s.projectRevision;}
+    function say(value,bad=false){message('workspace-source-message',value,bad);}
+    function controls(){
+      const s=scope(),ready=!!s?.ready&&supported()&&!panel.hidden,open=ready&&panel.open,locked=!!working||pending()||busy,version=!!access&&access.projectRevision===s?.projectRevision,write=open&&version&&s.status==='active'&&access.canManageAccess;
+      by('refresh').disabled=!open||locked;by('access-form').hidden=!open||!access?.canManageAccess;
+      for(const n of ['member-search','member-find'])by(n).disabled=!write||locked;by('member-more').hidden=!more;by('member-more').disabled=!write||locked||!more;
+      for(const button of by('members').querySelectorAll('button'))button.disabled=!write||locked||button.dataset.selectable!=='true';
+      const selected=write&&members.includes(member)&&member.grantRevision<Number.MAX_SAFE_INTEGER;
+      for(const n of ['read','export','password','confirmed'])by(n).disabled=!selected||locked;
+      const changed=selected&&['read','export'].some(f=>by(f).checked!==member[f]);by('access-save').disabled=!selected||locked||!changed||!by('password').value||new TextEncoder().encode(by('password').value).length>512||!by('confirmed').checked;
+      by('view').disabled=!open||locked||!allowsRead();by('export-section').hidden=!open||!access?.export||!access.sourceAvailable;
+      const canSave=open&&version&&access?.sourceAvailable&&access.read&&access.export&&!locked;
+      by('export-confirmed').disabled=!canSave;by('export-save').disabled=!canSave||!by('export-confirmed').checked;
+      by('export-cancel').disabled=!open||!activeExport||!same(activeExport.scope)||activeExport.cancelRequested;
+      by('export-requirement').textContent=access?.export&&!access.read?'已获独立导出权；还需负责人明确授予查阅权后才能保存，系统不会自动勾选或授予。':'保存须同时具备本项目明确查阅权和导出权；会在系统选择后再次在线核验。';
+      if(!open||!access)by('status').textContent='';else if(!version)by('status').textContent='项目版本已变化，请先刷新当前项目；未读取来源内容。';else if(!access.sourceAvailable)by('status').textContent='本项目尚无已保存立项来源；可按明确管理能力配置权限，不会补造来源。';else by('status').textContent=access.read?'已获来源查阅权；点击“查阅已保存的立项来源”明确读取。':'当前未获来源查阅权；未读取客户、金额或来源详情。';updateWorkspaceFormalizationControls();
+    }
+    async function invoke(name,input,c){const result=await api[name](input);if(!current(c))throw {code:'STALE_SOURCE_VIEW'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','当前来源登录已失效，请重新登录。',true);}throw result?.error||{code:'INVALID_RESPONSE'};}return result.value;}
+    function target(c=scope()){return {teamId:c.teamId,projectId:c.projectId};}
+    function renderMembers(){by('members').replaceChildren();for(const m of members){const row=el('li'),button=el('button',(m.id===scope()?.actor.id?'选择自己：':'选择：')+m.displayName+' · '+labels[m.role],'button');button.type='button';button.dataset.sourceMember=m.id;button.dataset.selectable=String(m.grantRevision<Number.MAX_SAFE_INTEGER);button.addEventListener('click',()=>{if(!document.contains(button)||!members.includes(m)||pending()||working||!access?.canManageAccess||button.disabled)return;member=m;proof();for(const f of ['read','export'])by(f).checked=m[f];by('target').textContent='授权对象：'+m.displayName+' · '+labels[m.role];controls();});row.append(button,el('small','查阅：'+(m.read?'有':'无')+' · 导出：'+(m.export?'有':'无')));by('members').append(row);}controls();}
+    async function loadMembers(append=false){
+      if(!panel.open||panel.hidden||!scope()?.ready||!access?.canManageAccess||working||pending()||append&&!more)return false;
+      read++;const c=context(),job={};working=job;member=null;proof();if(!append){members=[];more=false;}renderMembers();
+      try{const value=await invoke('listWorkspaceSourceMembers',{...target(c.scope),q:by('member-search').value,...(append&&members.length?{after:members.at(-1).id}:{}),limit:20},c);if(!exact(value,['members','hasMore'])||!Array.isArray(value.members)||value.members.length>20||typeof value.hasMore!=='boolean'||!value.members.every(m=>exact(m,['id','displayName','role','memberRevision','grantRevision','read','export'])&&typeof m.id==='string'&&/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(m.id)&&text(m.displayName,80,false)&&!/[\p{Cc}\p{Cf}]/u.test(m.displayName)&&['manager','partner'].includes(m.role)&&integer(m.memberRevision)&&integer(m.grantRevision)&&typeof m.read==='boolean'&&typeof m.export==='boolean'))throw {code:'INVALID_RESPONSE'};const all=append?members.concat(value.members):value.members;if(new Set(all.map(m=>m.id)).size!==all.length)throw {code:'INVALID_RESPONSE'};members=all;more=value.hasMore;renderMembers();return true;}catch(e){if(current(c)){clearMembers();say(e.message||'来源授权对象无法确认，请刷新。',true);}return false;}finally{if(working===job)working=null;controls();}
+    }
+    function changedAccess(a){return !access||['projectRevision','grantRevision','canManageAccess','sourceAvailable','read','export'].some(k=>a[k]!==access[k]);}
+    async function loadAccess({closed=false,allowJob=null}={}){
+      if(!scope()?.ready||!supported()||panel.hidden||!closed&&!panel.open||working||pending()&&!allowJob)return false;
+      read++;const c=context(!closed),job={};working=job;clearBody();clearMembers();controls();let loaded=false;
+      try{const value=await invoke('getWorkspaceSourceAccess',target(c.scope),c);if(!validAccess(value,c))throw {code:'INVALID_RESPONSE'};if(changedAccess(value)||!value.read)clearWorkspaceSourceReceipt();access=value;loaded=true;controls();if(panel.open)say(value.read?'来源权限已核验；尚未自动读取财务正文。':'来源权限已核验；未获查阅时不请求来源正文。');return true;}catch(e){if(current(c)){access=null;clearBody();clearMembers();clearWorkspaceSourceReceipt();say(e.message||'来源权限无法确认，已清空旧内容，请刷新。',true);}return false;}finally{if(working===job)working=null;controls();if(loaded&&panel.open&&access?.canManageAccess&&!pending())void loadMembers();}
+    }
+    function validSource(value,c){
+      if(!exact(value,['source','metadata']))return false;const s=value.source,m=value.metadata;
+      if(!exact(m,['teamId','projectId','projectRevision','grantRevision','sourceKind','sourceProjectId','sourceSha256','byteLength'])||m.teamId!==c.scope.teamId||m.projectId!==c.scope.projectId||m.projectRevision!==access?.projectRevision||m.grantRevision!==access?.grantRevision||!['workspace-formalization','project-migration'].includes(m.sourceKind)||!uuid(m.sourceProjectId)||!hash(m.sourceSha256)||!integer(m.byteLength,1)||m.byteLength>131072)return false;
+      if(!exact(s,['format','schemaVersion','initiation','quote','numbering','policy'])||s.format!=='shenyi-legacy-project-source'||s.schemaVersion!==1)return false;
+      const i=s.initiation,q=s.quote,n=s.numbering,k=['projectName','issuer','customerName','firmName','auditYear','quoteDate','totalCents','projectType'];
+      if(!exact(i,['schemaVersion','quoteId','revision','source','form','createdAt','updatedAt'])||i.schemaVersion!==1||i.quoteId!==m.sourceProjectId||!integer(i.revision,1)||!iso(i.createdAt)||!iso(i.updatedAt)||i.createdAt>i.updatedAt||!exact(i.form,['projectName','initiationDate','manager','notes'])||!text(i.form.projectName,300,false)||!date(i.form.initiationDate)||!text(i.form.manager,100)||!text(i.form.notes,2000))return false;
+      if(!exact(i.source,['quoteId','wonEventNo','wonAt',...k])||i.source.quoteId!==i.quoteId||!integer(i.source.wonEventNo,1)||!iso(i.source.wonAt)||!exact(q,['id','createdAt','snapshot','events','lastEventNo'])||q.id!==i.quoteId||!iso(q.createdAt)||!exact(q.snapshot,k)||!k.every(key=>q.snapshot[key]===i.source[key]))return false;
+      const snap=q.snapshot;if(!text(snap.projectName,300,false)||!['issuer','customerName','firmName'].every(key=>text(snap[key],200))||!text(snap.projectType,100)||!integer(snap.auditYear,1900)||snap.auditYear>9999||!date(snap.quoteDate)||!integer(snap.totalCents)||!Array.isArray(q.events)||q.events.length<1||q.events.length>1000||q.lastEventNo!==q.events.length||!q.events.every((e,index)=>exact(e,['eventNo','recordedAt','outcome'])&&e.eventNo===index+1&&iso(e.recordedAt)&&['won','lost','cancelled'].includes(e.outcome)))return false;
+      if(!exact(n,['identity','riskLevel','projectType','businessNumber','workspaceRevision','legacyManagerName'])||!exact(n.identity,['schemaVersion','projectId','year','sequence','firstWonAt'])||n.identity.schemaVersion!==1||n.identity.projectId!==i.quoteId||!integer(n.identity.year,1900)||n.identity.year>9999||!integer(n.identity.sequence,1)||!iso(n.identity.firstWonAt)||!['A类','B类','C类'].includes(n.riskLevel)||!text(n.projectType,100,false)||!text(n.businessNumber,200,false)||!integer(n.workspaceRevision,1)||!text(n.legacyManagerName,100))return false;
+      return exact(s.policy,['governanceRegistrationOnly','includesCustomerOriginals','identityAuthenticated','originalCreatorKnown','professionalApprovalClaimed'])&&s.policy.governanceRegistrationOnly===true&&['includesCustomerOriginals','identityAuthenticated','originalCreatorKnown','professionalApprovalClaimed'].every(k=>s.policy[k]===false);
+    }
+    function renderSource(value){
+      const box=by('data'),s=value.source,m=value.metadata,i=s.initiation,q=s.quote,n=s.numbering;box.replaceChildren();
+      const group=(title,rows)=>{const section=el('section');section.append(el('h4',title));for(const [name,value]of rows)section.append(el('p',name+'：'+(value===''?'未填写':String(value))));box.append(section);};
+      group('已保存来源与身份',[['当前工作区 W',m.projectId],['来源项目 Q',m.sourceProjectId],['来源类型',m.sourceKind==='workspace-formalization'?'负责人业务确认来源':'旧正式项目治理迁入来源'],['来源 SHA-256',m.sourceSha256],['规范来源文件大小',m.byteLength+' 字节'],['当前项目版本',m.projectRevision],['本人来源授权版本',m.grantRevision]]);
+      group('已保存立项表',[['立项项目名称',i.form.projectName],['立项日期',i.form.initiationDate],['立项历史负责人文字',i.form.manager],['立项说明',i.form.notes]]);
+      const cents=BigInt(q.snapshot.totalCents);group('中标报价快照（非最终项目／合同金额）',[['报价项目名称',q.snapshot.projectName],['委托方',q.snapshot.issuer],['被审单位',q.snapshot.customerName],['事务所',q.snapshot.firmName],['审计年度',q.snapshot.auditYear],['报价日期',q.snapshot.quoteDate],['中标报价金额',(cents/100n)+'.'+String(cents%100n).padStart(2,'0')+' 元'],['原报价项目类型',q.snapshot.projectType]]);
+      group('固定编号与历史登记',[['原业务编号',n.businessNumber],['风险等级',n.riskLevel],['登记项目类型',n.projectType],['编号项目身份',n.identity.projectId],['编号年度',n.identity.year],['固定序号',n.identity.sequence],['首次中标',n.identity.firstWonAt],['登记表历史经理文字',n.legacyManagerName]]);
+      group('保存版本与引用时点',[['立项版本',i.revision],['旧工作区版本',n.workspaceRevision],['立项创建时间',i.createdAt],['立项保存时间',i.updatedAt],['报价创建时间',q.createdAt],['立项引用中标事件号',i.source.wonEventNo],['立项引用中标时点',i.source.wonAt],['来源保存时最新中标',q.events.at(-1).recordedAt],['已保存报价事件数',q.lastEventNo]]);
+      const events=el('section'),list=el('ol');events.append(el('h4','已保存的全部报价结果事件'));for(const e of q.events)list.append(el('li','事件 '+e.eventNo+' · '+({won:'中标',lost:'未中标',cancelled:'取消'}[e.outcome])+' · '+e.recordedAt));events.append(list);box.append(events,el('p','本页是保存时历史事实，后续变化不会自动同步；历史负责人文字不绑定账号，来源不认证创建者身份，不构成现实中标证明或专业审计签发。','identity-note'));metadata={...m};box.hidden=false;
+    }
+    async function viewSource(){
+      controls();if(by('view').disabled)return;read++;const c=context(),job={};working=job;clearBody();controls();
+      try{const value=await invoke('getWorkspaceSource',target(c.scope),c);if(!validSource(value,c))throw {code:'INVALID_RESPONSE'};const fresh=await invoke('getWorkspaceSourceAccess',target(c.scope),c);if(!validAccess(fresh,c)||!fresh.read||!fresh.sourceAvailable||['projectRevision','grantRevision'].some(k=>fresh[k]!==value.metadata[k]))throw {code:'SOURCE_ACCESS_CHANGED'};access=fresh;renderSource(value);say('已显示获准的已保存立项来源；不是实时中标验证或审计签发。');}catch(e){if(current(c)){clearBody();clearWorkspaceSourceReceipt();if(['SOURCE_ACCESS_CHANGED','HTTP_403','HTTP_404'].includes(e.code))access=null;say(e.message||'来源内容无法确认，已清空，请刷新权限后重试。',true);}}finally{if(working===job)working=null;controls();}
+    }
+    async function changeAccess(event){
+      event.preventDefault();controls();if(by('access-save').disabled)return;read++;const c=context(),m=member,job={scope:c.scope,kind:'grant'},input={...target(c.scope),projectRevision:access.projectRevision,userId:m.id,memberRevision:m.memberRevision,grantRevision:m.grantRevision,read:by('read').checked,export:by('export').checked,currentPassword:by('password').value,confirmed:true};jobs.add(job);proof();clearBody();controls();updateProjectAccessControls();let completed=false;
+      try{const value=await invoke('changeWorkspaceSourceAccess',input,c);if(!exact(value,['changed','projectRevision'])||value.changed!==true||value.projectRevision!==input.projectRevision)throw {code:'INVALID_RESPONSE'};completed=true;clearView({clearAccess:true});const refreshed=await loadAccess({allowJob:job});if(same(job.scope)&&panel.open)say(refreshed?'来源授权已保存；已重新核对当前能力，请重新选择授权对象或明确查阅。':'来源授权已保存，但当前能力刷新未确认；请刷新核对，不会自动重发。',!refreshed);}catch(e){if(current(c)){const uncertain=['OPERATION_UNCONFIRMED','INVALID_RESPONSE','DELIVERY_UNKNOWN'].includes(e.code)||passwordChangeUncertain(e);if(uncertain||['HTTP_409','HTTP_404'].includes(e.code)){clearView({clearAccess:true});say(uncertain?'来源授权结果尚未确认，可能已保存；请刷新当前权限核对，不会自动重发。':'项目、成员或授权版本已变化，请刷新核对后重新选择。',true);}else say(e.message||'来源授权未通过，请核对当前密码和目标。',true);}}finally{input.currentPassword='';jobs.delete(job);controls();updateProjectAccessControls();if(completed&&same(job.scope)&&panel.open&&access?.canManageAccess)void loadMembers();}
+    }
+    async function poll(){
+      if(polling||working||grantPending()||busy||!scope()?.ready||panel.hidden||!supported()||!panel.open&&!workspaceFormalizationReceipt)return;const c=context(false),job={};polling=job;
+      try{const value=await invoke('getWorkspaceSourceAccess',target(c.scope),c);if(!validAccess(value,c))throw {code:'INVALID_RESPONSE'};if(changedAccess(value)){clearView();access=value;say('来源权限或版本已变化，旧内容已清空；请重新选择或明确查阅。',true);}else if(!value.read)clearWorkspaceSourceReceipt();controls();}catch(e){if(current(c)){clearView({clearAccess:true});say(e.message||'来源权限暂无法确认，旧内容已清空，请刷新。',true);}}finally{if(polling===job)polling=null;}
+    }
+    async function exportSource(){
+      controls();if(by('export-save').disabled)return;read++;const c=context(),job={scope:c.scope,kind:'export',requestId:window.crypto.randomUUID(),cancelRequested:false};
+      const input={requestId:job.requestId,...target(c.scope),projectRevision:access.projectRevision,grantRevision:access.grantRevision,confirmed:true};jobs.add(job);activeExport=job;by('export-confirmed').checked=false;by('export-message').textContent='正在核验来源保存权限；系统选择后还会重新核验。';controls();updateProjectAccessControls();
+      try{const value=await invoke('exportWorkspaceSource',input,c);
+        if(exact(value,['canceled','requestId'])&&value.canceled===true&&value.requestId===job.requestId)message('workspace-source-export-message','本次来源保存已停止；未自动重复保存。');
+        else if(exact(value,['saved','requestId','filename','byteLength','sha256'])&&value.saved===true&&value.requestId===job.requestId&&text(value.filename,255,false)&&!/[\\/\p{Cc}]/u.test(value.filename)&&integer(value.byteLength,1)&&value.byteLength<=131072&&hash(value.sha256))message('workspace-source-export-message','立项来源文件已保存：'+value.filename+' · '+value.byteLength+' 字节 · SHA-256 '+value.sha256+'；仅为已存来源副本。');
+        else throw {code:'INVALID_RESPONSE'};
+      }catch(e){if(current(c)){
+        if(e.code==='WORKSPACE_SOURCE_PUBLISHED')message('workspace-source-export-message','本次立项来源已保存；当前会话或视图已变化，请核对先前选择的位置，不会自动重复保存。',true);
+        else if(e.code==='WORKSPACE_SOURCE_SAVE_UNKNOWN'||e.code==='INVALID_RESPONSE'||passwordChangeUncertain(e))message('workspace-source-export-message','保存结果尚未确认，文件可能已经写入；请核对先前选择的位置，不会自动重试。',true);
+        else{if(['WORKSPACE_SOURCE_CHANGED','HTTP_403','HTTP_404'].includes(e.code)){clearBody();clearWorkspaceSourceReceipt();access=null;}message('workspace-source-export-message',e.message||'本次来源保存未完成，请核对当前权限与先前选择的位置；不会自动重复保存。',true);}
+      }}finally{jobs.delete(job);if(activeExport===job)activeExport=null;controls();updateProjectAccessControls();}
+    }
+    function cancelExport(silent=false){
+      const job=activeExport;if(!job||job.cancelRequested)return;job.cancelRequested=true;const c=context(false);controls();
+      if(!silent)message('workspace-source-export-message','已请求停止本次保存；系统对话框可能仍需返回，保存结果以本次核对为准。');
+      void Promise.resolve(api.cancelWorkspaceSourceExport({requestId:job.requestId})).then(result=>{if(!silent&&activeExport===job&&current(c)&&(!result?.ok||!exact(result.value,['canceled'])||typeof result.value.canceled!=='boolean'))message('workspace-source-export-message','停止结果尚未确认，请核对系统对话框和先前选择的位置；不会自动重试。',true);}).catch(()=>{if(!silent&&activeExport===job&&current(c))message('workspace-source-export-message','停止结果尚未确认，请核对先前选择的位置；不会自动重试。',true);});
+    }
+    function show(){reset();if(!scope()?.ready||!supported())return;panel.hidden=false;controls();void loadAccess({closed:true});}
+    const observer=new MutationObserver(records=>closeRecords(records));observer.observe(panel,{attributes:true,attributeFilter:['open'],attributeOldValue:true});
+    panel.addEventListener('toggle',()=>{closeBarrier();if(panel.open&&!panel.hidden){if(!opened){opened=true;void loadAccess();}}else if(opened){opened=false;clearView();}});
+    by('refresh').addEventListener('click',()=>void loadAccess());by('view').addEventListener('click',()=>void viewSource());by('member-find').addEventListener('click',()=>void loadMembers());by('member-more').addEventListener('click',()=>void loadMembers(true));by('access-form').addEventListener('submit',event=>void changeAccess(event));
+    by('member-search').addEventListener('input',()=>{if(pending())return;read++;working=null;clearMembers();controls();});by('member-search').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();void loadMembers();}});
+    for(const flag of ['read','export'])by(flag).addEventListener('change',()=>{proof();controls();});by('password').addEventListener('input',controls);by('confirmed').addEventListener('change',controls);
+    by('export-confirmed').addEventListener('change',controls);by('export-save').addEventListener('click',()=>void exportSource());by('export-cancel').addEventListener('click',()=>cancelExport());
+    const timer=setInterval(()=>void poll(),5000);controls();return {show,reset,pending,update:controls,allowsRead,destroy(){observer.disconnect();clearInterval(timer);reset();}};
+  }
+
+  const workspaceFormalizationRequests=new Map(),workspaceFormalizationQueries=new Map();
+  let workspaceFormalizationEpoch=0,workspaceFormalizationContextValue=null,workspaceFormalizationSource=null,workspaceFormalizationReceipt=null,workspaceFormalizationRead=null,workspaceFormalizationChoose=null,workspaceFormalizationMutation=null;
+  function workspaceFormalizationApiReady(){return ['getWorkspaceFormalization','chooseWorkspaceFormalizationSource','confirmWorkspaceFormalization','getWorkspaceFormalizationReceipt','discardWorkspaceFormalizationSource'].every(name=>typeof api?.[name]==='function');}
+  function workspaceFormalizationCandidate(){const p=projectAccessState.project;return workspaceFormalizationApiReady()&&projectAccessReady()&&!byId('project-access-panel').hidden&&byId('project-access-panel').open&&p?.kind==='collection-workspace'&&(p.canManageAccess===true||p.status==='frozen');}
+  function workspaceFormalizationVisible(){return workspaceFormalizationCandidate()&&(projectAccessState.project.canManageAccess===true||workspaceFormalizationContextValue!==null);}
+  function workspaceFormalizationKey(){return session?.account.id&&projectAccessState.team&&projectAccessState.projectId?session.account.id+'\0'+projectAccessState.team+'\0'+projectAccessState.projectId:null;}
+  function workspaceFormalizationPending(){return !!workspaceFormalizationMutation&&sameAccountSessionsActor(workspaceFormalizationMutation.actor);}
+  function workspaceFormalizationCurrent(c){return sameAccountSessionsActor(c.actor)&&c.at===workspaceFormalizationEpoch&&c.device===deviceUiEpoch&&c.main===session?.device?.epoch&&c.state===projectAccessState&&c.team===projectAccessState.team&&c.projectId===projectAccessState.projectId&&workspaceFormalizationCandidate();}
+  function workspaceFormalizationCapture(){return {actor:accountSessionsActor(),at:workspaceFormalizationEpoch,device:deviceUiEpoch,main:session?.device?.epoch,state:projectAccessState,team:projectAccessState.team,projectId:projectAccessState.projectId};}
+  function workspaceFormalizationProof(){byId('workspace-formalization-password').value='';byId('workspace-formalization-confirmed').checked=false;byId('workspace-formalization-business-confirmed').checked=false;}
+  function discardWorkspaceFormalizationHandle(handle){if(!collectionWorkspaceUuid(handle)||typeof api?.discardWorkspaceFormalizationSource!=='function')return;try{Promise.resolve(api.discardWorkspaceFormalizationSource({handle})).catch(()=>{});}catch{}}
+  function clearWorkspaceFormalizationSource(){const source=workspaceFormalizationSource;workspaceFormalizationSource=null;workspaceFormalizationProof();byId('workspace-formalization-source-summary').replaceChildren();if(source)discardWorkspaceFormalizationHandle(source.handle);}
+  function resetWorkspaceFormalization(){workspaceFormalizationEpoch++;workspaceFormalizationContextValue=null;workspaceFormalizationRead=null;workspaceFormalizationReceipt=null;clearWorkspaceFormalizationSource();byId('workspace-formalization-section').hidden=true;byId('workspace-formalization-form').hidden=true;byId('workspace-formalization-status').textContent='';byId('workspace-formalization-message').textContent='';byId('workspace-formalization-request-id').value='';byId('workspace-formalization-receipt-summary').replaceChildren();}
+  function formalizationExact(value,keys){return !!value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===keys.length&&keys.every(k=>Object.hasOwn(value,k));}
+  function formalizationText(value,max,required=true){return typeof value==='string'&&value.isWellFormed()&&value.length<=max&&(!required||!!value.trim())&&!/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value);}
+  const formalizationIso=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;
+  function validWorkspaceFormalizationSummary(v){const keys=['projectId','title','businessNumber','initiationRevision','workspaceRevision','firstWonAt','initiationWonAt','latestWonAt','quoteSnapshot'],q=v?.quoteSnapshot;return formalizationExact(v,keys)&&collectionWorkspaceUuid(v.projectId)&&formalizationText(v.title,300)&&formalizationText(v.businessNumber,200)&&['initiationRevision','workspaceRevision'].every(k=>Number.isSafeInteger(v[k])&&v[k]>=1&&v[k]<Number.MAX_SAFE_INTEGER)&&['firstWonAt','initiationWonAt','latestWonAt'].every(k=>formalizationIso(v[k]))&&v.firstWonAt<=v.initiationWonAt&&v.initiationWonAt<=v.latestWonAt&&formalizationExact(q,['projectName','issuer','customerName','firmName','auditYear','quoteDate','totalCents','projectType'])&&formalizationText(q.projectName,300)&&['issuer','customerName','firmName'].every(k=>formalizationText(q[k],200,false))&&formalizationText(q.projectType,100,false)&&Number.isInteger(q.auditYear)&&q.auditYear>=1900&&q.auditYear<=9999&&Number.isSafeInteger(q.totalCents)&&q.totalCents>=0&&typeof q.quoteDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(q.quoteDate)&&!q.quoteDate.startsWith('0000')&&Number.isFinite(Date.parse(q.quoteDate))&&new Date(q.quoteDate).toISOString().slice(0,10)===q.quoteDate;}
+  function validWorkspaceFormalizationReceipt(v,c,id){const keys=['requestId','teamId','projectId','sourceProjectId','sourceTitle','sourceSha256','businessNumber','confirmedBy','confirmedAt','projectRevisionBefore','projectRevisionAfter','confirmationMode'];return formalizationExact(v,keys)&&collectionWorkspaceUuid(v.requestId)&&(!id||v.requestId===id)&&v.teamId===c.team&&v.projectId===c.projectId&&collectionWorkspaceUuid(v.sourceProjectId)&&formalizationText(v.sourceTitle,300)&&/^[a-f0-9]{64}$/.test(v.sourceSha256)&&formalizationText(v.businessNumber,200)&&typeof v.confirmedBy==='string'&&/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(v.confirmedBy)&&Number.isSafeInteger(v.confirmedAt)&&v.confirmedAt>=0&&Number.isSafeInteger(v.projectRevisionBefore)&&v.projectRevisionBefore>=1&&Number.isSafeInteger(v.projectRevisionAfter)&&v.projectRevisionAfter===v.projectRevisionBefore+1&&v.confirmationMode==='owner-attested-local-source';}
+  function validWorkspaceFormalizationContext(v,c){return formalizationExact(v,['teamId','projectId','projectRevision','canConfirm','confirmation'])&&v.teamId===c.team&&v.projectId===c.projectId&&Number.isSafeInteger(v.projectRevision)&&v.projectRevision>=1&&typeof v.canConfirm==='boolean'&&!(projectAccessState.project?.status==='frozen'&&v.canConfirm)&&(v.confirmation===null||validWorkspaceFormalizationReceipt(v.confirmation,c))&&(!v.confirmation||!v.canConfirm);}
+  function updateWorkspaceFormalizationControls(){const visible=workspaceFormalizationVisible(),entry=workspaceFormalizationRequests.get(workspaceFormalizationKey()),ctx=workspaceFormalizationContextValue,p=projectAccessState.project,working=!!workspaceFormalizationRead||!!workspaceFormalizationChoose&&sameAccountSessionsActor(workspaceFormalizationChoose.actor),locked=!visible||busy||projectAccessPending()||working,eligible=ctx?.canConfirm===true&&!ctx.confirmation&&!workspaceFormalizationReceipt&&ctx.projectRevision===p?.revision&&p?.status==='active'&&p.revision<Number.MAX_SAFE_INTEGER;
+    byId('workspace-formalization-section').hidden=!visible;if(visible&&entry?.status==='unknown'&&!byId('workspace-formalization-message').textContent)message('workspace-formalization-message','原业务确认结果尚未确认，请按保留编号只读核对，不会重新提交。',true);if(entry)byId('workspace-formalization-request-id').value=entry.requestId;else if(!byId('workspace-formalization-request-id').value)byId('workspace-formalization-request-id').value=workspaceFormalizationQueries.get(workspaceFormalizationKey())||'';
+    byId('workspace-formalization-refresh').disabled=locked;byId('workspace-formalization-source-open').disabled=locked||!!entry||!eligible;byId('workspace-formalization-source-discard').disabled=locked||!workspaceFormalizationSource;byId('workspace-formalization-form').hidden=!visible||!eligible||!workspaceFormalizationSource;
+    const pwd=byId('workspace-formalization-password').value;byId('workspace-formalization-confirm').disabled=locked||!!entry||!eligible||!workspaceFormalizationSource||!pwd||new TextEncoder().encode(pwd).length>512||!byId('workspace-formalization-business-confirmed').checked||!byId('workspace-formalization-confirmed').checked;
+    for(const id of ['workspace-formalization-password','workspace-formalization-business-confirmed','workspace-formalization-confirmed'])byId(id).disabled=locked||!eligible||!workspaceFormalizationSource;
+    byId('workspace-formalization-request-id').readOnly=!!entry;byId('workspace-formalization-request-id').disabled=locked;byId('workspace-formalization-receipt').disabled=locked||!collectionWorkspaceUuid(byId('workspace-formalization-request-id').value)||!workspaceSource?.allowsRead();
+  }
+  function renderWorkspaceFormalizationReceipt(value,{localAcknowledgement=false}={}){if(!localAcknowledgement&&!workspaceSource?.allowsRead()){clearWorkspaceSourceReceipt();return;}workspaceFormalizationReceipt=value;byId('workspace-formalization-status').textContent='本工作区已有负责人业务确认；来源为确认时历史快照，不自动同步后续变化。';const box=byId('workspace-formalization-receipt-summary');box.replaceChildren();for(const text of ['负责人已业务确认正式立项 · 非专业审计签审','工作区W：'+value.projectId,'旧正式来源Q：'+value.sourceProjectId,'来源名称：'+value.sourceTitle,'确认时原业务编号：'+value.businessNumber,'业务确认人：'+value.confirmedBy+' · '+new Date(value.confirmedAt).toLocaleString('zh-CN'),'来源SHA-256：'+value.sourceSha256,'业务确认查询编号：'+value.requestId,'确认时项目版本：'+value.projectRevisionBefore+' → '+value.projectRevisionAfter+'；回执不代表当前资料权限。','本机历史来源不自动同步后续中标结果或分类；资料清单须另行明确授予读取／导入等五项权限；业务确认不自动授权。'])box.append(el('p',text));updateWorkspaceFormalizationControls();}
+  function renderWorkspaceFormalizationSource(value){const box=byId('workspace-formalization-source-summary'),s=value.summary,q=s.quoteSnapshot;box.replaceChildren();for(const text of ['当前工作区W：'+projectAccessState.projectId,'当前工作区名称：'+projectAccessState.project.title,'旧正式来源Q：'+s.projectId,'旧立项名称：'+s.title,'名称核对：'+(s.title===projectAccessState.project.title?'相同名称，仍须人工核验对应业务。':'名称不同，请明确核验是否对应同一业务；不会改写任何名称。'),'原显示业务编号：'+s.businessNumber,'首次中标：'+s.firstWonAt,'立项引用中标：'+s.initiationWonAt,'来源保存时最新中标：'+s.latestWonAt,'中标报价金额：'+(BigInt(q.totalCents)/100n)+'.'+String(BigInt(q.totalCents)%100n).padStart(2,'0')+' 元（非最终项目金额／合同金额）','来源报价：'+q.projectName+' · 委托方 '+(q.issuer||'未填')+' · 被审单位 '+(q.customerName||'未填')+' · 事务所 '+(q.firmName||'未填'),'审计年度／报价日期／原报价类型：'+q.auditYear+'／'+q.quoteDate+'／'+(q.projectType||'未填'),'旧立项／旧工作区版本：'+s.initiationRevision+'／'+s.workspaceRevision,'来源SHA-256：'+value.sourceSha256,'依据所选来源快照；磁盘后续修改不会自动跟随，变更须重新选择。来源只证明旧记录关系一致，由负责人核验业务事实，不是系统实时验证中标或专业签发。'])box.append(el('p',text));}
+  async function workspaceFormalizationCall(name,input,c){const value=await api[name](input);if(!workspaceFormalizationCurrent(c))throw {code:'STALE_FORMALIZATION',definiteRejected:value?.ok===false};if(!value?.ok){if(value?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','当前登录已失效，请重新登录后按原业务确认编号核对。',true);}throw {...(value?.error||{code:'INVALID_RESPONSE'}),definiteRejected:value?.ok===false};}return value.value;}
+  async function loadWorkspaceFormalization(committedProjectMutation=null){if(!workspaceFormalizationCandidate()||busy||projectAccessPending(committedProjectMutation)||workspaceFormalizationRead||workspaceFormalizationChoose&&sameAccountSessionsActor(workspaceFormalizationChoose.actor))return false;clearWorkspaceFormalizationSource();workspaceFormalizationContextValue=null;workspaceFormalizationReceipt=null;byId('workspace-formalization-receipt-summary').replaceChildren();const c=workspaceFormalizationCapture(),job={actor:c.actor};workspaceFormalizationRead=job;updateWorkspaceFormalizationControls();try{const value=await workspaceFormalizationCall('getWorkspaceFormalization',{teamId:c.team,projectId:c.projectId},c);if(!validWorkspaceFormalizationContext(value,c))throw {code:'INVALID_RESPONSE'};workspaceFormalizationContextValue=value;byId('workspace-formalization-status').textContent=value.confirmation?'本工作区已有负责人业务确认；来源为确认时历史快照，不自动同步后续变化。':value.projectRevision!==projectAccessState.project.revision?'项目版本已变化，请刷新当前项目后继续。':value.canConfirm?'尚未业务确认。请先选择并核验已保存来源，再填写本次密码与两项确认。':projectAccessState.project?.businessConfirmed===true?'本工作区已有负责人业务确认；当前来源详情须另获查阅权。':'当前工作区不能确认，请核对冻结状态及负责人权限。';if(value.confirmation&&workspaceSource?.allowsRead())renderWorkspaceFormalizationReceipt(value.confirmation);else if(!workspaceSource?.allowsRead())clearWorkspaceSourceReceipt();const entry=workspaceFormalizationRequests.get(workspaceFormalizationKey());if(entry)message('workspace-formalization-message','原业务确认编号已保留；已发操作可能完成，请只读核对，不会重新提交。');return true;}catch(error){if(workspaceFormalizationCurrent(c)){workspaceFormalizationContextValue=null;workspaceFormalizationReceipt=null;clearWorkspaceFormalizationSource();byId('workspace-formalization-receipt-summary').replaceChildren();message('workspace-formalization-message',error.message||'负责人业务确认状态未能核验，请刷新当前项目。',true);}return false;}finally{if(workspaceFormalizationRead===job)workspaceFormalizationRead=null;if(sameAccountSessionsActor(c.actor))updateWorkspaceFormalizationControls();}}
+  async function chooseWorkspaceFormalizationSource(){if(!workspaceFormalizationVisible()||byId('workspace-formalization-source-open').disabled)return;clearWorkspaceFormalizationSource();workspaceFormalizationReceipt=null;byId('workspace-formalization-receipt-summary').replaceChildren();const c=workspaceFormalizationCapture(),revision=workspaceFormalizationContextValue.projectRevision,job={actor:c.actor};workspaceFormalizationChoose=job;updateWorkspaceFormalizationControls();try{const result=await api.chooseWorkspaceFormalizationSource({teamId:c.team,projectId:c.projectId,projectRevision:revision});if(!workspaceFormalizationCurrent(c)){if(result?.ok)discardWorkspaceFormalizationHandle(result.value?.handle);return;}if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','登录已失效，请重新登录。',true);}throw result?.error||{code:'INVALID_RESPONSE'};}const value=result.value;if(formalizationExact(value,['status'])&&value.status==='cancelled'){message('workspace-formalization-message','已取消来源选择，未提交业务确认。');return;}if(!formalizationExact(value,['status','handle','sourceSha256','summary'])||value.status!=='selected'||!collectionWorkspaceUuid(value.handle)||!/^[a-f0-9]{64}$/.test(value.sourceSha256)||!validWorkspaceFormalizationSummary(value.summary)){discardWorkspaceFormalizationHandle(value?.handle);throw {code:'INVALID_RESPONSE'};}workspaceFormalizationSource=value;workspaceFormalizationProof();byId('workspace-formalization-request-id').value=value.handle;workspaceFormalizationQueries.set(workspaceFormalizationKey(),value.handle);renderWorkspaceFormalizationSource(value);message('workspace-formalization-message','来源预检完成，尚未确认；请本人核验业务事实后填写密码并明确确认。');}catch(error){if(workspaceFormalizationCurrent(c)){clearWorkspaceFormalizationSource();message('workspace-formalization-message',error.message||'来源无法核验，未提交业务确认。',true);}}finally{if(workspaceFormalizationChoose===job)workspaceFormalizationChoose=null;if(sameAccountSessionsActor(c.actor))updateWorkspaceFormalizationControls();}}
+  async function refreshWorkspaceFormalizationProject(c){const value=await workspaceFormalizationCall('getProject',{teamId:c.team,projectId:c.projectId},c);if(!validProjectView(value?.project)||value.project.id!==c.projectId||value.project.kind!=='collection-workspace'||value.project.businessConfirmed!==true)throw {code:'INVALID_RESPONSE'};const s=projectAccessState;s.project=value.project;s.projects=s.projects.map(p=>p.id===c.projectId?value.project:p);byId('project-access-status').textContent=projectKindLabel(s.project)+' · '+(s.project.status==='frozen'?'项目已冻结 · 所有修改关闭':'项目使用中')+' · 当前版本 '+s.project.revision;updateCollectionWorkspaceMaterialNotice(s.project);byId('collection-workspace-materials-locked').hidden=true;projectMaterials?.show();renderProjectList();updateProjectAccessControls();}
+  async function confirmWorkspaceFormalization(event){event.preventDefault();if(byId('workspace-formalization-confirm').disabled||!workspaceFormalizationVisible())return;const c=workspaceFormalizationCapture(),key=workspaceFormalizationKey(),source=workspaceFormalizationSource,entry={requestId:source.handle,status:'pending'},job={actor:c.actor,entry,team:c.team,projectId:c.projectId},input={handle:source.handle,sourceSha256:source.sourceSha256,teamId:c.team,projectId:c.projectId,projectRevision:workspaceFormalizationContextValue.projectRevision,currentPassword:byId('workspace-formalization-password').value,businessConfirmed:true,confirmed:true};workspaceFormalizationRequests.set(key,entry);workspaceFormalizationQueries.set(key,source.handle);workspaceFormalizationMutation=job;workspaceFormalizationProof();updateProjectAccessControls();message('workspace-formalization-message','正在提交负责人业务确认；查询编号已显示，关闭不能撤回已发操作。');let confirmed=false;
+    try{const value=await workspaceFormalizationCall('confirmWorkspaceFormalization',input,c);if(formalizationExact(value,['status','requestId'])&&value.status==='unknown'&&value.requestId===entry.requestId){entry.status='unknown';clearWorkspaceFormalizationSource();message('workspace-formalization-message','业务确认结果尚未确认，可能已完成；请只读查询原编号，不会自动重新提交。',true);return;}if(!formalizationExact(value,['status','receipt'])||value.status!=='confirmed'||!validWorkspaceFormalizationReceipt(value.receipt,c,entry.requestId)||value.receipt.sourceSha256!==source.sourceSha256||value.receipt.sourceProjectId!==source.summary.projectId||value.receipt.projectRevisionBefore!==input.projectRevision)throw {code:'INVALID_RESPONSE'};confirmed=true;if(workspaceFormalizationRequests.get(key)===entry)workspaceFormalizationRequests.delete(key);clearWorkspaceFormalizationSource();renderWorkspaceFormalizationReceipt(value.receipt,{localAcknowledgement:true});try{await refreshWorkspaceFormalizationProject(c);message('workspace-formalization-message','负责人已业务确认正式立项并关联来源；当前项目能力已重新读取，原采集权限与原件保持。');}catch{if(workspaceFormalizationCurrent(c))message('workspace-formalization-message','负责人业务确认已完成，但当前项目能力刷新未确认；请刷新核对，不要重复确认。',true);}}
+    catch(error){const unknown=!confirmed&&!error.definiteRejected;if(workspaceFormalizationRequests.get(key)===entry){if(unknown)entry.status='unknown';else workspaceFormalizationRequests.delete(key);}if(workspaceFormalizationCurrent(c)){clearWorkspaceFormalizationSource();workspaceFormalizationContextValue=null;message('workspace-formalization-message',unknown?'业务确认结果无法确认，原编号已保留；请只读核对，不会重复提交。':error.message||'业务确认未通过，请核验当前状态后重新选择来源。',true);}}
+    finally{input.currentPassword='';if(workspaceFormalizationMutation===job)workspaceFormalizationMutation=null;if(workspaceFormalizationCurrent(c))workspaceFormalizationProof();if(sameAccountSessionsActor(c.actor))updateProjectAccessControls();}
+  }
+  async function getWorkspaceFormalizationReceipt(){const requestId=byId('workspace-formalization-request-id').value;if(!workspaceFormalizationVisible()||!workspaceSource?.allowsRead()||byId('workspace-formalization-receipt').disabled||!collectionWorkspaceUuid(requestId))return;const c=workspaceFormalizationCapture(),key=workspaceFormalizationKey(),job={actor:c.actor};workspaceFormalizationQueries.set(key,requestId);workspaceFormalizationRead=job;workspaceFormalizationProof();updateWorkspaceFormalizationControls();try{const value=await workspaceFormalizationCall('getWorkspaceFormalizationReceipt',{teamId:c.team,projectId:c.projectId,requestId},c);if(!validWorkspaceFormalizationReceipt(value,c,requestId))throw {code:'INVALID_RESPONSE'};if(workspaceFormalizationRequests.get(key)?.requestId===requestId)workspaceFormalizationRequests.delete(key);clearWorkspaceFormalizationSource();renderWorkspaceFormalizationReceipt(value);try{await refreshWorkspaceFormalizationProject(c);message('workspace-formalization-message','已只读核对业务确认回执与当前能力；未重新提交确认。');}catch{if(workspaceFormalizationCurrent(c))message('workspace-formalization-message','业务确认回执已确认，但当前能力刷新未确认；请刷新，勿重复确认。',true);}}catch(error){if(workspaceFormalizationCurrent(c)){workspaceFormalizationReceipt=null;byId('workspace-formalization-receipt-summary').replaceChildren();message('workspace-formalization-message',error.code==='HTTP_404'?'暂未查到可访问回执；原确认仍可能在途，请保留编号稍后只读核对，不会自动重发。':error.message||'回执暂无法核对，请保留原编号。',true);}}finally{if(workspaceFormalizationRead===job)workspaceFormalizationRead=null;if(sameAccountSessionsActor(c.actor))updateWorkspaceFormalizationControls();}}
+  function resumePendingWorkspaceFormalization(){const job=workspaceFormalizationMutation;if(!job||!sameAccountSessionsActor(job.actor)||job.team!==projectAccessState.team||!byId('project-access-panel').open||!workspaceFormalizationApiReady())return;projectAccessState.projectId=job.projectId;void refreshAccessProject();}
+  function updateCollectionWorkspaceMaterialNotice(project){byId('collection-workspace-materials-locked').textContent=project?.businessConfirmed===true?'负责人已业务确认正式立项；资料清单须另行明确授予读取／导入等五项权限，业务确认不自动授权。':'采集工作区 · 未正式立项：资料清单等专业模块尚未开放，不能导入或访问完整材料目录／原件。';}
+  byId('workspace-formalization-refresh').addEventListener('click',()=>void loadWorkspaceFormalization());byId('workspace-formalization-source-open').addEventListener('click',()=>void chooseWorkspaceFormalizationSource());byId('workspace-formalization-source-discard').addEventListener('click',()=>{if(byId('workspace-formalization-source-discard').disabled)return;clearWorkspaceFormalizationSource();updateWorkspaceFormalizationControls();message('workspace-formalization-message','本次私有来源与密码已清除，未提交业务确认。');});byId('workspace-formalization-form').addEventListener('submit',event=>void confirmWorkspaceFormalization(event));byId('workspace-formalization-receipt').addEventListener('click',()=>void getWorkspaceFormalizationReceipt());
+  for(const [id,type]of [['workspace-formalization-password','input'],['workspace-formalization-confirmed','change'],['workspace-formalization-business-confirmed','change']])byId(id).addEventListener(type,updateWorkspaceFormalizationControls);byId('workspace-formalization-request-id').addEventListener('input',()=>{const key=workspaceFormalizationKey();if(key){const id=byId('workspace-formalization-request-id').value;if(collectionWorkspaceUuid(id))workspaceFormalizationQueries.set(key,id);else workspaceFormalizationQueries.delete(key);}updateWorkspaceFormalizationControls();});
+  const collectionWorkspaceUuid=value=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
+  function projectKindLabel(project){return project?.kind==='collection-workspace'?(project.businessConfirmed===true?'采集工作区 · 负责人已业务确认正式立项':'采集工作区 · 未正式立项'):'既有登记项目';}
+  function collectionWorkspaceApiReady(){return ['createCollectionWorkspace','getCollectionWorkspaceReceipt'].every(name=>typeof api?.[name]==='function');}
+  function collectionWorkspaceKey(team=projectAccessState.team){return session?.account?.id&&team?session.account.id+'\0'+team:null;}
+  function collectionWorkspacePending(){return !!collectionWorkspaceOperation&&sameAccountSessionsActor(collectionWorkspaceOperation.actor);}
+  function collectionWorkspaceContext(){return {actor:accountSessionsActor(),at:collectionWorkspaceEpoch,device:deviceUiEpoch,main:session?.device?.epoch,team:projectAccessState.team,state:projectAccessState};}
+  function currentCollectionWorkspace(c){return !!c&&sameAccountSessionsActor(c.actor)&&c.at===collectionWorkspaceEpoch&&c.device===deviceUiEpoch&&c.main===session?.device?.epoch&&c.state===projectAccessState&&c.team===projectAccessState.team&&projectAccessReady()&&projectAccessState.teams.some(t=>t.teamId===c.team)&&byId('project-access-panel').open&&!byId('project-access-panel').hidden;}
+  function clearCollectionWorkspaceProof(){byId('collection-workspace-password').value='';byId('collection-workspace-confirmed').checked=false;}
+  function clearCollectionWorkspaceDraft(){clearCollectionWorkspaceProof();byId('collection-workspace-title').value='';for(const f of ['read','manage','review'])byId('collection-workspace-'+f).checked=false;}
+  function resetCollectionWorkspaceView(){collectionWorkspaceEpoch++;clearCollectionWorkspaceDraft();collectionWorkspaceReceiptView=null;byId('collection-workspace-section').hidden=true;byId('collection-workspace-request-id').value='';byId('collection-workspace-receipt-summary').replaceChildren();byId('collection-workspace-message').textContent='';byId('collection-workspace-message').dataset.workspaceState='';byId('collection-workspace-open').hidden=true;}
+  function collectionWorkspaceTitle(value){return typeof value==='string'&&value.isWellFormed()&&value.trim().length>0&&[...value].length<=300&&!/[\p{Cc}\p{Cf}]/u.test(value);}
+  function validCollectionWorkspaceReceipt(value,c,id){const keys=['requestId','teamId','projectId','kind','title','createdBy','read','manage','review','createdProjectRevision','createdAt'];return !!value&&Object.keys(value).length===keys.length&&keys.every(k=>Object.hasOwn(value,k))&&value.requestId===id&&collectionWorkspaceUuid(value.requestId)&&value.teamId===c.team&&collectionWorkspaceUuid(value.projectId)&&value.kind==='collection-workspace'&&value.createdBy===c.actor.id&&collectionWorkspaceTitle(value.title)&&value.title===value.title.trim()&&['read','manage','review'].every(k=>typeof value[k]==='boolean')&&(value.read||!value.manage&&!value.review)&&Number.isSafeInteger(value.createdProjectRevision)&&value.createdProjectRevision>=1&&Number.isSafeInteger(value.createdAt)&&value.createdAt>=0;}
+  function updateCollectionWorkspaceControls(){const s=projectAccessState,available=collectionWorkspaceApiReady()&&projectAccessReady()&&s.teams.some(t=>t.teamId===s.team)&&byId('project-access-panel').open&&!byId('project-access-panel').hidden,entry=collectionWorkspaceRequests.get(collectionWorkspaceKey()),reading=!!collectionWorkspaceQuery&&sameAccountSessionsActor(collectionWorkspaceQuery.actor),locked=!available||busy||projectAccessPending()||reading;
+    byId('collection-workspace-section').hidden=!available;if(entry)byId('collection-workspace-request-id').value=entry.requestId;else if(!byId('collection-workspace-request-id').value)byId('collection-workspace-request-id').value=collectionWorkspaceQueryIds.get(collectionWorkspaceKey())||'';byId('collection-workspace-request-id').readOnly=!!entry;byId('collection-workspace-request-id').disabled=locked;
+    for(const id of ['title','password','confirmed','read'])byId('collection-workspace-'+id).disabled=locked||!!entry;for(const id of ['manage','review'])byId('collection-workspace-'+id).disabled=locked||!!entry||!byId('collection-workspace-read').checked;
+    const read=byId('collection-workspace-read').checked,manage=byId('collection-workspace-manage').checked,review=byId('collection-workspace-review').checked,pwd=byId('collection-workspace-password').value;byId('collection-workspace-scope-note').textContent=!read?'三项均未选择时，仅有负责人治理权限；本人不能读取或创建采集任务，现有入口也不能事后给自己补授采集权。':!manage?'本人可以读取采集任务，但不能创建或管理任务；核对原件仍以独立勾选为准。':'本人可读取并管理采集任务；'+(review?'本次明确选择了独立资料核对权。':'未选择资料核对权，不能查看他人提交原件。');
+    byId('collection-workspace-create').disabled=locked||!!entry||!collectionWorkspaceTitle(byId('collection-workspace-title').value)||!pwd||new TextEncoder().encode(pwd).length>512||!byId('collection-workspace-confirmed').checked||!read&&(manage||review);
+    byId('collection-workspace-receipt').disabled=locked||!collectionWorkspaceUuid(byId('collection-workspace-request-id').value);byId('collection-workspace-open').hidden=!collectionWorkspaceReceiptView;byId('collection-workspace-open').disabled=locked||!collectionWorkspaceReceiptView;
+    const notice=byId('collection-workspace-message'),state=entry?entry.requestId+':'+entry.status:'';if(entry&&available&&notice.dataset.workspaceState!==state)message('collection-workspace-message',entry.status==='pending'?'创建仍在处理中；编号已保留，关闭不会撤回已发请求。':'创建结果尚未确认；请只读核对原编号，不会自动重新提交。',entry.status!=='pending');notice.dataset.workspaceState=state;
+  }
+  async function collectionWorkspaceCall(name,input,c){const result=await api[name](input);if(!currentCollectionWorkspace(c))throw {code:'STALE_WORKSPACE',definiteRejected:result?.ok===false};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','当前工作区登录已失效，请重新登录。',true);}throw {...(result?.error||{code:'INVALID_RESPONSE'}),definiteRejected:result?.ok===false};}return result.value;}
+  function renderCollectionWorkspaceReceipt(receipt,project){collectionWorkspaceReceiptView=receipt;const box=byId('collection-workspace-receipt-summary');box.replaceChildren();for(const text of ['创建时：采集工作区 · 未正式立项：'+receipt.title,'工作区UUID：'+receipt.projectId,'创建查询编号：'+receipt.requestId,'创建者：'+receipt.createdBy,'创建时采集权限：'+['read','manage','review'].map((k,i)=>['读取','管理','核对'][i]+' '+(receipt[k]?'已选':'未选')).join(' · '),'创建时版本：'+receipt.createdProjectRevision+'；回执仅记录创建事实，不代表当前权限。'])box.append(el('p',text));if(project)box.append(el('p','本次回执读取时核验的状态（快照，不代表当前状态）：'+projectKindLabel(project)+' · '+(project.canRead?'可读取任务':'不可读取任务')+' · '+(project.canCreateTask?'可创建／管理任务':'不可创建／管理任务')+' · '+(project.canReview?'可核对提交原件':'不可核对提交原件')));updateCollectionWorkspaceControls();}
+  async function refreshCollectionWorkspaceResult(c,receipt,{refreshList=true}={}){const detail=await collectionWorkspaceCall('getProject',{teamId:c.team,projectId:receipt.projectId},c);if(!validProjectView(detail?.project)||detail.project.id!==receipt.projectId||detail.project.kind!=='collection-workspace')throw {code:'INVALID_RESPONSE'};renderCollectionWorkspaceReceipt(receipt,detail.project);if(!refreshList)return;const s=projectAccessState;s.read.list++;s.working.list=true;try{const list=await collectionWorkspaceCall('listProjects',{teamId:c.team,limit:20},c);if(!Array.isArray(list?.projects)||typeof list.hasMore!=='boolean'||!list.projects.every(validProjectView)||new Set(list.projects.map(p=>p.id)).size!==list.projects.length)throw {code:'INVALID_RESPONSE'};s.projects=list.projects;s.projectMore=list.hasMore;s.query='';byId('project-access-search').value='';renderProjectList();if(s.projects.length&&byId('project-access-message').textContent==='当前没有已登记且获授权的项目。')message('project-access-message','');}finally{if(currentCollectionWorkspace(c)){s.working.list=false;updateProjectAccessControls();}}}
+  async function createCollectionWorkspace(event){event.preventDefault();const s=projectAccessState;if(!collectionWorkspaceApiReady()||!projectAccessReady()||busy||projectAccessPending()||collectionWorkspaceQuery&&sameAccountSessionsActor(collectionWorkspaceQuery.actor)||!byId('project-access-panel').open||!s.teams.some(t=>t.teamId===s.team)||collectionWorkspaceRequests.has(collectionWorkspaceKey()))return;const rawTitle=byId('collection-workspace-title').value,title=rawTitle.trim(),currentPassword=byId('collection-workspace-password').value,flags=Object.fromEntries(['read','manage','review'].map(k=>[k,byId('collection-workspace-'+k).checked]));if(!collectionWorkspaceTitle(rawTitle)||!currentPassword||new TextEncoder().encode(currentPassword).length>512||!byId('collection-workspace-confirmed').checked||!flags.read&&(flags.manage||flags.review))return;
+    const c=collectionWorkspaceContext(),key=collectionWorkspaceKey(),requestId=window.crypto.randomUUID(),entry={requestId,status:'pending'},job={actor:c.actor,entry,key};collectionWorkspaceRequests.set(key,entry);collectionWorkspaceQueryIds.set(key,requestId);collectionWorkspaceOperation=job;byId('collection-workspace-request-id').value=requestId;clearCollectionWorkspaceProof();byId('collection-workspace-receipt-summary').replaceChildren();collectionWorkspaceReceiptView=null;updateProjectAccessControls();message('collection-workspace-message','正在创建采集工作区；查询编号已显示，关闭不会撤回已发请求。');let created=false;
+    try{const value=await collectionWorkspaceCall('createCollectionWorkspace',{requestId,teamId:c.team,title,...flags,currentPassword,confirmed:true},c);if(value?.status==='unknown'&&Object.keys(value).length===2&&value.requestId===requestId){entry.status='unknown';clearCollectionWorkspaceDraft();message('collection-workspace-message','创建结果尚未确认，可能已完成；请只读核对原编号，不会自动重新提交。',true);return;}if(!value||Object.keys(value).length!==2||value.status!=='created'||!validCollectionWorkspaceReceipt(value.receipt,c,requestId)||value.receipt.title!==title||['read','manage','review'].some(k=>value.receipt[k]!==flags[k]))throw {code:'INVALID_RESPONSE'};created=true;if(collectionWorkspaceRequests.get(key)===entry)collectionWorkspaceRequests.delete(key);clearCollectionWorkspaceDraft();renderCollectionWorkspaceReceipt(value.receipt);try{await refreshCollectionWorkspaceResult(c,value.receipt);if(currentCollectionWorkspace(c))message('collection-workspace-message','采集工作区已创建，创建时未正式立项；本次回执读取时能力已核验。当前状态与权限请刷新项目详情确认。');}catch{if(currentCollectionWorkspace(c))message('collection-workspace-message','采集工作区已创建，但当前能力或列表刷新未确认；请刷新并核对，不要重复创建。',true);}}
+    catch(error){const uncertain=!created&&(error.code==='HTTP_409'||!error.definiteRejected&&(['STALE_WORKSPACE','SESSION_CHANGED','INVALID_RESPONSE','OPERATION_UNCONFIRMED','NETWORK_ERROR','NETWORK_UNAVAILABLE'].includes(error.code)||!error.code));if(collectionWorkspaceRequests.get(key)===entry){if(uncertain)entry.status='unknown';else collectionWorkspaceRequests.delete(key);}if(currentCollectionWorkspace(c))message('collection-workspace-message',uncertain?'创建结果无法确认，编号已保留；请只读核对，不会自动换编号重试。':error.message||'创建未通过，请重新核对名称、权限和当前密码。',true);}
+    finally{if(collectionWorkspaceOperation===job)collectionWorkspaceOperation=null;if(currentCollectionWorkspace(c))clearCollectionWorkspaceProof();if(sameAccountSessionsActor(c.actor))updateProjectAccessControls();}
+  }
+  async function getCollectionWorkspaceReceipt(){const key=collectionWorkspaceKey(),entry=collectionWorkspaceRequests.get(key),requestId=byId('collection-workspace-request-id').value;if(!collectionWorkspaceApiReady()||busy||projectAccessPending()||collectionWorkspaceQuery&&sameAccountSessionsActor(collectionWorkspaceQuery.actor)||!collectionWorkspaceUuid(requestId)||entry&&entry.requestId!==requestId)return;const c=collectionWorkspaceContext();if(!currentCollectionWorkspace(c))return;const job={actor:c.actor};collectionWorkspaceQueryIds.set(key,requestId);collectionWorkspaceQuery=job;clearCollectionWorkspaceProof();updateCollectionWorkspaceControls();try{const receipt=await collectionWorkspaceCall('getCollectionWorkspaceReceipt',{teamId:c.team,requestId},c);if(!validCollectionWorkspaceReceipt(receipt,c,requestId))throw {code:'INVALID_RESPONSE'};if(collectionWorkspaceRequests.get(key)?.requestId===requestId)collectionWorkspaceRequests.delete(key);clearCollectionWorkspaceDraft();renderCollectionWorkspaceReceipt(receipt);try{await refreshCollectionWorkspaceResult(c,receipt,{refreshList:false});if(currentCollectionWorkspace(c))message('collection-workspace-message','创建回执已核对；本次回执读取时能力已核验。当前状态与权限请刷新项目详情确认；未重新提交创建。');}catch{if(currentCollectionWorkspace(c))message('collection-workspace-message','创建回执已确认，但当前能力或列表刷新未确认；请刷新，不要重复创建。',true);}}
+    catch(error){if(currentCollectionWorkspace(c)){byId('collection-workspace-receipt-summary').replaceChildren();collectionWorkspaceReceiptView=null;message('collection-workspace-message',error.code==='HTTP_404'?'暂未查到可访问回执；这不表示原请求永远未提交，请保留原编号稍后核对，不会自动重发。':error.message||'回执暂无法核对，请保留原编号稍后只读查询。',true);}}finally{if(collectionWorkspaceQuery===job)collectionWorkspaceQuery=null;if(sameAccountSessionsActor(c.actor))updateProjectAccessControls();}}
+  byId('collection-workspace-form').addEventListener('submit',event=>void createCollectionWorkspace(event));byId('collection-workspace-receipt').addEventListener('click',()=>void getCollectionWorkspaceReceipt());byId('collection-workspace-request-id').addEventListener('input',()=>{const key=collectionWorkspaceKey(),id=byId('collection-workspace-request-id').value;if(key){if(collectionWorkspaceUuid(id))collectionWorkspaceQueryIds.set(key,id);else collectionWorkspaceQueryIds.delete(key);}updateCollectionWorkspaceControls();});
+  for(const field of ['title','read','manage','review'])byId('collection-workspace-'+field).addEventListener(field==='title'?'input':'change',()=>{clearCollectionWorkspaceProof();if(field==='read'&&!byId('collection-workspace-read').checked){byId('collection-workspace-manage').checked=false;byId('collection-workspace-review').checked=false;}updateCollectionWorkspaceControls();});for(const field of ['password','confirmed'])byId('collection-workspace-'+field).addEventListener(field==='password'?'input':'change',updateCollectionWorkspaceControls);
+  byId('collection-workspace-open').addEventListener('click',()=>{const r=collectionWorkspaceReceiptView,c=collectionWorkspaceContext();if(!r||!currentCollectionWorkspace(c)||busy||projectAccessPending()||collectionWorkspaceQuery&&sameAccountSessionsActor(collectionWorkspaceQuery.actor))return;clearProjectDetail();projectAccessState.projectId=r.projectId;void refreshAccessProject();});
+  function blankProjectAccess(){return {teams:[],team:'',projects:[],projectMore:false,query:'',projectId:'',project:null,members:[],memberMore:false,memberQuery:'',member:null,tasks:[],taskMore:false,taskQuery:'',task:null,submissions:[],submissionMore:false,read:{list:0,detail:0,members:0,tasks:0,submissions:0},working:{list:false,detail:false,members:false,tasks:false,submissions:false}};}
+  function projectAccessApiReady(){return ['getProjectAccess','listProjects','getProject','listProjectMembers','changeProjectAccess','listProjectTasks','createProjectTask','listProjectSubmissions','downloadProjectSubmission'].every(name=>typeof api?.[name]==='function');}
+  function projectAccessReady(){return !!session&&session.device?.required===true&&session.device.state==='ready'&&deviceSnapshot?.state==='ready';}
+  function projectAccessPending(committedProjectMutation=null){return !!projectAccessMutation&&projectAccessMutation!==committedProjectMutation&&sameAccountSessionsActor(projectAccessMutation.actor)||collectionWorkspacePending()||workspaceFormalizationPending();}
+  function projectDownloadPending(){return !!projectDownloadOperation&&sameAccountSessionsActor(projectDownloadOperation.actor)||originalsExportPending()||!!projectMaterials?.pending()||!!workspaceSource?.pending();}
+  function projectContext(kind='detail'){const s=projectAccessState;return {actor:accountSessionsActor(),at:projectAccessEpoch,device:deviceUiEpoch,main:session?.device?.epoch,team:s.team,projectId:s.projectId,taskId:s.task?.id,kind,read:s.read[kind]};}
+  function currentProjectContext(context,{project=true,task=false,read=true}={}){const s=projectAccessState;return sameAccountSessionsActor(context.actor)&&context.at===projectAccessEpoch&&context.device===deviceUiEpoch&&context.main===session?.device?.epoch&&context.team===s.team&&projectAccessReady()&&s.teams.some(value=>value.teamId===s.team)&&byId('project-access-panel').open&&!byId('project-access-panel').hidden&&(!project||context.projectId===s.projectId)&&(!task||context.taskId===s.task?.id)&&(!read||context.read===s.read[context.kind]);}
+  function clearProjectGrantSelection(){projectAccessState.member=null;byId('project-access-password').value='';byId('project-access-confirmed').checked=false;for(const kind of ['read','manage','review'])byId('project-access-'+kind).checked=false;byId('project-access-target').textContent='尚未选择授权对象。';}
+  function clearProjectTaskCreate(){byId('project-task-title').value='';byId('project-task-instructions').value='';byId('project-task-confirmed').checked=false;}
+  function clearProjectReview(){stopTaskSubmissionPreview(true);projectOriginalSelection.clear();const s=projectAccessState;s.read.submissions++;s.working.submissions=false;s.task=null;s.submissions=[];s.submissionMore=false;byId('project-review-title').textContent='采集资料核对';byId('project-review-list').replaceChildren();message('project-review-message','');byId('project-review-section').hidden=true;}
+  function resetProjectMaterials(){
+    if(projectMaterials){projectMaterials.reset();return;}
+    const panel=byId('project-materials-panel');if(!panel)return;
+    panel.hidden=true;panel.open=false;
+    for(const field of panel.querySelectorAll('input,textarea')){field.value='';if(field.type==='checkbox')field.checked=false;field.disabled=true;}
+    for(const field of panel.querySelectorAll('select')){field.selectedIndex=0;field.disabled=true;}
+    for(const button of panel.querySelectorAll('button'))button.disabled=true;
+    for(const id of ['project-materials-tree','project-materials-history','project-materials-source-summary','project-materials-record-summary','project-materials-receipt-summary','project-materials-members','project-materials-message','project-materials-attachment-summary','project-materials-maintenance-note'])byId(id)?.replaceChildren();
+    for(const id of ['project-materials-record-section','project-materials-access-form','project-materials-import-form','project-materials-action-form','project-materials-maintenance-form'])if(byId(id))byId(id).hidden=true;
+    if(byId('project-materials-export-confirmed'))byId('project-materials-export-confirmed').checked=false;
+    for(const id of ['project-materials-export-summary','project-materials-export-message'])if(byId(id))byId(id).textContent='';
+    if(byId('project-materials-record-title'))byId('project-materials-record-title').textContent='项目资料清单';
+    if(byId('project-materials-item-target'))byId('project-materials-item-target').textContent='尚未选择资料项。';
+    if(byId('project-materials-target'))byId('project-materials-target').textContent='尚未选择授权对象。';
+    if(byId('project-materials-maintenance-target'))byId('project-materials-maintenance-target').textContent='尚未选择当前叶原件操作。';
+    if(byId('project-materials-maintenance-title'))byId('project-materials-maintenance-title').textContent='当前叶原件维护';
+  }
+  function clearProjectDetail(){resetWorkspaceFormalization();resetWorkspaceSource();resetProjectMaterials();byId('collection-workspace-materials-locked').hidden=true;const s=projectAccessState;for(const kind of ['detail','members','tasks']){s.read[kind]++;s.working[kind]=false;}s.projectId='';s.project=null;s.members=[];s.memberMore=false;s.memberQuery='';s.tasks=[];s.taskMore=false;s.taskQuery='';byId('project-access-member-search').value='';byId('project-tasks-search').value='';clearProjectGrantSelection();clearProjectTaskCreate();clearProjectReview();byId('project-access-title').textContent='';byId('project-access-status').textContent='';byId('project-access-members').replaceChildren();byId('project-tasks-list').replaceChildren();byId('project-access-detail').hidden=true;for(const name of ['project-access-grant-message','project-task-create-message','project-tasks-message'])message(name,'');}
+  function resetProjectAccess(close=true,hide=true){resetCollectionWorkspaceView();const prior=projectAccessState;projectAccessEpoch++;clearProjectDetail();projectAccessState=blankProjectAccess();if(!hide){projectAccessState.teams=prior.teams;projectAccessState.team=prior.team;}else{byId('project-access-panel').hidden=true;byId('project-access-team').replaceChildren();}byId('project-access-search').value='';byId('project-access-list').replaceChildren();message('project-access-message','');if(close){projectAccessOpened=false;byId('project-access-panel').open=false;}updateProjectAccessControls();}
+  function validProjectView(value){const keys=['id','title','status','revision','canRead','canManageAccess','canCreateTask','canReview'],kind=!!value&&Object.hasOwn(value,'kind'),confirmed=!!value&&Object.hasOwn(value,'businessConfirmed');return !!value&&Object.keys(value).length===keys.length+(kind?1:0)+(confirmed?1:0)&&keys.every(key=>Object.hasOwn(value,key))&&(!kind||value.kind==='collection-workspace')&&(!confirmed||kind&&value.businessConfirmed===true)&&typeof value.id==='string'&&typeof value.title==='string'&&['active','frozen'].includes(value.status)&&Number.isSafeInteger(value.revision)&&value.revision>=1&&['canRead','canManageAccess','canCreateTask','canReview'].every(key=>typeof value[key]==='boolean')&&!(value.status==='frozen'&&(value.canManageAccess||value.canCreateTask));}
+  function projectMemberSelectable(value){return !!value&&value.status==='active'&&['manager','partner'].includes(value.role)&&Number.isSafeInteger(value.revision)&&value.revision>=0&&value.revision<Number.MAX_SAFE_INTEGER;}
+  function updateProjectAccessControls(){
+    const s=projectAccessState,ready=projectAccessReady()&&projectAccessApiReady()&&s.teams.some(value=>value.teamId===s.team)&&byId('project-access-panel').open&&!byId('project-access-panel').hidden,locked=busy||projectAccessPending()||projectDownloadPending(),project=ready&&s.project&&validProjectView(s.project)&&!s.working.detail,write=project&&s.project.status==='active'&&s.project.revision<Number.MAX_SAFE_INTEGER;
+    for(const id of ['project-access-team','project-access-search','project-access-search-button','project-access-refresh'])byId(id).disabled=!ready||locked||s.working.list;byId('project-access-more').hidden=!s.projectMore;byId('project-access-more').disabled=!ready||locked||s.working.list||!s.projectMore;for(const button of byId('project-access-list').querySelectorAll('button'))button.disabled=!ready||locked;
+    byId('project-tasks-section').hidden=!project||!s.project.canRead;byId('project-access-detail-refresh').disabled=!ready||!s.projectId||locked||s.working.detail;byId('project-access-form').hidden=!project||!s.project.canManageAccess;byId('project-task-create-form').hidden=!project||!s.project.canCreateTask;
+    for(const id of ['project-access-member-search','project-access-member-search-button','project-access-member-refresh'])byId(id).disabled=!write||!s.project.canManageAccess||locked||s.working.members;byId('project-access-member-more').hidden=!s.memberMore;byId('project-access-member-more').disabled=!write||!s.project.canManageAccess||locked||s.working.members||!s.memberMore;for(const button of byId('project-access-members').querySelectorAll('button'))button.disabled=!write||!s.project.canManageAccess||locked||s.working.members||button.dataset.selectable!=='true';
+    const target=write&&s.project.canManageAccess&&!locked&&!s.working.members&&s.members.includes(s.member)&&projectMemberSelectable(s.member);for(const kind of ['read','manage','review','confirmed','password'])byId('project-access-'+kind).disabled=!target;const changed=target&&(!byId('project-access-read').checked||['read','manage','review'].some(kind=>byId('project-access-'+kind).checked!==s.member[kind]));byId('project-access-save').disabled=!target||!changed||!byId('project-access-confirmed').checked||!byId('project-access-password').value;
+    for(const id of ['project-task-title','project-task-instructions','project-task-confirmed'])byId(id).disabled=!write||!s.project.canCreateTask||locked;byId('project-task-create').disabled=!write||!s.project.canCreateTask||locked||!byId('project-task-title').value.trim()||!byId('project-task-confirmed').checked;
+    for(const id of ['project-tasks-refresh','project-tasks-search','project-tasks-search-button'])byId(id).disabled=!project||locked||s.working.tasks;byId('project-tasks-more').hidden=!s.taskMore;byId('project-tasks-more').disabled=!project||locked||s.working.tasks||!s.taskMore;for(const button of byId('project-tasks-list').querySelectorAll('button'))button.disabled=!project||locked||s.working.tasks||button.dataset.action==='review'&&!s.project.canReview||button.dataset.action==='manage'&&!s.project.canCreateTask;
+    const review=project&&s.project.canReview&&!!s.task;byId('project-review-section').hidden=!review;byId('project-review-refresh').disabled=!review||locked||s.working.submissions;byId('project-review-more').hidden=!s.submissionMore;byId('project-review-more').disabled=!review||locked||s.working.submissions||!s.submissionMore;for(const button of byId('project-review-list').querySelectorAll('button'))button.disabled=!review||locked||s.working.submissions;updateOriginalsExportControls();updateTaskSubmissionPreviewControls();updateCollectionWorkspaceControls();updateWorkspaceFormalizationControls();workspaceSource?.update();
+  }
+  function renderProjectList(){const s=projectAccessState,list=byId('project-access-list');list.replaceChildren();if(!s.projects.length)list.append(el('li','当前没有已登记且获授权的项目。','identity-note'));for(const item of s.projects){const row=el('li'),description=el('div');row.dataset.projectId=item.id;description.append(el('strong',item.title),el('small',projectKindLabel(item)+' · '+(item.status==='frozen'?'项目已冻结，仅可按授权读取。':'项目使用中')));const choose=el('button',s.projectId===item.id?'已选择此项目':(!item.canRead&&!item.canManageAccess&&!item.canCreateTask&&!item.canReview?'打开项目':'打开项目采集'),'button');choose.type='button';choose.addEventListener('click',()=>{if(busy||projectAccessPending()||projectDownloadPending()||projectAccessState!==s||!byId('project-access-list').contains(choose)||!s.projects.includes(item))return;void selectAccessProject(item.id);});row.append(description,choose);list.append(row);}updateProjectAccessControls();}
+  function renderProjectMembers(){const s=projectAccessState,list=byId('project-access-members');list.replaceChildren();if(!s.members.length)list.append(el('li','没有已加载的可授权经理或合伙人。','identity-note'));for(const item of s.members){const row=el('li'),description=el('div');row.dataset.userId=item.id;description.append(el('strong',item.displayName+' · '+labels[item.role]),el('small',[item.read?'读取':'未授读取',item.manage?'采集管理':'未授管理',item.review?'资料核对':'未授核对'].join(' · ')));const choose=el('button',s.member===item?'已选择此员工':'选择授权对象','button');choose.type='button';choose.dataset.selectable=String(projectMemberSelectable(item));choose.addEventListener('click',()=>{if(busy||projectAccessPending()||projectDownloadPending()||projectAccessState!==s||!byId('project-access-members').contains(choose)||s.working.members||!s.project?.canManageAccess||!s.members.includes(item)||!projectMemberSelectable(item))return;clearProjectGrantSelection();s.member=item;for(const kind of ['read','manage','review'])byId('project-access-'+kind).checked=item[kind];byId('project-access-target').textContent='拟调整：'+item.displayName+' · '+labels[item.role]+' · '+s.project.title;renderProjectMembers();});row.append(description,choose);list.append(row);}updateProjectAccessControls();}
+  function renderProjectTasks(){const s=projectAccessState,list=byId('project-tasks-list');list.replaceChildren();if(!s.tasks.length)list.append(el('li','没有已加载的本项目任务。','identity-note'));for(const item of s.tasks){const row=el('li'),description=el('div'),actions=el('div',undefined,'project-task-actions');row.dataset.taskId=item.id;description.append(el('strong',item.title),el('small',(statuses[item.status]||'状态待核对')+' · '+item.instructions));if(s.project?.canReview){const review=el('button',s.task?.id===item.id?'已选择核对此任务':'选择资料核对','button');review.type='button';review.dataset.action='review';review.addEventListener('click',()=>void selectProjectReviewTask(item));actions.append(review);}if(s.project?.canCreateTask){const manage=el('button','打开下方任务分工','button');manage.type='button';manage.dataset.action='manage';manage.addEventListener('click',()=>void openProjectTaskManagement(item));actions.append(manage);}row.append(description,actions);list.append(row);}updateProjectAccessControls();}
+  function renderProjectSubmissions(){const s=projectAccessState,list=byId('project-review-list');list.replaceChildren();if(!s.submissions.length)list.append(el('li','当前任务没有已加载的提交记录。','identity-note'));for(const item of s.submissions){const row=el('li'),description=el('div');row.dataset.submissionId=item.id;description.append(el('strong',item.filename),el('small',item.submittedBy.displayName+' · '+formatSize(item.byteLength)+' · '+new Date(item.createdAt).toLocaleString('zh-CN')),el('small','SHA-256 '+item.sha256));const download=el('button','保存核对原件副本','button');download.type='button';download.addEventListener('click',()=>void downloadProjectReview(item));description.append(originalCheckbox(true,item));row.append(description,download,taskSubmissionPreviewButton(true,item));list.append(row);}updateProjectAccessControls();}
+  async function projectAccessCall(name,input,current){const result=await api[name](input);if(!current())throw {code:'STALE_PROJECT_ACCESS'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','当前项目登录已失效，请重新登录。',true);}throw result?.error||{code:'INVALID_RESPONSE'};}return result.value;}
+  async function loadProjectAccess(){resetProjectAccess();if(!projectAccessReady()||!projectAccessApiReady())return;const actor=accountSessionsActor(),at=projectAccessEpoch,device=deviceUiEpoch,current=()=>sameAccountSessionsActor(actor)&&at===projectAccessEpoch&&device===deviceUiEpoch&&projectAccessReady();try{const value=await projectAccessCall('getProjectAccess',undefined,current);if(!current())return;if(!Array.isArray(value?.teams)||value.teams.length>50||!value.teams.every(team=>typeof team.teamId==='string'&&team.teamId&&typeof team.teamName==='string')||new Set(value.teams.map(team=>team.teamId)).size!==value.teams.length)throw {code:'INVALID_RESPONSE'};const s=projectAccessState;s.teams=value.teams;s.team=value.teams[0]?.teamId||'';byId('project-access-team').replaceChildren();for(const team of value.teams){const option=el('option',team.teamName);option.value=team.teamId;byId('project-access-team').append(option);}byId('project-access-team').value=s.team;byId('project-access-panel').hidden=!value.teams.length;updateProjectAccessControls();}catch{if(current())resetProjectAccess();}}
+  async function loadAccessProjects(append=false){const s=projectAccessState;if(!projectAccessReady()||!projectAccessApiReady()||!s.teams.some(team=>team.teamId===s.team)||!byId('project-access-panel').open||busy||projectAccessPending()||projectDownloadPending()||s.working.list||append&&!s.projectMore)return;if(!append){clearProjectDetail();s.projects=[];s.projectMore=false;}s.read.list++;const context=projectContext('list');s.working.list=true;renderProjectList();message('project-access-message','正在读取当前授权范围内的项目…');try{const value=await projectAccessCall('listProjects',{teamId:s.team,...(s.query?{q:s.query}:{}),...(append&&s.projects.length?{after:s.projects.at(-1).id}:{}),limit:20},()=>currentProjectContext(context,{project:false}));if(!Array.isArray(value?.projects)||!value.projects.every(validProjectView)||typeof value.hasMore!=='boolean')throw {code:'INVALID_RESPONSE'};const rows=append?s.projects.concat(value.projects):value.projects;if(new Set(rows.map(row=>row.id)).size!==rows.length)throw {code:'INVALID_RESPONSE'};s.projects=rows;s.projectMore=value.hasMore;renderProjectList();message('project-access-message',rows.length?'请选择项目后查看当前可用操作。':'当前没有已登记且获授权的项目。');}catch(error){if(currentProjectContext(context,{project:false})){s.projects=[];s.projectMore=false;clearProjectDetail();renderProjectList();message('project-access-message',error.message||'项目列表无法确认，请手动刷新。',true);}}finally{if(currentProjectContext(context,{project:false})){s.working.list=false;updateProjectAccessControls();}}}
+  async function selectAccessProject(id){const s=projectAccessState;if(busy||projectAccessPending()||projectDownloadPending()||!s.projects.some(project=>project.id===id)||!projectAccessReady()||!byId('project-access-panel').open)return;clearProjectDetail();s.projectId=id;renderProjectList();await refreshAccessProject();}
+  async function refreshAccessProject(committedProjectMutation=null){const s=projectAccessState;if(!s.projectId||!projectAccessReady()||!projectAccessApiReady()||!byId('project-access-panel').open||busy)return false;const id=s.projectId;clearProjectDetail();s.projectId=id;s.read.detail++;const context=projectContext('detail');s.working.detail=true;byId('project-access-detail').hidden=false;byId('project-access-title').textContent='正在核验项目…';updateProjectAccessControls();try{const value=await projectAccessCall('getProject',{teamId:s.team,projectId:id},()=>currentProjectContext(context));if(!validProjectView(value?.project)||value.project.id!==id)throw {code:'INVALID_RESPONSE'};s.project=value.project;s.projects=s.projects.map(project=>project.id===id?value.project:project);byId('project-access-title').textContent=s.project.title;byId('project-access-status').textContent=projectKindLabel(s.project)+' · '+(s.project.status==='frozen'?'项目已冻结 · 所有修改关闭':'项目使用中')+' · 当前版本 '+s.project.revision;s.working.detail=false;renderProjectList();if(s.project.kind==='collection-workspace'&&s.project.businessConfirmed!==true){resetProjectMaterials();byId('collection-workspace-materials-locked').hidden=false;updateCollectionWorkspaceMaterialNotice(s.project);}else{byId('collection-workspace-materials-locked').hidden=true;projectMaterials?.show();}workspaceSource?.show();const results=await Promise.all([s.project.canRead?loadAccessProjectTasks():Promise.resolve(true),s.project.canManageAccess?loadAccessProjectMembers():Promise.resolve(true),workspaceFormalizationCandidate()?loadWorkspaceFormalization(committedProjectMutation):Promise.resolve(true)]);return currentProjectContext(context)&&results.every(Boolean);}catch(error){if(currentProjectContext(context)){s.project=null;byId('project-access-title').textContent='项目状态尚未核验';byId('project-access-status').textContent='';message('project-access-message',error.message||'当前项目能力无法确认，请刷新列表核对。',true);}return false;}finally{if(currentProjectContext(context)){s.working.detail=false;updateProjectAccessControls();}}}
+  async function loadAccessProjectMembers(append=false){const s=projectAccessState;if(!s.project?.canManageAccess||s.project.status!=='active'||!byId('project-access-panel').open||!projectAccessReady()||s.working.members||append&&!s.memberMore)return false;s.read.members++;const context=projectContext('members');s.working.members=true;clearProjectGrantSelection();if(!append){s.members=[];s.memberMore=false;}renderProjectMembers();try{const value=await projectAccessCall('listProjectMembers',{teamId:s.team,projectId:s.projectId,...(s.memberQuery?{q:s.memberQuery}:{}),...(append&&s.members.length?{after:s.members.at(-1).id}:{}),limit:20},()=>currentProjectContext(context));if(!Array.isArray(value?.members)||typeof value.hasMore!=='boolean'||!value.members.every(member=>typeof member.id==='string'&&typeof member.displayName==='string'&&['manager','partner'].includes(member.role)&&member.status==='active'&&Number.isSafeInteger(member.revision)&&member.revision>=0&&['read','manage','review'].every(key=>typeof member[key]==='boolean')&&(!member.manage&&!member.review||member.read)))throw {code:'INVALID_RESPONSE'};const rows=append?s.members.concat(value.members):value.members;if(new Set(rows.map(row=>row.id)).size!==rows.length)throw {code:'INVALID_RESPONSE'};s.members=rows;s.memberMore=value.hasMore;renderProjectMembers();return true;}catch(error){if(currentProjectContext(context)){s.members=[];s.memberMore=false;renderProjectMembers();message('project-access-grant-message',error.message||'授权对象无法确认，请刷新。',true);}return false;}finally{if(currentProjectContext(context)){s.working.members=false;updateProjectAccessControls();}}}
+  function projectTaskListHint(project){
+    const actions=[];
+    if(project.canReview)actions.push('点击「选择资料核对」查看已提交的资料。');
+    if(project.canCreateTask)actions.push('点击「打开下方任务分工」处理指派和退回。');
+    return actions.join('')||'当前授权可查阅项目采集任务。';
+  }
+  async function loadAccessProjectTasks(append=false){
+    const s=projectAccessState;
+    if(!s.project?.canRead||!byId('project-access-panel').open||!projectAccessReady()||s.working.tasks||(append&&!s.taskMore))return false;
+    s.read.tasks++;
+    const context=projectContext('tasks');
+    s.working.tasks=true;
+    if(!append){s.tasks=[];s.taskMore=false;clearProjectReview();message('project-tasks-message','');}
+    renderProjectTasks();
+    try{
+      const input={teamId:s.team,projectId:s.projectId,...(s.taskQuery?{q:s.taskQuery}:{}),...(append&&s.tasks.length?{after:s.tasks.at(-1).id}:{}),limit:20};
+      const value=await projectAccessCall('listProjectTasks',input,()=>currentProjectContext(context));
+      if(!Array.isArray(value?.tasks)||typeof value.hasMore!=='boolean'||!value.tasks.every(task=>typeof task.id==='string'&&typeof task.title==='string'&&typeof task.instructions==='string'&&Object.hasOwn(statuses,task.status)&&Number.isSafeInteger(task.revision)&&task.revision>=0))throw {code:'INVALID_RESPONSE'};
+      const rows=append?s.tasks.concat(value.tasks):value.tasks;
+      if(new Set(rows.map(row=>row.id)).size!==rows.length)throw {code:'INVALID_RESPONSE'};
+      s.tasks=rows;
+      s.taskMore=value.hasMore;
+      renderProjectTasks();
+      message('project-tasks-message',rows.length?projectTaskListHint(s.project):'');
+      return true;
+    }catch(error){
+      if(currentProjectContext(context)){
+        s.tasks=[];s.taskMore=false;clearProjectReview();renderProjectTasks();
+        message('project-tasks-message',error.message||'当前项目任务无法确认，请刷新。',true);
+      }
+      return false;
+    }finally{
+      if(currentProjectContext(context)){s.working.tasks=false;updateProjectAccessControls();}
+    }
+  }
+  async function selectProjectReviewTask(task){const s=projectAccessState;if(busy||projectAccessPending()||projectDownloadPending()||!s.project?.canReview||!s.tasks.includes(task)||!byId('project-access-panel').open||!projectAccessReady())return;clearProjectReview();s.task=task;byId('project-review-title').textContent='采集资料核对 · '+task.title;renderProjectTasks();await loadAccessProjectSubmissions();}
+  async function loadAccessProjectSubmissions(append=false){const s=projectAccessState;if(!s.project?.canReview||!s.task||!byId('project-access-panel').open||!projectAccessReady()||s.working.submissions||append&&!s.submissionMore)return false;stopTaskSubmissionPreview(true);s.read.submissions++;const context=projectContext('submissions');s.working.submissions=true;if(!append){projectOriginalSelection.clear();s.submissions=[];s.submissionMore=false;}renderProjectSubmissions();try{const value=await projectAccessCall('listProjectSubmissions',{teamId:s.team,projectId:s.projectId,taskId:s.task.id,...(append&&s.submissions.length?{after:s.submissions.at(-1).id}:{}),limit:20},()=>currentProjectContext(context,{task:true}));if(!Array.isArray(value?.submissions)||typeof value.hasMore!=='boolean'||!value.submissions.every(item=>typeof item.id==='string'&&typeof item.attachmentId==='string'&&typeof item.filename==='string'&&/^[a-f0-9]{64}$/.test(item.sha256)&&Number.isSafeInteger(item.byteLength)&&item.byteLength>=0&&Number.isSafeInteger(item.createdAt)&&item.submittedBy&&typeof item.submittedBy.id==='string'&&typeof item.submittedBy.displayName==='string'))throw {code:'INVALID_RESPONSE'};const rows=append?s.submissions.concat(value.submissions):value.submissions;if(new Set(rows.map(row=>row.id)).size!==rows.length)throw {code:'INVALID_RESPONSE'};s.submissions=rows;s.submissionMore=value.hasMore;renderProjectSubmissions();message('project-review-message','仅用于人工核对采集资料；保存时会再次核验权限。');return true;}catch(error){if(currentProjectContext(context,{task:true})){s.submissions=[];s.submissionMore=false;renderProjectSubmissions();message('project-review-message',error.message||'资料核对记录无法确认，请刷新项目权限。',true);}return false;}finally{if(currentProjectContext(context,{task:true})){s.working.submissions=false;updateProjectAccessControls();}}}
+  async function openProjectTaskManagement(task){const s=projectAccessState;if(busy||projectAccessPending()||projectDownloadPending()||!s.project?.canCreateTask||!s.tasks.includes(task)||!projectAccessReady()||!byId('project-access-panel').open)return;const context=projectContext('tasks');if(!session.memberships.some(member=>member.teamId===s.team)){message('project-tasks-message','当前账号团队状态需要重新登录核对。',true);return;}if(teamId!==s.team){teamId=s.team;byId('team-select').value=teamId;await loadTasks();if(!currentProjectContext(context))return;}await selectTask(task.id);if(currentProjectContext(context))byId('task-detail').scrollIntoView?.({block:'start'});}
+  async function downloadProjectReview(item){const s=projectAccessState;if(busy||projectAccessPending()||projectDownloadPending()||!s.project?.canReview||!s.task||!s.submissions.includes(item)||!projectAccessReady()||!byId('project-access-panel').open)return;const context=projectContext('submissions'),operation={actor:context.actor};projectDownloadOperation=operation;updateProjectAccessControls();message('project-review-message','正在读取并核验当前原件保存权限…');try{const result=await projectAccessCall('downloadProjectSubmission',{teamId:s.team,projectId:s.projectId,taskId:s.task.id,submissionId:item.id},()=>currentProjectContext(context,{task:true}));if(currentProjectContext(context,{task:true}))message('project-review-message',result.canceled?'已取消，未保存副本。':'核对原件副本已保存：'+result.filename);}catch(error){if(currentProjectContext(context,{task:true}))message('project-review-message',error.message||'原件未能保存，请刷新当前权限后核对。',true);}finally{if(projectDownloadOperation===operation)projectDownloadOperation=null;if(sameAccountSessionsActor(context.actor))updateProjectAccessControls();}}
+  function projectMutationMessage(id,text,bad=false){message(id,text,bad);message('project-access-message',text,bad);}
+  async function mutateProjectAccess(kind,event){
+    event.preventDefault();const s=projectAccessState,project=s.project,member=s.member;if(!projectAccessReady()||!projectAccessApiReady()||!byId('project-access-panel').open||busy||projectAccessPending()||projectDownloadPending()||s.working.detail||!project||project.status!=='active'||!Number.isSafeInteger(project.revision)||project.revision<1||project.revision>=Number.MAX_SAFE_INTEGER)return;let input,name,feedback;
+    if(kind==='grant'){const currentPassword=byId('project-access-password').value,values=Object.fromEntries(['read','manage','review'].map(key=>[key,byId('project-access-'+key).checked]));if(!project.canManageAccess||s.working.members||!s.members.includes(member)||!projectMemberSelectable(member)||!byId('project-access-confirmed').checked||!currentPassword||new TextEncoder().encode(currentPassword).length>512||!values.read&&(values.manage||values.review)||values.read&&!['read','manage','review'].some(key=>values[key]!==member[key]))return;input={teamId:s.team,projectId:s.projectId,revision:project.revision,userId:member.id,memberRevision:member.revision,...values,currentPassword,confirmed:true};name='changeProjectAccess';feedback='project-access-grant-message';}
+    else{const title=byId('project-task-title').value.trim(),instructions=byId('project-task-instructions').value;if(!project.canCreateTask||!byId('project-task-confirmed').checked||!title||[...title].length>160||/[\p{Cc}\p{Cf}]/u.test(title)||[...instructions].length>4000||/[\p{Cf}\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u.test(instructions))return;input={teamId:s.team,projectId:s.projectId,revision:project.revision,title,instructions,confirmed:true};name='createProjectTask';feedback='project-task-create-message';}
+    const context=projectContext('detail'),operation={actor:context.actor};projectAccessMutation=operation;byId('project-access-password').value='';byId('project-access-confirmed').checked=false;byId('project-task-confirmed').checked=false;if(kind==='task')clearProjectTaskCreate();updateProjectAccessControls();projectMutationMessage(feedback,kind==='grant'?'正在验证当前密码并保存本项目授权…':'正在创建本项目采集任务…');let completed=false;
+    try{const value=await projectAccessCall(name,input,()=>currentProjectContext(context));completed=true;if(!Number.isSafeInteger(value?.revision)||value.revision<=project.revision||kind==='grant'&&value.changed!==true||kind==='task'&&(!value.task||typeof value.task.id!=='string'||value.task.status!=='open'||value.task.revision!==0))throw {code:'INVALID_RESPONSE'};const refreshed=await refreshAccessProject(operation);if(currentProjectContext(context,{read:false})){projectMutationMessage(feedback,refreshed?(kind==='grant'?'本项目采集授权已保存；当前项目和授权对象已重新读取。':'任务已创建。请打开该任务的下方分工，明确指派本团队实习生或助理。'):(kind==='grant'?'本项目采集授权已保存，但列表刷新未确认；请刷新当前项目核对。':'采集任务已创建，但列表刷新未确认；请刷新当前项目核对。'),!refreshed);}}
+    catch(error){if(currentProjectContext(context,{read:false})){const uncertain=error.code==='OPERATION_UNCONFIRMED'||passwordChangeUncertain(error);if(completed||uncertain||['HTTP_409','HTTP_404'].includes(error.code)){clearProjectDetail();s.projectId=context.projectId;byId('project-access-detail').hidden=false;byId('project-access-title').textContent='请刷新当前项目核对';}projectMutationMessage(feedback,completed?(kind==='grant'?'授权操作已完成，但结果展示未确认；请刷新项目核对。':'任务创建已完成，但结果展示未确认；请刷新项目核对。'):uncertain?'未能确认操作结果；请求可能已完成，请刷新项目核对，系统不会自动重试。':error.code==='HTTP_409'?'项目或员工版本已变化，请刷新当前项目后重新选择。':error.message||'项目操作未通过，请核对当前授权与密码。',true);}}
+    finally{if(projectAccessMutation===operation)projectAccessMutation=null;if(currentProjectContext(context,{read:false})){byId('project-access-password').value='';byId('project-access-confirmed').checked=false;byId('project-task-confirmed').checked=false;updateProjectAccessControls();}else if(sameAccountSessionsActor(context.actor)){updateProjectAccessControls();if(byId('project-access-panel').open&&!byId('project-access-panel').hidden&&!projectAccessPending())void loadAccessProjects();}}
+  }
+  function closeProjectAccess(){const pending=projectAccessPending()||projectDownloadPending();projectAccessOpened=false;resetProjectAccess(false,false);if(pending&&session)message('workspace-message','已清除项目操作输入；已提交的操作仍可能完成，请刷新当前项目核对。');}
+  byId('project-originals-export').addEventListener('click',()=>void exportSelectedOriginals(true));
+  byId('project-access-panel').querySelector('summary').addEventListener('click',()=>{if(byId('project-access-panel').open)closeProjectAccess();else projectAccessOpened=true;});
+  byId('project-access-panel').addEventListener('toggle',()=>{if(byId('project-access-panel').open&&!byId('project-access-panel').hidden&&projectAccessReady()){projectAccessOpened=true;if(projectAccessPending()||projectDownloadPending()){message('project-access-message','项目操作仍在处理中；请稍候刷新核对。');resumePendingWorkspaceFormalization();}else void loadAccessProjects();updateProjectAccessControls();}else if(projectAccessOpened)closeProjectAccess();});
+  byId('project-access-team').addEventListener('change',()=>{const value=byId('project-access-team').value,s=projectAccessState;if(busy||projectAccessPending()||projectDownloadPending()||!s.teams.some(team=>team.teamId===value))return;resetProjectAccess(false,false);projectAccessState.team=value;byId('project-access-team').value=value;void loadAccessProjects();});
+  byId('project-access-search').addEventListener('input',()=>{const s=projectAccessState;if(projectAccessPending()||projectDownloadPending())return;s.query=byId('project-access-search').value;s.read.list++;s.working.list=false;s.projects=[];s.projectMore=false;clearProjectDetail();renderProjectList();});
+  byId('project-access-search').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();void loadAccessProjects();}});byId('project-access-search-button').addEventListener('click',()=>void loadAccessProjects());byId('project-access-refresh').addEventListener('click',()=>void loadAccessProjects());byId('project-access-more').addEventListener('click',()=>void loadAccessProjects(true));
+  byId('project-access-detail-refresh').addEventListener('click',()=>{if(!projectAccessPending()&&!projectDownloadPending())void refreshAccessProject();});
+  byId('project-access-member-search').addEventListener('input',()=>{const s=projectAccessState;if(projectAccessPending()||projectDownloadPending())return;s.memberQuery=byId('project-access-member-search').value;s.read.members++;s.working.members=false;s.members=[];s.memberMore=false;clearProjectGrantSelection();renderProjectMembers();});byId('project-access-member-search').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();if(!projectAccessPending()&&!projectDownloadPending())void loadAccessProjectMembers();}});for(const id of ['project-access-member-search-button','project-access-member-refresh'])byId(id).addEventListener('click',()=>{if(!projectAccessPending()&&!projectDownloadPending())void loadAccessProjectMembers();});byId('project-access-member-more').addEventListener('click',()=>{if(!projectAccessPending()&&!projectDownloadPending())void loadAccessProjectMembers(true);});
+  for(const kind of ['read','manage','review'])byId('project-access-'+kind).addEventListener('change',()=>{if(kind==='read'&&!byId('project-access-read').checked){byId('project-access-manage').checked=false;byId('project-access-review').checked=false;}else if(kind!=='read'&&byId('project-access-'+kind).checked)byId('project-access-read').checked=true;byId('project-access-password').value='';byId('project-access-confirmed').checked=false;updateProjectAccessControls();});byId('project-access-confirmed').addEventListener('change',updateProjectAccessControls);byId('project-access-password').addEventListener('input',updateProjectAccessControls);byId('project-access-form').addEventListener('submit',event=>void mutateProjectAccess('grant',event));
+  for(const id of ['project-task-title','project-task-instructions'])byId(id).addEventListener('input',()=>{byId('project-task-confirmed').checked=false;updateProjectAccessControls();});byId('project-task-confirmed').addEventListener('change',updateProjectAccessControls);byId('project-task-create-form').addEventListener('submit',event=>void mutateProjectAccess('task',event));
+  byId('project-tasks-search').addEventListener('input',()=>{const s=projectAccessState;if(projectAccessPending()||projectDownloadPending())return;s.taskQuery=byId('project-tasks-search').value;s.read.tasks++;s.working.tasks=false;s.tasks=[];s.taskMore=false;clearProjectReview();renderProjectTasks();message('project-tasks-message','');});byId('project-tasks-search').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();if(!projectAccessPending()&&!projectDownloadPending())void loadAccessProjectTasks();}});for(const id of ['project-tasks-refresh','project-tasks-search-button'])byId(id).addEventListener('click',()=>{if(!projectAccessPending()&&!projectDownloadPending())void loadAccessProjectTasks();});byId('project-tasks-more').addEventListener('click',()=>{if(!projectAccessPending()&&!projectDownloadPending())void loadAccessProjectTasks(true);});byId('project-submission-preview-close').addEventListener('click',event=>closeTaskSubmissionPreview(event.currentTarget.dataset.previewId));byId('project-review-refresh').addEventListener('click',()=>{if(!projectAccessPending()&&!projectDownloadPending())void loadAccessProjectSubmissions();});byId('project-review-more').addEventListener('click',()=>{if(!projectAccessPending()&&!projectDownloadPending())void loadAccessProjectSubmissions(true);});
+  let administratorBusinessRoleEpoch=0,administratorBusinessRoleAccessEpoch=0,administratorBusinessRoleState=blankAdministratorBusinessRole(),administratorBusinessRoleMutation=null,administratorBusinessRoleOpened=false;
+  function blankAdministratorBusinessRole(){return {canReview:false,rows:[],selected:null,query:'',hasMore:false,needsRefresh:true,working:false,read:0};}
+  function administratorBusinessRoleApiReady(){return ['getAdministratorBusinessRoleAccess','listAdministratorBusinessRoles','changeAdministratorBusinessRole'].every(name=>typeof api?.[name]==='function');}
+  function administratorBusinessRoleReady(){return !!session&&session.device?.required===true&&session.device.state==='ready'&&deviceSnapshot?.state==='ready';}
+  function administratorBusinessRolePending(){return !!administratorBusinessRoleMutation&&sameAccountSessionsActor(administratorBusinessRoleMutation.actor);}
+  function administratorBusinessRoleContext(){return {actor:accountSessionsActor(),at:administratorBusinessRoleEpoch,device:deviceUiEpoch,main:session?.device?.epoch,state:administratorBusinessRoleState,read:administratorBusinessRoleState.read};}
+  function currentAdministratorBusinessRole(context){return sameAccountSessionsActor(context.actor)&&context.at===administratorBusinessRoleEpoch&&context.device===deviceUiEpoch&&context.main===session?.device?.epoch&&context.state===administratorBusinessRoleState&&context.read===administratorBusinessRoleState.read&&administratorBusinessRoleReady()&&administratorBusinessRoleState.canReview&&byId('administrator-business-role-panel').open&&!byId('administrator-business-role-panel').hidden;}
+  function administratorBusinessRoleValid(item){return !!item&&typeof item.id==='string'&&!!item.id&&typeof item.displayName==='string'&&typeof item.teamId==='string'&&!!item.teamId&&typeof item.teamName==='string'&&item.status==='active'&&(item.role===null||Object.hasOwn(labels,item.role))&&Number.isSafeInteger(item.revision)&&item.revision>=0&&['unreviewed','approved','withdrawn','invalidated'].includes(item.approvalStatus)&&!(item.approvalStatus==='approved'&&item.role===null)&&!(item.approvalStatus==='withdrawn'&&item.role!==null);}
+  function administratorBusinessRoleSelectable(item){return administratorBusinessRoleValid(item)&&item.revision<Number.MAX_SAFE_INTEGER;}
+  function administratorBusinessRoleChoice(){const value=byId('administrator-business-role-new').value;return value==='withdraw'?null:Object.hasOwn(labels,value)?value:undefined;}
+  function administratorBusinessRoleChanged(item,role){return role!==undefined&&(!['approved','withdrawn'].includes(item.approvalStatus)||role!==item.role);}
+  function clearAdministratorBusinessRoleSelection(){administratorBusinessRoleState.selected=null;byId('administrator-business-role-new').value='';byId('administrator-business-role-password').value='';byId('administrator-business-role-confirmed').checked=false;byId('administrator-business-role-target').textContent='尚未选择管理员。';}
+  function invalidateAdministratorBusinessRole(clearQuery=false){const s=administratorBusinessRoleState;s.read++;s.rows=[];s.hasMore=false;s.needsRefresh=true;s.working=false;clearAdministratorBusinessRoleSelection();if(clearQuery){s.query='';byId('administrator-business-role-search').value='';}renderAdministratorBusinessRole();}
+  function resetAdministratorBusinessRole(close=true,hide=true){const canReview=administratorBusinessRoleState.canReview;administratorBusinessRoleEpoch++;administratorBusinessRoleState=blankAdministratorBusinessRole();if(hide){administratorBusinessRoleAccessEpoch++;byId('administrator-business-role-panel').hidden=true;}else administratorBusinessRoleState.canReview=canReview;clearAdministratorBusinessRoleSelection();byId('administrator-business-role-search').value='';if(close){administratorBusinessRoleOpened=false;byId('administrator-business-role-panel').open=false;}message('administrator-business-role-message','');renderAdministratorBusinessRole();}
+  function updateAdministratorBusinessRoleControls(){const s=administratorBusinessRoleState,ready=administratorBusinessRoleReady()&&administratorBusinessRoleApiReady()&&s.canReview&&byId('administrator-business-role-panel').open&&!byId('administrator-business-role-panel').hidden,locked=busy||s.working||administratorBusinessRolePending();for(const id of ['administrator-business-role-search','administrator-business-role-search-button','administrator-business-role-refresh'])byId(id).disabled=!ready||locked;byId('administrator-business-role-more').hidden=!s.hasMore;byId('administrator-business-role-more').disabled=!ready||locked||s.needsRefresh||!s.hasMore;for(const button of byId('administrator-business-role-list').querySelectorAll('button'))button.disabled=!ready||locked||s.needsRefresh||button.dataset.selectable!=='true';const target=ready&&!locked&&!s.needsRefresh&&s.rows.includes(s.selected)&&administratorBusinessRoleSelectable(s.selected);for(const id of ['administrator-business-role-new','administrator-business-role-password','administrator-business-role-confirmed'])byId(id).disabled=!target;byId('administrator-business-role-submit').disabled=!target||!administratorBusinessRoleChanged(s.selected,administratorBusinessRoleChoice())||!byId('administrator-business-role-confirmed').checked||!byId('administrator-business-role-password').value;}
+  function renderAdministratorBusinessRole(){const s=administratorBusinessRoleState,list=byId('administrator-business-role-list'),approvals={unreviewed:'尚未核准',approved:'业务兼任已核准',withdrawn:'业务兼任已收回',invalidated:'原核准已失效'};list.replaceChildren();if(!s.rows.length)list.append(el('li',s.needsRefresh?'请读取当前授权范围内的管理员列表。':'没有匹配的可审核管理员。','identity-note'));for(const item of s.rows){const row=el('li'),description=el('div');row.dataset.userId=item.id;row.dataset.teamId=item.teamId;description.append(el('strong',item.displayName+' · '+(item.role===null?'无业务兼任':labels[item.role])),el('small',item.teamName+' · '+approvals[item.approvalStatus]+(administratorBusinessRoleSelectable(item)?'':' · 当前版本不可审核，请联系负责人核对。')));const choose=el('button',s.selected===item?'已选择此管理员':'选择审核业务兼任','button');choose.type='button';choose.dataset.selectable=String(administratorBusinessRoleSelectable(item));choose.setAttribute('aria-pressed',String(s.selected===item));choose.addEventListener('click',()=>{if(administratorBusinessRoleState!==s||!list.contains(choose)||busy||s.working||administratorBusinessRolePending()||s.needsRefresh||!administratorBusinessRoleReady()||!s.canReview||!byId('administrator-business-role-panel').open||!s.rows.includes(item)||!administratorBusinessRoleSelectable(item))return;clearAdministratorBusinessRoleSelection();s.selected=item;byId('administrator-business-role-target').textContent='拟审核：'+item.displayName+' · '+item.teamName+' · 当前业务职级 '+(item.role===null?'无业务兼任':labels[item.role])+' · '+approvals[item.approvalStatus];renderAdministratorBusinessRole();});row.append(description,choose);list.append(row);}updateAdministratorBusinessRoleControls();}
+  async function administratorBusinessRoleCall(name,input,current){const result=await api[name](input);if(!current())throw {code:'STALE_ADMINISTRATOR_BUSINESS_ROLE'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','当前登录已失效，请重新登录。',true);}throw result?.error||{code:'INVALID_RESPONSE'};}return result.value;}
+  async function loadAdministratorBusinessRoleAccess(){resetAdministratorBusinessRole();if(!administratorBusinessRoleReady()||!administratorBusinessRoleApiReady())return;const actor=accountSessionsActor(),at=administratorBusinessRoleAccessEpoch,device=deviceUiEpoch,main=session.device.epoch,current=()=>sameAccountSessionsActor(actor)&&at===administratorBusinessRoleAccessEpoch&&device===deviceUiEpoch&&main===session?.device?.epoch&&administratorBusinessRoleReady();try{const value=await administratorBusinessRoleCall('getAdministratorBusinessRoleAccess',undefined,current);if(typeof value?.canReview!=='boolean')throw {code:'INVALID_RESPONSE'};administratorBusinessRoleState.canReview=value.canReview;byId('administrator-business-role-panel').hidden=!value.canReview;updateAdministratorBusinessRoleControls();}catch{if(current())resetAdministratorBusinessRole();}}
+  async function readAdministratorBusinessRolePage(context,after,append=false){const s=context.state,value=await administratorBusinessRoleCall('listAdministratorBusinessRoles',{...(s.query?{q:s.query}:{}),...(after?{after}:{}),limit:20},()=>currentAdministratorBusinessRole(context));if(!Array.isArray(value?.members)||value.members.length>20||typeof value.hasMore!=='boolean'||value.hasMore&&value.members.length!==20||!value.members.every(administratorBusinessRoleValid))throw {code:'INVALID_RESPONSE'};const rows=append?s.rows.concat(value.members):value.members;if(new Set(rows.map(item=>item.id)).size!==rows.length)throw {code:'INVALID_RESPONSE'};s.rows=rows;s.hasMore=value.hasMore;s.needsRefresh=false;clearAdministratorBusinessRoleSelection();renderAdministratorBusinessRole();}
+  async function loadAdministratorBusinessRole(append=false){const s=administratorBusinessRoleState;if(!administratorBusinessRoleReady()||!administratorBusinessRoleApiReady()||!s.canReview||!byId('administrator-business-role-panel').open||busy||s.working||administratorBusinessRolePending()||append&&(s.needsRefresh||!s.hasMore))return;if(!append)invalidateAdministratorBusinessRole();s.read++;const context=administratorBusinessRoleContext();s.working=true;updateAdministratorBusinessRoleControls();message('administrator-business-role-message','正在读取当前可审核的管理员…');try{await readAdministratorBusinessRolePage(context,append?s.rows.at(-1)?.id:undefined,append);if(currentAdministratorBusinessRole(context))message('administrator-business-role-message','请明确选择管理员、所属团队和本次职级或收回，再填写当前审核账号密码。');}catch(error){if(currentAdministratorBusinessRole(context)){invalidateAdministratorBusinessRole();message('administrator-business-role-message',error.message||'管理员兼任列表无法确认，请刷新核对。',true);}}finally{if(currentAdministratorBusinessRole(context)){s.working=false;updateAdministratorBusinessRoleControls();}}}
+  async function changeAdministratorBusinessRole(event){event.preventDefault();const s=administratorBusinessRoleState,item=s.selected,role=administratorBusinessRoleChoice(),currentPassword=byId('administrator-business-role-password').value;if(!administratorBusinessRoleReady()||!administratorBusinessRoleApiReady()||!s.canReview||!byId('administrator-business-role-panel').open||busy||s.working||administratorBusinessRolePending()||s.needsRefresh||!s.rows.includes(item)||!administratorBusinessRoleSelectable(item)||!administratorBusinessRoleChanged(item,role)||!currentPassword||new TextEncoder().encode(currentPassword).length>512||!byId('administrator-business-role-confirmed').checked)return;const context=administratorBusinessRoleContext(),operation={actor:context.actor};administratorBusinessRoleMutation=operation;byId('administrator-business-role-password').value='';byId('administrator-business-role-confirmed').checked=false;updateAdministratorBusinessRoleControls();message('administrator-business-role-message','正在验证当前密码并审核管理员业务兼任…');let completed=false;try{const value=await administratorBusinessRoleCall('changeAdministratorBusinessRole',{userId:item.id,revision:item.revision,role,currentPassword,confirmed:true},()=>currentAdministratorBusinessRole(context));completed=true;if(value?.changed!==true||value.role!==role||!Number.isSafeInteger(value.revision)||value.revision<=item.revision)throw {code:'INVALID_RESPONSE'};clearAdministratorBusinessRoleSelection();await readAdministratorBusinessRolePage(context);if(currentAdministratorBusinessRole(context))message('administrator-business-role-message',role===null?'业务兼任已收回；技术管理员身份保留，目标须重新登录。':'管理员业务兼任已核准；目标须重新登录，再重新明确分配项目、任务及原件权限。');}catch(error){if(currentAdministratorBusinessRole(context)){const uncertain=error.code==='OPERATION_UNCONFIRMED'||passwordChangeUncertain(error);if(completed||uncertain||['HTTP_409','HTTP_404'].includes(error.code))invalidateAdministratorBusinessRole();message('administrator-business-role-message',completed?'管理员兼任审核已完成，但列表刷新未确认；请刷新列表核对。':uncertain?'未能确认审核结果；请求可能已完成，请刷新管理员列表核对，系统不会自动重试。':error.code==='HTTP_409'?'管理员、兼任或授权版本已变化，请刷新后重新选择。':error.message||'审核未通过，请核对管理员和当前密码。',true);}}finally{if(administratorBusinessRoleMutation===operation)administratorBusinessRoleMutation=null;if(sameAccountSessionsActor(context.actor)){updateAdministratorBusinessRoleControls();if(context.at!==administratorBusinessRoleEpoch&&byId('administrator-business-role-panel').open&&!administratorBusinessRolePending())void loadAdministratorBusinessRole();}}}
+  function closeAdministratorBusinessRole(){const pending=administratorBusinessRolePending();administratorBusinessRoleOpened=false;resetAdministratorBusinessRole(false,false);if(pending&&session)message('workspace-message','已清除管理员兼任审核输入；已提交的请求仍可能完成，请刷新列表核对。');}
+  byId('administrator-business-role-panel').querySelector('summary').addEventListener('click',()=>{if(byId('administrator-business-role-panel').open)closeAdministratorBusinessRole();else administratorBusinessRoleOpened=true;});byId('administrator-business-role-panel').addEventListener('toggle',()=>{if(byId('administrator-business-role-panel').open&&!byId('administrator-business-role-panel').hidden&&administratorBusinessRoleReady()){administratorBusinessRoleOpened=true;if(administratorBusinessRolePending())message('administrator-business-role-message','管理员兼任审核仍在处理中；请稍候刷新核对。');else void loadAdministratorBusinessRole();updateAdministratorBusinessRoleControls();}else if(administratorBusinessRoleOpened)closeAdministratorBusinessRole();});
+  byId('administrator-business-role-search').addEventListener('input',()=>{if(administratorBusinessRolePending())return;administratorBusinessRoleState.query=byId('administrator-business-role-search').value;invalidateAdministratorBusinessRole();});byId('administrator-business-role-search').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();void loadAdministratorBusinessRole();}});byId('administrator-business-role-search-button').addEventListener('click',()=>void loadAdministratorBusinessRole());byId('administrator-business-role-refresh').addEventListener('click',()=>void loadAdministratorBusinessRole());byId('administrator-business-role-more').addEventListener('click',()=>void loadAdministratorBusinessRole(true));byId('administrator-business-role-form').addEventListener('submit',event=>void changeAdministratorBusinessRole(event));byId('administrator-business-role-new').addEventListener('change',()=>{byId('administrator-business-role-password').value='';byId('administrator-business-role-confirmed').checked=false;updateAdministratorBusinessRoleControls();});byId('administrator-business-role-password').addEventListener('input',updateAdministratorBusinessRoleControls);byId('administrator-business-role-confirmed').addEventListener('change',updateAdministratorBusinessRoleControls);
+  function businessRoleApiReady(){return ['getBusinessRoleManagementAccess','listBusinessRoleMembers','changeBusinessRole'].every(name=>typeof api?.[name]==='function');}
+  function businessRoleReady(){return !!session&&session.device?.required===true&&session.device.state==='ready'&&deviceSnapshot?.state==='ready';}
+  function businessRolePending(){return !!businessRoleMutation&&sameAccountSessionsActor(businessRoleMutation.actor);}
+  function businessRoleContext(){return {actor:accountSessionsActor(),at:businessRoleEpoch,team:businessRoleTeam,device:deviceUiEpoch,main:session?.device?.epoch};}
+  function currentBusinessRole(context){return sameAccountSessionsActor(context.actor)&&context.at===businessRoleEpoch&&context.team===businessRoleTeam&&context.device===deviceUiEpoch&&context.main===session?.device?.epoch&&businessRoleReady()&&businessRoleTeams.some(value=>value.teamId===context.team)&&byId('business-role-panel').open&&!byId('business-role-panel').hidden;}
+  function businessRoleSelectable(item){return item?.status==='active'&&Object.hasOwn(labels,item.role)&&Number.isSafeInteger(item.revision)&&item.revision>=0&&item.revision<Number.MAX_SAFE_INTEGER;}
+  function clearBusinessRoleSelection(){businessRoleSelected=null;byId('business-role-password').value='';byId('business-role-new').value='';byId('business-role-confirmed').checked=false;byId('business-role-target').textContent='尚未选择员工。';}
+  function invalidateBusinessRole(clearQuery=false){businessRoleEpoch++;businessRoleWorking=false;businessRoleRows=[];businessRoleHasMore=false;businessRoleNeedsRefresh=true;clearBusinessRoleSelection();if(clearQuery){businessRoleQuery='';byId('business-role-search').value='';}renderBusinessRole();}
+  function resetBusinessRole(close=true,hide=true){invalidateBusinessRole(true);if(hide){businessRoleAccessEpoch++;businessRoleTeams=[];businessRoleTeam='';byId('business-role-team').replaceChildren();byId('business-role-panel').hidden=true;}if(close){businessRoleOpened=false;byId('business-role-panel').open=false;}message('business-role-message','');updateBusinessRoleControls();}
+  function updateBusinessRoleControls(){
+    const ready=businessRoleReady()&&businessRoleApiReady()&&businessRoleTeams.some(value=>value.teamId===businessRoleTeam)&&byId('business-role-panel').open&&!byId('business-role-panel').hidden,locked=busy||businessRoleWorking||businessRolePending();
+    for(const id of ['business-role-team','business-role-search','business-role-search-button','business-role-refresh'])byId(id).disabled=!ready||locked;byId('business-role-more').hidden=!businessRoleHasMore;byId('business-role-more').disabled=!ready||locked||businessRoleNeedsRefresh||!businessRoleHasMore;for(const button of byId('business-role-list').querySelectorAll('button'))button.disabled=!ready||locked||businessRoleNeedsRefresh||button.dataset.selectable!=='true';
+    const target=ready&&!locked&&!businessRoleNeedsRefresh&&businessRoleRows.includes(businessRoleSelected)&&businessRoleSelectable(businessRoleSelected);for(const id of ['business-role-new','business-role-password','business-role-confirmed'])byId(id).disabled=!target;const role=byId('business-role-new').value;byId('business-role-submit').disabled=!target||!Object.hasOwn(labels,role)||role===businessRoleSelected.role||!byId('business-role-confirmed').checked||!byId('business-role-password').value;
+  }
+  function renderBusinessRole(){
+    const list=byId('business-role-list');list.replaceChildren();if(!businessRoleRows.length)list.append(el('li',businessRoleNeedsRefresh?'请读取当前授权范围内的员工列表。':'没有匹配的可调整员工。','identity-note'));
+    for(const item of businessRoleRows){const row=el('li'),description=el('div');row.dataset.userId=item.id;row.dataset.teamId=businessRoleTeam;description.append(el('strong',item.displayName+' · '+labels[item.role]),el('small',businessRoleSelectable(item)?'账号使用中':'当前版本不可调整，请联系负责人核对。'));const choose=el('button',businessRoleSelected===item?'已选择此员工':'选择调整职级','button');choose.type='button';choose.dataset.selectable=String(businessRoleSelectable(item));choose.setAttribute('aria-pressed',String(businessRoleSelected===item));choose.addEventListener('click',()=>{if(busy||businessRoleWorking||businessRolePending()||businessRoleNeedsRefresh||!businessRoleReady()||!byId('business-role-panel').open||!businessRoleRows.includes(item)||!businessRoleSelectable(item))return;clearBusinessRoleSelection();businessRoleSelected=item;byId('business-role-target').textContent='拟调整：'+item.displayName+' · 当前职级 '+labels[item.role]+' · '+(businessRoleTeams.find(value=>value.teamId===businessRoleTeam)?.teamName||businessRoleTeam);renderBusinessRole();});row.append(description,choose);list.append(row);}updateBusinessRoleControls();
+  }
+  async function businessRoleCall(name,input,current){const result=await api[name](input);if(!current())throw {code:'STALE_BUSINESS_ROLE'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','当前登录已失效，请重新登录。',true);}throw result?.error||{code:'INVALID_RESPONSE'};}return result.value;}
+  async function loadBusinessRoleAccess(){
+    resetBusinessRole();if(!businessRoleReady()||!businessRoleApiReady())return;const actor=accountSessionsActor(),at=businessRoleAccessEpoch,device=deviceUiEpoch,current=()=>sameAccountSessionsActor(actor)&&at===businessRoleAccessEpoch&&device===deviceUiEpoch&&businessRoleReady();
+    try{const value=await businessRoleCall('getBusinessRoleManagementAccess',undefined,current);if(!current())return;if(!Array.isArray(value?.teams)||value.teams.length>50||!value.teams.every(item=>typeof item.teamId==='string'&&item.teamId&&typeof item.teamName==='string')||new Set(value.teams.map(item=>item.teamId)).size!==value.teams.length)throw {code:'INVALID_RESPONSE'};businessRoleTeams=value.teams;businessRoleTeam=businessRoleTeams[0]?.teamId||'';byId('business-role-team').replaceChildren();for(const team of businessRoleTeams){const option=el('option',team.teamName);option.value=team.teamId;byId('business-role-team').append(option);}byId('business-role-team').value=businessRoleTeam;byId('business-role-panel').hidden=!businessRoleTeams.length;updateBusinessRoleControls();}catch{if(current())resetBusinessRole();}
+  }
+  async function readBusinessRolePage(context,after,append=false){const value=await businessRoleCall('listBusinessRoleMembers',{teamId:context.team,...(businessRoleQuery?{q:businessRoleQuery}:{}),...(after?{after}:{}),limit:20},()=>currentBusinessRole(context));if(!Array.isArray(value?.members)||value.members.length>20||typeof value.hasMore!=='boolean'||!value.members.every(item=>typeof item.id==='string'&&item.id&&typeof item.displayName==='string'&&item.status==='active'&&Object.hasOwn(labels,item.role)&&Number.isSafeInteger(item.revision)&&item.revision>=0))throw {code:'INVALID_RESPONSE'};const members=append?businessRoleRows.concat(value.members):value.members;if(new Set(members.map(item=>item.id)).size!==members.length)throw {code:'INVALID_RESPONSE'};businessRoleRows=members;businessRoleHasMore=value.hasMore;businessRoleNeedsRefresh=false;clearBusinessRoleSelection();renderBusinessRole();}
+  async function loadBusinessRole(append=false){
+    if(!businessRoleReady()||!businessRoleApiReady()||!businessRoleTeams.some(value=>value.teamId===businessRoleTeam)||!byId('business-role-panel').open||busy||businessRoleWorking||businessRolePending()||append&&(businessRoleNeedsRefresh||!businessRoleHasMore))return;if(!append)invalidateBusinessRole();const context=businessRoleContext();businessRoleWorking=true;updateBusinessRoleControls();message('business-role-message','正在读取当前授权范围内的员工…');
+    try{await readBusinessRolePage(context,append?businessRoleRows.at(-1)?.id:undefined,append);if(currentBusinessRole(context))message('business-role-message','请先选择员工和不同的新职级，再核对收回旧权限并填写当前密码。');}catch(error){if(currentBusinessRole(context)){invalidateBusinessRole();message('business-role-message',error.message||'员工职级列表无法确认，请刷新核对。',true);}}finally{if(currentBusinessRole(context)){businessRoleWorking=false;updateBusinessRoleControls();}}
+  }
+  async function changeBusinessRole(event){
+    event.preventDefault();const item=businessRoleSelected,role=byId('business-role-new').value,currentPassword=byId('business-role-password').value;if(!businessRoleReady()||!businessRoleApiReady()||!businessRoleTeams.some(value=>value.teamId===businessRoleTeam)||!byId('business-role-panel').open||busy||businessRoleWorking||businessRolePending()||businessRoleNeedsRefresh||!businessRoleRows.includes(item)||!businessRoleSelectable(item)||!Object.hasOwn(labels,role)||role===item.role||!currentPassword||new TextEncoder().encode(currentPassword).length>512||!byId('business-role-confirmed').checked)return;
+    const context=businessRoleContext(),operation={actor:context.actor};businessRoleMutation=operation;byId('business-role-password').value='';byId('business-role-confirmed').checked=false;updateBusinessRoleControls();message('business-role-message','正在核验当前密码并调整员工职级…');let completed=false;
+    try{const value=await businessRoleCall('changeBusinessRole',{teamId:context.team,userId:item.id,revision:item.revision,role,currentPassword,confirmed:true},()=>currentBusinessRole(context));completed=true;if(value?.changed!==true||value.role!==role||!Number.isSafeInteger(value.revision)||value.revision<=item.revision)throw {code:'INVALID_RESPONSE'};clearBusinessRoleSelection();await readBusinessRolePage(context);if(currentBusinessRole(context))message('business-role-message','员工职级已更改；员工须重新登录，并重新分配项目、任务及资料权限。');}
+    catch(error){if(currentBusinessRole(context)){const uncertain=error.code==='OPERATION_UNCONFIRMED'||passwordChangeUncertain(error);if(completed||uncertain||['HTTP_409','HTTP_404'].includes(error.code)){businessRoleRows=[];businessRoleHasMore=false;businessRoleNeedsRefresh=true;clearBusinessRoleSelection();renderBusinessRole();}message('business-role-message',completed?'员工职级已更改，但列表刷新未确认；请刷新列表核对。':uncertain?'未能确认职级调整结果；请求可能已完成，请刷新员工列表核对，系统不会自动重试。':error.code==='HTTP_409'?'员工职级、版本或授权已变化，请刷新后重新选择。':error.message||'职级调整未通过，请核对员工和当前密码。',true);}}
+    finally{if(businessRoleMutation===operation)businessRoleMutation=null;if(sameAccountSessionsActor(context.actor)){byId('business-role-password').value='';byId('business-role-confirmed').checked=false;updateBusinessRoleControls();if(context.at!==businessRoleEpoch&&byId('business-role-panel').open)void loadBusinessRole();}}
+  }
+  function closeBusinessRole(){const pending=businessRolePending();businessRoleOpened=false;resetBusinessRole(false,false);if(pending&&session)message('workspace-message','已清除职级调整输入；已提交的请求仍可能完成，请刷新员工列表核对。');}
+  byId('business-role-panel').querySelector('summary').addEventListener('click',()=>{if(byId('business-role-panel').open)closeBusinessRole();else businessRoleOpened=true;});byId('business-role-panel').addEventListener('toggle',()=>{if(byId('business-role-panel').open&&!byId('business-role-panel').hidden&&businessRoleReady()){businessRoleOpened=true;if(businessRolePending())message('business-role-message','职级调整仍在处理中；请稍候刷新核对。');else void loadBusinessRole();updateBusinessRoleControls();}else if(businessRoleOpened)closeBusinessRole();});
+  byId('business-role-team').addEventListener('change',()=>{const value=byId('business-role-team').value;if(!businessRoleTeams.some(item=>item.teamId===value))return;businessRoleTeam=value;invalidateBusinessRole(true);void loadBusinessRole();});byId('business-role-search').addEventListener('input',()=>{businessRoleQuery=byId('business-role-search').value;invalidateBusinessRole();});byId('business-role-search').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();void loadBusinessRole();}});byId('business-role-search-button').addEventListener('click',()=>void loadBusinessRole());byId('business-role-refresh').addEventListener('click',()=>void loadBusinessRole());byId('business-role-more').addEventListener('click',()=>void loadBusinessRole(true));byId('business-role-form').addEventListener('submit',event=>void changeBusinessRole(event));byId('business-role-new').addEventListener('change',()=>{byId('business-role-password').value='';byId('business-role-confirmed').checked=false;updateBusinessRoleControls();});byId('business-role-password').addEventListener('input',updateBusinessRoleControls);byId('business-role-confirmed').addEventListener('change',updateBusinessRoleControls);
+  function memberManagementApiReady(){return ['getMemberManagementAccess','listTeamBusinessMembers','listTeamAdministrators','disableTeamBusinessMember','disableTeamAdministrator'].every(name=>typeof api?.[name]==='function');}
+  function memberManagementAllowed(){return memberManagementTeams.length>0||memberManagementCanReview;}
+  function memberManagementPending(){return !!memberManagementMutation&&sameAccountSessionsActor(memberManagementMutation.actor);}
+  function memberManagementSelectable(item){return item?.status==='active'&&Number.isSafeInteger(item.revision)&&item.revision>=0&&item.revision<Number.MAX_SAFE_INTEGER;}
+  function memberManagementContext(){return {actor:accountSessionsActor(),at:memberManagementEpoch,mode:memberManagementMode,teamId:memberManagementTeam};}
+  function currentMemberManagement(context){return sameAccountSessionsActor(context.actor)&&context.at===memberManagementEpoch&&context.mode===memberManagementMode&&context.teamId===memberManagementTeam&&memberManagementAllowed()&&!byId('member-management-panel').hidden&&byId('member-management-panel').open;}
+  function clearMemberManagementSelection(){memberManagementSelected=null;byId('member-management-password').value='';byId('member-management-target').textContent='尚未选择停用对象。';}
+  function invalidateMemberManagement(clearQuery=false){memberManagementEpoch++;memberManagementWorking=false;memberManagementRows=[];memberManagementHasMore=false;memberManagementNeedsRefresh=true;clearMemberManagementSelection();if(clearQuery){memberManagementQuery='';byId('member-management-search').value='';}renderMemberManagement();}
+  function resetMemberManagement(close=true,hide=true){
+    invalidateMemberManagement(true);if(hide){memberManagementAccessEpoch++;memberManagementTeams=[];memberManagementCanReview=false;memberManagementTeam='';memberManagementMode='business';byId('member-management-panel').hidden=true;byId('member-management-mode').replaceChildren();byId('member-management-team').replaceChildren();}if(close){memberManagementOpened=false;byId('member-management-panel').open=false;}if(!memberManagementPending())memberManagementMutation=null;message('member-management-message','');updateMemberManagementControls();
+  }
+  function memberManagementTargetLabel(item){const team=memberManagementMode==='administrators'?item.teamName:memberManagementTeams.find(value=>value.teamId===memberManagementTeam)?.teamName;return item.displayName+' · '+(item.role==='administrator'?'技术管理员':labels[item.role]||'岗位待核对')+' · '+(team||memberManagementTeam);}
+  function updateMemberManagementControls(){
+    const ready=!!session&&memberManagementApiReady()&&memberManagementAllowed()&&!byId('member-management-panel').hidden&&byId('member-management-panel').open,locked=busy||memberManagementWorking||memberManagementPending();
+    for(const id of ['member-management-mode','member-management-team','member-management-search','member-management-search-button','member-management-refresh'])byId(id).disabled=!ready||locked;
+    byId('member-management-more').hidden=!memberManagementHasMore;byId('member-management-more').disabled=!ready||locked||memberManagementNeedsRefresh||!memberManagementHasMore;
+    for(const button of byId('member-management-list').querySelectorAll('button'))button.disabled=!ready||locked||memberManagementNeedsRefresh||button.dataset.selectable!=='true';
+    const target=ready&&!locked&&!memberManagementNeedsRefresh&&memberManagementSelectable(memberManagementSelected)&&memberManagementRows.includes(memberManagementSelected);byId('member-management-password').disabled=!target;byId('member-management-disable').disabled=!target||!byId('member-management-password').value;
+  }
+  function renderMemberManagement(){
+    const list=byId('member-management-list');list.replaceChildren();if(!memberManagementRows.length)list.append(el('li',memberManagementNeedsRefresh?'请读取当前授权范围内的成员列表。':'没有匹配的可管理成员。','identity-note'));
+    for(const item of memberManagementRows){const row=el('li'),description=el('div');row.dataset.userId=item.id;row.dataset.teamId=memberManagementMode==='administrators'?item.teamId:memberManagementTeam;description.append(el('strong',memberManagementTargetLabel(item)),el('small',item.status==='disabled'?'账号已停用':memberManagementSelectable(item)?'账号使用中':'账号使用中 · 当前版本不可停用，请联系负责人核对。'));const choose=el('button',memberManagementSelected===item?'已选择此账号':'选择停用对象','button');choose.type='button';choose.dataset.selectable=String(memberManagementSelectable(item));choose.setAttribute('aria-pressed',String(memberManagementSelected===item));choose.addEventListener('click',()=>{if(busy||memberManagementWorking||memberManagementPending()||memberManagementNeedsRefresh||!byId('member-management-panel').open||!memberManagementRows.includes(item)||!memberManagementSelectable(item))return;clearMemberManagementSelection();memberManagementSelected=item;byId('member-management-target').textContent='拟停用：'+memberManagementTargetLabel(item)+' · 账号使用中。请再次核对对象。';renderMemberManagement();});row.append(description,choose);list.append(row);}updateMemberManagementControls();
+  }
+  function configureMemberManagementScope(){
+    const mode=byId('member-management-mode');mode.replaceChildren();for(const [value,label] of [...(memberManagementTeams.length?[['business','业务成员']]:[]),...(memberManagementCanReview?[['administrators','技术管理员']]:[])]){const option=el('option',label);option.value=value;mode.append(option);}if(![...mode.options].some(option=>option.value===memberManagementMode))memberManagementMode=mode.options[0]?.value||'business';mode.value=memberManagementMode;byId('member-management-mode-field').hidden=mode.options.length<2;
+    const teams=byId('member-management-team');teams.replaceChildren();for(const team of memberManagementTeams){const option=el('option',team.teamName);option.value=team.teamId;teams.append(option);}if(!memberManagementTeams.some(team=>team.teamId===memberManagementTeam))memberManagementTeam=memberManagementTeams[0]?.teamId||'';teams.value=memberManagementTeam;byId('member-management-team-field').hidden=memberManagementMode!=='business';updateMemberManagementControls();
+  }
+  async function memberManagementCall(name,input,current){
+    const result=await api[name](input);if(!current())throw {code:'STALE_MEMBER_MANAGEMENT'};
+    if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message',result.error.message||'当前登录已失效，请重新登录。',true);}throw result?.error||{code:'INVALID_RESPONSE'};}return result.value;
+  }
+  async function loadMemberManagementAccess(){
+    resetMemberManagement();if(!session||!memberManagementApiReady())return;const actor=accountSessionsActor(),at=memberManagementAccessEpoch,current=()=>sameAccountSessionsActor(actor)&&at===memberManagementAccessEpoch;
+    try{const value=await memberManagementCall('getMemberManagementAccess',undefined,current);if(!current())return;if(!Array.isArray(value?.teams)||typeof value.canReviewAdministrators!=='boolean'||!value.teams.every(item=>typeof item.teamId==='string'&&item.teamId&&typeof item.teamName==='string'))throw {code:'INVALID_RESPONSE'};memberManagementTeams=value.teams;memberManagementCanReview=value.canReviewAdministrators;configureMemberManagementScope();byId('member-management-panel').hidden=!memberManagementAllowed();updateMemberManagementControls();}
+    catch{if(current())resetMemberManagement();}
+  }
+  async function readMemberManagementPage(context,after,append=false){
+    const input={...(context.mode==='business'?{teamId:context.teamId}:{}),...(memberManagementQuery?{q:memberManagementQuery}:{}),...(after?{after}:{}),limit:20},value=await memberManagementCall(context.mode==='business'?'listTeamBusinessMembers':'listTeamAdministrators',input,()=>currentMemberManagement(context));
+    if(!Array.isArray(value?.members)||typeof value.hasMore!=='boolean'||!value.members.every(item=>typeof item.id==='string'&&item.id&&typeof item.displayName==='string'&&['active','disabled'].includes(item.status)&&Number.isSafeInteger(item.revision)&&item.revision>=0&&(context.mode==='business'?Object.hasOwn(labels,item.role):item.role==='administrator'&&typeof item.teamId==='string'&&item.teamId&&typeof item.teamName==='string')))throw {code:'INVALID_RESPONSE'};
+    memberManagementRows=append?memberManagementRows.concat(value.members):value.members;memberManagementHasMore=value.hasMore;memberManagementNeedsRefresh=false;renderMemberManagement();
+  }
+  async function loadMemberManagement(append=false){
+    if(!session||!memberManagementAllowed()||!memberManagementApiReady()||busy||memberManagementWorking||memberManagementPending()||!byId('member-management-panel').open||byId('member-management-panel').hidden)return;const previous=append?memberManagementRows:[],after=append?previous.at(-1)?.id:undefined;invalidateMemberManagement();memberManagementRows=previous;const context=memberManagementContext();memberManagementWorking=true;renderMemberManagement();message('member-management-message','正在读取当前授权范围内的成员…');
+    try{await readMemberManagementPage(context,after,append);if(currentMemberManagement(context))message('member-management-message','请先选择并核对停用对象，再填写你当前账号的密码。');}
+    catch(error){if(currentMemberManagement(context)){invalidateMemberManagement();if(['HTTP_403','HTTP_404'].includes(error.code)){resetMemberManagement();message('workspace-message','成员管理权限无法确认，请重新登录后核对。',true);}else message('member-management-message',error.message||'成员列表无法确认，请刷新后核对。',true);}}
+    finally{if(currentMemberManagement(context)){memberManagementWorking=false;updateMemberManagementControls();}}
+  }
+  function closeMemberManagement(){const pending=memberManagementPending();memberManagementOpened=false;resetMemberManagement(false,false);if(pending&&session)message('workspace-message','已清除成员列表与密码；已提交的停用请求仍可能完成，请稍后刷新核对。');}
+  async function disableMemberManagement(event){
+    event.preventDefault();if(!session||busy||memberManagementWorking||memberManagementPending()||memberManagementNeedsRefresh||!memberManagementAllowed()||!memberManagementApiReady()||!byId('member-management-panel').open)return;const target=memberManagementSelected,currentPassword=byId('member-management-password').value;if(!memberManagementSelectable(target)||!memberManagementRows.includes(target)||!currentPassword){message('member-management-message','请明确选择停用对象并填写你当前账号的密码。',true);return;}
+    const context=memberManagementContext(),operation={actor:context.actor,context},input={teamId:context.mode==='business'?context.teamId:target.teamId,userId:target.id,revision:target.revision,currentPassword};memberManagementMutation=operation;byId('member-management-password').value='';updateMemberManagementControls();message('member-management-message','正在验证当前密码并停用选中账号…');let committed=false;
+    try{const value=await memberManagementCall(context.mode==='business'?'disableTeamBusinessMember':'disableTeamAdministrator',input,()=>currentMemberManagement(context));if(value?.disabled!==true)throw {code:'INVALID_RESPONSE'};committed=true;clearMemberManagementSelection();memberManagementRows=[];memberManagementHasMore=false;memberManagementNeedsRefresh=true;renderMemberManagement();await readMemberManagementPage(context);if(currentMemberManagement(context))message('member-management-message','成员账号已停用，列表已更新。');}
+    catch(error){if(currentMemberManagement(context)){if(committed||passwordChangeUncertain(error)||error.code==='HTTP_409'||error.code==='HTTP_404'){clearMemberManagementSelection();memberManagementRows=[];memberManagementHasMore=false;memberManagementNeedsRefresh=true;renderMemberManagement();}message('member-management-message',committed?'成员账号已停用，但列表刷新失败；请刷新核对。':passwordChangeUncertain(error)?'未能确认停用结果；请求可能已完成，请刷新列表核对，避免重复操作。':error.code==='HTTP_409'?'账号或授权状态已变化，请刷新列表后核对。':error.message||'停用请求未通过，请核对对象及当前密码。',true);}}
+    finally{if(memberManagementMutation===operation)memberManagementMutation=null;if(sameAccountSessionsActor(context.actor)){byId('member-management-password').value='';updateMemberManagementControls();if(context.at!==memberManagementEpoch&&byId('member-management-panel').open)void loadMemberManagement();}}
+  }
+  byId('member-management-panel').querySelector('summary').addEventListener('click',()=>{if(byId('member-management-panel').open)closeMemberManagement();else memberManagementOpened=true;});
+  byId('member-management-panel').addEventListener('toggle',()=>{if(byId('member-management-panel').open&&!byId('member-management-panel').hidden&&session&&memberManagementAllowed()){memberManagementOpened=true;if(memberManagementPending())message('member-management-message','停用请求仍在处理中；请稍候刷新核对。');else void loadMemberManagement();updateMemberManagementControls();}else if(memberManagementOpened)closeMemberManagement();});
+  byId('member-management-mode').addEventListener('change',()=>{const value=byId('member-management-mode').value;if(value==='business'&&!memberManagementTeams.length||value==='administrators'&&!memberManagementCanReview||!['business','administrators'].includes(value))return;memberManagementMode=value;invalidateMemberManagement(true);configureMemberManagementScope();void loadMemberManagement();});
+  byId('member-management-team').addEventListener('change',()=>{const value=byId('member-management-team').value;if(!memberManagementTeams.some(team=>team.teamId===value))return;memberManagementTeam=value;invalidateMemberManagement(true);void loadMemberManagement();});
+  byId('member-management-search').addEventListener('input',()=>{memberManagementQuery=byId('member-management-search').value;invalidateMemberManagement();});
+  byId('member-management-search').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();void loadMemberManagement();}});
+  byId('member-management-search-button').addEventListener('click',()=>void loadMemberManagement());byId('member-management-refresh').addEventListener('click',()=>void loadMemberManagement());byId('member-management-more').addEventListener('click',()=>void loadMemberManagement(true));byId('member-management-password').addEventListener('input',updateMemberManagementControls);byId('member-management-disable-form').addEventListener('submit',event=>void disableMemberManagement(event));
+  function rebuildInvitationTeams(){
+    const teams=new Map((session?.memberships||[]).map(member=>[member.teamId,{teamId:member.teamId,teamName:member.teamId}]));for(const team of administrationTeams)teams.set(team.teamId,team);
+    if(invitationResumeTeam&&invitationResumeTeam.accountId===session?.account.id&&teams.has(invitationResumeTeam.teamId)){
+      invitationTeamId=invitationResumeTeam.teamId;invitationResumeTeam=null;
+    }
+    const select=byId('invitation-team');select.replaceChildren();for(const team of teams.values()){const option=el('option',team.teamName);option.value=team.teamId;select.append(option);}if(!teams.has(invitationTeamId))invitationTeamId=teams.has(teamId)?teamId:teams.keys().next().value||'';select.value=invitationTeamId;select.hidden=teams.size<2;byId('employee-invitations-panel').querySelector('label[for=invitation-team]').hidden=teams.size<2;
+  }
+  async function loadTeamAdministration(){
+    if(!session||typeof api?.getTeamAdministration!=='function')return;const actor=accountSessionsActor();
+    try{const value=await accountSessionsCall('getTeamAdministration',undefined,actor);if(!sameAccountSessionsActor(actor))return;const previous=invitationTeamId;administrationTeams=value.teams;rebuildInvitationTeams();if(invitationTeamId!==previous)void loadInvitationAccess();if(!teamId&&administrationTeams.length)message('workspace-message','当前账号可管理员工邀请，尚未获指派审计角色或资料权限。');}
+    catch{if(sameAccountSessionsActor(actor)){administrationTeams=[];rebuildInvitationTeams();}}
+  }
+  byId('invitation-team').addEventListener('change',()=>{invitationResumeTeam=null;invitationTeamId=byId('invitation-team').value;void loadInvitationAccess();});
+
+  function onboardingApiReady(){return ['getOnboardingStatus','previewEmployeeInvitation','requestEmployeeActivation','activateEmployee'].every(name=>typeof api?.[name]==='function');}
+  function updateOnboardingControls(){
+    const ready=onboardingReady&&onboardingApiReady(),proof=!!activationChallenge&&activationChallenge.expiresAt>Date.now();
+    for(const id of ['activation-invitation','activation-phone'])byId(id).disabled=busy||activationWorking;
+    byId('activation-preview').disabled=busy||activationWorking||!onboardingApiReady();
+    byId('activation-send-code').disabled=busy||activationWorking||!ready||!onboardingAvailable||!activationPreview;
+    byId('activation-proof').hidden=!activationChallenge;byId('activation-proof').disabled=busy||activationWorking||!ready||!onboardingAvailable||!proof;
+    for(const id of ['activation-code','activation-display-name','activation-password','activation-accept'])byId(id).disabled=busy||activationWorking||!ready||!onboardingAvailable||!proof;
+    byId('activation-submit').disabled=busy||activationWorking||!ready||!onboardingAvailable||!proof||!byId('activation-accept').checked;
+    byId('activation-cancel').disabled=false;
+    const invitationLocked=busy||invitationWorking||invitationMutationPending(),invitationReady=!!session&&invitationAllowed&&invitationPageLoaded;
+    const recovering=activeInvitationRecovery(),retry=!!recovering&&recovering.phase==='retry'&&invitationCreationLookup;
+    const invitationCreateReady=!!session&&invitationAllowed&&(recovering?retry:invitationPageLoaded);
+    byId('employee-invitation-fields').disabled=invitationLocked||!invitationCreateReady;
+    byId('invitation-phone').disabled=invitationLocked||!invitationCreateReady;
+    byId('invitation-role').disabled=invitationLocked||!invitationCreateReady||retry;
+    byId('invitation-create').disabled=invitationLocked||!invitationCreateReady;
+    byId('invitation-create').textContent=retry?'用原编号重试':'创建邀请';
+    byId('invitation-refresh').disabled=invitationLocked||!invitationAllowed;
+    byId('invitation-prev').disabled=invitationLocked||!invitationReady||invitationCursors.length<2;
+    byId('invitation-next').disabled=invitationLocked||!invitationReady||!invitationNextCursor;
+    for(const button of byId('employee-invitation-list').querySelectorAll('button'))button.disabled=invitationLocked||!invitationReady||!!recovering;
+    renderInvitationRecovery(invitationLocked);
+    updateFirstAdminControls();updateProvisioningControls();
+    byId('invitation-team').disabled=invitationLocked;
+    byId('invitation-service-status').textContent=onboardingAvailable?'员工需本人完成手机号验证并确认加入。':'短信激活服务尚未开通。创建邀请不会发送消息，员工暂不能完成激活。';
+  }
+  function resetActivation(clearIdentity=true,close=false){
+    activationEpoch++;activationWorking=false;activationPreview=null;activationChallenge=null;
+    for(const id of ['activation-code','activation-password','activation-display-name'])byId(id).value='';
+    byId('activation-accept').checked=false;byId('activation-target').hidden=true;
+    byId('activation-target-description').textContent='';byId('activation-target-expiry').textContent='';byId('activation-accept-label').textContent='确认加入邀请指定的团队与岗位';
+    if(clearIdentity)for(const id of ['activation-invitation','activation-phone'])byId(id).value='';
+    message('activation-message','');if(close)byId('activation-panel').open=false;
+    byId('login-view').classList.toggle('onboarding-active',byId('activation-panel').open);updateOnboardingControls();
+  }
+  async function loadOnboardingStatus(){
+    const at=++onboardingStatusEpoch;onboardingReady=false;onboardingAvailable=false;updateOnboardingControls();
+    if(!onboardingApiReady()){message('activation-service-status','当前桌面激活接口尚未就绪，不能发送验证码或激活账号。');return;}
+    try{const result=await call('getOnboardingStatus');if(at!==onboardingStatusEpoch)return;onboardingReady=result.invitationOnly===true;onboardingAvailable=onboardingReady&&result.available===true;message('activation-service-status',onboardingAvailable?'手机号验证服务已配置；仍须核对邀请、本人验证码及加入确认。':'短信激活服务尚未开通，当前不能发送验证码或激活账号。');}
+    catch{if(at!==onboardingStatusEpoch)return;message('activation-service-status','激活服务状态暂不可读取，当前不能发送验证码或激活账号。',true);}
+    finally{if(at===onboardingStatusEpoch)updateOnboardingControls();}
+  }
+  function activationIdentity(){return {invitationCode:byId('activation-invitation').value,phone:byId('activation-phone').value};}
+  async function previewActivation(){
+    if(busy||activationWorking||!onboardingApiReady())return;const identity=activationIdentity();if(!identity.invitationCode.trim()||!identity.phone.trim()){message('activation-message','请填写邀请码和受邀手机号。',true);return;}
+    resetActivation(false);const at=activationEpoch;activationWorking=true;updateOnboardingControls();message('activation-message','正在核对邀请…');
+    try{const result=await call('previewEmployeeInvitation',identity);if(at!==activationEpoch)return;activationPreview=result;byId('activation-target').hidden=false;byId('activation-target-description').textContent='加入团队 '+result.teamId+' · '+labels[result.role]+' · '+result.phoneMasked;byId('activation-target-expiry').textContent='邀请有效至 '+new Date(result.expiresAt).toLocaleString('zh-CN');byId('activation-accept-label').textContent='本人确认以'+labels[result.role]+'身份加入团队 '+result.teamId;message('activation-message','请核对团队与岗位，再获取本人手机号验证码。');}
+    catch(error){if(at===activationEpoch)message('activation-message',error.message||'邀请无法使用，请联系管理员。',true);}
+    finally{if(at===activationEpoch){activationWorking=false;updateOnboardingControls();}}
+  }
+  const invitationStatusWords={pending:'待激活',revoked:'已撤销',accepted:'已使用',expired:'已过期'};
+  function activeInvitationRecovery(target=invitationTeamId){
+    const entry=invitationRecoveries.get(target);
+    return session&&entry?.accountId===session.account.id?entry:null;
+  }
+  function clearInvitationRecoveries(){invitationRecoveries.clear();invitationResumeTeam=null;}
+  function retainInvitationRecoveries(accountId){
+    for(const [team,entry] of invitationRecoveries)if(entry.accountId!==accountId)invitationRecoveries.delete(team);
+    if(invitationResumeTeam?.accountId!==accountId)invitationResumeTeam=null;
+  }
+  function renderInvitationRecovery(locked){
+    const section=byId('invitation-recovery'),lookup=byId('invitation-recovery-read'),revoke=byId('invitation-recovery-revoke');
+    const visible=invitationAllowed&&byId('employee-invitations-panel').open;
+    const entry=visible?activeInvitationRecovery():null,receipt=visible?invitationRecoveryReceipt:null;
+    const data=entry||receipt,record=entry?.record??receipt?.record;
+    section.hidden=!data;
+    lookup.hidden=!entry;lookup.disabled=locked||!entry;
+    revoke.hidden=entry?.phase!=='found'||record?.status!=='pending';revoke.disabled=locked||revoke.hidden;
+    let text='';
+    if(data){
+      const number='查询编号 '+data.requestId+'。';
+      if(record){
+        text=number+'邀请记录 '+record.invitationId+' · '+record.phoneMasked+' · '+labels[record.role]+' · '+invitationStatusWords[record.status]+'。';
+        if(entry)text+='如受邀人尚未激活且没有可用的邀请码，可撤销这条邀请。确认撤销后再创建新邀请。';
+        else if(record.status==='accepted')text+='请受邀人使用已激活的账号登录。';
+      }else if(entry.phase==='retry'&&invitationCreationLookup){
+        text=number+'暂未查到对应邀请。请重新输入原受邀手机号，核对岗位后，用原编号重试。';
+      }else{
+        text=number+'请先核对这次邀请的状态，再继续处理本团队的邀请。';
+      }
+    }
+    const status=byId('invitation-recovery-message');
+    if(status.textContent!==text)status.textContent=text;
+  }
+  function clearIssuedInvitation(){byId('issued-invitation').hidden=true;byId('issued-invitation-description').textContent='';byId('issued-invitation-code').value='';}
+  function showIssuedInvitation(value){
+    byId('issued-invitation-description').textContent=value.phoneMasked+' · '+labels[value.role]+' · 团队 '+value.teamId+' · 有效至 '+new Date(value.expiresAt).toLocaleString('zh-CN');
+    byId('issued-invitation-code').value=value.invitationCode;
+    byId('issued-invitation').hidden=false;
+  }
+  function clearInvitationPage(reset=true){invitationPageRows=[];invitationNextCursor=null;invitationPageLoaded=false;if(reset)invitationCursors=[null];byId('employee-invitation-list').replaceChildren();byId('invitation-page-status').textContent='';}
+  function resetInvitations(close=true){
+    invitationEpoch++;invitationWorking=false;invitationAllowed=false;invitationCreationLookup=false;invitationRecoveryReceipt=null;
+    const panel=byId('employee-invitations-panel');panel.hidden=true;if(close)panel.open=false;
+    invitationPanelOpen=panel.open;
+    clearIssuedInvitation();byId('invitation-phone').value='';byId('invitation-role').value='intern';clearInvitationPage();message('invitation-message','');updateOnboardingControls();return invitationEpoch;
+  }
+  function invitationMutationPending(){return !!invitationMutation&&sameAccountSessionsActor(invitationMutation.actor);}
+  function invitationContext(){return {at:invitationEpoch,target:invitationTeamId,actor:accountSessionsActor(),device:deviceUiEpoch,main:session?.device?.epoch,open:byId('employee-invitations-panel').open};}
+  function currentInvitationView(c){return c.at===invitationEpoch&&sameAccountSessionsActor(c.actor)&&invitationTeamId===c.target&&c.device===deviceUiEpoch&&c.main===session?.device?.epoch&&deviceBusinessReady(session?.device)&&deviceBusinessReady()&&(!c.open||byId('employee-invitations-panel').open);}
+  async function invitationCall(name,input,c){const result=await api[name](input);if(!currentInvitationView(c))throw {code:'STALE_INVITATION_VIEW'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message',result.error.message||'登录已失效，请重新登录。',true);}throw result?.error||{code:'INVALID_RESPONSE'};}return result.value;}
+  function invitationAccessLost(error){return ['SIGN_IN_REQUIRED','HTTP_401','HTTP_403','HTTP_404'].includes(error?.code);}
+  function failInvitationRead(c){
+    if(!currentInvitationView(c))return;
+    if(activeInvitationRecovery(c.target)&&invitationAllowed){
+      message('invitation-message','邀请列表暂时无法读取。仍可按编号核对上次创建的邀请。',true);
+    }else resetInvitations();
+  }
+  async function readInvitationAccess(c){
+    let permission;
+    try{permission=await invitationCall('getInvitationAccess',{teamId:c.target},c);}
+    catch(error){
+      if(!currentInvitationView(c)||!invitationAccessLost(error))throw error;
+      invitationRecoveries.delete(c.target);resetInvitations();return false;
+    }
+    if(typeof permission?.canInvite!=='boolean'||Object.hasOwn(permission,'creationLookup')&&typeof permission.creationLookup!=='boolean')throw {code:'INVALID_RESPONSE'};
+    if(!permission.canInvite){invitationRecoveries.delete(c.target);resetInvitations();return false;}
+    invitationCreationLookup=permission.creationLookup===true;
+    const entry=activeInvitationRecovery(c.target);
+    if(entry){
+      invitationAllowed=true;byId('employee-invitations-panel').hidden=false;
+      if(entry.phase==='retry')byId('invitation-role').value=entry.role;
+    }
+    return true;
+  }
+  function validInvitationCursor(value){return typeof value==='string'&&value.length>=1&&value.length<=1024&&/^[A-Za-z0-9_-]+$/.test(value);}
+  function invitationPage(value,c,cursors){if(!value||!Array.isArray(value.invitations)||value.invitations.length>50||cursors.length>1&&!Object.hasOwn(value,'nextCursor'))throw {code:'INVALID_RESPONSE'};const next=Object.hasOwn(value,'nextCursor')?value.nextCursor:null,items=value.invitations;if(next!==null&&(!validInvitationCursor(next)||cursors.includes(next)))throw {code:'INVALID_RESPONSE'};if(!items.every(item=>item&&typeof item.invitationId==='string'&&item.invitationId.length>=1&&item.invitationId.length<=128&&item.teamId===c.target&&['intern','assistant'].includes(item.role)&&['pending','accepted','revoked','expired'].includes(item.status)&&typeof item.phoneMasked==='string'&&item.phoneMasked.length<=80&&Number.isSafeInteger(item.expiresAt)&&item.expiresAt>=0))throw {code:'INVALID_RESPONSE'};return {items,next};}
+  function renderInvitations(items){
+    const list=byId('employee-invitation-list');list.replaceChildren();const words=invitationStatusWords;
+    if(!items.length)list.append(el('li','本页暂无邀请记录。'));
+    for(const item of items){const row=el('li'),description=el('div');description.append(el('strong',item.phoneMasked+' · '+labels[item.role]+' · '+words[item.status]),el('small','有效至 '+new Date(item.expiresAt).toLocaleString('zh-CN')));row.append(description);if(item.status==='pending'){const revoke=el('button','撤销','button');revoke.type='button';revoke.addEventListener('click',()=>revokeInvitation(item.invitationId));row.append(revoke);}list.append(row);}
+    byId('invitation-page-status').textContent='第 '+invitationCursors.length+' 页 · 本页 '+items.length+' 条';updateOnboardingControls();
+  }
+  async function refreshInvitationList(c,cursors,issued=null){
+    clearInvitationPage(issued!==null);updateOnboardingControls();
+    if(!await readInvitationAccess(c))return false;
+    const after=cursors.at(-1);
+    let value;
+    try{value=await invitationCall('listEmployeeInvitations',{teamId:c.target,limit:50,...(after?{after}:{})},c);}
+    catch(error){
+      if(!issued||!c.open||!currentInvitationView(c)||!['HTTP_429','HTTP_503'].includes(error?.code))throw error;
+      showIssuedInvitation(issued);
+      message('invitation-message','邀请已创建，未发送消息。列表暂未刷新。请先核对并复制本次邀请码，再刷新邀请记录。');
+      return false;
+    }
+    const page=invitationPage(value,c,cursors);
+    if(!currentInvitationView(c))return false;
+    invitationCursors=cursors;invitationPageRows=page.items.slice();invitationNextCursor=page.next;invitationPageLoaded=true;invitationAllowed=true;
+    byId('employee-invitations-panel').hidden=false;renderInvitations(invitationPageRows);return true;
+  }
+  async function loadInvitationAccess(){
+    const at=resetInvitations(false);
+    if(!session||!invitationTeamId||!['getInvitationAccess','listEmployeeInvitations','createEmployeeInvitation','revokeEmployeeInvitation'].every(name=>typeof api?.[name]==='function'))return;
+    const c=invitationContext();invitationWorking=true;updateOnboardingControls();
+    try{await refreshInvitationList(c,[null]);}
+    catch{failInvitationRead(c);}
+    finally{if(at===invitationEpoch){invitationWorking=false;updateOnboardingControls();}}
+  }
+  async function moveInvitationPage(direction){
+    if(busy||invitationWorking||invitationMutationPending()||!invitationAllowed||!invitationPageLoaded||direction<0&&invitationCursors.length<2||direction>0&&!invitationNextCursor)return;
+    const cursors=direction>0?[...invitationCursors,invitationNextCursor]:invitationCursors.slice(0,-1);invitationEpoch++;const c=invitationContext();invitationWorking=true;clearIssuedInvitation();updateOnboardingControls();
+    try{if(await refreshInvitationList(c,cursors))message('invitation-message','已读取当前页；仅显示本页记录，不提供总数。');}
+    catch{failInvitationRead(c);}
+    finally{if(c.at===invitationEpoch){invitationWorking=false;updateOnboardingControls();}}
+  }
+  async function revokeInvitation(invitationId){
+    if(busy||invitationWorking||invitationMutationPending()||!invitationAllowed||!invitationPageLoaded||activeInvitationRecovery()||
+      !invitationPageRows.some(row=>row.invitationId===invitationId&&row.status==='pending'))return;
+    const c=invitationContext(),job={actor:c.actor},cursors=[...invitationCursors];invitationMutation=job;invitationWorking=true;clearIssuedInvitation();updateOnboardingControls();
+    try{await invitationCall('revokeEmployeeInvitation',{teamId:c.target,invitationId},c);if(await refreshInvitationList(c,cursors)&&currentInvitationView(c))message('invitation-message','邀请状态已更新，已重新读取当前页。');}
+    catch{if(currentInvitationView(c))resetInvitations();}
+    finally{if(invitationMutation===job)invitationMutation=null;if(c.at===invitationEpoch)invitationWorking=false;updateOnboardingControls();}
+  }
+  function closeActivationInput(){const submitted=activationWorking&&!!activationChallenge;resetActivation();if(submitted)message('login-message','已清除输入；已提交的激活可能已完成，可用手机号登录核对。');}
+  // Native details opening is synchronous, but toggle is queued. Never clear
+  // activation inputs in that late opening event: the user may already have pasted.
+  byId('activation-panel').querySelector('summary').addEventListener('click',()=>{if(byId('activation-panel').open)closeActivationInput();});
+  byId('activation-panel').addEventListener('toggle',()=>{if(byId('activation-panel').open){resetRecovery(true,true);byId('login-view').classList.add('onboarding-active');resetFirstAdmin(true,true);resetWechat();byId('username').value='';byId('password').value='';void loadOnboardingStatus();}else closeActivationInput();});
+  for(const id of ['activation-invitation','activation-phone'])byId(id).addEventListener('input',()=>{resetActivation(false);message('activation-message','邀请码或手机号已改变，请重新核对邀请。');});
+  byId('activation-preview').addEventListener('click',()=>void previewActivation());
+  byId('activation-send-code').addEventListener('click',async()=>{
+    if(busy||activationWorking||!activationPreview||!onboardingReady||!onboardingAvailable)return;if(activationPreview.expiresAt<=Date.now()){resetActivation(false);message('activation-message','邀请已过期，请联系管理员。',true);return;}
+    const at=activationEpoch;activationChallenge=null;byId('activation-code').value='';byId('activation-password').value='';byId('activation-accept').checked=false;activationWorking=true;updateOnboardingControls();message('activation-message','正在请求本人手机号验证码…');
+    try{const value=await call('requestEmployeeActivation',activationIdentity());if(at!==activationEpoch)return;activationChallenge=value;message('activation-message','验证码发送请求已完成。请填写收到的验证码，核对并确认加入。');}
+    catch(error){if(at===activationEpoch)message('activation-message',error.message||'验证码请求未完成。',true);}
+    finally{if(at===activationEpoch){activationWorking=false;updateOnboardingControls();}}
+  });
+  byId('activation-accept').addEventListener('change',updateOnboardingControls);
+  byId('activation-form').addEventListener('submit',async event=>{
+    event.preventDefault();if(busy||activationWorking||!activationPreview||!onboardingAvailable||!activationChallenge)return;
+    if(activationChallenge.expiresAt<=Date.now()||activationPreview.expiresAt<=Date.now()){resetActivation(false);message('activation-message','验证或邀请已过期，请重新核对。',true);return;}
+    if(!byId('activation-accept').checked){message('activation-message','请先核对并确认加入指定团队与岗位。',true);return;}
+    const at=activationEpoch,proof={...activationIdentity(),challengeId:activationChallenge.challengeId,code:byId('activation-code').value,password:byId('activation-password').value,displayName:byId('activation-display-name').value,accept:true};
+    activationWorking=true;updateOnboardingControls();message('activation-message','正在验证本人账号并确认加入…');
+    try{await call('activateEmployee',proof);if(at!==activationEpoch)return;resetActivation();if(methods.phonePassword){byId('login-mode').value='phone';updateLoginIdentityField();}message('activation-message','账号已激活，请返回使用手机号＋密码登录。');}
+    catch(error){if(at===activationEpoch)message('activation-message',error.message||'激活未完成，请核对资料或联系管理员。',true);}
+    finally{if(at===activationEpoch){byId('activation-password').value='';byId('activation-code').value='';byId('activation-accept').checked=false;activationWorking=false;updateOnboardingControls();}}
+  });
+  byId('activation-cancel').addEventListener('click',()=>{const submitted=activationWorking&&!!activationChallenge;resetActivation(true,true);if(submitted)message('login-message','已清除输入；已提交的激活可能已完成，可用手机号登录核对。');});
+  function validInvitationRecoveryIdentity(row,c,entry){
+    return row&&row.teamId===c.target&&row.role===entry.role&&typeof row.invitationId==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(row.invitationId)&&
+      (!entry.invitationId||entry.invitationId===row.invitationId)&&typeof row.phoneMasked==='string'&&
+      /^[+0-9* ]{7,32}$/.test(row.phoneMasked)&&row.phoneMasked.includes('*')&&Number.isSafeInteger(row.expiresAt)&&row.expiresAt>=0;
+  }
+  async function readInvitationRecovery(c,entry){
+    if(!await readInvitationAccess(c))return;
+    if(!invitationCreationLookup){message('invitation-message','当前服务暂不能按编号核对。请稍后再刷新核对。',true);return;}
+    const value=await invitationCall('listEmployeeInvitations',{teamId:c.target,requestId:entry.requestId},c);
+    if(!value||Object.keys(value).length!==3||value.requestId!==entry.requestId||value.nextCursor!==null||!Array.isArray(value.invitations)||
+      value.invitations.length>1||value.invitations.some(row=>!validInvitationRecoveryIdentity(row,c,entry)||
+        !Object.hasOwn(invitationStatusWords,row.status)))throw {code:'INVALID_RESPONSE'};
+    const row=value.invitations[0];
+    if(!row){
+      if(entry.invitationId){message('invitation-message','暂未读到先前核对过的邀请。请保留编号并重新核对。',true);return;}
+      entry.phase='retry';byId('invitation-role').value=entry.role;
+      message('invitation-message','已核对本次查询。需要重试时，请填写原受邀手机号并使用原编号。');
+      return;
+    }
+    const record={invitationId:row.invitationId,status:row.status,role:row.role,phoneMasked:row.phoneMasked};
+    entry.invitationId=record.invitationId;
+    if(record.status==='pending'){
+      entry.phase='found';entry.record=record;
+      message('invitation-message','已核对邀请记录。邀请码只在创建时显示，请参照该记录处理。');
+      return;
+    }
+    invitationRecoveryReceipt={requestId:entry.requestId,record};invitationRecoveries.delete(c.target);
+    try{
+      if(await refreshInvitationList(c,invitationCursors)&&currentInvitationView(c))message('invitation-message','已核对邀请状态。请按显示的记录继续。');
+    }catch(error){
+      if(!currentInvitationView(c))return;
+      if(invitationAccessLost(error))resetInvitations();
+      else message('invitation-message','已核对本次邀请，邀请列表暂未刷新。请刷新列表后继续。',true);
+    }
+  }
+  async function resolveInvitationRecovery(revoke=false){
+    const entry=activeInvitationRecovery(),panel=byId('employee-invitations-panel');
+    if(!entry||busy||invitationWorking||invitationMutationPending()||!invitationAllowed||!panel.open||
+      revoke&&(entry.phase!=='found'||entry.record?.status!=='pending'))return;
+    const c=invitationContext(),job={actor:c.actor};
+    if(revoke)invitationMutation=job;
+    invitationWorking=true;entry.phase='check';entry.record=null;clearIssuedInvitation();
+    byId('invitation-phone').value='';updateOnboardingControls();
+    message('invitation-message',revoke?'正在提交撤销并核对本次邀请…':'正在按原编号核对邀请…');
+    try{
+      if(revoke){
+        if(!await readInvitationAccess(c))return;
+        if(!invitationCreationLookup){message('invitation-message','当前服务暂不能核对本次邀请。请稍后再核对。',true);return;}
+        try{
+          const value=await invitationCall('revokeEmployeeInvitation',{teamId:c.target,invitationId:entry.invitationId},c);
+          if(value?.revoked!==true)throw {code:'INVALID_RESPONSE'};
+        }catch{
+          if(currentInvitationView(c))message('invitation-message','未能确认撤销结果，请按原编号核对，再决定下一步。',true);
+          return;
+        }
+      }
+      await readInvitationRecovery(c,entry);
+    }catch(error){
+      if(!currentInvitationView(c))return;
+      message('invitation-message','邀请状态暂时无法确认，请按原编号重新核对。',true);
+    }finally{
+      if(invitationMutation===job)invitationMutation=null;
+      if(c.at===invitationEpoch)invitationWorking=false;
+      updateOnboardingControls();
+    }
+  }
+  function uncertainInvitationCreation(error){
+    return passwordChangeUncertain(error)||['HTTP_408','HTTP_409','HTTP_429','INVITATION_CREATION_ALREADY_RECORDED',
+      'DEVICE_PROOF_REQUIRED','DEVICE_BODY_MISMATCH','DEVICE_REQUEST_REPLAY','DEVICE_PROOF_LIMIT','DEVICE_STATE_CHANGED'].includes(error?.code);
+  }
+  async function createInvitation(event){
+    event.preventDefault();
+    const prior=activeInvitationRecovery(),panel=byId('employee-invitations-panel');
+    const retry=prior?.phase==='retry'&&invitationCreationLookup;
+    if(busy||invitationWorking||invitationMutationPending()||!invitationAllowed||!panel.open||
+      (prior?!retry:!invitationPageLoaded))return;
+    const c=invitationContext(),input={teamId:c.target,phone:byId('invitation-phone').value,role:byId('invitation-role').value};
+    if(!input.phone.trim()||!['intern','assistant'].includes(input.role)||retry&&input.role!==prior.role){message('invitation-message','请填写受邀手机号并核对岗位。',true);return;}
+    const requestId=prior?.requestId??(invitationCreationLookup?window.crypto?.randomUUID?.():null);
+    if(invitationCreationLookup&&!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(requestId??'')){
+      message('invitation-message','当前客户端无法生成邀请查询编号，请重新打开或更新客户端。',true);return;
+    }
+    const entry=prior||(requestId?{accountId:c.actor.id,requestId,role:input.role}:null);
+    if(entry){input.requestId=entry.requestId;entry.phase='check';invitationRecoveries.set(c.target,entry);}
+    const job={actor:c.actor};invitationMutation=job;invitationWorking=true;invitationRecoveryReceipt=null;clearIssuedInvitation();updateOnboardingControls();
+    try{
+      const value=await invitationCall('createEmployeeInvitation',input,c);
+      if(entry&&(value?.requestId!==entry.requestId||!validInvitationRecoveryIdentity(value,c,entry)||
+        typeof value.invitationCode!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(value.invitationCode)))throw {code:'INVALID_RESPONSE'};
+      if(!currentInvitationView(c))return;
+      if(entry)entry.invitationId=value.invitationId;
+      byId('invitation-phone').value='';
+      const refreshed=await refreshInvitationList(c,[null],value);
+      if(!currentInvitationView(c))return;
+      if(!refreshed&&byId('issued-invitation').hidden)return;
+      if(entry)invitationRecoveries.delete(c.target);
+      if(refreshed){showIssuedInvitation(value);message('invitation-message','邀请已创建，未发送消息。已返回首页；请核对后自行转交本次邀请码。');}
+    }
+    catch(error){
+      if(!currentInvitationView(c))return;
+      const code=error?.code;
+      const notice=code==='SEAT_CAPACITY_EXHAUSTED'?'可用席位已用完。请核对待激活邀请和当前席位。':
+        code==='SUBSCRIPTION_WRITE_UNAVAILABLE'?'当前订阅不可创建邀请。请在订阅与席位中核对当前状态。':'';
+      if(entry&&(entry.invitationId||!invitationAccessLost(error)&&(prior||uncertainInvitationCreation(error)))){
+        byId('invitation-phone').value='';clearIssuedInvitation();
+        message('invitation-message',notice||'邀请结果暂未确认，请按原编号核对后再继续。',true);return;
+      }
+      if(entry)invitationRecoveries.delete(c.target);
+      if(!notice){resetInvitations();return;}
+      byId('invitation-phone').value='';
+      try{if(await refreshInvitationList(c,[null])&&currentInvitationView(c))message('invitation-message',notice,true);}
+      catch{failInvitationRead(c);}
+    }
+    finally{if(invitationMutation===job)invitationMutation=null;if(c.at===invitationEpoch)invitationWorking=false;updateOnboardingControls();}
+  }
+  byId('employee-invitation-form').addEventListener('submit',event=>void createInvitation(event));
+  byId('invitation-recovery-read').addEventListener('click',()=>void resolveInvitationRecovery());
+  byId('invitation-recovery-revoke').addEventListener('click',()=>void resolveInvitationRecovery(true));
+  function closeInvitationPage(){invitationEpoch++;invitationWorking=false;invitationPanelOpen=false;invitationRecoveryReceipt=null;clearIssuedInvitation();clearInvitationPage();byId('invitation-phone').value='';byId('invitation-role').value='intern';message('invitation-message','');updateOnboardingControls();}
+  byId('employee-invitations-panel').querySelector('summary').addEventListener('click',()=>{if(byId('employee-invitations-panel').open)closeInvitationPage();});
+  byId('employee-invitations-panel').addEventListener('toggle',()=>{
+    if(!byId('employee-invitations-panel').open){if(invitationPanelOpen)closeInvitationPage();return;}
+    invitationPanelOpen=true;updateOnboardingControls();
+    if(!invitationPageLoaded&&!invitationWorking&&invitationAllowed&&!invitationMutationPending())void loadInvitationAccess();
+  });
+  byId('invitation-refresh').addEventListener('click',()=>void loadInvitationAccess());
+  byId('invitation-prev').addEventListener('click',()=>void moveInvitationPage(-1));byId('invitation-next').addEventListener('click',()=>void moveInvitationPage(1));
+  window.addEventListener('offline',()=>resetInvitations());
+  window.addEventListener('online',()=>{if(session&&deviceBusinessReady()&&!invitationMutationPending())void loadInvitationAccess();});
+  byId('wechat-login').addEventListener('click',async()=>{if(busy||!methodsReady||!methods.wechat||!desktopWechatReady||wechatActive())return;resetRecovery(true,true);resetActivation(true,true);resetFirstAdmin(true,true);resetWechat(false);const at=wechatEpoch;wechatState='starting';wechatWorking=true;for(const id of ['username','password'])byId(id).value='';message('login-message','');message('wechat-status','正在打开系统浏览器，请稍候…');updateIdentityControls();try{await applyWechatResult(await wechatCall('startWechatLogin',undefined,at),at);}catch(error){if(at===wechatEpoch)terminalWechat('failed',error.message||'无法开始微信授权，请重试。',true);}finally{if(at===wechatEpoch){wechatWorking=false;updateIdentityControls();}}});
+  byId('wechat-cancel').addEventListener('click',()=>{if(!wechatActive())return;resetDevicePresentation();resetWechat();terminalWechat('canceled','本次微信授权已取消，可重新开始。');});
+  byId('wechat-link-submit').addEventListener('click',async()=>{if(busy||wechatWorking||wechatState!=='binding_required')return;if(wechatExpiresAt&&wechatExpiresAt<=Date.now()){terminalWechat('expired','本次微信授权已过期，请重新开始。',true);return;}const phone=byId('wechat-link-phone').value,password=byId('wechat-link-password').value;if(!phone.trim()||!password){message('wechat-status','请填写本人现有账号的已验证手机号和密码。',true);return;}const at=wechatEpoch;wechatState='linking';wechatWorking=true;message('wechat-status','正在验证账号并确认关联…');updateIdentityControls();try{await applyWechatResult(await wechatCall('linkWechatAccount',{phone,password},at),at);}catch(error){if(at===wechatEpoch){if(['HTTP_410','TRANSACTION_EXPIRED'].includes(error.code))terminalWechat('expired','本次微信授权已过期，请重新开始。',true);else if(error.code==='WECHAT_NOT_LINKABLE'){resetWechat();terminalWechat('failed','本次微信授权状态已改变，请重新开始。',true);}else{wechatState='binding_required';message('wechat-status',error.message||'关联未完成，请核对账号后重试或取消。',true);}}}finally{if(at===wechatEpoch){byId('wechat-link-password').value='';wechatWorking=false;updateIdentityControls();}}});
+  for(const id of ['wechat-link-phone','wechat-link-password'])byId(id).addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();byId('wechat-link-submit').click();}});
+  window.addEventListener('beforeunload',()=>{ledgerChecks?.destroy();workpapers?.destroy();workspaceSource?.destroy();myDeviceObserver.disconnect();resetMyDeviceOverview();resetProjectMigration();resetAdministratorBusinessRole();resetProjectAccess();resetBusinessRole();deviceUiClosed=true;billing?.destroy();refundIntake?.destroy();clearInterval(devicePollTimer);resetDevicePresentation();resetMemberManagement();resetTaskSubmissionAccess();resetTaskManagement();resetRecovery(true,true);resetAccountSessions();resetPasswordChange();resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);resetProvisioning();resetRecoveryReviews();clearInvitationRecoveries();resetInvitations();});
+  function taskManagementReady(){return ['getTaskManagement','listTaskAssignees','assignTask','returnTask'].every(name=>typeof api?.[name]==='function');}
+  function taskManagementContext(){return session&&selected?{actor:accountSessionsActor(),teamId,taskId:selected.id,view:viewEpoch}:null;}
+  function sameTaskManagement(context){return !!context&&sameAccountSessionsActor(context.actor)&&context.teamId===teamId&&context.taskId===selected?.id&&context.view===viewEpoch;}
+  function taskManagementPending(){return !!taskManagementMutation&&sameAccountSessionsActor(taskManagementMutation.context.actor);}
+  function sameTaskView(context){return !!context&&sameAccountSessionsActor(context.actor)&&context.teamId===teamId&&context.view===viewEpoch;}
+  function taskUploadPending(){return !!taskUploadOperation&&sameAccountSessionsActor(taskUploadOperation.context.actor);}
+  function resetTaskSubmissionAccess(status='idle'){submissionAccessEpoch++;submissionAccess=null;submissionAccessStatus=status;updateTaskSubmissionControls();}
+  function canSubmitSelected(){return !!selected&&submissionAccessStatus==='ready'&&sameTaskManagement(submissionAccess?.context)&&submissionAccess.canSubmit===true&&Number.isSafeInteger(revision)&&revision>=0&&revision<Number.MAX_SAFE_INTEGER&&submissionAccess.revision===revision;}
+  function taskSubmissionWords(){
+    if(submissionAccessStatus==='pending')return '正在核验本任务提交权限…';
+    if(submissionAccessStatus==='unavailable')return '当前桌面提交权限接口未更新，暂不能提交；请更新客户端并刷新任务。';
+    if(submissionAccessStatus==='error')return '无法核验提交权限，请刷新任务后重试。';
+    if(submissionAccessStatus==='stale'||(submissionAccessStatus==='ready'&&submissionAccess?.revision!==revision))return '任务版本已变化，请刷新任务后再提交。';
+    if(submissionAccessStatus==='ready'&&submissionAccess?.canSubmit===false){
+      if(selected?.status==='submitted')return '本任务已提交，等待负责人核对。';
+      return '当前账号无本任务提交权限；请联系负责人核对分工或刷新任务。';
+    }
+    return canSubmitSelected()?'已核验本次提交权限；选择文件时仍会重新核验。':'提交权限需要重新核验，请刷新任务。';
+  }
+  function updateTaskSubmissionControls(){
+    const button=byId('task-upload');if(button)button.disabled=busy||taskManagementPending()||taskUploadPending()||!canSubmitSelected();
+    const note=byId('task-submission-access-message');if(note){note.textContent=taskSubmissionWords();note.classList.toggle('error',['error','stale','unavailable'].includes(submissionAccessStatus)||(submissionAccessStatus==='ready'&&submissionAccess?.revision!==revision));}
+  }
+  async function taskViewCall(name,input,context,current=()=>true){
+    const result=await api[name](input);
+    // Check actor and view before interpreting even a 401 from a previous task/login.
+    if(!sameTaskView(context)||!current())throw {code:'STALE_TASK_VIEW'};
+    if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message',result.error.message||'当前登录已失效，请重新登录。',true);}throw result?.error||{code:'INVALID_RESPONSE',message:'任务状态无法确认，请刷新后重试。'};}
+    return result.value;
+  }
+  async function loadTaskSubmissionAccess(refreshHistory=false){
+    const context=taskManagementContext();if(!context)return false;const at=++submissionAccessEpoch;submissionAccess=null;submissionAccessStatus='pending';updateTaskSubmissionControls();
+    if(typeof api?.getTaskSubmissionAccess!=='function'){submissionAccessStatus='unavailable';updateTaskSubmissionControls();return false;}
+    try{
+      const input={teamId:context.teamId,taskId:context.taskId},current=()=>at===submissionAccessEpoch&&sameTaskManagement(context);
+      if(refreshHistory){const history=await taskViewCall('getSubmissions',input,context,current);if(!current())return false;revision=history.revision;submissions=history.submissions;renderDetail();}
+      const value=await taskViewCall('getTaskSubmissionAccess',input,context,current);if(!current())return false;
+      if(typeof value?.canSubmit!=='boolean'||!Number.isSafeInteger(value.revision)||value.revision<0||(value.canSubmit&&value.revision===Number.MAX_SAFE_INTEGER))throw {code:'INVALID_RESPONSE'};
+      submissionAccess={...value,context};submissionAccessStatus='ready';return true;
+    }catch{if(at===submissionAccessEpoch&&sameTaskManagement(context)){submissionAccess=null;submissionAccessStatus='error';}return false;}
+    finally{if(at===submissionAccessEpoch&&sameTaskManagement(context))updateTaskSubmissionControls();}
+  }
+  function resetTaskManagement(){stopTaskSubmissionPreview(false);taskOriginalSelection.clear();taskManagementEpoch++;taskManagementState=null;taskManagementMembers=[];taskManagementHasMore=false;taskManagementQuery='';taskManagementChosen='';taskManagementWorking=false;taskManagementNeedsRefresh=false;taskManagementMessage='';taskManagementError=false;byId('task-management')?.remove();}
+  function taskManagementFeedback(text,error=false){taskManagementMessage=text;taskManagementError=error;const node=byId('task-management-message');if(node){node.textContent=text;node.classList.toggle('error',error);}}
+  function updateTaskManagementControls(){
+    if(!byId('task-management'))return;const locked=busy||taskManagementWorking||taskManagementPending()||taskUploadPending(),ready=!!session&&!!selected&&taskManagementState?.canManage===true&&!taskManagementNeedsRefresh;
+    for(const id of ['task-management-search','task-management-search-button','task-management-member'])byId(id).disabled=locked||!ready;
+    byId('task-management-more').disabled=locked||!ready;byId('task-management-more').hidden=!taskManagementHasMore;
+    byId('task-management-assign').disabled=locked||!ready||!taskManagementMembers.some(member=>member.id===taskManagementChosen)||taskManagementState.status==='closed';
+    byId('task-management-return').disabled=locked||!ready||taskManagementState.status!=='submitted';
+    byId('task-management-refresh').disabled=locked;
+  }
+  function fillTaskManagementMembers(){const select=byId('task-management-member');if(!select)return;select.replaceChildren();const prompt=el('option',taskManagementMembers.length?'选择接收此任务的成员':'当前没有已加载的候选成员');prompt.value='';select.append(prompt);for(const member of taskManagementMembers){const option=el('option',member.displayName+' · '+(labels[member.role]||'岗位待核对'));option.value=member.id;select.append(option);}select.value=taskManagementChosen;}
+  function renderTaskManagement(){
+    if(!taskManagementState?.canManage)return null;
+    const panel=el('section',undefined,'task-management');panel.id='task-management';panel.setAttribute('aria-label','任务分工与退回');
+    const heading=el('div',undefined,'task-management-heading'),title=el('h3','任务分工与退回'),refresh=el('button','重新读取分工','button');refresh.id='task-management-refresh';refresh.type='button';refresh.addEventListener('click',async()=>{const context=taskManagementContext();resetTaskSubmissionAccess();await loadTaskManagement();if(sameTaskManagement(context))void loadTaskSubmissionAccess(true);});heading.append(title,refresh);panel.append(heading);
+    const current=el('p',undefined,'identity-note');current.id='task-management-current';current.textContent=taskManagementState.assignees.length?'当前分工：'+taskManagementState.assignees.map(member=>member.displayName+'（'+(labels[member.role]||'岗位待核对')+'）').join('、'):'当前没有有效分工。';if(taskManagementState.hasMoreAssignees)current.append(document.createTextNode(' 还有其他当前分工未列出。'));panel.append(current);
+    panel.append(el('p','采集任务仅可指派给本团队实习生或助理。改派会替换本任务全部当前分工；原有附件不会自动开放给新成员。','identity-note'));
+    const searchWrap=el('div',undefined,'task-management-search-row'),search=el('input');search.id='task-management-search';search.type='search';search.maxLength=80;search.value=taskManagementQuery;search.placeholder='按成员姓名查找';search.setAttribute('aria-label','查找可指派成员');const searchButton=el('button','查找成员','button');searchButton.id='task-management-search-button';searchButton.type='button';searchButton.addEventListener('click',()=>void searchTaskManagementMembers());search.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();void searchTaskManagementMembers();}});search.addEventListener('input',()=>{taskManagementQuery=search.value;taskManagementChosen='';taskManagementMembers=[];taskManagementHasMore=false;fillTaskManagementMembers();updateTaskManagementControls();});searchWrap.append(search,searchButton);panel.append(searchWrap);
+    const selectLabel=el('label','接收任务的成员');selectLabel.htmlFor='task-management-member';const select=el('select');select.id='task-management-member';select.setAttribute('aria-label','接收任务的成员');select.addEventListener('change',()=>{taskManagementChosen=taskManagementMembers.some(member=>member.id===select.value)?select.value:'';updateTaskManagementControls();});const more=el('button','继续加载成员','button');more.id='task-management-more';more.type='button';more.hidden=!taskManagementHasMore;more.addEventListener('click',()=>void searchTaskManagementMembers(true));panel.append(selectLabel,select,more);
+    const prompt=el('option','选择接收此任务的成员');prompt.value='';select.append(prompt);for(const member of taskManagementMembers){const option=el('option',member.displayName+' · '+(labels[member.role]||'岗位待核对'));option.value=member.id;select.append(option);}select.value=taskManagementChosen;
+    const actions=el('div',undefined,'task-management-actions'),assign=el('button','确认改派并替换当前分工','button primary'),returned=el('button','退回补充资料','button');assign.type=returned.type='button';assign.id='task-management-assign';returned.id='task-management-return';assign.addEventListener('click',()=>void mutateTaskManagement('assign'));returned.addEventListener('click',()=>void mutateTaskManagement('return'));actions.append(assign,returned);panel.append(actions,el('p','退回只将已提交任务改为待补充，不代表形成审计结论。','identity-note'));
+    const feedback=el('p',taskManagementMessage,'feedback'+(taskManagementError?' error':''));feedback.id='task-management-message';feedback.setAttribute('role','status');feedback.setAttribute('aria-live','polite');panel.append(feedback);return panel;
+  }
+  async function taskManagementCall(name,input,context){
+    const result=await api[name](input);if(!sameTaskManagement(context))throw {code:'STALE_TASK_MANAGEMENT'};
+    if(!result?.ok&&result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message',result.error.message||'当前登录已失效，请重新登录。',true);throw result.error;}
+    if(!sameTaskManagement(context))throw {code:'STALE_TASK_MANAGEMENT'};if(!result?.ok)throw result?.error||{code:'INVALID_RESPONSE'};return result.value;
+  }
+  async function loadTaskManagement(){
+    if(!taskManagementReady())return false;const context=taskManagementContext();if(!context)return false;const at=++taskManagementEpoch;taskManagementWorking=true;taskManagementChosen='';taskManagementMembers=[];taskManagementHasMore=false;taskManagementQuery='';updateTaskManagementControls();
+    try{
+      const value=await taskManagementCall('getTaskManagement',{teamId:context.teamId,taskId:context.taskId},context);if(at!==taskManagementEpoch)return false;
+      taskManagementState=value.canManage?value:null;taskManagementNeedsRefresh=false;taskManagementMessage='';taskManagementError=false;
+      if(!value.canManage){renderDetail();return true;}selected.status=value.status;if(value.revision!==revision)resetTaskSubmissionAccess('stale');const task=tasks.find(item=>item.id===context.taskId);if(task)task.status=value.status;renderTasks();renderDetail();
+      const data=await taskManagementCall('listTaskAssignees',{teamId:context.teamId,taskId:context.taskId,limit:20},context);if(at!==taskManagementEpoch)return false;
+      taskManagementMembers=data.members;taskManagementHasMore=data.hasMore;renderDetail();return true;
+    }catch(error){if(at===taskManagementEpoch&&sameTaskManagement(context)){taskManagementState=null;taskManagementMembers=[];taskManagementChosen='';renderDetail();message('workspace-message',error.message||'任务管理状态无法确认，请重新读取任务。',true);}return false;}
+    finally{if(at===taskManagementEpoch&&sameTaskManagement(context)){taskManagementWorking=false;updateTaskManagementControls();}}
+  }
+  async function searchTaskManagementMembers(append=false){
+    if(busy||taskManagementWorking||taskManagementPending()||taskUploadPending()||taskManagementNeedsRefresh||!taskManagementState?.canManage)return;const context=taskManagementContext();if(!context)return;const at=++taskManagementEpoch,query=taskManagementQuery;taskManagementWorking=true;taskManagementChosen='';const input={teamId:context.teamId,taskId:context.taskId,q:query,limit:20};if(append&&taskManagementMembers.length)input.after=taskManagementMembers.at(-1).id;else{taskManagementMembers=[];taskManagementHasMore=false;}updateTaskManagementControls();
+    try{const data=await taskManagementCall('listTaskAssignees',input,context);if(at!==taskManagementEpoch)return;taskManagementMembers=append?taskManagementMembers.concat(data.members):data.members;taskManagementHasMore=data.hasMore;taskManagementFeedback(data.members.length?'请选择接收任务的成员，再确认改派。':'没有匹配的可指派成员。');renderDetail();}
+    catch(error){if(at===taskManagementEpoch&&sameTaskManagement(context)){taskManagementMembers=[];taskManagementChosen='';taskManagementHasMore=false;taskManagementNeedsRefresh=true;taskManagementFeedback(error.message||'成员列表无法确认，请重新读取分工。',true);if(error.code==='HTTP_404')taskManagementState=null;renderDetail();}}
+    finally{if(at===taskManagementEpoch&&sameTaskManagement(context)){taskManagementWorking=false;updateTaskManagementControls();}}
+  }
+  async function mutateTaskManagement(action){
+    if(busy||taskManagementWorking||taskManagementPending()||taskUploadPending()||taskManagementNeedsRefresh||!taskManagementState?.canManage)return;
+    const context=taskManagementContext();if(!context||taskManagementState.status==='closed'||(action==='return'&&taskManagementState.status!=='submitted'))return;
+    const member=taskManagementMembers.find(item=>item.id===taskManagementChosen);if(action==='assign'&&!member){taskManagementFeedback('请先选择本次可指派成员。',true);return;}
+    const expected=taskManagementState.revision,input={teamId:context.teamId,taskId:context.taskId,revision:expected,...(action==='assign'?{userId:member.id}:{})},operation={context};taskManagementMutation=operation;resetTaskSubmissionAccess();updateTaskManagementControls();taskManagementFeedback(action==='assign'?'正在更新任务分工…':'正在退回任务，原提交记录将保留…');let confirmed=false;
+    try{
+      const value=await taskManagementCall(action==='assign'?'assignTask':'returnTask',input,context);if(value?.revision!==expected+1)throw {code:'INVALID_RESPONSE'};confirmed=true;taskManagementNeedsRefresh=true;taskManagementChosen='';if(action==='return')selected.status='returned';
+      const read=await loadTaskManagement();if(sameTaskManagement(context)){if(read)await loadTaskSubmissionAccess(true);if(!sameTaskManagement(context))return;taskManagementFeedback(read?(action==='assign'?'任务已改派，当前分工已重新读取。':'任务已退回补充，原提交记录保持。'):'任务已更新，但当前状态刷新失败，请刷新任务核对。',!read);message('workspace-message',read?(action==='assign'?'任务分工已更新。':'任务已退回，采集员可补充后重新提交。'):'任务已更新，但当前状态刷新失败，请刷新任务核对。',!read);}
+    }catch(error){if(sameTaskManagement(context)){taskManagementChosen='';taskManagementMembers=[];taskManagementHasMore=false;taskManagementNeedsRefresh=true;const uncertain=passwordChangeUncertain(error);const text=confirmed?'任务已更新，但刷新无法确认，请重新读取任务。':uncertain?'未能确认操作结果；请求可能已完成，请重新读取任务核对，避免重复操作。':error.code==='HTTP_409'?'资料或分工已更新，请重新读取后再操作。':error.message||'任务操作未通过，请重新读取当前授权。';taskManagementFeedback(text,true);if(error.code==='HTTP_404')taskManagementState=null;renderDetail();message('workspace-message',text,true);}}
+    finally{if(taskManagementMutation===operation)taskManagementMutation=null;if(sameAccountSessionsActor(context.actor))renderDetail();updateTaskManagementControls();updateTaskSubmissionControls();if(sameAccountSessionsActor(context.actor)&&context.teamId===teamId&&context.taskId===selected?.id&&context.view!==viewEpoch)void loadTaskManagement();}
+  }
+  function detailEmpty(){const wrap=el('div',undefined,'detail-empty');wrap.append(el('h2','选择一项任务'),el('p','任务要求和你的提交记录将在这里显示。'));byId('task-detail').replaceChildren(wrap);}
+  function statusChip(status){return el('span',statuses[status]||'状态待核对','status-chip '+status);}
+  function renderTasks(){const list=byId('task-list');list.replaceChildren();byId('task-count').textContent=tasks.length?tasks.length+' 项已加载':'';byId('load-more').hidden=!hasMore;
+    if(!tasks.length){list.append(el('p','当前没有可见的采集任务。','list-empty'));return;}
+    for(const task of tasks){
+      const button=el('button',undefined,'task-button'+(selected?.id===task.id?' selected':''));
+      button.type='button';
+      button.setAttribute('aria-pressed',String(selected?.id===task.id));
+      button.append(el('strong',task.title),statusChip(task.status),el('small','查看任务要求与我的提交'));
+      button.addEventListener('click',async event=>{
+        const fromKeyboard=event.detail===0&&document.activeElement===button;
+        const context=await selectTask(task.id);
+        if(fromKeyboard&&context&&sameTaskView(context)&&(document.activeElement===document.body||document.activeElement===button)){
+          byId('task-detail').focus();
+        }
+      });
+      list.append(button);
+    }
+  }
+  function renderDetail(){if(!selected){detailEmpty();return;}const heading=el('div',undefined,'detail-heading');heading.append(el('h2',selected.title),statusChip(selected.status));const label=el('p','采集要求','detail-label');const description=el('div',selected.instructions,'instructions');
+    const upload=el('div',undefined,'upload-area'),words=el('div');words.append(el('strong','提交此任务所需资料'),el('p','每份不超过12 MiB；请选择合成演示文件。'));const uploadButton=el('button','选择文件并提交','button primary');uploadButton.id='task-upload';uploadButton.type='button';uploadButton.setAttribute('aria-describedby','task-submission-access-message');uploadButton.addEventListener('click',uploadSelected);const accessNote=el('p',taskSubmissionWords());accessNote.id='task-submission-access-message';accessNote.setAttribute('role','status');accessNote.setAttribute('aria-live','polite');words.append(accessNote);upload.append(words,uploadButton);
+    const historyTitle=el('h3','我的提交记录'),list=el('ul',undefined,'submission-list');
+    if(!submissions.length)list.append(el('li','尚无提交记录。','submission-empty'));
+    for(const item of submissions){const row=el('li',undefined,'submission-item'),info=el('div');info.append(el('strong',item.filename),el('small',formatSize(item.byteLength)+' · '+new Date(item.createdAt).toLocaleString('zh-CN')),el('small','SHA-256 '+item.sha256));const download=el('button','下载原件','button');download.type='button';download.disabled=busy;download.addEventListener('click',()=>downloadItem(item.attachmentId));info.append(originalCheckbox(false,item));row.append(info,download,taskSubmissionPreviewButton(false,item));list.append(row);}
+    const management=renderTaskManagement();byId('task-detail').replaceChildren(heading,label,description,...(management?[management]:[]),upload,historyTitle,originalsExportToolbar(),list);updateTaskManagementControls();updateTaskSubmissionControls();updateOriginalsExportControls();updateTaskSubmissionPreviewControls();}
+  function formatSize(bytes){return bytes<1024?bytes+' B':bytes<1024*1024?(bytes/1024).toFixed(1)+' KiB':(bytes/1024/1024).toFixed(2)+' MiB';}
+  function taskSubmissionPreviewReady(){return originalsExportReady()&&['previewTaskSubmission','previewProjectSubmission','closeTaskSubmissionPreview'].every(name=>typeof api?.[name]==='function');}
+  function discardTaskSubmissionPreview(job){if(!job||typeof api?.closeTaskSubmissionPreview!=='function')return;try{Promise.resolve(api.closeTaskSubmissionPreview({previewId:job.id})).catch(()=>{});}catch{}}
+  function stopTaskSubmissionPreview(project){const job=taskSubmissionPreview;if(!job||typeof project==='boolean'&&job.project!==project)return;taskSubmissionPreview=null;discardTaskSubmissionPreview(job);updateTaskSubmissionPreviewControls();}
+  function closeTaskSubmissionPreview(id){const job=taskSubmissionPreview;if(!job||job.id!==id)return;stopTaskSubmissionPreview();message(job.project?'project-review-message':'workspace-message','已关闭本次提交预览；未保存原件副本。');}
+  function validTaskPreviewVersion(value,min=0){return Number.isSafeInteger(value)&&value>=min;}
+  function currentTaskSubmissionPreview(job){const s=projectAccessState;return taskSubmissionPreview===job&&taskSubmissionPreviewReady()&&job.device===deviceUiEpoch&&job.main===session?.device?.epoch&&(job.project?currentProjectContext(job.context,{task:true})&&s.project?.canRead&&s.project?.canReview&&s.project.revision===job.input.projectRevision&&s.task?.revision===job.input.revision&&s.submissions.includes(job.item):sameTaskManagement(job.context)&&revision===job.input.revision&&submissions.includes(job.item));}
+  function taskSubmissionPreviewButton(project,item){const b=el('button','软件内预览','button');b.type='button';b.dataset.taskSubmissionPreview=project?'project':'own';b.dataset.submissionId=item.id||'';b.addEventListener('click',()=>void previewTaskSubmission(project,item));return b;}
+  function taskSubmissionPreviewCloseButton(project){const b=el('button','关闭本次提交预览','button');b.id=project?'project-submission-preview-close':'task-submission-preview-close';b.type='button';b.hidden=true;b.addEventListener('click',()=>closeTaskSubmissionPreview(b.dataset.previewId));return b;}
+  function updateTaskSubmissionPreviewControls(){
+    const ready=taskSubmissionPreviewReady(),pending=!!taskSubmissionPreview?.pending,s=projectAccessState;
+    for(const b of document.querySelectorAll('[data-task-submission-preview]')){const project=b.dataset.taskSubmissionPreview==='project',rows=project?s.submissions:submissions,item=rows.find(row=>row.id===b.dataset.submissionId),version=project?s.task?.revision:revision,scope=project?projectAccessReady()&&byId('project-access-panel').open&&!byId('project-access-panel').hidden&&s.project?.canRead&&s.project?.canReview&&validTaskPreviewVersion(s.project?.revision,1)&&!s.working.submissions:!!selected;
+      b.disabled=!ready||busy||pending||!scope||!validTaskPreviewVersion(version)||!item||!Number.isSafeInteger(item.byteLength)||item.byteLength<1||item.byteLength>12*1024*1024||project&&(projectAccessPending()||projectDownloadPending());b.title=!ready?'当前客户端预览接口未就绪；原下载仍可使用。':item?.byteLength===0?'空文件无法呈现正文；原下载与导出仍保留。':'只读预览，不代表已核对；保存请使用原件下载。';
+    }
+    for(const project of [false,true]){const b=byId(project?'project-submission-preview-close':'task-submission-preview-close');if(!b)continue;const job=taskSubmissionPreview,visible=!!job&&job.project===project;b.hidden=!visible;b.disabled=!visible;b.dataset.previewId=visible?job.id:'';}
+  }
+  async function previewTaskSubmission(project,item){
+    const s=projectAccessState;if(!taskSubmissionPreviewReady()||busy||taskSubmissionPreview?.pending||!Number.isSafeInteger(item?.byteLength)||item.byteLength<1||item.byteLength>12*1024*1024)return;
+    if(project?projectAccessPending()||projectDownloadPending()||!s.project?.canRead||!s.project?.canReview||!s.task||!s.submissions.includes(item)||s.working.submissions||!projectAccessReady()||!byId('project-access-panel').open:!selected||!submissions.includes(item)||taskManagementPending()||taskUploadPending())return;
+    const version=project?s.task.revision:revision;if(!validTaskPreviewVersion(version)||project&&!validTaskPreviewVersion(s.project.revision,1))return;
+    const context=project?projectContext('submissions'):taskManagementContext(),id=window.crypto.randomUUID(),input=project?{requestId:id,teamId:s.team,projectId:s.projectId,projectRevision:s.project.revision,taskId:s.task.id,revision:version,submissionId:item.id}:{requestId:id,teamId:context.teamId,taskId:context.taskId,revision:version,submissionId:item.id};
+    if(typeof item.id!=='string'||!item.id)return;stopTaskSubmissionPreview();const job={id,project,item,context,input,device:deviceUiEpoch,main:session?.device?.epoch,pending:true};taskSubmissionPreview=job;updateTaskSubmissionPreviewControls();const feedback=project?'project-review-message':'workspace-message';message(feedback,'正在核验提交原件的当前预览权限…');
+    try{const result=await api[project?'previewProjectSubmission':'previewTaskSubmission'](input);if(!currentTaskSubmissionPreview(job)){discardTaskSubmissionPreview(job);return;}if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED'){showLogin();message('login-message','当前预览登录已失效，请重新登录。',true);return;}throw result?.error||{code:'INVALID_RESPONSE'};}const v=result.value;if(!v||Object.keys(v).length!==4||v.opened!==true||v.previewId!==id||v.filename!==item.filename||v.byteLength!==item.byteLength)throw {code:'INVALID_RESPONSE'};job.pending=false;message(feedback,'阅读窗口已获准显示：'+v.filename+'。正文是否成功读取请查看窗口提示；预览不代表已核对。');}
+    catch(error){if(currentTaskSubmissionPreview(job)){stopTaskSubmissionPreview();message(feedback,error.message||'原件预览无法确认，请刷新当前任务及项目权限后重试。',true);}else discardTaskSubmissionPreview(job);}
+    finally{if(taskSubmissionPreview===job)job.pending=false;updateTaskSubmissionPreviewControls();}
+  }
+  function originalsExportPending(){return !!originalsExportOperation&&sameAccountSessionsActor(originalsExportOperation.actor);}
+  function originalsExportReady(){return !!session&&session.device?.required===true&&deviceBusinessReady(session.device)&&!deviceUiClosed;}
+  function originalRows(project){return project?projectAccessState.submissions:submissions;}
+  function originalSelection(project){return project?projectOriginalSelection:taskOriginalSelection;}
+  function originalStats(project){const rows=originalRows(project).filter(item=>originalSelection(project).has(item.id));return {rows,count:rows.length,bytes:rows.reduce((sum,item)=>sum+item.byteLength,0)};}
+  function originalsExportAvailable(project){const s=projectAccessState;return originalsExportReady()&&typeof api?.[project?'exportProjectTaskOriginals':'exportTaskOriginals']==='function'&&(project?projectAccessReady()&&s.project?.canReview&&s.task&&byId('project-access-panel').open&&!byId('project-access-panel').hidden:!!selected);}
+  function updateOriginalsExportControls(){
+    for(const project of [false,true]){const prefix=project?'project-originals':'task-originals',stats=originalStats(project),available=originalsExportAvailable(project),locked=busy||originalsExportPending()||!!projectDownloadOperation;
+      const button=byId(prefix+'-export'),count=byId(prefix+'-selection');if(button)button.disabled=!available||locked||!stats.count||stats.count>20||stats.bytes>64*1024*1024;if(count)count.textContent='已选择 '+stats.count+' 份 · '+formatSize(stats.bytes)+'（最多20份／64 MiB）';
+      for(const node of document.querySelectorAll('[data-original-selection="'+(project?'project':'task')+'"]')){node.checked=originalSelection(project).has(node.dataset.submissionId);node.disabled=!available||locked;}
+    }
+  }
+  function originalCheckbox(project,item){const label=el('label',undefined,'original-selection'),checkbox=el('input');checkbox.type='checkbox';checkbox.dataset.originalSelection=project?'project':'task';checkbox.dataset.submissionId=item.id;checkbox.checked=originalSelection(project).has(item.id);checkbox.setAttribute('aria-label','选择导出：'+item.filename);checkbox.addEventListener('change',()=>{
+      if(!document.contains(checkbox)||!originalsExportAvailable(project)||busy||originalsExportPending()||!originalRows(project).includes(item)){checkbox.checked=originalSelection(project).has(item.id);return;}
+      const selection=originalSelection(project);if(checkbox.checked)selection.add(item.id);else selection.delete(item.id);const stats=originalStats(project);
+      if(stats.count>20||stats.bytes>64*1024*1024){selection.delete(item.id);checkbox.checked=false;message(project?'project-review-message':'workspace-message','每次最多选择20份原件，总大小不超过64 MiB；没有截断或自动省略。',true);}updateOriginalsExportControls();
+    });label.append(checkbox,el('span','选择导出'));return label;}
+  function originalsExportToolbar(){const toolbar=el('div',undefined,'originals-export-toolbar'),note=el('p','仅导出本任务已显示且明确选中的原件副本；不代表全部历史、备份或审计通过。','identity-note'),count=el('span');count.id='task-originals-selection';const button=el('button','导出所选原件包','button');button.id='task-originals-export';button.type='button';button.addEventListener('click',()=>void exportSelectedOriginals(false));toolbar.append(note,count,button,taskSubmissionPreviewCloseButton(false));return toolbar;}
+  async function exportSelectedOriginals(project){
+    if(!originalsExportAvailable(project)||busy||originalsExportPending()||!!projectDownloadOperation)return;const stats=originalStats(project);if(!stats.count||stats.count>20||stats.bytes>64*1024*1024)return;
+    const context=project?projectContext('submissions'):{...taskManagementContext(),device:deviceUiEpoch,main:session.device.epoch},current=()=>project?currentProjectContext(context,{task:true}):sameTaskManagement(context)&&context.device===deviceUiEpoch&&context.main===session?.device?.epoch&&originalsExportReady();
+    const s=projectAccessState,input=project?{teamId:s.team,projectId:s.projectId,taskId:s.task.id,revision:s.task.revision,projectRevision:s.project.revision,submissionIds:stats.rows.map(item=>item.id).sort()}:{teamId:context.teamId,taskId:context.taskId,revision,submissionIds:stats.rows.map(item=>item.id).sort()},operation={actor:context.actor};originalsExportOperation=operation;originalSelection(project).clear();setBusy(true);const owner=busyEpoch,feedback=project?'project-review-message':'workspace-message';updateOriginalsExportControls();message(feedback,'正在核验所选原件、生成副本包；保存前还会重新核验当前权限…');
+    try{const result=project?await projectAccessCall('exportProjectTaskOriginals',input,current):await taskViewCall('exportTaskOriginals',input,context,current);if(!current())return;
+      if(result?.canceled===true&&Object.keys(result).length===1)message(feedback,'已取消，未保存原件包。');else if(result?.saved===true&&typeof result.filename==='string'&&Number.isSafeInteger(result.byteLength)&&result.byteLength>0&&result.fileCount===stats.count&&Object.keys(result).length===4)message(feedback,'所选 '+result.fileCount+' 份原件副本包已保存：'+result.filename);else message(feedback,'无法确认原件包保存结果，请先检查所选位置，再决定是否重新操作。',true);
+    }catch(error){if(current())message(feedback,error.message||'原件包未能保存，请刷新任务和权限后核对；不会自动重试。',true);}
+    finally{if(originalsExportOperation===operation)originalsExportOperation=null;if(sameAccountSessionsActor(context.actor)){if(busyEpoch===owner)setBusy(false);updateOriginalsExportControls();updateProjectAccessControls();}}
+  }
+  async function loadTasks(append=false){
+    if(!session||!teamId)return;stopTaskSubmissionPreview(false);if(!append)resetTaskManagement();resetTaskSubmissionAccess();const context={actor:accountSessionsActor(),teamId,view:++viewEpoch};setBusy(true);message('workspace-message','正在读取获授权任务…');
+    try{const query={teamId:context.teamId,q:byId('search').value,limit:30};if(append&&tasks.length)query.after=tasks.at(-1).id;const data=await taskViewCall('listTasks',query,context);if(!sameTaskView(context))return;tasks=append?tasks.concat(data.tasks):data.tasks;hasMore=data.hasMore;if(!append){selected=null;submissions=[];revision=0;renderDetail();}else if(selected)void loadTaskSubmissionAccess();renderTasks();message('workspace-message','任务列表已更新。');}
+    catch(error){if(sameTaskView(context))message('workspace-message',error.message,true);}
+    finally{if(sameTaskView(context))setBusy(false);}
+  }
+  async function selectTask(taskId){
+    if(!session||!teamId)return;resetTaskManagement();resetTaskSubmissionAccess();const context={actor:accountSessionsActor(),teamId,taskId,view:++viewEpoch};setBusy(true);message('workspace-message','正在读取任务…');
+    try{const key={teamId:context.teamId,taskId};const [detail,history]=await Promise.all([taskViewCall('getTask',key,context),taskViewCall('getSubmissions',key,context)]);if(!sameTaskView(context))return;selected=detail.task;submissions=history.submissions;revision=history.revision;renderTasks();renderDetail();message('workspace-message','只展示当前任务和你的提交记录。');void loadTaskSubmissionAccess();void loadTaskManagement();return context;}
+    catch(error){if(sameTaskView(context)){selected=null;submissions=[];revision=0;resetTaskSubmissionAccess();renderDetail();message('workspace-message',error.message,true);}}
+    finally{if(sameTaskView(context)){setBusy(false);renderDetail();}}
+  }
+  async function uploadSelected(){
+    if(!selected||busy||taskManagementPending()||taskUploadPending()||!canSubmitSelected())return;
+    const context=taskManagementContext(),expected=revision,operation={context};taskUploadOperation=operation;resetTaskSubmissionAccess();setBusy(true);const uploadBusyEpoch=busyEpoch;message('workspace-message',remoteService?'请选择资料；确认后将提交至配置的HTTPS团队服务。':'请选择资料；确认后将提交至本机团队服务。');
+    try{
+      const result=await taskViewCall('chooseAndUpload',{teamId:context.teamId,taskId:context.taskId,revision:expected},context);if(!sameTaskManagement(context))return;
+      if(result.canceled){await loadTaskSubmissionAccess();if(sameTaskManagement(context))message('workspace-message','已取消，未提交资料。');return;}
+      const refreshed=await selectTask(context.taskId);if(!sameTaskManagement(refreshed))return;const updated=tasks.find(task=>task.id===context.taskId);if(updated)updated.status=selected.status;renderTasks();message('workspace-message','资料已提交，原件与提交记录已保存。');
+    }catch(error){if(sameTaskManagement(context)){resetTaskSubmissionAccess();message('workspace-message',error.message||'提交结果无法确认，请刷新任务后核对。',true);}}
+    finally{if(taskUploadOperation===operation)taskUploadOperation=null;if(sameTaskManagement(context)&&busyEpoch===uploadBusyEpoch)setBusy(false);if(sameAccountSessionsActor(context.actor)){updateTaskManagementControls();updateTaskSubmissionControls();}}
+  }
+  async function downloadItem(attachmentId){
+    if(!selected||busy)return;const context=taskManagementContext();setBusy(true);const downloadBusyEpoch=busyEpoch;message('workspace-message','正在核验原件下载权限…');
+    try{const result=await taskViewCall('downloadAttachment',{teamId:context.teamId,taskId:context.taskId,attachmentId},context,()=>sameTaskManagement(context));if(sameTaskManagement(context))message('workspace-message',result.canceled?'已取消，未保存副本。':'原件副本已保存：'+result.filename);}
+    catch(error){if(sameTaskManagement(context))message('workspace-message',error.message||'原件保存结果无法确认，请核对后重试。',true);}
+    finally{if(sameTaskManagement(context)&&busyEpoch===downloadBusyEpoch){setBusy(false);renderDetail();}}
+  }
+  async function enter(value){resetLedgerChecks();resetWorkpapers();if(!deviceApiReady()||!validDeviceSnapshot(value?.device)||!deviceBusinessReady(value.device)){await acceptAuthenticatedSession(value);return;}accountIdentityEpoch++;resetMyDeviceOverview();resetProjectMigration();resetAdministratorBusinessRole();resetProjectAccess();resetBusinessRole();resetMemberManagement();taskUploadOperation=null;resetTaskSubmissionAccess();selected=null;submissions=[];revision=0;renderDetail();resetTaskManagement();resetRecovery(true,true);resetAccountSessions();resetPasswordChange();resetWechat(false);resetActivation(true,true);resetFirstAdmin(true,true);resetProvisioning(true,true,provisioningRecovery?.accountId===value.account.id);resetRecoveryReviews();retainInvitationRecoveries(value.account.id);resetInvitations();administrationTeams=[];session=value;viewEpoch++;clearPhoneProof();message('phone-bind-message','');byId('phone-bind-panel').open=false;byId('login-view').hidden=true;byId('workspace-view').hidden=false;byId('session-actions').hidden=false;byId('account-name').textContent=session.account.displayName;byId('password').value='';const select=byId('team-select');select.replaceChildren();for(const member of session.memberships){const option=el('option',member.teamId);option.value=member.teamId;select.append(option);}teamId=session.memberships[0]?.teamId||'';invitationTeamId=teamId;rebuildInvitationTeams();updateRole();void loadIdentityMethods();void loadOnboardingStatus();void loadInvitationAccess();void loadProvisioningAccess();void loadRecoveryReviewsAccess();void loadTeamAdministration();void loadMemberManagementAccess();void loadReplacementReviewAccess();void loadBusinessRoleAccess();void loadProjectAccess();void loadAdministratorBusinessRoleAccess();void loadProjectMigrationAccess();if(teamId)void loadTasks();else{tasks=[];renderTasks();detailEmpty();message('workspace-message','当前账号尚未获指派审计角色或资料权限。');}}
+  function updateRole(){billing?.update();refundIntake?.update();ledgerChecks?.sync();workpapers?.sync();byId('role-label').textContent=labels[session?.memberships.find(member=>member.teamId===teamId)?.role]||'未指派角色';}
+  function watchWorkspaceNavigation(){
+    const workspace=byId('workspace-view'),navigation=byId('workspace-navigation'),groups=byId('workspace-navigation-groups');
+    if(!navigation||!groups)return;
+    const sections=[
+      ['项目业务',['project-access-panel','ledger-check-panel','workpaper-panel']],
+      ['团队管理',['employee-invitations-panel','business-role-panel','member-management-panel','device-replacement-reviews-panel','recovery-reviews-panel']],
+      ['独立审核',['team-provisioning-panel','administrator-business-role-panel','project-migration-panel']],
+      ['订阅与订单',['billing-panel','refund-intake-panel']],
+    ].map(([title,ids])=>({title,panels:ids.map(byId).filter(panel=>panel?.parentElement===workspace)}));
+    const available=panel=>!workspace.hidden&&!panel.hidden;
+    let shown='';
+    const update=()=>{
+      const visible=sections.map(({title,panels})=>({title,panels:panels.filter(available)})).filter(group=>group.panels.length);
+      const keys=visible.flatMap(group=>group.panels.map(panel=>panel.id)).join(',');
+      const managementOnly=!!keys&&!teamId;
+      const heading=byId('workspace-title'),caption=byId('workspace-caption');
+      if(workspace.classList.contains('management-workspace')!==managementOnly){
+        workspace.classList.toggle('management-workspace',managementOnly);
+        heading.textContent=managementOnly?'审易工作台':'我的采集任务';
+        caption.textContent=managementOnly?'打开模块查看可办理的团队、审核或账务事项。':'选择一项任务，核对要求，再提交资料。';
+        byId('refresh').textContent=managementOnly?'刷新':'刷新任务';
+        const label=managementOnly?'管理与审核':'资料采集';
+        byId('workspace-sidebar-label').textContent=label;
+        byId('workspace-breadcrumb-label').textContent=label;
+      }
+      if(keys===shown)return;
+      shown=keys;
+      const focused=groups.contains(document.activeElement)?document.activeElement.getAttribute('aria-controls'):null;
+      const next=visible.map(({title,panels})=>{
+        const group=el('div',undefined,'workspace-navigation-group');
+        const links=el('ul');
+        group.append(el('h3',title),links);
+        for(const panel of panels){
+          const summary=panel.firstElementChild;
+          const button=el('button',summary.textContent.trim(),'button');
+          button.type='button';
+          button.disabled=busy;
+          button.setAttribute('aria-controls',panel.id);
+          button.addEventListener('click',()=>{
+            if(busy||!available(panel))return;
+            panel.open=true;
+            summary.focus();
+          });
+          const item=el('li');
+          item.append(button);
+          links.append(item);
+        }
+        return group;
+      });
+      groups.replaceChildren(...next);
+      navigation.hidden=!keys;
+      if(focused&&!workspace.hidden){
+        const replacement=Array.from(groups.querySelectorAll('button')).find(button=>button.getAttribute('aria-controls')===focused);
+        (replacement&&!replacement.disabled?replacement:heading).focus({preventScroll:true});
+      }
+    };
+    const observer=new MutationObserver(update);
+    const options={attributes:true,attributeFilter:['hidden']};
+    for(const element of [workspace,...sections.flatMap(group=>group.panels)])observer.observe(element,options);
+    update();
+  }
+  byId('login-form').addEventListener('submit',async event=>{
+    event.preventDefault();if(deviceGateActive()){if(deviceSnapshot?.state==='enrollment_required'&&!deviceLocalIssue)await enrollCurrentDevice();return;}if(busy||deviceAction)return;if(!deviceApiReady()){suspendDeviceView('当前客户端设备接口未更新，请更新客户端后重试。');return;}
+    const phoneMode=identityServiceMode==='managed-service'||byId('login-mode').value==='phone';
+    if(phoneMode&&(!methodsReady||!methods.phonePassword)){message('login-message','手机号登录暂不可用。',true);return;}
+    if(!phoneMode&&!methods.demoUsername){message('login-message','身份服务状态暂不可读取，请稍候重试。',true);return;}
+    resetRecovery(true,true);resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);
+    const operation=beginDeviceAction('login'),input=phoneMode?{phone:byId('username').value,password:byId('password').value}:{username:byId('username').value,password:byId('password').value};setBusy(true);const owner=busyEpoch;message('login-message','正在登录并核验当前电脑…');
+    try{const result=await api[phoneMode?'loginPhone':'login'](input);if(!currentDeviceAction(operation))return;byId('password').value='';if(!result?.ok)throw result?.error||{code:'INVALID_RESPONSE'};message('login-message','');await acceptAuthenticatedSession(result.value);}
+    catch(error){if(currentDeviceAction(operation)){byId('password').value='';message('login-message',error.message||'登录或设备核验未完成，请重试。',true);}}
+    finally{if(currentDeviceAction(operation)){deviceAction=null;if(busyEpoch===owner)setBusy(false);updateIdentityControls();void pollDeviceStatus();}}
+  });
+  byId('login-mode').addEventListener('change',()=>{resetTaskSubmissionAccess();resetRecovery(true,true);resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);byId('username').value='';byId('password').value='';clearPhoneProof();message('login-message','');if(identityServiceMode==='managed-service')byId('login-mode').value='phone';updateLoginIdentityField();});
+  byId('bind-phone').addEventListener('input',()=>{clearPhoneProof(false);message('phone-bind-message','手机号已改变，请重新获取验证码。');});
+  byId('send-bind-code').addEventListener('click',async()=>{if(busy||!session)return;if(!methodsReady||!methods.phoneVerification){message('phone-bind-message','短信验证服务尚未开通，未发送验证码。',true);return;}const at=viewEpoch,phone=byId('bind-phone').value;clearPhoneProof(false);setBusy(true);message('phone-bind-message','正在请求短信验证…');try{const result=await call('requestPhoneBind',{phone});if(at!==viewEpoch||byId('bind-phone').value!==phone)return;challengeId=result.challengeId;challengeExpiresAt=result.expiresAt;challengePhone=phone;message('phone-bind-message','验证码发送请求已完成，请填写收到的验证码及当前账号密码。');}catch(error){if(at===viewEpoch)message('phone-bind-message',error.message,true);}finally{if(at===viewEpoch)setBusy(false);}});
+  byId('phone-bind-form').addEventListener('submit',async event=>{event.preventDefault();if(busy||!session)return;if(!challengeId||challengeExpiresAt<=Date.now()||byId('bind-phone').value!==challengePhone){clearPhoneProof(false);message('phone-bind-message','本次验证码已失效，请重新获取。',true);return;}const at=viewEpoch,proof={challengeId,code:byId('bind-code').value,currentPassword:byId('bind-current-password').value};let completed=false;setBusy(true);try{const result=await call('bindPhone',proof);if(at!==viewEpoch)return;completed=true;message('phone-bind-message','手机号已验证并绑定：'+result.phoneMasked);}catch(error){if(at===viewEpoch)message('phone-bind-message',error.message,true);}finally{if(at===viewEpoch){if(completed)clearPhoneProof();else{byId('bind-code').value='';byId('bind-current-password').value='';}setBusy(false);}}});
+  byId('logout').addEventListener('click',()=>void exitDeviceSession());byId('device-exit').addEventListener('click',()=>void exitDeviceSession());byId('device-retry').addEventListener('click',()=>void reconnectCurrentDevice());for(const id of ['password','device-name'])byId(id).addEventListener('input',updateDeviceControls);byId('device-enroll-consent').addEventListener('change',updateDeviceControls);
+  byId('refresh').addEventListener('click',()=>{if(activeProvisioningRecovery()&&!provisioningAllowed&&!provisioningWorking)void loadProvisioningAccess();void loadInvitationAccess();loadTasks();});byId('load-more').addEventListener('click',()=>loadTasks(true));byId('team-select').addEventListener('change',()=>{resetAccountSessions();resetPasswordChange();teamId=byId('team-select').value;invitationResumeTeam=null;invitationTeamId=teamId;rebuildInvitationTeams();updateRole();void loadInvitationAccess();loadTasks();});byId('search-form').addEventListener('submit',event=>{event.preventDefault();loadTasks();});
+  workspaceSource=createWorkspaceSourceView();
+  projectMaterials=window.createProjectMaterialsView?.({api,onLockChange:()=>updateProjectAccessControls(),getContext:()=>{const s=projectAccessState,a=accountSessionsActor();return s.project&&(s.project.kind!=='collection-workspace'||s.project.businessConfirmed===true)?{requiresMapping:s.project.kind==='collection-workspace',actor:a.id+':'+a.epoch,userId:a.id,device:deviceUiEpoch+':'+session?.device?.epoch,teamId:s.team,projectId:s.projectId,title:s.project.title,status:s.project.status,ready:projectAccessReady()&&byId('project-access-panel').open&&!byId('project-access-panel').hidden,busy}:null;},onUnauthorized:()=>{showLogin();message('login-message','当前资料登录已失效，请重新登录。',true);}});
+  ledgerChecks=window.createLedgerCheckView?.({api,getContext:()=>{const a=accountSessionsActor(),membership=session?.memberships.find(m=>m.teamId===teamId);return{actor:a.id+':'+a.epoch,userId:a.id,device:deviceUiEpoch+':'+session?.device?.epoch,teamId,role:membership?.role,ready:projectAccessReady()&&!byId('workspace-view').hidden,busy};},onUnauthorized:()=>{showLogin();message('login-message','\u8d26\u8868\u767b\u5f55\u5df2\u5931\u6548\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55\u3002',true);}});
+  workpapers=window.createWorkpaperView?.({api,getContext:()=>{const a=accountSessionsActor(),membership=session?.memberships.find(m=>m.teamId===teamId);return{actor:a.id+':'+a.epoch,userId:a.id,device:deviceUiEpoch+':'+session?.device?.epoch,teamId,role:membership?.role,ready:projectAccessReady()&&!byId('workspace-view').hidden,busy};},onUnauthorized:()=>{showLogin();message('login-message','\u5e95\u7a3f\u767b\u5f55\u5df2\u5931\u6548\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55\u3002',true);}});
+  const billingContext=()=>{const actor=accountSessionsActor(),bound=deviceSnapshot?.device,binding=bound?.status==='active'&&bound.keyFingerprint===deviceSnapshot.localFingerprint?JSON.stringify([bound.id,bound.keyFingerprint,bound.revision]):'';return{identity:deviceAccount?.id||actor.id,actor:actor.id+':'+actor.epoch,device:deviceUiEpoch+':'+deviceSnapshot?.epoch,binding,paused:deviceSnapshot?.state==='paused',teamId,ready:myDeviceReady()&&!deviceLocalIssue&&!byId('workspace-view').hidden,busy};};
+  billing=window.createBillingView?.({
+    api,
+    getContext:billingContext,
+    onUnauthorized:()=>{showLogin();message('login-message','当前账号登录已失效，请重新登录。',true);},
+    onDeviceUnavailable:()=>suspendDeviceView(identityServiceMode==='managed-service'
+      ? '当前设备无法通过核验，团队业务已暂停。请重新连接并核验。'
+      : '当前设备无法通过核验，团队业务已暂停。请重新连接并核验。如刚提交订单，请恢复后先到订单列表核对。')
+  });
+  refundIntake=window.createRefundIntakeView?.({
+    api,
+    getContext:billingContext,
+    onUnauthorized:()=>{showLogin();message('login-message','当前账号登录已失效，请重新登录。',true);},
+    onDeviceUnavailable:()=>suspendDeviceView('当前设备无法通过核验。重新连接后，请在原订单中核对受理记录。')
+  });
+  watchWorkspaceNavigation();
+  if(!api){message('login-message','此页面需要审易桌面客户端，请从桌面启动入口打开。',true);byId('login-submit').disabled=true;}
+  renderIdentityService();updateIdentityControls();updateOnboardingControls();updateMemberManagementControls();if(api){void loadIdentityMethods();void loadOnboardingStatus();devicePollTimer=setInterval(()=>void pollDeviceStatus(),1000);void pollDeviceStatus();}
+})();

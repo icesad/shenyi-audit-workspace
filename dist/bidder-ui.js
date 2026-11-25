@@ -10,30 +10,41 @@
   function button(label,id,cls){const x=el('button',label,cls||'btn');x.type='button';if(id)x.id=id;return x;}
   function status(id){const x=el('p','','muted');x.id=id;x.setAttribute('role','status');return x;}
   function labeled(id,title,element){element.id=id;const l=el('label',title);l.htmlFor=id;l.append(element);return l;}
-  function connect({apply,detach}){
+  function connect({apply,detach,compactPicker=false}){
     const picker=document.getElementById('bidder-picker'),editor=document.getElementById('bidder-library-editor');
     if(!picker||!editor||typeof apply!=='function'||typeof detach!=='function')throw Error('投标方资料面板未就绪');
     let db=null,rows=[],current=null,files=new Map(),used=null,editorBusy=false,pickBusy=false,pickEpoch=0,listError=false,archiveBusy=false,intake=null,archiveDraft=null,loadedFromArchive=new Set(),baseline=null,editorSerial=0;
     const select=el('select'),use=button('重新带入','bidder-apply'),unlink=button('改为手工录入','bidder-unlink','text-button');
     const pickStatus=status('bidder-picker-status'),actions=el('div',undefined,'bidder-picker-actions');
-    select.append(option('','请选择事务所（仅测算可不选）'));actions.append(labeled('bidder-picker-select','从投标方信息库带入',select),use,unlink);
+    const pickerPlaceholder=compactPicker?'请选择已录入的单位':'请选择事务所（仅测算可不选）';
+    const pickerLabel=compactPicker?'选择报价单位':'从投标方信息库带入';
+    use.hidden=compactPicker;unlink.hidden=compactPicker;
+    select.setAttribute('aria-label',pickerLabel);
+    select.append(option('',pickerPlaceholder));actions.append(labeled('bidder-picker-select',pickerLabel,select),use,unlink);
     picker.replaceChildren(actions,pickStatus);
-    const intro=el('p','仅存于本浏览器。维护本所和获授权合作所的资料。报价时带入基础信息与营业执照、执业证书。','muted');
+    let savedOriginals=[],pendingOriginals=[],listedFirm='';
     const list=el('div',undefined,'bidder-catalog');list.id='bidder-directory';
-    const form=el('form');form.id='bidder-editor-form';const title=el('h3','新增事务所');
+    const form=el('form');form.id='bidder-editor-form';
     const archiveCurrent=status('bidder-archive-current');archiveCurrent.hidden=true;
     const newBtn=button('新增事务所','bidder-new'),refresh=button('刷新列表','bidder-refresh');
     const toolbar=el('div',undefined,'bidder-toolbar');toolbar.append(newBtn,refresh);
     const archiveBox=el('section',undefined,'bidder-import-panel'),archiveInput=el('input');
-    archiveInput.type='file';archiveInput.accept='.zip,.rar,.pdf,.docx,.doc,.txt,.rtf,.odt,.xlsx,.xls,.ods,.csv,.tsv,.png,.jpg,.jpeg,.gif,.webp,.bmp,.pptx,.ppt,.odp';
+    archiveInput.type='file';archiveInput.multiple=true;
     const archiveStatus=status('bidder-import-status'),archiveRows=el('div',undefined,'bidder-import-rows');
     archiveRows.id='bidder-import-rows';
-    const clearArchive=button('清除本次识别结果','bidder-import-clear','text-button');
+    const clearArchive=button(compactPicker?'移除待保存资料':'清除本次识别结果','bidder-import-clear','text-button');
     clearArchive.hidden=true;
-    archiveBox.append(el('h3','导入基础资料'),el('p','支持 ZIP / RAR 5 资料包（最多160 MiB），或 PDF、DOCX、DOC、TXT、RTF、ODT、常见表格和图片（单份最多12 MiB，DOC最多2 MiB）。读取明确字段与可识别内嵌证照；扫描件不提供OCR。结果只填入待核对编辑稿，不自动保存或上传。','muted'),labeled('bidder-archive-file','选择基础资料文件',archiveInput),archiveStatus,archiveRows,clearArchive);
+    const drop=labeled('bidder-archive-file','',archiveInput),savedFiles=el('ul',undefined,'bidder-saved-files');
+    drop.className='bidder-dropzone';
+    archiveInput.className='bidder-file-native';archiveInput.setAttribute('aria-label','选择基础资料文件');
+    drop.append(el('strong','拖入事务所资料'),el('span','或点击选择文件'));
+    const lookupDetails=compactPicker?el('details',undefined,'bidder-recognition-details'):null;
+    if(lookupDetails)lookupDetails.append(el('summary','查看识别结果'),archiveRows);
+    archiveBox.append(drop,archiveStatus,savedFiles,lookupDetails||archiveRows,clearArchive);
     const intakeURLs=new Set();
     function clearIntakeURLs(){for(const u of intakeURLs)root.URL.revokeObjectURL(u);intakeURLs.clear();}
     const fields=el('div',undefined,'fields client-fields'),controls={};
+    let nameField;
     const alternativesBox=el('div',undefined,'bidder-import-alternatives');alternativesBox.hidden=true;
     function showAlternatives(alternatives){
       alternativesBox.replaceChildren();alternativesBox.hidden=true;
@@ -60,7 +71,10 @@
           x.append(option('','暂不填写'));for(const p of root.RuleCatalog?.PROVINCES||[])x.append(option(({'450000':'广西','130000':'河北','310000':'上海'})[p.code]||p.name,p.name));
         }
       }else{x=el('input');x.type=key==='email'?'email':key==='phone'?'tel':'text';x.required=key==='name';x.maxLength=max;}
-      controls[key]=x;fields.append(labeled('bidder-edit-'+key,label,x));
+      controls[key]=x;
+      const field=labeled('bidder-edit-'+key,label,x);
+      if(key==='name'){nameField=field;field.className='bidder-name-field';}
+      else fields.append(field);
     }
     const certGrid=el('div',undefined,'credential-grid bidder-cert-grid'),signGrid=el('div',undefined,'credential-grid bidder-cert-grid bidder-sign-grid'),certControls={};
     const openImages=new Map();
@@ -96,8 +110,33 @@
     }
     const save=button('保存资料','bidder-save','btn primary');save.type='submit';
     const editStatus=status('bidder-editor-status');
-    form.append(title,archiveCurrent,fields,alternativesBox,el('p','资料可暂缺证照。每项可选一份 PDF、PNG 或 JPEG，最大 3 MiB；出具报价单时须备齐两证。','muted'),certGrid,save);
-    editor.replaceChildren(intro,toolbar,archiveBox,list,form,editStatus);
+    form.append(nameField,archiveBox);
+    const directory=el('section',undefined,'bidder-directory-section');
+    if(compactPicker){
+      const formActions=el('div',undefined,'bidder-toolbar');
+      formActions.append(save,newBtn);form.append(formActions);
+      directory.append(el('h3','已有资料'),list);
+    }else{
+      form.append(archiveCurrent,fields,alternativesBox,certGrid,save);
+      directory.append(el('h3','已保存事务所'),toolbar,list);
+    }
+    editor.replaceChildren(form,editStatus,directory);
+
+    function renderOriginals(){
+      const item=(file,saved)=>{
+        const row=el('li',file.name);
+        if(saved){
+          const download=button('下载','', 'text-button');
+          download.setAttribute('aria-label','下载 '+file.name);
+          download.onclick=()=>root.ProjectWorkspaceStore.download(file.blob,file.name);
+          row.append(download);
+        }else row.append(el('span','待保存','muted'));
+        return row;
+      };
+      const existing=compactPicker?[]:savedOriginals.map(f=>item(f,true));
+      savedFiles.replaceChildren(...existing,...pendingOriginals.map(f=>item(f,false)));
+      savedFiles.hidden=!savedFiles.children.length;
+    }
 
     function captureDraft(){return {values:Object.fromEntries(Object.entries(controls).map(([k,x])=>[k,x.value])),files:new Map(files)};}
     function isEditorClean(){
@@ -121,10 +160,13 @@
     function changeEditor(row){
       editorSerial++;
       showAlternatives();archiveDraft=null;loadedFromArchive=new Set();
+      if(compactPicker){clearIntakeURLs();intake=null;archiveStatus.textContent='';}
       current=row?{id:row.id,version:row.version}:null;
+      if(compactPicker)newBtn.hidden=!row;
+      savedOriginals=row?.materials||[];pendingOriginals=[];renderOriginals();
       files=new Map([...(row?.attachments||[]),...(row?.signingAssets||[])].map(a=>[a.kind,a]));
       for(const [key,x]of Object.entries(controls))x.value=row?.[key]||(key==='kind'?'own':'');
-      baseline=captureDraft();title.textContent=row?'编辑 · '+row.name:'新增事务所';describe();
+      baseline=captureDraft();nameField.firstChild.textContent=row?'事务所名称':'新增事务所名称';describe();
     }
     function lock(){
       const locked=editorBusy||archiveBusy||!db||listError;
@@ -136,33 +178,81 @@
       clearArchive.disabled=editorBusy||archiveBusy;
       select.disabled=pickBusy||!db||listError;use.disabled=select.disabled||!select.value||!rows.some(r=>r.id===select.value);unlink.disabled=pickBusy;
     }
+    function appendFirmFiles(firm,list){
+      list.replaceChildren(el('li','读取中…','muted'));
+      db.get(firm.id).then(row=>{
+        if(!list.isConnected)return;
+        if(row.version!==firm.version)throw Error('资料已更新，请重新打开此页面。');
+        const entries=[
+          ...(row.materials||[]).map((file,index)=>({name:file.name,index})),
+          ...row.attachments.map(file=>({name:file.name,kind:file.kind}))
+        ];
+        list.replaceChildren(...entries.map(({name,index,kind})=>{
+          const item=el('li',kind?labels[kind]+' · '+name:name);
+          const download=button('下载',undefined,'text-button');
+          download.setAttribute('aria-label','下载 '+name);
+          download.onclick=()=>editAction(async()=>{
+            const current=await db.get(firm.id);
+            if(current.version!==firm.version)throw Error('资料已更新，请重新打开此页面。');
+            const file=kind?current.attachments.find(item=>item.kind===kind):current.materials?.[index];
+            if(!file||file.name!==name)throw Error('未找到该资料。');
+            root.ProjectWorkspaceStore.download(file.blob||new Blob([file.bytes],{type:file.mime}),name);
+          });
+          item.append(download);return item;
+        }));
+        if(!entries.length)list.replaceChildren(el('li','暂无已保存文件。','muted'));
+        lock();
+      }).catch(error=>{if(list.isConnected)list.replaceChildren(el('li',error.message,'muted'));});
+    }
     function renderRows(){
-      list.replaceChildren();select.replaceChildren(option('','请选择事务所（仅测算可不选）'));
-      if(!rows.length)list.append(el('p','暂无已保存事务所，可在下方建立第一条资料。','muted'));
+      list.replaceChildren();select.replaceChildren(option('',pickerPlaceholder));
+      if(!rows.length)list.append(el('p',compactPicker?'暂无已有资料。':'暂无已保存事务所。','muted'));
       for(const r of rows){
-        const summary=el('div');summary.append(el('strong',r.name),el('span',labels[r.kind]+' · '+(r.team||'所在地未填')+' · 已备 '+r.credentialKinds.length+'/2 项证照','muted'));
+        const summary=el('div');summary.append(el('strong',r.name),el('span',labels[r.kind]+' · '+(r.materialCount||0)+' 份资料 · '+r.credentialKinds.length+'/2 项证照','muted'));
         const edit=button('编辑'),del=button('删除');edit.dataset.bidderEdit=r.id;del.dataset.bidderRemove=r.id;edit.setAttribute('aria-label','编辑 '+r.name);del.setAttribute('aria-label','删除 '+r.name);
-        edit.addEventListener('click',()=>editAction(async()=>{const row=await db.get(r.id);changeEditor(row);refreshIntakeForEditor();editStatus.textContent='正在编辑已保存资料。';controls.name.focus();}));
-        del.addEventListener('click',()=>{if(!root.confirm('删除“'+r.name+'”及库内证照？已带入的草稿和已登记历史不会被修改。'))return;editAction(async()=>{await db.remove(r.id,r.version);if(current?.id===r.id){changeEditor(null);refreshIntakeForEditor();}await refreshRows();editStatus.textContent='已从资料库删除。';});});
+        edit.addEventListener('click',()=>editAction(async()=>{const row=await db.get(r.id);changeEditor(row);refreshIntakeForEditor();editStatus.textContent=compactPicker?'':'正在编辑已保存资料。';controls.name.focus();}));
+        del.addEventListener('click',()=>{if(!root.confirm('删除“'+r.name+'”及其资料？'))return;editAction(async()=>{await db.remove(r.id,r.version);if(current?.id===r.id){changeEditor(null);refreshIntakeForEditor();}await refreshRows();editStatus.textContent='已从资料库删除。';});});
         const g=el('div',undefined,'bidder-row-actions'),row=el('div',undefined,'bidder-row');g.append(edit,del);row.append(summary,g);list.append(row);
-        select.append(option(r.id,labels[r.kind]+' · '+r.name));
+        if(compactPicker){
+          summary.lastElementChild.textContent=[r.materialCount?'原件 '+r.materialCount+' 份':'',r.credentialKinds.length?'证照 '+r.credentialKinds.length+' 份':''].filter(Boolean).join(' · ')||'暂无文件';
+          const show=button('查看资料'),contents=el('ul',undefined,'bidder-saved-files bidder-firm-files');
+          show.setAttribute('aria-label','查看资料 '+r.name);show.setAttribute('aria-controls','bidder-materials-'+r.id);
+          contents.id='bidder-materials-'+r.id;
+          function expand(open){
+            contents.hidden=!open;show.setAttribute('aria-expanded',String(open));
+            show.textContent=open?'收起资料':'查看资料';
+            if(open)appendFirmFiles(r,contents);else contents.replaceChildren();
+          }
+          show.onclick=()=>{
+            const open=contents.hidden;
+            listedFirm=open?r.id:'';
+            expand(open);
+          };
+          g.prepend(show);row.append(contents);expand(listedFirm===r.id);
+        }
+        select.append(option(r.id,compactPicker?r.name:labels[r.kind]+' · '+r.name));
       }
-      if(used&&!rows.some(r=>r.id===used.id)){const historic=option(used.id,used.name+'（已从库中删除，当前草稿仍保留）');historic.disabled=true;select.append(historic);}
-      select.value=used?.id||'';if(used){const latest=rows.find(r=>r.id===used.id);pickStatus.textContent='当前草稿已带入：'+used.name+'。'+(!latest?'原资料已删除。':latest.version!==used.version?'库内资料有更新，可重新带入。':'库内后续修改不会自动覆盖草稿。');}
+      const latest=rows.find(r=>r.id===used?.id);
+      if(used&&!latest&&!compactPicker){const historic=option(used.id,used.name+'（已从库中删除，当前草稿仍保留）');historic.disabled=true;select.append(historic);}
+      select.value=compactPicker&&!latest?'':used?.id||'';
+      if(compactPicker){
+        use.hidden=!latest||latest.version===used.version;
+        pickStatus.textContent=used&&!latest?'原报价单位已从资料库删除，请重新选择。':!rows.length?'暂无可选单位，请先在投标方信息库录入。':!use.hidden?'库内资料有更新，可重新带入。':'';
+      }else if(used)pickStatus.textContent='当前草稿已带入：'+used.name+'。'+(!latest?'原资料已删除。':latest.version!==used.version?'库内资料有更新，可重新带入。':'库内后续修改不会自动覆盖草稿。');
       lock();
     }
     async function refreshRows(){try{rows=await db.list();listError=false;renderRows();}catch(e){listError=true;rows=[];renderRows();throw e;}}
     async function editAction(fn,prefix=''){if(editorBusy||archiveBusy||!db)return;editorBusy=true;lock();try{await fn();}catch(e){editStatus.textContent=prefix+(e?.message||'操作失败，请重试。');}finally{editorBusy=false;describe();lock();}}
-    const clearPicker=()=>{pickEpoch++;used=null;select.value='';pickBusy=false;pickStatus.textContent='未选用库内事务所。可先手工测算；生成报价包前请选择事务所。';lock();};
+    const clearPicker=()=>{pickEpoch++;used=null;select.value='';pickBusy=false;pickStatus.textContent=compactPicker?'':'未选用库内事务所。可先手工测算；生成报价包前请选择事务所。';if(compactPicker)use.hidden=true;lock();};
     async function pick(id){
       if(pickBusy)return;const epoch=++pickEpoch;pickBusy=true;used=null;lock();pickStatus.textContent=id?'正在读取所选事务所及其证照……':'正在解除选用……';
       try{await detach();if(epoch!==pickEpoch)return;
-        if(!id){select.value='';pickStatus.textContent='已改为手工录入；已清空上一家事务所资料及两证。';return;}
+        if(!id){select.value='';pickStatus.textContent=compactPicker?'':'已改为手工录入；已清空上一家事务所资料及两证。';return;}
         const r=await db.get(id);if(epoch!==pickEpoch)return;
-        const {signingAssets,signingKinds,...quoteProfile}=r;await apply(quoteProfile,{});if(epoch!==pickEpoch)return;
-        used={id:r.id,name:r.name,version:r.version};select.value=r.id;pickStatus.textContent='已带入：'+r.name+'（'+labels[r.kind]+'）；已备 '+r.attachments.length+'/2 项证照。';
+        const {signingAssets,signingKinds,materials,materialCount,...quoteProfile}=r;await apply(quoteProfile,{});if(epoch!==pickEpoch)return;
+        used={id:r.id,name:r.name,version:r.version};select.value=r.id;pickStatus.textContent=compactPicker?'':'已带入：'+r.name+'（'+labels[r.kind]+'）；已备 '+r.attachments.length+'/2 项证照。';
       }catch(e){if(epoch!==pickEpoch)return;select.value='';used=null;try{await detach();}catch{}pickStatus.textContent='未带入所选事务所，请重新选择或手工录入。'+(e?.message||'');}
-      finally{if(epoch===pickEpoch){pickBusy=false;lock();}}
+      finally{if(epoch===pickEpoch){pickBusy=false;if(compactPicker)use.hidden=true;lock();}}
     }
     const firmKey=v=>String(v||'').normalize('NFKC').trim();
     const sameRows=p=>{const key=firmKey(p.fields?.name);return key?rows.filter(r=>firmKey(r.name)===key):[];};
@@ -172,8 +262,8 @@
       return matches.length<=1&&(pristine()||(matches.length===1&&current?.id===matches[0].id&&isEditorClean()));
     };
     const showEditor=()=>form.scrollIntoView?.({block:'start',behavior:'smooth'});
-    async function fillCandidate(candidate,automatic=false){
-      if(automatic&&!canAuto(candidate))return;
+    async function fillCandidate(candidate,automatic=false,keepEditor=false){
+      if(automatic&&!keepEditor&&!canAuto(candidate))return;
       const matches=sameRows(candidate);
       let target=null;
       if(matches.length>1){
@@ -192,27 +282,27 @@
             next.set(k,asset);if(SIGNING.includes(k)&&Number.isInteger(asset.size)&&asset.size!==file.size)cleaned.push(labels[k]);
           }catch{failed.push(labels[k]);failedKinds.add(k);}
         }
-        const prior=target?await db.get(target.id):null;
-        changeEditor(prior);
+        const prior=target&&!keepEditor?await db.get(target.id):null,originals=pendingOriginals,recognized=intake;
+        if(!keepEditor){changeEditor(prior);pendingOriginals=originals;intake=recognized;renderOriginals();}
         for(const k of ['name','team','contactName','phone','email']){
           const field=controls[k],v=candidate.fields?.[k];
-          if(typeof v!=='string'||!v.trim()||(k==='name'&&prior))continue;
+          if(typeof v!=='string'||!v.trim()||(k==='name'&&prior)||(keepEditor&&field.value.trim()))continue;
           if(k==='team'&&!Array.from(field.options).some(o=>o.value===v))continue;
           field.value=field.maxLength>0?v.slice(0,field.maxLength):v;
         }
-        if(!prior)controls.kind.value='';
-        showAlternatives(candidate.alternatives);
+        if(!prior&&!keepEditor&&!compactPicker)controls.kind.value='';
+        if(!compactPicker)showAlternatives(candidate.alternatives);
         for(const [k,v]of next){files.set(k,v);loadedFromArchive.add(k);}
         archiveDraft={candidate,verified:new Map(next),failed:failedKinds};
-        title.textContent=prior?'核对资料 · '+prior.name:'核对资料 · 新增事务所';
-        editStatus.textContent='已填入待核对资料。未识别字段请补填，核对后点击「保存资料」。'+(failed.length?'未带入（文件校验未通过）：'+failed.join('、')+'。':'')+(cleaned.length?' 已清理 JPEG 非图像尾部：'+cleaned.join('、')+'；原文件未改，请核对图片。':'');
-        archiveStatus.textContent='已从资料读入 '+next.size+'/2 项并填入'+(prior?'同名档案的待核对编辑稿':'新增档案的待核对编辑稿')+'。'+(failed.length?'有 '+failed.length+' 项未通过校验。':'')+'请核对后保存；原档案尚未修改。';
+        editStatus.textContent=compactPicker?'':'已填入待核对资料。未识别字段请补填，核对后点击「保存资料」。'+(failed.length?'未带入（文件校验未通过）：'+failed.join('、')+'。':'')+(cleaned.length?' 已清理 JPEG 非图像尾部：'+cleaned.join('、')+'；原文件未改，请核对图片。':'');
+        archiveStatus.textContent=compactPicker?'已选 '+pendingOriginals.length+' 份资料'+(next.size?' · 识别到 '+next.size+' 项证照':'')+'。':'已从资料读入 '+next.size+'/2 项并填入'+(prior?'同名档案的待核对编辑稿':'新增档案的待核对编辑稿')+'。'+(failed.length?'有 '+failed.length+' 项未通过校验。':'')+'请核对后保存；原档案尚未修改。';
         renderIntake();
         if(!automatic)showEditor();
       },'没有修改库内资料。');
     }
     function renderIntake(){
-      archiveRows.replaceChildren();clearArchive.hidden=!intake;
+      archiveRows.replaceChildren();clearArchive.hidden=!intake&&!pendingOriginals.length;
+      if(lookupDetails){lookupDetails.hidden=!intake;if(!intake)lookupDetails.open=false;}
       if(!intake)return;
       const {profiles,inventory,warnings}=intake;
       for(const warning of warnings||[])archiveRows.append(el('p',String(warning),'muted'));
@@ -238,7 +328,7 @@
         const applied=archiveDraft?.candidate===candidate;
         const count=KINDS.filter(k=>candidate.files?.[k]).length;
         info.append(el('strong',(index+1)+'. '+(candidate.fields?.name||'待填写事务所名称')),
-          el('span',applied?'已填入待核对：'+archiveDraft.verified.size+'/2 项':'识别到 '+count+'/2 项 · 尚未填入编辑稿','muted'));
+          el('span',applied?'已填入待核对：'+archiveDraft.verified.size+'/2 项':'识别到 '+count+'/2 项'+(compactPicker?'':' · 尚未填入编辑稿'),'muted'));
         const checklist=el('ul',undefined,'bidder-import-checklist');
         for(const k of KINDS){
           const f=candidate.files?.[k],loaded=applied&&archiveDraft.verified.get(k),bad=applied&&archiveDraft.failed.has(k);
@@ -251,7 +341,11 @@
         for(const note of candidate.notes||[])info.append(el('span',String(note),'muted'));
         const apply=button(applied?'前往核对并保存':sameRows(candidate).length?'补齐同名档案':'填入这条资料',null,applied?'btn':'btn primary');
         apply.dataset.bidderIntake=String(index);
-        apply.addEventListener('click',()=>applied?showEditor():fillCandidate(candidate));
+        apply.addEventListener('click',()=>{
+          const typed=firmKey(controls.name.value),recognized=firmKey(candidate.fields?.name);
+          if(applied)showEditor();
+          else void fillCandidate(candidate,false,compactPicker&&!!typed&&(!recognized||recognized===typed));
+        });
         row.append(info,apply);archiveRows.append(row);
       }
       if(inventory?.length){
@@ -262,36 +356,75 @@
       }
       lock();
     }
+    function compatibleProfile(typed,profiles){
+      if(!typed||profiles.some(profile=>firmKey(profile.fields?.name)&&firmKey(profile.fields?.name)!==typed))return null;
+      const named=profiles.filter(profile=>firmKey(profile.fields?.name)===typed);
+      const fields=named.length===1?named[0].fields:{name:typed};
+      const recognized={};
+      for(const kind of KINDS){
+        const matches=profiles.filter(profile=>profile.files?.[kind]);
+        if(matches.length===1)recognized[kind]=matches[0].files[kind];
+      }
+      return named.length===1||Object.keys(recognized).length?{fields,files:recognized}:null;
+    }
     function refreshIntakeForEditor(){
       if(intake?.profiles.length&&!archiveDraft)archiveStatus.textContent='已有资料识别结果，尚未填入当前编辑稿。请点击对应候选的按钮。';
       renderIntake();
     }
-    clearArchive.addEventListener('click',()=>{clearIntakeURLs();intake=null;archiveInput.value='';archiveStatus.textContent='已清除识别结果；编辑稿及已保存的资料不变。';renderIntake();});
-    archiveInput.addEventListener('change',async()=>{
-      const file=archiveInput.files?.[0];archiveInput.value='';if(!file||archiveBusy||editorBusy||!db)return;
-      clearIntakeURLs();archiveBusy=true;intake=null;renderIntake();lock();archiveStatus.textContent='正在本机读取原件和候选资料，请稍候…';
-      let archive;
-      try{
-        if(root.BidderIntake.readFile)intake=await root.BidderIntake.readFile(file);
-        else{archive=await root.BidderArchive.open(file);intake=await root.BidderIntake.read(archive);}
-        archiveStatus.textContent=intake.profiles.length?'识别到 '+intake.profiles.length+' 条候选档案。请核对后保存；没有自动写入资料库。':'未识别到可带入的资料。可查看文件清单或手工填写。';
-      }catch(e){intake=null;archiveStatus.textContent='未完成读取；资料库未改动。'+(e?.message||'请检查压缩包。');}
-      finally{
-        try{await archive?.close();}catch{}
-        archiveBusy=false;renderIntake();lock();
+    clearArchive.addEventListener('click',()=>{
+      clearIntakeURLs();intake=null;pendingOriginals=[];archiveInput.value='';
+      if(compactPicker&&baseline){
+        files=new Map(baseline.files);archiveDraft=null;loadedFromArchive.clear();
+        for(const [key,value] of Object.entries(baseline.values))if(key!=='name')controls[key].value=value;
       }
-      if(intake?.profiles.length===1&&canAuto(intake.profiles[0]))await fillCandidate(intake.profiles[0],true);
-      else if(intake?.profiles.length)archiveStatus.textContent='已识别 '+intake.profiles.length+' 条候选，尚未填入。'+
+      archiveStatus.textContent='已移除待保存资料。';renderOriginals();renderIntake();
+    });
+    async function importFiles(selected){
+      if(!selected.length||archiveInput.disabled)return;
+      const incoming=selected.map(file=>({name:file.name,blob:file}));
+      try{root.BidderLibrary.validateMaterials?.([...savedOriginals,...pendingOriginals,...incoming]);}
+      catch(error){archiveStatus.textContent=error.message;return;}
+      pendingOriginals.push(...incoming);renderOriginals();
+      clearIntakeURLs();archiveBusy=true;intake=null;renderIntake();lock();archiveStatus.textContent='正在本机读取原件和候选资料，请稍候…';
+      const results={profiles:[],inventory:[],warnings:[],materials:[]};
+      let failed=0;
+      for(const file of selected){
+        let archive;
+        try{
+          if(!root.BidderIntake.readFile)archive=await root.BidderArchive.open(file);
+          const data=archive?await root.BidderIntake.read(archive):await root.BidderIntake.readFile(file);
+          for(const key of Object.keys(results))results[key].push(...(data[key]||[]));
+        }catch(error){failed++;results.warnings.push(file.name+'：'+(error?.message||'无法识别内容。'));}
+        finally{try{await archive?.close();}catch{}}
+      }
+      intake=results;archiveBusy=false;renderIntake();lock();
+      archiveStatus.textContent=!compactPicker&&failed===selected.length?'未完成读取；资料库未改动。':'已选 '+pendingOriginals.length+' 份资料，保存后可再次读取。';
+      const typed=firmKey(controls.name.value);
+      const matching=typed?intake.profiles.filter(candidate=>firmKey(candidate.fields?.name)===typed):[];
+      const profile=compactPicker&&compatibleProfile(typed,intake.profiles);
+      if(profile)await fillCandidate(profile,true,true);
+      else if(matching.length===1)await fillCandidate(matching[0],true,true);
+      else if(intake.profiles.length===1&&canAuto(intake.profiles[0]))await fillCandidate(intake.profiles[0],true);
+      else if(!compactPicker&&intake.profiles.length)archiveStatus.textContent='已识别 '+intake.profiles.length+' 条候选，尚未填入。'+
         (!isEditorClean()?'当前编辑稿有未保存修改。':intake.profiles.length>1?'请先核对所属事务所。':'请核对目标档案。')+
         '点击对应候选的按钮即可带入，不用逐个上传。';
+    }
+    archiveInput.addEventListener('change',()=>{
+      const selected=Array.from(archiveInput.files||[]);archiveInput.value='';void importFiles(selected);
     });
+    for(const event of ['dragenter','dragover'])drop.addEventListener(event,e=>{e.preventDefault();if(!archiveInput.disabled)drop.classList.add('is-dragover');});
+    drop.addEventListener('dragleave',e=>{if(!drop.contains(e.relatedTarget))drop.classList.remove('is-dragover');});
+    drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('is-dragover');void importFiles(Array.from(e.dataTransfer?.files||[]));});
     select.addEventListener('change',()=>pick(select.value));use.addEventListener('click',()=>pick(select.value));unlink.addEventListener('click',()=>pick(''));
     newBtn.addEventListener('click',()=>{if(editorBusy)return;changeEditor(null);refreshIntakeForEditor();controls.name.focus();editStatus.textContent='正在新增资料。';});
     refresh.addEventListener('click',()=>editAction(async()=>{await refreshRows();editStatus.textContent='列表已刷新。';}));
     form.addEventListener('submit',e=>{e.preventDefault();if(editorBusy||archiveBusy||!db||listError||!form.reportValidity())return;
       const values=Object.fromEntries(Object.entries(controls).map(([key,x])=>[key,x.value.trim()]));const attachments=[...files.values()];const editing=current;
-      editAction(async()=>{const r=editing?await db.update(editing.id,editing.version,values,attachments):await db.create(values,attachments);const fromArchive=!!archiveDraft;changeEditor(r);await refreshRows();
-        if(fromArchive){archiveStatus.textContent='已保存：两证 '+r.credentialKinds.length+'/2 项。可回报价页选用或「重新带入」。';intake=null;renderIntake();}
+      if(compactPicker&&!values.kind)values.kind='own';
+      const materials=[...savedOriginals,...pendingOriginals];
+      editAction(async()=>{const r=editing?await db.update(editing.id,editing.version,values,attachments,materials):await db.create(values,attachments,materials);const fromArchive=!!archiveDraft;changeEditor(r);listedFirm=r.id;await refreshRows();
+        archiveStatus.textContent=fromArchive&&!compactPicker?'已保存：两证 '+r.credentialKinds.length+'/2 项。':'';
+        clearIntakeURLs();intake=null;renderIntake();
         editStatus.textContent='已保存 '+r.name+'。';});
     });
     changeEditor(null);clearPicker();
@@ -300,7 +433,7 @@
     function pendingError(message,code='BIDDER_PENDING_INVALID'){
       editStatus.textContent=message;const e=Error(message);e.code=code;e.preserveDOM=true;throw e;
     }
-    function filesUnchanged(){return !!baseline&&files.size===baseline.files.size&&[...files].every(([k,v])=>baseline.files.get(k)===v);}
+    function filesUnchanged(){return !!baseline&&!pendingOriginals.length&&files.size===baseline.files.size&&[...files].every(([k,v])=>baseline.files.get(k)===v);}
     function assertPendingReady(){
       if(editorBusy||archiveBusy)pendingError('资料正在读取或保存，请等待完成；当前编辑稿和附件仍保留。','BIDDER_PENDING_BUSY');
       if(!db||listError||!baseline)pendingError('资料库尚未就绪，未暂存或恢复当前编辑稿。');
@@ -339,10 +472,10 @@
       for(const [k,v]of Object.entries(data))controls[k].value=v;
       // Do not update baseline: restored text remains an unsaved, dirty editor.
       // Native files, historical opaque assets and the quotation picker stay put.
-      editStatus.textContent='已恢复本事务所的暂存文字，尚未正式保存或选用；请核对后点击「保存资料」。';
+      editStatus.textContent=compactPicker?'已恢复暂存。':'已恢复本事务所的暂存文字，尚未正式保存或选用；请核对后点击「保存资料」。';
       return Object.freeze({restored:true,scope:draftScope(),fields:6});
     }
-    return Object.freeze({ready,clearPicker,draftScope,capturePending,restorePending});
+    return Object.freeze({ready,clearPicker,restorePicker(profile){pickEpoch++;pickBusy=false;used=profile?{id:profile.id,name:profile.name,version:profile.version}:null;renderRows();},draftScope,capturePending,restorePending});
   }
   root.BidderUI=Object.freeze({connect});
 })(globalThis);
