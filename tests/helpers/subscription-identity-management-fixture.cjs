@@ -5,7 +5,7 @@ const assert=require('node:assert/strict'),{randomUUID,randomBytes}=require('nod
 const {createBusinessRoleFixture,PASSWORD,source}=require('./business-role-fixture.cjs');
 const {OWNER,ADMIN}=require('./administrator-business-role-fixture.cjs');
 const PHONE='+8613800000081',NEW_PASSWORD='SyntheticIdentityStaff!2026';
-const technical=new Set(['team_auth_limits','team_device_request_replays','team_device_usage','team_subscription_heads','team_subscription_events','team_employee_activation_challenges','team_operator_employee_activation_challenges']);
+const technical=new Set(['team_auth_limits','team_auth_limit_pools','team_auth_limit_pool_buckets','team_device_request_replays','team_device_usage','team_subscription_heads','team_subscription_events','team_employee_activation_challenges','team_operator_employee_activation_challenges']);
 function snapshot(db){return db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().filter(row=>!technical.has(row.name)).map(({name})=>{const s=db.prepare('SELECT * FROM "'+name.replaceAll('"','""')+'"');s.setReadBigInts(true);return{name,rows:s.all().map(row=>JSON.stringify(Object.keys(row).sort().map(key=>{const v=row[key];return[key,typeof v==='bigint'?['integer',v.toString()]:v instanceof Uint8Array?['blob',Buffer.from(v).toString('base64')]:[typeof v,v]];}))).sort()};});}
 async function identityFixture(t,kind,{existing=false,operator=false}={}){
  const f=await createBusinessRoleFixture(t),sent=[],smsState={hold:null};

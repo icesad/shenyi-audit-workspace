@@ -30,13 +30,13 @@ async function approved(f,id='employee-a',actor='admin-a'){const p=await pending
 const reset=(f,p,patch={})=>call(f,'/api/auth/phone/reset',{challengeId:p.c.challengeId,code:p.c.code,newPassword:NEW,recoveryProof:p.approval.recoveryProof,...patch});
 const credential=(f,id='employee-a')=>({...f.db.prepare('SELECT * FROM team_credentials WHERE user_id=?').get(id)});
 const activeSessions=(f,id)=>f.db.prepare('SELECT COUNT(*) n FROM team_sessions WHERE user_id=? AND revoked_at IS NULL').get(id).n;
-function mutateBeforeTransaction(t,db,mutate){const original=db.exec;let hit=false;db.exec=function(sql){if(!hit&&/^BEGIN IMMEDIATE/.test(sql)){hit=true;mutate();}return original.call(this,sql);};t.after(()=>db.exec=original);return ()=>hit;}
+function mutateBeforeTransaction(t,db,mutate,occurrence=1){const original=db.exec;let seen=0,hit=false;db.exec=function(sql){if(/^BEGIN IMMEDIATE/.test(sql)){seen++;if(!hit&&seen===occurrence){hit=true;mutate();}}return original.call(this,sql);};t.after(()=>db.exec=original);return ()=>hit;}
 
 test('reviewed mode capability requires explicit mode and SMS but does not grant reviewer power',async t=>{const f=await fixture(t);const r=await call(f,'/api/auth/recovery-requests/capabilities');assert.deepEqual(r.data,{reviewed:true,available:true});const disabled=await call(f,'/api/auth/recovery-requests/capabilities',undefined,undefined,{reviewedRecovery:true});assert.deepEqual(disabled.data,{reviewed:true,available:false});for(const actor of ['employee-a','orphan','provision'])assert.deepEqual((await call(f,'/api/account/recovery-reviews/access',undefined,f.tokens[actor])).data,{canReview:false});for(const actor of ['admin-a','owner'])assert.deepEqual((await call(f,'/api/account/recovery-reviews/access',undefined,f.tokens[actor])).data,{canReview:true});});
 
 test('verified known, unknown and unroutable phones receive identical pending-shaped receipts',async t=>{const f=await fixture(t),known=await pending(f),unknownCode=await sms(f,'orphan','+8613900000000'),unknown=await submit(f,unknownCode),orphan=await pending(f,'orphan');for(const value of [known.receipt,unknown,orphan.receipt]){assert.equal(value.status,'pending');assert.equal(value.expiresAt,NOW+300000);assert.equal(value.revision,1);assert.equal(JSON.stringify(value).includes('employee'),false);}assert.equal((await list(f,'admin-a')).data.requests.length,1);assert.deepEqual((await list(f,'owner')).data.requests,[]);});
 
-test('wrong SMS, altered purpose and caller-selected identity cannot create review requests',async t=>{const f=await fixture(t),c=await sms(f),bad=c.code==='000000'?'999999':'000000';assert.equal((await call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:bad})).status,400);for(const patch of [{userId:'employee-b'},{teamId:'team-b'},{approved:true},{role:'partner'},{phone:PHONES['employee-b']}])assert.equal((await call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:c.code,...patch})).status,400);assert.deepEqual((await list(f,'admin-a')).data.requests,[]);});
+test('wrong SMS, altered purpose and caller-selected identity cannot create review requests',async t=>{const f=await fixture(t),c=await sms(f),bad=c.code==='000000'?'999999':'000000';assert.equal((await call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:bad})).status,400);assert.equal(f.db.prepare('SELECT attempts FROM team_phone_challenges WHERE challenge_id=?').get(c.challengeId).attempts,1);for(const patch of [{userId:'employee-b'},{teamId:'team-b'},{approved:true},{role:'partner'},{phone:PHONES['employee-b']}])assert.equal((await call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:c.code,...patch})).status,400);assert.deepEqual((await list(f,'admin-a')).data.requests,[]);});
 
 test('pending submission is idempotent for one verified challenge without creating extra review records',async t=>{const f=await fixture(t),p=await pending(f),again=await call(f,'/api/auth/recovery-requests',{challengeId:p.c.challengeId,code:p.c.code});assert.ok([200,201].includes(again.status),again.raw);assert.deepEqual(again.data,p.receipt);assert.equal((await list(f,'admin-a')).data.requests.length,1);});
 
@@ -109,4 +109,235 @@ test('review list applies own-scope before the fifty-row limit and exposes no ot
 
 test('approval storage failure returns no proof and rolls back review and event state',async t=>{const f=await fixture(t),p=await pending(f);f.db.exec("CREATE TRIGGER recovery_approval_event_failure BEFORE INSERT ON team_recovery_events BEGIN SELECT RAISE(ABORT,'synthetic event failure'); END");const result=await decision(f,p.receipt.requestId,1);assert.equal(result.status,503,result.raw);assert.equal(result.raw.includes('synthetic event'),false);const row=f.db.prepare('SELECT * FROM team_recovery_requests WHERE request_id=?').get(p.receipt.requestId);assert.equal(row.status,'pending');assert.equal(row.revision,1);assert.equal(row.token_hash,null);assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_events').get().n,0);});
 
-test('request creation rechecks the SMS deadline inside its insert transaction',async t=>{const f=await fixture(t),c=await sms(f);f.now=c.expiresAt-1;const hit=mutateBeforeTransaction(t,f.db,()=>{f.now=c.expiresAt;});const result=await call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:c.code});assert.equal(hit(),true);const stored=f.db.prepare('SELECT created_at,expires_at,status FROM team_recovery_requests WHERE challenge_id=?').get(c.challengeId);assert.equal(result.status,400,JSON.stringify({response:result.data,stored}));assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests WHERE challenge_id=?').get(c.challengeId).n,0);assert.deepEqual((await list(f,'admin-a')).data.requests,[]);});
+test('request creation rechecks the SMS deadline inside its insert transaction',async t=>{const f=await fixture(t),c=await sms(f);f.now=c.expiresAt-1;const hit=mutateBeforeTransaction(t,f.db,()=>{f.now=c.expiresAt;},2);const result=await call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:c.code});assert.equal(hit(),true);const stored=f.db.prepare('SELECT created_at,expires_at,status FROM team_recovery_requests WHERE challenge_id=?').get(c.challengeId);assert.equal(result.status,400,JSON.stringify({response:result.data,stored}));assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests WHERE challenge_id=?').get(c.challengeId).n,0);assert.equal(f.db.prepare("SELECT 1 FROM team_auth_limits WHERE bucket='recovery-request:global'").get(),undefined);assert.deepEqual((await list(f,'admin-a')).data.requests,[]);});
+
+
+test('anonymous recovery requests are source-isolated and malformed or invalid proofs cannot consume the shared budget',async t=>{
+  const f=await fixture(t),route='/api/auth/recovery-requests';
+  const malformedAddress='198.51.100.20',blockedAddress='198.51.100.21',validAddress='198.51.100.22';
+  const post=(address,value)=>new Request('http://127.0.0.1:8774'+route,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-Shenyi-Client-IP':address},
+    body:JSON.stringify(value),
+  });
+  // A malformed anonymous body is rejected before even creating a source bucket.
+  for(let i=0;i<60;i++)assert.equal((await rawCall(f,post(malformedAddress,{}))).status,400);
+  const hash=value=>createHash('sha256').update(value).digest('hex');
+  const malformedBucket='recovery-request:ip:'+hash(malformedAddress);
+  assert.equal(f.db.prepare('SELECT 1 FROM team_auth_limits WHERE bucket=?').get(malformedBucket),undefined);
+
+  // Structurally valid but nonexistent challenges consume only this source's
+  // bounded bucket; they never consume the shared recovery-request budget.
+  const unknownChallenge=randomUUID(),invalidBody={challengeId:unknownChallenge,code:'000000'};
+  for(let i=0;i<60;i++)assert.equal((await rawCall(f,post(blockedAddress,invalidBody))).status,400);
+  assert.equal((await rawCall(f,post(blockedAddress,invalidBody))).status,429);
+  const blockedBucket='recovery-request:ip:'+hash(blockedAddress);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(blockedBucket).attempts,60);
+  assert.equal(f.db.prepare("SELECT 1 FROM team_auth_limits WHERE bucket='recovery-request:global'").get(),undefined);
+
+  // A different legitimate source can still submit a live SMS proof.
+  const challenge=await sms(f),created=await rawCall(f,post(validAddress,{challengeId:challenge.challengeId,code:challenge.code}));
+  assert.equal(created.status,201,created.raw);
+  const validBucket='recovery-request:ip:'+hash(validAddress);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(validBucket).attempts,1);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:global'").get().attempts,1);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests').get().n,1);
+});
+
+async function recoveryAtSourceCapacity(t){
+  const {fullSourcePool}=require('./helpers/onboarding-rate-limit-capacity.cjs');
+  const f=await fixture(t),proof=await sms(f);
+  const pool=fullSourcePool(f.db,'recovery-request:ip:',f.now);
+  const post=(address,body={challengeId:proof.challengeId,code:proof.code})=>rawCall(f,
+    new Request('http://127.0.0.1:8774/api/auth/recovery-requests',{
+      method:'POST',headers:{'Content-Type':'application/json','X-Shenyi-Client-IP':address},
+      body:JSON.stringify(body),
+    }));
+  const attempts=()=>f.db.prepare('SELECT attempts FROM team_phone_challenges WHERE challenge_id=?').get(proof.challengeId).attempts;
+  const global=()=>f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:global'").get();
+  const requests=()=>f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests').get().n;
+  return {f,proof,pool,post,attempts,global,requests};
+}
+
+test('full recovery source storage still permits an unseen source with a live SMS proof',async t=>{
+  const {pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  const response=await post(pool.validAddress);
+  assert.equal(response.status,201,response.raw);
+  assert.equal(response.data.status,'pending');
+  assert.equal(attempts(),1);
+  assert.equal(global().attempts,1);
+  assert.equal(requests(),1);
+  pool.assertUnchanged();
+});
+
+test('full recovery source storage cannot reset an already exhausted source',async t=>{
+  const {pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  const response=await post(pool.blockedAddress);
+  assert.equal(response.status,429,response.raw);
+  assert.equal(attempts(),0);
+  assert.equal(global(),undefined);
+  assert.equal(requests(),0);
+  pool.assertUnchanged();
+});
+
+test('full recovery source storage rejects unknown SMS proofs without spending shared budget',async t=>{
+  const {pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  const response=await post(pool.invalidAddress,{challengeId:randomUUID(),code:'000000'});
+  assert.equal(response.status,400,response.raw);
+  assert.equal(attempts(),0);
+  assert.equal(global(),undefined);
+  assert.equal(requests(),0);
+  pool.assertUnchanged();
+});
+
+test('full recovery source overflow bounds invalid proofs but preserves valid proofs after the overflow budget is exhausted',async t=>{
+  const {f,proof,pool,post,global,requests}=await recoveryAtSourceCapacity(t);
+  const prefix='recovery-request:ip:';
+  const expiryPlan=f.db.prepare(`EXPLAIN QUERY PLAN SELECT bucket FROM team_auth_limit_pool_buckets
+    WHERE prefix=? AND window_start<=? ORDER BY window_start,bucket LIMIT ?`).all(prefix,f.now-60000,256);
+  const expiryDetails=expiryPlan.map(row=>row.detail||'');
+  assert.ok(expiryDetails.some(detail=>detail.includes('team_auth_limit_pool_expiry')),JSON.stringify(expiryDetails));
+  assert.equal(expiryDetails.some(detail=>/SCAN team_auth_limit_pool_buckets/.test(detail)),false,JSON.stringify(expiryDetails));
+  const counterPlan=f.db.prepare('EXPLAIN QUERY PLAN SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').all(prefix);
+  assert.ok(counterPlan.some(row=>/SEARCH team_auth_limit_pools/.test(row.detail||'')),JSON.stringify(counterPlan));
+  assert.equal(f.db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count,10000);
+
+  // A full source pool cannot admit unbounded proof-validation work. The
+  // overflow gate is shared but deliberately separate from successful-request
+  // budget, so malformed/unknown proofs never spend the business quota.
+  for(let i=0;i<300;i++){
+    const address='198.51.'+Math.floor(i/250)+'.'+(i%250+1);
+    const response=await post(address,{challengeId:randomUUID(),code:'000000'});
+    assert.equal(response.status,400,response.raw);
+  }
+  const blocked=await post('198.51.2.1',{challengeId:randomUUID(),code:'000000'});
+  assert.equal(blocked.status,429,blocked.raw);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:overflow'").get().attempts,300);
+  assert.equal(global(),undefined);
+  assert.equal(requests(),0);
+  assert.equal(f.db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count,10000);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:overflow'").get().attempts,300);
+
+  // A valid, account-bound SMS proof is not blocked by the shared invalid-proof
+  // overflow gate, even though the source pool and overflow budget are both full.
+  const valid=await post(pool.validAddress,{challengeId:proof.challengeId,code:proof.code});
+  assert.equal(valid.status,201,valid.raw);
+  assert.equal(global().attempts,1);
+  assert.equal(requests(),1);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:overflow'").get().attempts,300);
+  pool.assertUnchanged();
+});
+
+test('database initialization rebuilds bounded source-pool metadata from existing limiter rows',async t=>{
+  const f=await fixture(t),prefix='recovery-request:ip:';
+  const insert=f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)');
+  insert.run(prefix+'legacy-a',f.now,1);
+  insert.run(prefix+'legacy-b',f.now,2);
+  const {initializeTeamDatabase}=await source('database.mjs');
+  initializeTeamDatabase(f.db);
+  assert.equal(f.db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count,2);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limit_pool_buckets WHERE prefix=?').get(prefix).n,2);
+});
+
+test('full recovery source storage still charges a wrong code to the real SMS challenge',async t=>{
+  const {proof,pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  const code=proof.code==='000000'?'999999':'000000';
+  const response=await post(pool.invalidAddress,{challengeId:proof.challengeId,code});
+  assert.equal(response.status,400,response.raw);
+  assert.equal(attempts(),1);
+  assert.equal(global(),undefined);
+  assert.equal(requests(),0);
+  pool.assertUnchanged();
+});
+
+test('full recovery overflow rejection still charges wrong SMS proof attempts before returning 429',async t=>{
+  const {f,proof,pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)')
+    .run('recovery-request:overflow',f.now,300);
+  const wrongCode=proof.code==='000000'?'999999':'000000';
+  for(let i=1;i<=5;i++){
+    const rejected=await post(pool.invalidAddress,{challengeId:proof.challengeId,code:wrongCode});
+    assert.equal(rejected.status,429,rejected.raw);
+    assert.equal(attempts(),i,'wrong proof must consume its challenge attempt before overflow returns 429');
+  }
+  const correct=await post(pool.validAddress,{challengeId:proof.challengeId,code:proof.code});
+  assert.equal(correct.status,429,correct.raw,'an exhausted proof from an unrecorded source must enter the overflow gate');
+  assert.equal(attempts(),5);
+  assert.equal(global(),undefined);
+  assert.equal(requests(),0);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:overflow'").get().attempts,300);
+  pool.assertUnchanged();
+});
+
+test('full recovery overflow charges an exhausted correct proof before rejecting it',async t=>{
+  const {f,proof,pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  f.db.prepare('UPDATE team_phone_challenges SET attempts=5 WHERE challenge_id=?').run(proof.challengeId);
+  f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)')
+    .run('recovery-request:overflow',f.now,299);
+  const overflow=()=>f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:overflow'").get()?.attempts;
+  const rejected=await post(pool.validAddress);
+  assert.equal(rejected.status,400,rejected.raw);
+  assert.equal(attempts(),5);
+  assert.equal(overflow(),300);
+  assert.equal(global(),undefined);
+  assert.equal(requests(),0);
+  const blocked=await post('203.0.113.243');
+  assert.equal(blocked.status,429,blocked.raw);
+  assert.equal(overflow(),300);
+  pool.assertUnchanged();
+});
+
+test('full recovery source pool permits the final correct proof attempt from attempts four',async t=>{
+  const {f,proof,pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  f.db.prepare('UPDATE team_phone_challenges SET attempts=4 WHERE challenge_id=?').run(proof.challengeId);
+  const accepted=await post(pool.validAddress);
+  assert.equal(accepted.status,201,accepted.raw);
+  assert.equal(attempts(),5);
+  assert.equal(global().attempts,1);
+  assert.equal(requests(),1);
+  pool.assertUnchanged();
+});
+
+test('full recovery source storage preserves valid proof retries until shared quota recovers',async t=>{
+  const {f,pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)')
+    .run('recovery-request:global',f.now,60);
+  for(let i=0;i<5;i++){
+    const rejected=await post(pool.validAddress);
+    assert.equal(rejected.status,429,rejected.raw);
+  }
+  assert.equal(attempts(),0);
+  assert.equal(global().attempts,60);
+  assert.equal(requests(),0);
+  pool.assertUnchanged();
+
+  f.now+=60000;
+  const accepted=await post(pool.validAddress);
+  assert.equal(accepted.status,201,accepted.raw);
+  assert.equal(attempts(),1);
+  assert.equal(global().attempts,1);
+  assert.equal(requests(),1);
+  assert.equal(f.db.prepare("SELECT COUNT(*) n FROM team_auth_limits WHERE bucket LIKE 'recovery-request:ip:%'").get().n,9745);
+});
+
+
+
+test('shared recovery budget rejection preserves a valid SMS proof for retry',async t=>{
+  const f=await fixture(t),c=await sms(f);
+  f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)')
+    .run('recovery-request:global',f.now,60);
+  const submit=()=>call(f,'/api/auth/recovery-requests',{challengeId:c.challengeId,code:c.code});
+  for(let i=0;i<5;i++){
+    const rejected=await submit();
+    assert.equal(rejected.status,429,rejected.raw);
+  }
+  assert.equal(f.db.prepare('SELECT attempts FROM team_phone_challenges WHERE challenge_id=?').get(c.challengeId).attempts,0);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests').get().n,0);
+
+  f.now+=60000;
+  const accepted=await submit();
+  assert.equal(accepted.status,201,accepted.raw);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_phone_challenges WHERE challenge_id=?').get(c.challengeId).attempts,1);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:global'").get().attempts,1);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_recovery_requests').get().n,1);
+});

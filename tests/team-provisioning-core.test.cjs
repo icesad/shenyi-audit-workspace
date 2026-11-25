@@ -184,3 +184,136 @@ test('an existing marked prototype upgrades all additive auth tables atomically 
   assert.deepEqual(db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='table' ORDER BY name").all(),before);assert.equal(db.prepare("SELECT status FROM team_users WHERE user_id='preserved'").get().status,'active');for(const name of [...usageNames,...sourceSchemaNames])assert.equal(db.prepare('SELECT COUNT(*) n FROM sqlite_schema WHERE name=?').get(name).n,0);
   initializeTeamDatabase(db);assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_schema WHERE type='table' AND name LIKE 'team_%'").get().n-ledgerCheckSchemaLayer(db).tables,before.length+47);for(const name of ['team_access_reviewers','team_member_access_events','team_device_bindings','team_device_challenges','team_device_leases','team_device_request_replays','team_device_events','team_device_replacement_reviewers','team_device_replacement_requests','team_device_replacement_challenges','team_device_replacement_events','team_business_role_events','team_project_access_projects','team_project_access_grants','team_project_access_events','team_administrator_business_role_reviewers','team_administrator_business_roles','team_administrator_business_role_events','team_project_migration_reviewers','team_project_migration_provenance','team_project_migration_events','team_material_grants','team_material_records','team_material_files','team_material_events','team_material_imports','team_material_import_chunks','team_material_maintenance_grants','team_material_maintenance_events','team_collection_workspace_creations','team_workspace_formalizations','team_device_usage','team_workspace_source_events','team_workspace_source_grants'])assert.ok(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(name));const usageAfter=db.prepare("SELECT type,name FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all().filter(row=>usageNames.includes(row.name));assert.deepEqual(usageAfter.map(row=>row.type+':'+row.name).sort(),['table:team_device_usage','trigger:device_usage_insert_owned_active','trigger:device_usage_update_owned_monotonic','index:my_device_event_owner_time','index:my_device_replacement_owner_request','index:my_device_replacement_event_request_time'].sort());assert.equal(db.prepare('SELECT COUNT(*) n FROM team_device_usage').get().n,0);for(const name of ['team_workspace_source_events','team_workspace_source_grants'])assert.equal(db.prepare('SELECT COUNT(*) n FROM '+name).get().n,0);assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
 });
+
+test('invalid anonymous first-administrator requests cannot exhaust another source or the shared valid-ticket budget',async t=>{
+  const f=await fixture(t),approved=await approve(f),ticket={invitationCode:approved.invitationCode},invalidCode=randomBytes(32).toString('base64url');
+  const sources=['203.0.113.20','203.0.113.21'];
+  for(const action of ['preview','challenges']){
+    for(let i=0;i<60;i++){
+      const r=await call(f,FIRST+'/'+action,{token:null,body:{invitationCode:invalidCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[0]}});
+      assert.equal(r.status,404,action+': '+r.raw);
+    }
+    const limited=await call(f,FIRST+'/'+action,{body:{invitationCode:invalidCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[0]}});
+    assert.equal(limited.status,429,action+': '+limited.raw);
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limits WHERE bucket=?').get('first-administrator:'+action+':global').n,0);
+    if(action==='preview'){
+      const valid=await call(f,FIRST+'/preview',{token:null,body:{invitationCode:ticket.invitationCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[1]}});
+      assert.equal(valid.status,200,valid.raw);
+    }else{
+      const valid=await call(f,FIRST+'/challenges',{token:null,body:{invitationCode:ticket.invitationCode,phone:PHONE},headers:{'X-Shenyi-Client-IP':sources[1]}});
+      assert.equal(valid.status,202,valid.raw);
+      assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get('first-administrator:challenges:global').attempts,1);
+    }
+  }
+  const delivered=f.sent.at(-1),activationBody={invitationCode:ticket.invitationCode,phone:PHONE,challengeId:delivered.challengeId,code:delivered.code,password:NEW_PASSWORD,displayName:'合成首管理员',accept:true};
+  for(let i=0;i<60;i++){
+    const r=await call(f,FIRST+'/activate',{token:null,body:{...activationBody,invitationCode:invalidCode},headers:{'X-Shenyi-Client-IP':sources[0]}});
+    assert.equal(r.status,404);
+  }
+  const limited=await call(f,FIRST+'/'+'activate',{body:{...activationBody,invitationCode:invalidCode},headers:{'X-Shenyi-Client-IP':sources[0]}});
+  assert.equal(limited.status,429,limited.raw);
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM team_auth_limits WHERE bucket=?').get('first-administrator:activate:global').n,0);
+  const valid=await call(f,FIRST+'/activate',{token:null,body:activationBody,headers:{'X-Shenyi-Client-IP':sources[1]}});
+  assert.equal(valid.status,200,valid.raw);
+});
+
+
+test('anonymous onboarding source buckets reclaim expired rows in bounded indexed batches and enforce a hard capacity',async t=>{
+  const f=await fixture(t),{consumeBounded}=await load('auth-api.mjs');
+  const prefix='first-administrator:challenges:ip:',now=f.now;
+  const insert=f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)');
+  const membership=f.db.prepare('INSERT INTO team_auth_limit_pool_buckets(prefix,bucket,window_start) VALUES (?,?,?)');
+  for(let i=0;i<10000;i++){
+    const bucket=prefix+'old-'+String(i).padStart(5,'0'),windowStart=i===0?now-60000:now-120000;
+    insert.run(bucket,windowStart,1);membership.run(prefix,bucket,windowStart);
+  }
+  f.db.prepare('UPDATE team_auth_limit_pools SET active_count=10000 WHERE prefix=?').run(prefix);
+  for(let i=0;i<40;i++)consumeBounded(f.db,prefix,prefix+'fresh-source-'+i,now,60000,60,10000);
+  const sourceCount=()=>f.db.prepare('SELECT COUNT(*) AS n FROM team_auth_limits WHERE bucket>=? AND bucket<?').get(prefix,prefix+String.fromCharCode(0xFFFF)).n;
+  assert.equal(sourceCount(),40,'bounded cleanup drains expired entries over multiple requests');
+  assert.equal(f.db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count,40);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(prefix+'fresh-source-39').attempts,1);
+  for(let i=0;i<9960;i++){
+    const bucket=prefix+'active-'+String(i).padStart(5,'0');
+    insert.run(bucket,now,1);membership.run(prefix,bucket,now);
+  }
+  f.db.prepare('UPDATE team_auth_limit_pools SET active_count=10000 WHERE prefix=?').run(prefix);
+  const protectedBucket=prefix+'active-00000';
+  f.db.prepare('UPDATE team_auth_limits SET attempts=59 WHERE bucket=?').run(protectedBucket);
+  consumeBounded(f.db,prefix,protectedBucket,now,60000,60,10000);
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(protectedBucket).attempts,60);
+  assert.equal(sourceCount(),10000);
+  assert.throws(()=>consumeBounded(f.db,prefix,prefix+'new-source-at-capacity',now,60000,60,10000));
+  assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(protectedBucket).attempts,60);
+  assert.equal(sourceCount(),10000);
+  assert.equal(f.db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count,10000);
+});
+
+test('first-administrator onboarding accepts valid tickets from new sources when anonymous source storage is full',async t=>{
+  const {fullSourcePool}=require('./helpers/onboarding-rate-limit-capacity.cjs');
+  for(const action of ['preview','challenges','activate']){
+    await t.test(action,async t=>{
+      const f=await fixture(t);
+      const approved=await approve(f),invitation={invitationCode:approved.invitationCode};
+      const proof=action==='activate'?await challenge(f,invitation):null;
+      const body=proof?payload(invitation,proof):{invitationCode:invitation.invitationCode,phone:PHONE};
+      const prefix='first-administrator:'+action+':ip:',global='first-administrator:'+action+':global';
+      const pool=fullSourcePool(f.db,prefix,f.now);
+      const route=FIRST+'/'+action;
+      const request=(address,value)=>call(f,route,{body:value,headers:{'X-Shenyi-Client-IP':address}});
+      const businessBudget=()=>JSON.stringify(f.db.prepare(
+        'SELECT bucket,window_start,attempts FROM team_auth_limits WHERE substr(bucket,1,length(?))<>? AND bucket<>? ORDER BY bucket'
+      ).all(prefix,prefix,'first-administrator:'+action+':overflow'));
+      const beforeBudget=businessBudget(),beforeMessages=f.sent.length;
+      const invalid=await request(pool.invalidAddress,{...body,invitationCode:randomBytes(32).toString('base64url')});
+      assert.ok([404,429].includes(invalid.status),invalid.raw);
+      assert.equal(businessBudget(),beforeBudget,'invalid tickets must not spend shared business or SMS budgets');
+      assert.equal(f.sent.length,beforeMessages,'invalid tickets must not send SMS');
+      pool.assertUnchanged();
+
+      // A source that has already spent its 60 attempts must not acquire a
+      // fresh allowance by presenting a valid ticket at the capacity boundary.
+      const limited=await request(pool.blockedAddress,body);
+      assert.equal(limited.status,429,limited.raw);
+      assert.equal(businessBudget(),beforeBudget);
+      pool.assertUnchanged();
+
+      const valid=await request(pool.validAddress,body);
+      assert.equal(valid.status,action==='challenges'?202:200,valid.raw);
+      assert.equal(f.db.prepare('SELECT attempts FROM team_auth_limits WHERE bucket=?').get(global).attempts,1);
+      assert.equal(f.sent.length,beforeMessages+(action==='challenges'?1:0));
+      pool.assertUnchanged();
+    });
+  }
+});
+
+
+test('first-administrator onboarding bounds invalid ticket validation but preserves valid tickets after overflow exhaustion',async t=>{
+  const {fullSourcePool}=require('./helpers/onboarding-rate-limit-capacity.cjs');
+  const f=await fixture(t),approved=await approve(f),prefix='first-administrator:preview:ip:';
+  const pool=fullSourcePool(f.db,prefix,f.now),invalidCode=randomBytes(32).toString('base64url');
+  for(let i=0;i<300;i++){
+    const address='198.51.'+Math.floor(i/250)+'.'+(i%250+1);
+    const response=await call(f,FIRST+'/preview',{
+      body:{invitationCode:invalidCode,phone:PHONE},
+      headers:{'X-Shenyi-Client-IP':address},
+    });
+    assert.equal(response.status,404,response.raw);
+  }
+  const blocked=await call(f,FIRST+'/preview',{
+    body:{invitationCode:invalidCode,phone:PHONE},
+    headers:{'X-Shenyi-Client-IP':'198.51.2.1'},
+  });
+  assert.equal(blocked.status,429,blocked.raw);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='first-administrator:preview:overflow'").get().attempts,300);
+  assert.equal(f.db.prepare("SELECT 1 FROM team_auth_limits WHERE bucket='first-administrator:preview:global'").get(),undefined);
+  assert.equal(f.sent.length,0);
+  const valid=await call(f,FIRST+'/preview',{
+    body:{invitationCode:approved.invitationCode,phone:PHONE},
+    headers:{'X-Shenyi-Client-IP':'198.51.2.2'},
+  });
+  assert.equal(valid.status,200,valid.raw);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='first-administrator:preview:global'").get().attempts,1);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='first-administrator:preview:overflow'").get().attempts,300);
+  pool.assertUnchanged();
+});
