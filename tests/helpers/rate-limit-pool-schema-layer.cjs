@@ -16,7 +16,7 @@ const PREFIXES=Object.freeze([
 const NAMES=Object.freeze([...TABLES,INDEX]);
 function definitions(db){
   return db.prepare(`SELECT type,name,tbl_name,sql FROM sqlite_schema
-    WHERE name IN (?,?,?) OR tbl_name IN (?,?) ORDER BY type,name`).all(...NAMES,...TABLES).map(row=>({...row}));
+    WHERE (name IN (?,?,?) OR tbl_name IN (?,?)) AND sql IS NOT NULL ORDER BY type,name`).all(...NAMES,...TABLES).map(row=>({...row}));
 }
 function rateLimitPoolSchemaLayer(db){
   const rows=definitions(db);
