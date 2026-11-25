@@ -198,8 +198,12 @@ export async function handleEmployeeInvitationRequest(request,{db,now=Date.now,i
   const clientAddress=isIP(suppliedAddress)?suppliedAddress.toLowerCase():'local';
   const sourceAt=now();
   const sourceRecorded=tryConsumeBounded(db,'onboarding:'+action+':ip:','onboarding:'+action+':ip:'+digest(clientAddress),sourceAt,60000,60);
-  if(!sourceRecorded)transaction(db,()=>consume(db,'onboarding:'+action+':overflow',sourceAt,60000,300));
-  const invitation=liveInvitation(db,body.invitationCode,phone,now());
+  let invitation;
+  try { invitation=liveInvitation(db,body.invitationCode,phone,now()); }
+  catch(error) {
+    if(!sourceRecorded)transaction(db,()=>consume(db,'onboarding:'+action+':overflow',sourceAt,60000,300));
+    throw error;
+  }
   consume(db,'onboarding:'+action+':global',now(),60000,60);
   if(action==='preview')return json(publicInvitation(invitation));
   const {sms,pepper}=smsProvider(identityProviders);
