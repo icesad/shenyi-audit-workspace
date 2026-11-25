@@ -206,7 +206,7 @@ test('managed request readiness avoids scanning bounded source-pool members',asy
   db.prepare=function(sql){
     const normalized=String(sql).replace(/\\s+/g,' ').trim();
     seen.push(normalized);
-    if(/COUNT\\s*\\(/i.test(normalized))throw new Error('request readiness must not count source-pool rows');
+    if(/COUNT\s*\(/i.test(normalized))throw new Error('request readiness must not count source-pool rows');
     if(normalized.includes('team_auth_limit_pool_buckets')&&!normalized.startsWith('PRAGMA')&&!/LIMIT 0$/i.test(normalized))
       throw new Error('request readiness must not scan source-pool members');
     return originalPrepare(sql);
