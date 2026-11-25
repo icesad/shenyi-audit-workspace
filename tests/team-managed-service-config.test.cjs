@@ -159,6 +159,9 @@ test('managed readiness rejects missing or inconsistent bounded source-pool meta
   const original=db.prepare("SELECT name,sql FROM sqlite_schema WHERE name LIKE 'team_auth_limit_pool_%' ORDER BY name").all();
   db.exec('DROP INDEX team_auth_limit_pool_expiry');
   assert.throws(ready,{code:'MANAGED_DATABASE_NOT_READY'});
+  db.exec('CREATE INDEX team_auth_limit_pool_expiry ON team_auth_limit_pool_buckets(prefix,window_start,bucket) WHERE window_start<0');
+  assert.throws(ready,{code:'MANAGED_DATABASE_NOT_READY'},'partial indexes cannot satisfy bounded expiry cleanup');
+  db.exec('DROP INDEX team_auth_limit_pool_expiry');
   initializeTeamDatabase(db);ready();
   db.exec('DROP TABLE team_auth_limit_pool_buckets');
   const missing=db.prepare("SELECT name,sql FROM sqlite_schema WHERE name LIKE 'team_auth_limit_pool_%' ORDER BY name").all();
@@ -171,7 +174,44 @@ test('managed readiness rejects missing or inconsistent bounded source-pool meta
   db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)').run('recovery-request:ip:orphan',Date.now(),1);
   assert.throws(ready,{code:'MANAGED_DATABASE_NOT_READY'});
   initializeTeamDatabase(db);ready();
+
+  // Keep both aggregate counts equal and each member joined to a real limiter
+  // row, but swap the membership rows across prefixes. Prefix reconciliation
+  // must reject this or recovery expiry could delete a live SMS source row.
+  const at=Date.now(),recoveryPrefix='recovery-request:ip:',smsPrefix='sms:source:';
+  const recoveryBucket=recoveryPrefix+'real-source',smsBucket=smsPrefix+'real-source';
+  const insertLimit=db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)');
+  insertLimit.run(recoveryBucket,at,1);insertLimit.run(smsBucket,at,1);
+  const insertMember=db.prepare('INSERT INTO team_auth_limit_pool_buckets(prefix,bucket,window_start) VALUES (?,?,?)');
+  insertMember.run(recoveryPrefix,smsBucket,at);insertMember.run(smsPrefix,recoveryBucket,at);
+  db.prepare('UPDATE team_auth_limit_pools SET active_count=1 WHERE prefix IN (?,?)').run(recoveryPrefix,smsPrefix);
+  assert.throws(ready,{code:'MANAGED_DATABASE_NOT_READY'},'members must belong to their own source prefix');
   assert.equal(original.length,3);
+});
+
+test('managed request readiness avoids scanning bounded source-pool members',async t=>{
+  const {initializeTeamDatabase}=await import('../server/team/database.mjs');
+  const {deviceServerId}=await import('../server/team/device-policy.mjs');
+  const {assertManagedDatabaseReady,assertManagedDatabaseRequestReady}=await import('../server/team/managed-database-readiness.mjs');
+  const db=new DatabaseSync(':memory:');t.after(()=>db.close());initializeTeamDatabase(db);
+  const prefix='recovery-request:ip:',now=Date.now();
+  const insert=db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)');
+  for(let i=0;i<10_000;i++)insert.run(prefix+String(i).padStart(5,'0'),now,1);
+  initializeTeamDatabase(db);
+  const serverId=deviceServerId(db);
+  const originalPrepare=db.prepare.bind(db),seen=[];
+  db.prepare=function(sql){
+    const normalized=String(sql).replace(/\\s+/g,' ').trim();
+    seen.push(normalized);
+    if(/COUNT\\s*\\(/i.test(normalized))throw new Error('request readiness must not count source-pool rows');
+    if(normalized.includes('team_auth_limit_pool_buckets')&&!normalized.startsWith('PRAGMA')&&!/LIMIT 0$/i.test(normalized))
+      throw new Error('request readiness must not scan source-pool members');
+    return originalPrepare(sql);
+  };
+  assertManagedDatabaseRequestReady(db,serverId,{reviewedRecovery:true});
+  assert.equal(seen.some(sql=>/COUNT\\s*\\(/i.test(sql)),false);
+  db.prepare=originalPrepare;
+  assertManagedDatabaseReady(db,serverId,{reviewedRecovery:true});
 });
 
 test('managed readiness requires recovery epoch triggers and challenge bindings only when reviewed recovery is enabled', async t => {
