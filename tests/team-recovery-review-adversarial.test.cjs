@@ -190,8 +190,8 @@ test('full recovery source storage rejects unknown SMS proofs without spending s
   pool.assertUnchanged();
 });
 
-test('full recovery source overflow is indexed and bounded before SMS proof validation',async t=>{
-  const {f,pool,post,global,requests}=await recoveryAtSourceCapacity(t);
+test('full recovery source overflow bounds invalid proofs but preserves valid proofs after the overflow budget is exhausted',async t=>{
+  const {f,proof,pool,post,global,requests}=await recoveryAtSourceCapacity(t);
   const prefix='recovery-request:ip:';
   const expiryPlan=f.db.prepare(`EXPLAIN QUERY PLAN SELECT bucket FROM team_auth_limit_pool_buckets
     WHERE prefix=? AND window_start<=? ORDER BY window_start,bucket LIMIT ?`).all(prefix,f.now-60000,256);
@@ -216,6 +216,15 @@ test('full recovery source overflow is indexed and bounded before SMS proof vali
   assert.equal(global(),undefined);
   assert.equal(requests(),0);
   assert.equal(f.db.prepare('SELECT active_count FROM team_auth_limit_pools WHERE prefix=?').get(prefix).active_count,10000);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:overflow'").get().attempts,300);
+
+  // A valid, account-bound SMS proof is not blocked by the shared invalid-proof
+  // overflow gate, even though the source pool and overflow budget are both full.
+  const valid=await post(pool.validAddress,{challengeId:proof.challengeId,code:proof.code});
+  assert.equal(valid.status,201,valid.raw);
+  assert.equal(global().attempts,1);
+  assert.equal(requests(),1);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:overflow'").get().attempts,300);
   pool.assertUnchanged();
 });
 
