@@ -9,6 +9,8 @@ const essentialColumns = {
   team_credentials: 'user_id, username, password_hash, revision',
   team_phone_credentials: 'user_id, phone, verified_at, revision',
   team_auth_limits: 'bucket, window_start, attempts',
+  team_auth_limit_pools: 'prefix, active_count',
+  team_auth_limit_pool_buckets: 'prefix, bucket, window_start',
   team_sessions: 'token_hash, user_id, expires_at, revoked_at',
   team_session_metadata: 'session_id, token_hash, created_at',
   team_device_bindings: 'device_id, user_id, public_key, key_fingerprint, revision, status',
@@ -49,6 +51,16 @@ const reviewedRecoveryColumns = {
   team_recovery_requests: 'request_id, challenge_id, target_user_id, team_id, target_kind, target_stamp, status, revision, created_at, expires_at, approved_by, approval_stamp, token_hash, consumed_at',
   team_recovery_events: 'event_id, request_id, actor_id, action, revision, created_at',
 };
+const BOUNDED_SOURCE_PREFIXES = Object.freeze([
+  'recovery-request:ip:',
+  'sms:source:',
+  'onboarding:preview:ip:',
+  'onboarding:challenges:ip:',
+  'onboarding:activate:ip:',
+  'first-administrator:preview:ip:',
+  'first-administrator:challenges:ip:',
+  'first-administrator:activate:ip:',
+]);
 const wechatColumns = {
   team_wechat_identities: 'app_id, open_id, user_id, created_at',
   team_wechat_transactions: 'transaction_id, state_hash, poll_hash, code_challenge, app_id, redirect_uri, status, expires_at, open_id, user_id, credential_revision',
@@ -89,6 +101,21 @@ export function assertManagedDatabaseReady(db, serverId, {reviewedRecovery = fal
     for (const [table, columns] of Object.entries(requiredColumns)) {
       if (!tables.has(table)) fail();
       db.prepare(`SELECT ${columns} FROM main.${table} LIMIT 0`).get();
+    }
+    // Bounded source admission is used by recovery, SMS, employee onboarding
+    // and first-administrator routes. Managed startup is read-only, so refuse
+    // an old or partially migrated database before accepting any traffic.
+    const pools=db.prepare('SELECT prefix,active_count FROM main.team_auth_limit_pools ORDER BY prefix').all();
+    if(pools.length!==BOUNDED_SOURCE_PREFIXES.length)fail();
+    for(let i=0;i<BOUNDED_SOURCE_PREFIXES.length;i++){
+      const prefix=BOUNDED_SOURCE_PREFIXES[i],pool=pools[i];
+      if(pool.prefix!==prefix||!Number.isSafeInteger(pool.active_count)||pool.active_count<0)fail();
+      const members=db.prepare('SELECT COUNT(*) AS count FROM main.team_auth_limit_pool_buckets WHERE prefix=?').get(prefix).count;
+      if(members!==pool.active_count)fail();
+      const stale=db.prepare(`SELECT COUNT(*) AS count FROM main.team_auth_limit_pool_buckets AS pool
+        LEFT JOIN main.team_auth_limits AS limits ON limits.bucket=pool.bucket
+        WHERE pool.prefix=? AND (limits.bucket IS NULL OR limits.window_start<>pool.window_start)`).get(prefix).count;
+      if(stale!==0)fail();
     }
     if (reviewedRecovery) {
       const triggers = new Map(db.prepare("SELECT name, tbl_name FROM main.sqlite_schema WHERE type = 'trigger'").all().map(row => [row.name,row.tbl_name]));
