@@ -250,6 +250,25 @@ test('full recovery source storage still charges a wrong code to the real SMS ch
   pool.assertUnchanged();
 });
 
+test('full recovery overflow rejection still charges wrong SMS proof attempts before returning 429',async t=>{
+  const {f,proof,pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
+  f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)')
+    .run('recovery-request:overflow',f.now,300);
+  const wrongCode=proof.code==='000000'?'999999':'000000';
+  for(let i=1;i<=5;i++){
+    const rejected=await post(pool.invalidAddress,{challengeId:proof.challengeId,code:wrongCode});
+    assert.equal(rejected.status,429,rejected.raw);
+    assert.equal(attempts(),i,'wrong proof must consume its challenge attempt before overflow returns 429');
+  }
+  const correct=await post(pool.validAddress,{challengeId:proof.challengeId,code:proof.code});
+  assert.equal(correct.status,400,correct.raw,'a proof with five failed attempts must remain unusable');
+  assert.equal(attempts(),5);
+  assert.equal(global(),undefined);
+  assert.equal(requests(),0);
+  assert.equal(f.db.prepare("SELECT attempts FROM team_auth_limits WHERE bucket='recovery-request:overflow'").get().attempts,300);
+  pool.assertUnchanged();
+});
+
 test('full recovery source storage preserves valid proof retries until shared quota recovers',async t=>{
   const {f,pool,post,attempts,global,requests}=await recoveryAtSourceCapacity(t);
   f.db.prepare('INSERT INTO team_auth_limits(bucket,window_start,attempts) VALUES (?,?,?)')
