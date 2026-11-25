@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([string] $StandardUserStage, [switch] $ShellReady)
 
 $ErrorActionPreference = 'Stop'
@@ -50,16 +50,79 @@ function Assert-Installed($Build, $Installed) {
     Assert-That (Test-Path -LiteralPath $Installed.Uninstall -PathType Leaf) 'Missing registered uninstaller.'
 }
 
-function Get-StartShortcut([string] $Target, [string] $BuildId='') {
-    $programs = [Environment]::GetFolderPath('Programs','Create')
-    $shell = New-Object -ComObject WScript.Shell
-    $links = Get-ChildItem -LiteralPath $programs -File -Filter '*.lnk' -Recurse:([bool]$BuildId)
-    foreach ($entry in $links) {
-        if ($BuildId -and -not $entry.BaseName.EndsWith($BuildId)) { continue }
-        $lnk = $shell.CreateShortcut($entry.FullName)
-        if ($lnk.TargetPath -eq $Target) { return $entry.FullName }
+function Get-FileIdentity([string] $Path) {
+    if (-not ('WorkbenchAcceptance.FileId' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+namespace WorkbenchAcceptance {
+    public static class FileId {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct IdInfo { public ulong Volume, Low, High; }
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetFileInformationByHandleEx(SafeFileHandle handle, int infoClass, out IdInfo info, uint size);
+        public static string Read(string name) {
+            using (var file = File.Open(name, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) {
+                IdInfo id;
+                if (!GetFileInformationByHandleEx(file.SafeFileHandle, 18, out id, (uint)Marshal.SizeOf(typeof(IdInfo))))
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                return String.Format("{0:X16}:{1:X16}{2:X16}", id.Volume, id.High, id.Low);
+            }
+        }
     }
-    throw "Missing per-user Start menu shortcut for $Target"
+}
+'@
+    }
+    return [WorkbenchAcceptance.FileId]::Read($Path)
+}
+
+function Write-ProfileShortcuts([string] $Root, $Shell) {
+    Write-Step "Searching the disposable profile (including hidden links): $Root"
+    $dirs = [Collections.Generic.Stack[string]]::new()
+    $dirs.Push($Root)
+    $count = 0
+    while ($dirs.Count) {
+        foreach ($item in Get-ChildItem -LiteralPath $dirs.Pop() -Force -ErrorAction SilentlyContinue) {
+            if ($item.PSIsContainer) {
+                if (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { $dirs.Push($item.FullName) }
+            } elseif ($item.Extension -eq '.lnk') {
+                $count++
+                try { $value = $Shell.CreateShortcut($item.FullName).TargetPath } catch { $value = $_.Exception.Message }
+                Write-Step "Found $($item.FullName) [$($item.Attributes)] -> '$value'"
+            }
+        }
+    }
+    Write-Step "Found $count shortcuts in $Root."
+}
+
+function Get-StartShortcut([string] $Target, [string] $BuildId='') {
+    $programs = [Environment]::GetFolderPath('Programs')
+    $title = '审易工作台（内测）'
+    $expected = if ($BuildId) {
+        Join-Path $programs "审易工作台内测版本\$title $BuildId.lnk"
+    } else {
+        Join-Path $programs ($title + '.lnk')
+    }
+    $shell = New-Object -ComObject WScript.Shell
+    Write-Step "Looking for exact Start menu link '$expected' -> '$Target'."
+    try {
+        Assert-That ([IO.File]::Exists($expected)) "Expected Start menu shortcut does not exist: $expected"
+        $link = $shell.CreateShortcut($expected)
+        $resolved = [Environment]::ExpandEnvironmentVariables($link.TargetPath)
+        Write-Step "Actual shortcut '$expected' -> '$resolved', arguments '$($link.Arguments)'."
+        Assert-That ([string]::IsNullOrEmpty($link.Arguments)) 'Unexpected shortcut arguments.'
+        Assert-That ([IO.Path]::IsPathRooted($resolved) -and [IO.File]::Exists($resolved)) "Shortcut target is not an existing local file: '$resolved'"
+        $actualId = Get-FileIdentity $resolved
+        $expectedId = Get-FileIdentity $Target
+        Assert-That ($actualId -eq $expectedId) "Wrong shortcut target: $resolved ($actualId), expected $Target ($expectedId)."
+        return $expected
+    } catch {
+        Write-ProfileShortcuts $env:USERPROFILE $shell
+        throw
+    }
 }
 
 function Test-Workspace($Share, $Installed, $Build, [string] $Mode, [string] $WorkspacePath) {
