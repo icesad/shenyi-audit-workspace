@@ -79,7 +79,7 @@ namespace WorkbenchAcceptance {
     return [WorkbenchAcceptance.FileId]::Read($Path)
 }
 
-function Write-ProfileShortcuts([string] $Root, $Shell) {
+function Write-ProfileShortcuts([string] $Root) {
     Write-Step "Searching the disposable profile (including hidden links): $Root"
     $dirs = [Collections.Generic.Stack[string]]::new()
     $dirs.Push($Root)
@@ -90,8 +90,9 @@ function Write-ProfileShortcuts([string] $Root, $Shell) {
                 if (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { $dirs.Push($item.FullName) }
             } elseif ($item.Extension -eq '.lnk') {
                 $count++
-                try { $value = $Shell.CreateShortcut($item.FullName).TargetPath } catch { $value = $_.Exception.Message }
-                Write-Step "Found $($item.FullName) [$($item.Attributes)] -> '$value'"
+                try { $value = [WorkbenchAcceptance.ShellLinkInfo]::Read($item.FullName).Details } catch { $value = $_.Exception.Message }
+                Write-Step "Found $($item.FullName) [$($item.Attributes)]: $value"
+                Write-Step ([WorkbenchAcceptance.LinkFile]::Describe($item.FullName))
             }
         }
     }
@@ -106,11 +107,13 @@ function Get-StartShortcut([string] $Target, [string] $BuildId='') {
     } else {
         Join-Path $programs ($title + '.lnk')
     }
-    $shell = New-Object -ComObject WScript.Shell
+    if (-not ('WorkbenchAcceptance.ShellLinkInfo' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'ci-shell-link.cs') }
     Write-Step "Looking for exact Start menu link '$expected' -> '$Target'."
     try {
         Assert-That ([IO.File]::Exists($expected)) "Expected Start menu shortcut does not exist: $expected"
-        $link = $shell.CreateShortcut($expected)
+        $link = [WorkbenchAcceptance.ShellLinkInfo]::Read($expected)
+        Write-Step "Exact link '$expected': $($link.Details)"
+        Assert-That ($link.ArgumentsResult -eq 0) 'Windows could not read shortcut arguments.'
         $resolved = [Environment]::ExpandEnvironmentVariables($link.TargetPath)
         Write-Step "Actual shortcut '$expected' -> '$resolved', arguments '$($link.Arguments)'."
         Assert-That ([string]::IsNullOrEmpty($link.Arguments)) 'Unexpected shortcut arguments.'
@@ -120,7 +123,7 @@ function Get-StartShortcut([string] $Target, [string] $BuildId='') {
         Assert-That ($actualId -eq $expectedId) "Wrong shortcut target: $resolved ($actualId), expected $Target ($expectedId)."
         return $expected
     } catch {
-        Write-ProfileShortcuts $env:USERPROFILE $shell
+        Write-ProfileShortcuts $env:USERPROFILE
         throw
     }
 }
@@ -290,6 +293,7 @@ try {
 
 Copy-Item -LiteralPath (Get-Command node.exe).Source -Destination (Join-Path $share 'node.exe')
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ci-installed-workspace.cjs') -Destination $share
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'ci-shell-link.cs') -Destination $share
 Copy-Item -LiteralPath $PSCommandPath -Destination (Join-Path $share 'ci-installer.ps1')
 $modules = New-Item -ItemType Directory -Path (Join-Path $share 'node_modules')
 foreach ($name in @('playwright','playwright-core')) {
