@@ -14,6 +14,17 @@
 
 首次备案取得备案号前保持本机或内网预览。已有阿里云订单的当前环节和资源要求以该订单为准。[阿里云备案期间的访问说明](https://help.aliyun.com/zh/icp-filing/the-influence-of-the-record-during-the-site-visit) · [管局审核](https://help.aliyun.com/zh/icp-filing/basic-icp-service/user-guide/administration-review) · [公安联网备案](https://help.aliyun.com/zh/icp-filing/basic-icp-service/the-public-security-network-for-record-and-cancellation)
 
+## 现在怎样试 Windows 版
+
+在自己的 Windows x64 电脑上，负责人可使用本地交付的内测安装器，打开后按向导安装，在开始菜单选择「审易工作台（内测）」。另有解压版，完整解压后双击 `ShenyiWorkbench.exe`。两者的本机体验工作区按 Windows 用户分开；同一 Windows 用户可沿用该体验工作区。
+
+| 项目 | 本轮覆盖 |
+| --- | --- |
+| 业务入口与资产 | 复用已合入 main 的 `dist/index.html` 和全部 419 份业务资源。Windows 实际打开招投标、立项、审计程序、报告、核算、基础资料六个入口。 |
+| 数据与账号 | 固定独立来源和专用 Electron 数据分区。合成事务所资料可在资料库保存，退出重开可读。其他专用配置查不到该记录。旧浏览器资料、团队账号和受管客户端分别使用各自的存储与授权流程。 |
+| 文档与窗口 | 原业务资源中的文件导入、导出、打印与内嵌预览需在客户场景逐项验收。原型限制新弹窗、内嵌页和远程访问。 |
+| 安装与开放下载 | 内测安装器安装在当前 Windows 用户目录。卸载以程序载荷为范围，体验数据独立保存。客户正式安装器需另行签发，并按相同哈希完成实机验收。 |
+
 ## 备案通过后，先开通官网
 
 1. 在已核对的源码提交、干净工作区中使用 Node.js 24.15 或以上的 24.x。准备一个尚不存在的仓库外输出目录。PowerShell 示例中的备案号由经办人输入。

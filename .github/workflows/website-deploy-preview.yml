@@ -1,0 +1,41 @@
+name: website-deploy-preview
+on:
+  pull_request:
+    paths: &website_paths
+      - 'website/**'
+      - 'dist/brand-shenyi.png'
+      - 'deploy/linux/nginx-shenyi-website.conf'
+      - 'scripts/build-windows-download-site.mjs'
+      - 'scripts/check-website-release.mjs'
+      - 'scripts/check-website-nginx.sh'
+      - 'scripts/website-preview.mjs'
+      - 'scripts/windows-candidate-authenticode.mjs'
+      - 'scripts/check-windows-release-msi.mjs'
+      - '.github/workflows/website-deploy-preview.yml'
+  push:
+    branches: [main]
+    paths: *website_paths
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  website-nginx:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - name: Prepare loopback test tools
+        shell: bash
+        run: |
+          if ! command -v nginx >/dev/null || ! command -v openssl >/dev/null; then
+            sudo systemctl mask --runtime nginx.service
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends nginx openssl
+          fi
+      - name: Exercise the filed website on a temporary HTTPS server
+        run: bash scripts/check-website-nginx.sh
