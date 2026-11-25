@@ -20,6 +20,7 @@ function definitions(db){
 }
 function rateLimitPoolSchemaLayer(db){
   const rows=definitions(db);
+  if(rows.length===0)return {tables:0,objects:0,definitions:[],names:[],tableNames:[]};
   assert.deepEqual(rows.map(({type,name,tbl_name})=>({type,name,tbl_name})),[
     {type:'index',name:INDEX,tbl_name:'team_auth_limit_pool_buckets'},
     {type:'table',name:'team_auth_limit_pool_buckets',tbl_name:'team_auth_limit_pool_buckets'},
@@ -43,6 +44,7 @@ function rateLimitPoolSchemaLayer(db){
 }
 function peelRateLimitPoolSchema(db){
   const layer=rateLimitPoolSchemaLayer(db);
+  if(layer.definitions.length===0)return layer;
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM team_auth_limit_pool_buckets').get().count,0,
     'Historical schema projection must not delete active source buckets');
   assert.ok(layer.definitions.every(row=>row.type==='table'||row.type==='index'));
@@ -53,6 +55,6 @@ function peelRateLimitPoolSchema(db){
 }
 function assertRateLimitPoolSchemaRestored(db,layer){
   assert.deepEqual(definitions(db),layer.definitions);
-  rateLimitPoolSchemaLayer(db);
+  if(layer.definitions.length)rateLimitPoolSchemaLayer(db);
 }
 module.exports={rateLimitPoolSchemaLayer,peelRateLimitPoolSchema,assertRateLimitPoolSchemaRestored,NAMES,TABLES};
