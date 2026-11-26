@@ -412,11 +412,12 @@ section[id] { scroll-margin-top: 1.25rem; }
 .homepage .hero-inner {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.04fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: clamp(2rem, 5.2vw, 5.3rem);
   padding-block: clamp(3.4rem, 7.5vw, 7.2rem);
 }
+.homepage .hero-copy { max-width: 48rem; }
 .edition { margin-bottom: 1.05rem; color: var(--on-dark); font-size: .9rem; letter-spacing: .07em; }
 .homepage .hero h1 { font-size: clamp(2.8rem, 5.1vw, 4.8rem); line-height: 1.14; }
 .homepage .lead { margin: 1.2rem 0 0; max-width: 23em; font-size: clamp(1rem, 1.35vw, 1.17rem); }
