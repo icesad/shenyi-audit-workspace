@@ -97,3 +97,17 @@ test('building a preview copies only the HTML, stylesheet and original logo into
   await assert.rejects(buildWebsite(path.join(root, 'new'), { rootDirectory: root }), /仓库外/);
   assert.equal(await fs.readFile(path.join(root, 'dist/index.html'), 'utf8'), 'original audit workbench');
 });
+
+
+test('the public website candidate identifies its confirmed Hainan operator and keeps filing identifiers pending approval', async () => {
+  const root = path.resolve(__dirname, '..');
+  const html = await fs.readFile(path.join(root, 'website', 'index.html'), 'utf8');
+  assert.match(html, /海南卓雅轩咨询有限公司运营/);
+  assert.ok(html.includes('ICP备案号：<!-- filing -->待海南省通信管理局核准后公示<!-- /filing -->；公安联网备案号：完成公安联网备案后公示。'));
+  assert.match(html, /公安联网备案号：完成公安联网备案后公示/);
+  assert.match(html, /隐私政策、用户协议及订阅服务条款将在正式开放前发布/);
+  assert.equal(html.split('<!-- filing -->').length - 1, 1);
+  assert.equal(html.split('<!-- /filing -->').length - 1, 1);
+  assert.equal(html.split('<!-- windows-release -->').length - 1, 1);
+  assert.equal(html.split('<!-- /windows-release -->').length - 1, 1);
+});
