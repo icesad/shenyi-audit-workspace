@@ -13,6 +13,18 @@ const section = optional + 0xf0;
 const rawSection = 0x200;
 const mismatch = { code: 'AUTHENTICODE_EXECUTABLE_MISMATCH' };
 
+test('customer signatures cannot approve an internal desktop experience or internal test build', async () => {
+  const { matchesCustomerInstallerMetadata } = await import('../scripts/windows-candidate-authenticode.mjs');
+  const valid = { productName:'审易 Windows 客户端', executableImage:true, productVersion:'1.2.3.0' };
+  const version = valid.productVersion;
+  assert.equal(matchesCustomerInstallerMetadata(valid, version), true);
+  for (const productName of ['审易（本机体验）', '审易 内 测 版', 'ShenYi 内部测试', 'ShenYi 本機體驗', 'Other Client']) {
+    assert.equal(matchesCustomerInstallerMetadata({...valid, productName}, version), false, productName);
+  }
+  assert.equal(matchesCustomerInstallerMetadata({...valid, executableImage:false}, version), false);
+  assert.equal(matchesCustomerInstallerMetadata({...valid, productVersion:'1.2.4.0'}, version), false);
+});
+
 function executable(overlayLength = 5) {
   const bytes = Buffer.alloc(0x400 + overlayLength);
   bytes.write('MZ', 0, 'ascii');

@@ -1,0 +1,31 @@
+name: Windows workbench preview installer
+
+on:
+  pull_request:
+    paths:
+      - 'desktop/windows/**'
+      - '.github/workflows/windows-workbench-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-workbench-preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  per-user-install:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify two preview installers with a standard Windows user
+        shell: pwsh
+        run: ./desktop/windows/ci-installer.ps1

@@ -24,6 +24,7 @@ const messages = {
   AUTHENTICODE_BUNDLE_INVALID: '发行包状态、文件清单或 Ed25519 发布签名无效。',
   AUTHENTICODE_MSI_INVALID: '请提供指定位置的有效 Windows MSI 文件。',
   AUTHENTICODE_MSI_MISMATCH: '最终 MSI 的文件摘要不符合经确认的 SHA-256，或文件在核验期间发生变化。',
+  CUSTOMER_INSTALLER_INVALID: '客户安装程序须为经批准的审易 EXE，且程序版本、发布者和文件摘要均须匹配。',
   AUTHENTICODE_OUTPUT_INVALID: '请在两个输入及仓库之外使用尚未存在的输出目录。',
   AUTHENTICODE_OPERATION_FAILED: 'Windows Authenticode 发行操作未完成。',
 };
@@ -102,6 +103,7 @@ async function executableBytes(input) {
 
 const authenticodeProbe = `
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 Import-Module (Join-Path $PSHOME 'Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1')
 $file = [IO.File]::Open($env:SHENYI_RELEASE_FILE, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
 try {
@@ -114,6 +116,24 @@ try {
   }
   finally { $sha.Dispose() }
   $result = [ordered]@{ status = [string]$sig.Status; type = [string]$sig.SignatureType; timestamp = ($null -ne $sig.TimeStamperCertificate); certificateSha256 = $hash; fileSha256 = $fileHash; bytes = $file.Length }
+  if ($env:SHENYI_VERIFY_CUSTOMER_INSTALLER -eq '1') {
+    $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($env:SHENYI_RELEASE_FILE)
+    $result['productName'] = $version.ProductName
+    $result['productVersion'] = @($version.ProductMajorPart, $version.ProductMinorPart, $version.ProductBuildPart, $version.ProductPrivatePart) -join '.'
+    $reader = [IO.BinaryReader]::new($file, [Text.Encoding]::ASCII, $true)
+    try {
+      $file.Position = 0
+      if ($reader.ReadUInt16() -ne 0x5a4d) { throw 'Invalid executable image' }
+      $file.Position = 60
+      $pe = $reader.ReadUInt32()
+      if ($pe -lt 64 -or $pe -gt ($file.Length - 24)) { throw 'Invalid executable image' }
+      $file.Position = $pe
+      if ($reader.ReadUInt32() -ne 0x4550) { throw 'Invalid executable image' }
+      $file.Position = $pe + 22
+      $flags = $reader.ReadUInt16()
+      $result['executableImage'] = (($flags -band 2) -ne 0 -and ($flags -band 0x2000) -eq 0)
+    } finally { $reader.Dispose() }
+  }
   if ($env:SHENYI_VERIFY_MSI -eq '1' -and $result.status -eq 'Valid' -and $result.type -eq 'Authenticode' -and $result.timestamp -and
       $hash -eq $env:SHENYI_EXPECTED_SIGNER -and $fileHash -eq $env:SHENYI_EXPECTED_MSI) {
     $installer = $null
@@ -137,7 +157,13 @@ finally { $file.Dispose() }
 
 export { resolveSystemPowerShell };
 
-async function verifyEmbeddedSignature(filename, publisherCertificateSha256, expected, { msi = false } = {}) {
+export function matchesCustomerInstallerMetadata(result, version) {
+  if (typeof result?.productName !== 'string' || result.executableImage !== true || result.productVersion !== version) return false;
+  const name = result.productName.normalize('NFKC').replace(/[\s\p{Cf}]+/gu, '');
+  return /审易|shenyi/i.test(name) && !/本机体验|本機體驗|内测|內測|内部测试|內部測試/.test(name);
+}
+
+async function verifyEmbeddedSignature(filename, publisherCertificateSha256, expected, { msi = false, customerVersion } = {}) {
   const changed = msi ? 'AUTHENTICODE_MSI_MISMATCH' : 'AUTHENTICODE_BUNDLE_INVALID';
   const readFacts = () => fileFacts(filename).catch(() => fail(changed));
   if (!expected || !sameFacts(await readFacts(), expected)) fail(changed);
@@ -146,6 +172,7 @@ async function verifyEmbeddedSignature(filename, publisherCertificateSha256, exp
     // Resolve the OS binary through Windows itself and give the verifier only its OS and input paths.
     const shell = await resolveSystemPowerShell();
     const env = { ...shell.env, SHENYI_RELEASE_FILE: filename };
+    if (customerVersion) env.SHENYI_VERIFY_CUSTOMER_INSTALLER = '1';
     if (msi) Object.assign(env, { SHENYI_VERIFY_MSI: '1', SHENYI_EXPECTED_SIGNER: publisherCertificateSha256, SHENYI_EXPECTED_MSI: expected.sha256 });
     const { stdout } = await run(shell.executable, ['-NoProfile', '-NonInteractive', '-Command', authenticodeProbe],
       { env, cwd: shell.cwd, maxBuffer: 64 * 1024, timeout: 60_000, windowsHide: true });
@@ -156,6 +183,26 @@ async function verifyEmbeddedSignature(filename, publisherCertificateSha256, exp
   if (!sameFacts({ sha256: result.fileSha256, bytes: result.bytes }, expected) ||
       !sameFacts(await readFacts(), expected)) fail(changed);
   if (msi && result.msiDatabase !== true) fail('AUTHENTICODE_MSI_INVALID');
+  if (customerVersion && !matchesCustomerInstallerMetadata(result, customerVersion)) fail('CUSTOMER_INSTALLER_INVALID');
+}
+
+export async function verifyWindowsCustomerInstaller({ customerExe, publisherSha256, sha256, version }) {
+  const publisher = trustedPublisher(publisherSha256);
+  const approvedDigest = trustedDigest(sha256);
+  const invalid = 'CUSTOMER_INSTALLER_INVALID';
+  if (typeof version !== 'string' || !/^(?:0|[1-9][0-9]{0,4})(?:\.(?:0|[1-9][0-9]{0,4})){2,3}$/.test(version) ||
+      version.split('.').some(part => Number(part) > 65535)) fail(invalid);
+  const filename = detachedSignatureFiles(fail).localPath(customerExe, invalid);
+  if (path.extname(filename).toLowerCase() !== '.exe') fail(invalid);
+  const initial = await lstat(filename, { bigint: true });
+  if (!initial.isFile() || initial.nlink !== 1n || initial.size < 1n || initial.size > 2n * 1024n ** 3n ||
+      path.relative(filename, await realpath(filename))) fail(invalid);
+  const expected = await fileFacts(filename);
+  if (expected.sha256 !== approvedDigest || BigInt(expected.bytes) !== initial.size) fail(invalid);
+  const productVersion = version.split('.').length === 3 ? version + '.0' : version;
+  await verifyEmbeddedSignature(filename, publisher, expected, { customerVersion: productVersion });
+  return { ...expected, version, publisherCertificateSha256: publisher, installerOsSignatureVerified: true,
+    timestampVerified: true, productVersionVerified: true };
 }
 
 function sameFacts(observed, expected) {

@@ -15,6 +15,20 @@ const {digest, keyPair} = require('./helpers/business-role-fixture.cjs');
 const windows = {skip: process.platform !== 'win32' || process.arch !== 'x64'};
 const badCertificate = error => /^(?:DEPTH_|CERT_|UNABLE_|SELF_SIGNED_|ERR_TLS_)/.test(error?.code);
 
+test('review package includes every SQL resource read during database initialization and owner bootstrap', async () => {
+  const files = new Set(require('../scripts/owner-review-server-files.json'));
+  for (const entry of ['server/team/database.mjs', 'server/team/managed-owner-bootstrap.mjs']) {
+    assert.ok(files.has(entry), entry);
+    const source = await fs.readFile(path.join(__dirname, '..', entry), 'utf8');
+    const schemaUrls = [...source.matchAll(/new URL\(\s*['"]\.\/([^'"]+\.sql)['"]\s*,\s*import\.meta\.url\s*\)/g)];
+    assert.ok(schemaUrls.length > 0, entry);
+    for (const [, file] of schemaUrls) {
+      const asset = path.posix.join(path.posix.dirname(entry), file);
+      assert.ok(files.has(asset), 'Missing review package resource: ' + asset);
+    }
+  }
+});
+
 async function packageFixture(t, {longAppDataPath = false} = {}) {
   const parent = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'shenyi-owner-managed-test-'));
   const appRoot = path.join(parent, "review 'package !");

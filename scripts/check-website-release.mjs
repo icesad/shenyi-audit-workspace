@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { lstat, open, realpath } from 'node:fs/promises';
 import { request } from 'node:https';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const assets = [
   { route: '/', file: 'index.html', type: 'text/html' },
@@ -21,6 +22,15 @@ const digestPattern = /^[0-9a-f]{64}$/;
 const commitPattern = /^[0-9a-f]{40}$/;
 const maxBaselineBytes = 64 * 1024;
 const maxAssetBytes = 32 * 1024 * 1024;
+export const windowsDownload = Object.freeze({
+  route: '/downloads/shenyi-windows-x64.msi', file: 'downloads/shenyi-windows-x64.msi',
+  mode: 'windows-managed-download', type: 'application/octet-stream', maxBytes: 2 * 1024 ** 3,
+});
+export const customerDownload = Object.freeze({
+  route: '/downloads/shenyi-windows-setup.exe', file: 'downloads/shenyi-windows-setup.exe',
+  mode: 'windows-customer-download', type: 'application/octet-stream', maxBytes: 2 * 1024 ** 3,
+});
+const downloads = [windowsDownload, customerDownload];
 const maxParallelProbes = 6;
 
 function fail(code) {
@@ -87,13 +97,16 @@ async function readBaseline(baseline, baselineSha256) {
   } catch {
     fail('INVALID_BASELINE');
   }
+  const installer = downloads.find(asset => asset.mode === manifest?.mode);
+  if (manifest?.mode !== undefined && !installer) fail('INVALID_BASELINE');
+  const expected = installer ? [...assets, installer] : assets;
   if (typeof manifest?.sourceCommit !== 'string' || !commitPattern.test(manifest.sourceCommit) ||
-    !Array.isArray(manifest.assets) || manifest.assets.length !== assets.length) fail('INVALID_BASELINE');
+    !Array.isArray(manifest.assets) || manifest.assets.length !== expected.length) fail('INVALID_BASELINE');
 
-  const checks = assets.map(spec => {
+  const checks = expected.map(spec => {
     const recorded = manifest.assets.find(row => row?.route === spec.route);
     if (!recorded || recorded.file !== spec.file ||
-      !Number.isSafeInteger(recorded.bytes) || recorded.bytes < 1 || recorded.bytes > maxAssetBytes ||
+      !Number.isSafeInteger(recorded.bytes) || recorded.bytes < 1 || recorded.bytes > (spec.maxBytes ?? maxAssetBytes) ||
       typeof recorded.sha256 !== 'string' || !digestPattern.test(recorded.sha256)) fail('INVALID_BASELINE');
     return { ...spec, bytes: recorded.bytes, sha256: recorded.sha256 };
   });
@@ -105,7 +118,7 @@ async function assetFacts(directory, spec) {
   try {
     if (path.relative(file, await realpath(file))) fail('INVALID_ASSET_FILE');
     const seen = await lstat(file, { bigint: true });
-    if (!seen.isFile() || seen.size < 1n || seen.size > BigInt(maxAssetBytes)) fail('INVALID_ASSET_FILE');
+    if (!seen.isFile() || seen.size < 1n || seen.size > BigInt(spec.maxBytes ?? maxAssetBytes)) fail('INVALID_ASSET_FILE');
 
     const handle = await open(file, 'r');
     try {
@@ -135,10 +148,7 @@ async function assetFacts(directory, spec) {
   }
 }
 
-async function makeBaseline(args) {
-  const values = optionsOf(args, ['--make-baseline', '--source-commit']);
-  const requested = values.get('--make-baseline');
-  const sourceCommit = values.get('--source-commit');
+export async function buildWebsiteBaseline(requested, sourceCommit, verifiedRelease, download) {
   if (!path.isAbsolute(requested) || !commitPattern.test(sourceCommit)) fail('INVALID_ARGUMENTS');
   const directory = path.resolve(requested);
   try {
@@ -149,7 +159,13 @@ async function makeBaseline(args) {
     fail('INVALID_STATIC_DIRECTORY');
   }
   const files = await Promise.all(assets.map(spec => assetFacts(directory, spec)));
-  console.log(JSON.stringify({ sourceCommit, assets: files }, null, 2));
+  if (verifiedRelease) {
+    if (!downloads.includes(download)) fail('INVALID_ARGUMENTS');
+    const installer = await assetFacts(directory, download);
+    if (installer.sha256 !== verifiedRelease.sha256 || installer.bytes !== verifiedRelease.bytes) fail('INSTALLER_DIGEST_MISMATCH');
+    return { sourceCommit, mode: download.mode, assets: [...files, installer] };
+  }
+  return { sourceCommit, assets: files };
 }
 
 function probe(origin, spec) {
@@ -163,7 +179,8 @@ function probe(origin, spec) {
       response?.destroy();
     }
 
-    const deadline = AbortSignal.timeout(5000);
+    const isInstaller = downloads.some(asset => asset.route === spec.route) && !spec.denialCode;
+    const deadline = AbortSignal.timeout(isInstaller ? 30 * 60_000 : 5000);
     const req = request(new URL(route, origin), {
       method: 'GET',
       agent: false,
@@ -222,6 +239,7 @@ function probe(origin, spec) {
         finish({ status: 'verified', ...transport, bytes, sha256 });
       });
     });
+    if (isInstaller) req.setTimeout(30_000, () => { finish({ status: 'failed', code: 'HTTPS_TIMEOUT' }); req.destroy(); });
     req.on('error', error => {
       const transportCode = typeof error.code === 'string' && /^[A-Z0-9_]{1,64}$/.test(error.code)
         ? error.code : 'UNKNOWN';
@@ -235,15 +253,19 @@ function probe(origin, spec) {
 async function main() {
   const args = process.argv.slice(2);
   if (args.includes('--make-baseline')) {
-    await makeBaseline(args);
+    const values = optionsOf(args, ['--make-baseline', '--source-commit']);
+    console.log(JSON.stringify(await buildWebsiteBaseline(values.get('--make-baseline'), values.get('--source-commit')), null, 2));
     return;
   }
   const { origin, baseline, baselineSha256 } = argumentsOf(args);
   const { sourceCommit, checks: expectedAssets } = await readBaseline(baseline, baselineSha256);
+  const activeDownload = expectedAssets.find(spec => spec.mode);
   const specs = [
     ...expectedAssets,
     ...checkoutRoutes.map(route => ({ route, denialCode: 'CHECKOUT_STATUS_MISMATCH' })),
     ...excludedRoutes.map(route => ({ route, denialCode: 'EXCLUDED_ROUTE_STATUS_MISMATCH' })),
+    ...downloads.filter(spec => spec.route !== activeDownload?.route)
+      .map(spec => ({ route: spec.route, denialCode: 'EXCLUDED_ROUTE_STATUS_MISMATCH' })),
   ];
   const checks = [];
   for (let start = 0; start < specs.length; start += maxParallelProbes) {
@@ -255,7 +277,7 @@ async function main() {
   process.exitCode = verified ? 0 : 1;
   console.log(JSON.stringify({
     status: verified ? 'verified' : 'failed',
-    mode: 'static-website',
+    mode: activeDownload?.mode ?? 'static-website',
     origin,
     sourceCommit,
     baselineSha256,
@@ -264,7 +286,7 @@ async function main() {
   }));
 }
 
-main().catch(error => {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(error => {
   const expected = ['INVALID_ARGUMENTS', 'INVALID_ORIGIN', 'INVALID_BASELINE', 'BASELINE_DIGEST_MISMATCH',
     'INVALID_STATIC_DIRECTORY', 'INVALID_ASSET_FILE'];
   process.exitCode = 1;

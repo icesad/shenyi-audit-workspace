@@ -8,11 +8,11 @@ import { listenOnLoopback } from '../server/team/team-http-listener.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const host = '127.0.0.1';
-const publicFiles = [
+export const publicFiles = Object.freeze([
   { source: 'website/index.html', name: 'index.html', type: 'text/html; charset=utf-8' },
   { source: 'website/styles.css', name: 'styles.css', type: 'text/css; charset=utf-8' },
   { source: 'dist/brand-shenyi.png', name: 'assets/brand-shenyi.png', type: 'image/png' },
-];
+].map(Object.freeze));
 const contentSecurityPolicy = "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 async function readPublicFiles(canonicalRoot) {

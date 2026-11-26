@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="审易面向审计项目团队，帮助员工按授权领取资料采集任务、查阅要求和核对提交记录。">
-  <title>审易｜审计团队资料采集工作台</title>
+  <meta name="description" content="审易是面向会计师事务所的审计工作台。在这里了解项目协作流程、查看 Windows 桌面客户端和官方下载状态。">
+  <title>审易｜审计工作台与 Windows 客户端下载</title>
   <link rel="icon" type="image/png" href="./assets/brand-shenyi.png">
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -18,110 +18,97 @@
       </a>
       <nav aria-label="官网导航">
         <a href="#workflow">产品</a>
-        <a href="#subscription">订阅</a>
-        <a href="#releases">版本</a>
+        <a href="#subscription">团队订阅</a>
         <a href="#help">帮助</a>
+        <a class="nav-download" href="#releases">下载中心</a>
       </nav>
     </div>
   </header>
-
   <main id="main" tabindex="-1">
     <section class="hero" aria-labelledby="hero-title">
       <div class="shell hero-inner">
         <div class="hero-copy">
-          <h1 id="hero-title"><span>审计团队的</span> <span>资料采集工作台</span></h1>
-          <p class="lead">负责人分派任务，成员按授权提交资料。</p>
+          <p class="edition">Windows 桌面客户端</p>
+          <h1 id="hero-title">审计团队的<br>项目工作台</h1>
+          <p class="lead"><span>按项目分派采集任务，</span><span>跟进审计程序与报告。</span></p>
           <div class="hero-actions">
-            <a class="button primary" href="#workflow">查看工作流程</a>
-            <a class="button secondary" href="#releases">版本与下载</a>
+            <a class="button primary" href="#releases">查看 Windows 下载 <span aria-hidden="true">↓</span></a>
+            <a class="text-action" href="#workflow">了解工作流程 <span aria-hidden="true">→</span></a>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="workflow" class="section workflow" aria-labelledby="workflow-title" tabindex="-1">
-      <div class="shell section-grid">
-        <div class="section-intro">
-          <p class="eyebrow">产品与权限</p>
-          <h2 id="workflow-title">一项任务，<br>从指派到提交</h2>
-          <p>项目、任务和资料按具体授权开放。职级与团队管理身份各有权限边界。</p>
         </div>
         <figure class="workspace-figure" aria-labelledby="workspace-preview-caption">
           <div class="workbench">
-            <div class="workbench-bar">
-              <span>审易工作台</span>
-              <span class="workbench-context">资料采集</span>
-            </div>
+            <div class="workbench-bar"><span>审易工作台</span><span class="workbench-context">资料采集</span></div>
             <div class="workbench-body">
               <div class="workbench-title"><strong>我的采集任务</strong><span class="role">实习生</span></div>
               <div class="workbench-columns">
                 <div class="sample-list">
                   <span class="sample-heading">已指派任务</span>
-                  <div class="sample-task">
-                    <strong>收集银行对账单</strong>
-                    <span>待提交</span>
-                  </div>
+                  <div class="sample-task"><strong>银行对账单</strong><span>待提交</span></div>
+                  <div class="sample-task other-task"><strong>科目余额表</strong><span>已提交</span></div>
                 </div>
                 <div class="sample-detail">
-                  <strong>提交要求</strong>
-                  <p>提交本期银行对账单，核对文件是否齐全。</p>
+                  <span class="sample-heading">提交要求</span><strong>收集银行对账单</strong>
+                  <p>提交本期银行对账单，核对账户与期间。</p>
                   <div class="sample-record"><span>我的提交记录</span><span>暂无提交</span></div>
                 </div>
               </div>
             </div>
           </div>
-          <figcaption id="workspace-preview-caption">界面示意 · 采用合成任务</figcaption>
+          <figcaption id="workspace-preview-caption">资料采集界面示意 · 示例任务</figcaption>
         </figure>
+      </div>
+    </section>
+    <section id="releases" class="section releases" aria-labelledby="release-title" tabindex="-1">
+      <div class="shell download-layout">
+        <div class="section-intro"><p class="eyebrow">下载中心</p><h2 id="release-title">获取桌面客户端</h2><p>Windows 优先发布。macOS 版安排在后续阶段。</p></div>
+        <div class="platform">
+          <h3><span class="window-mark" aria-hidden="true"></span> Windows</h3>
+          <!-- windows-release -->
+          <p class="platform-status">正式安装包待发布</p>
+          <p>发布后可在这里下载安装包，查看版本号与 SHA-256 校验值。</p>
+          <!-- /windows-release -->
+        </div>
+      </div>
+    </section>
+    <section id="workflow" class="section workflow" aria-labelledby="workflow-title" tabindex="-1">
+      <div class="shell">
+        <div class="section-intro"><p class="eyebrow">产品与权限</p><h2 id="workflow-title">按项目分工，按任务协作</h2></div>
         <ol class="steps">
-          <li><h3>分派采集任务</h3><p>获项目授权的经理或合伙人，可向本团队实习生和助理分派任务。</p></li>
-          <li><h3>按任务提交资料</h3><p>实习生和助理仅查看被指派的任务、采集要求和本人的提交记录。</p></li>
-          <li><h3>在项目范围内核对</h3><p>查阅提交与原件须有相应权限。账号、设备或账务管理身份不会自动取得审计资料的访问权。</p></li>
+          <li><h3>分派采集任务</h3><p>获项目授权的经理或合伙人，为本团队的实习生和助理分派任务。</p></li>
+          <li><h3>按要求提交资料</h3><p>员工在自己的任务中查看要求、提交资料，并核对提交记录。</p></li>
+          <li><h3>核对项目资料</h3><p>获授权的项目成员查阅提交记录、核对原件，跟进项目进度。</p></li>
         </ol>
       </div>
     </section>
-
     <section id="subscription" class="section subscription" aria-labelledby="subscription-title" tabindex="-1">
       <div class="shell section-grid">
-        <div class="section-intro">
-          <p class="eyebrow">订阅与席位</p>
-          <h2 id="subscription-title">团队年订阅<br>按员工席位配置</h2>
-          <p>本团队技术管理员可在候选流程中核对续费、增购及订单。正式定价、购买入口和退款条款待发布。</p>
-        </div>
+        <div class="section-intro"><p class="eyebrow">团队订阅</p><h2 id="subscription-title">年订阅与员工席位</h2><p>团队技术管理员管理续费与席位。正式价格和购买入口将在发布时公布。</p></div>
         <dl class="subscription-rules">
           <div><dt>席位怎么计</dt><dd>每位启用的业务成员占一个席位。纯技术管理员不占席，兼任业务职级计一个席位。员工邀请发出即预留席位。</dd></div>
-          <div><dt>期限怎么续</dt><dd>团队主动按年续订。期内增购席位与原到期日对齐。</dd></div>
-          <div><dt>到期后怎么用</dt><dd>业务新增和修改暂停。成员可按原授权查阅或导出历史资料。</dd></div>
+          <div><dt>期限怎么续</dt><dd>团队主动按年续订。期内增购席位与团队原到期日对齐。</dd></div>
+          <div><dt>到期后怎么用</dt><dd>暂停新增和修改。成员可按原授权查阅或导出历史资料。</dd></div>
         </dl>
       </div>
     </section>
-
-    <section id="releases" class="section releases shell" aria-labelledby="release-title" tabindex="-1">
-      <div class="release-heading">
-        <div><p class="eyebrow">桌面客户端</p><h2 id="release-title">版本与下载</h2></div>
-        <p>正式安装包和版本说明将在交付验收后发布。</p>
-      </div>
-      <div class="release-platforms">
-        <div class="platform"><h3>Windows</h3><p class="platform-status">本机候选已验证</p><p>已使用合成数据验证登录、绑定电脑、采集任务、模拟年续费和增购席位。</p></div>
-        <div class="platform"><h3>macOS</h3><p class="platform-status pending">待原生验收</p><p>当前暂无正式安装包。</p></div>
-      </div>
-    </section>
-
     <section id="help" class="section help" aria-labelledby="help-title" tabindex="-1">
       <div class="shell section-grid">
         <div class="section-intro"><p class="eyebrow">使用帮助</p><h2 id="help-title">常见问题</h2></div>
         <div class="questions">
-          <details><summary>员工如何开通账号？</summary><p>团队和首管理员由产品负责人审核开通。员工收到本团队管理员的邀请后激活个人账号。官网账号入口待开放。</p></details>
-          <details><summary>更换办公电脑怎么办？</summary><p>首版规则为一个账号绑定一台电脑，员工换机由团队管理员审核。审核通过后在新电脑上激活。</p></details>
-          <details><summary>在哪里购买、续费或申请退款？</summary><p>官网购买和续费入口待开放。首版退款由产品负责人受理，团队客户端暂无申请入口。正式处理条款待发布。</p></details>
+          <details><summary>如何确认安装包来自审易官网？</summary><p>认准域名 shenji.vip。下载后可将文件的 SHA-256 与下载中心公布的校验值核对，并在 Windows 文件属性的“数字签名”中核对发布者。</p></details>
+          <details><summary>团队员工如何开通账号？</summary><p>团队和首管理员由产品负责人审核开通。员工收到本团队管理员的邀请后，激活个人账号。</p></details>
+          <details><summary>更换办公电脑怎么办？</summary><p>一个账号绑定一台电脑。员工向团队管理员申请换机，审核通过后在新电脑上激活。</p></details>
+          <details><summary>在哪里续费或申请退款？</summary><p>官网购买和续费入口待开放。首版退款由产品负责人受理，正式处理条款待发布。</p></details>
         </div>
       </div>
     </section>
   </main>
-
   <footer class="site-footer">
     <div class="shell footer-inner">
-      <p><strong>审易</strong><span>官网本地候选</span></p>
-      <p>运营主体、备案信息及隐私与服务条款待正式发布。</p>
+      <p><strong>审易</strong><span>shenji.vip</span></p>
+      <!-- filing -->
+      <p>ICP备案审核中</p>
+      <!-- /filing -->
     </div>
   </footer>
 </body>
