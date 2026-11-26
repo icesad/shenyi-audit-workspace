@@ -15,7 +15,7 @@ cleanup() {
 }
 trap cleanup EXIT
 out="$scratch/release"
-filing='沪ICP备00000000号-1'
+filing='琼ICP备00000000号-1'
 node scripts/build-windows-download-site.mjs --output "$out" --source-commit "$(git rev-parse HEAD)" \
   --filing-number "$filing" > "$scratch/build.json"
 test "$(sha256sum "$out/baseline.json" | cut -d' ' -f1)" = "$(jq -r .baselineSha256 "$scratch/build.json")"

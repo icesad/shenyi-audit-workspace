@@ -46,7 +46,7 @@ async function setup(t) {
   await fs.writeFile(msi, bytes);
   const input = { msi, sha256: hash(bytes), appPayloadSha256: 'a'.repeat(64), publisherSha256: 'b'.repeat(64),
     publicKey: path.join(directory, 'public.pem'), version: '1.0.1', installedVersion: '1.0.0',
-    filingNumber: '沪ICP备12345678号-1', scratchRoot: directory };
+    filingNumber: '琼ICP备00000000号-1', scratchRoot: directory };
   const root = path.join(directory, 'source');
   const sources = ['website/index.html','website/styles.css','dist/brand-shenyi.png','deploy/linux/nginx-shenyi-website.conf'];
   for (const file of sources) {
@@ -78,7 +78,7 @@ test('the filed website can publish ahead of the installer and keeps the downloa
   await fs.writeFile(path.join(root, 'website/index.html'), 'uncommitted fixture');
   const staged = await buildWindowsDownloadSite({ output, sourceCommit, filingNumber: args.input.filingNumber }, {root});
   const html = await fs.readFile(path.join(staged.site, 'index.html'), 'utf8');
-  assert.ok(html.includes(args.input.filingNumber));
+  assert.ok(html.includes('<a href="https://beian.miit.gov.cn/" rel="noreferrer">' + args.input.filingNumber + '</a>'));
   assert.ok(!html.includes('/downloads/shenyi-windows-x64.msi'));
   assert.deepEqual((await fs.readdir(staged.site)).sort(), ['assets', 'index.html', 'styles.css']);
   const manifest = JSON.parse(await fs.readFile(path.join(output, 'baseline.json')));
@@ -94,7 +94,8 @@ test('staging binds the published page, exact download route and TLS baseline to
   const route = '/downloads/shenyi-windows-x64.msi';
   const html = await fs.readFile(path.join(staged.site, 'index.html'), 'utf8');
   assert.ok(html.includes('href="' + route + '"') && html.includes('管理员下载受管部署包'));
-  assert.ok(html.includes(args.input.filingNumber) && html.includes(staged.sha256));
+  assert.ok(html.includes('<a href="https://beian.miit.gov.cn/" rel="noreferrer">' + args.input.filingNumber + '</a>'));
+  assert.ok(html.includes(staged.sha256));
   assert.equal(await fs.readFile(path.join(staged.site, route.slice(1)), 'utf8'), bytes.toString());
   const encoded = await fs.readFile(path.join(args.output, 'baseline.json'));
   const manifest = JSON.parse(encoded);
@@ -127,9 +128,29 @@ test('customer EXE publication requires independent installer approval and only 
   const route = '/downloads/shenyi-windows-setup.exe';
   assert.ok(html.includes('下载 Windows 客户端') && html.includes('href="' + route + '"'));
   assert.ok(!html.includes('/downloads/shenyi-windows-x64.msi'));
+  assert.ok(html.includes('<a href="https://beian.miit.gov.cn/" rel="noreferrer">' + filingNumber + '</a>'));
   const baseline = JSON.parse(await fs.readFile(path.join(args.output,'baseline.json')));
   assert.equal(baseline.mode, 'windows-customer-download');
   assert.equal(baseline.assets.find(row => row.route === route).sha256, sha256);
   const config = await fs.readFile(path.join(args.output,'nginx-shenyi-website.conf'), 'utf8');
   assert.ok(config.includes('location = ' + route + ' {') && !config.includes('/downloads/shenyi-windows-x64'));
+});
+
+test('the filing field rejects unrelated prefixes, missing website suffixes and unapproved placeholders', async t => {
+  const { buildWindowsDownloadSite } = await builder;
+  const { args, root } = await setup(t);
+  const { output, sourceCommit } = args;
+  for (const filingNumber of ['京ICP备00000000号-1', '琼ICP备00000000号', '待审批']) {
+    await assert.rejects(buildWindowsDownloadSite({ output, sourceCommit, filingNumber }, {root}), /备案号/);
+    await assert.rejects(buildWindowsDownloadSite({ ...args, input: {...args.input, filingNumber} }, {root}), /备案号/);
+  }
+});
+
+test('the site-only build still accepts the previously supported Shanghai website format', async t => {
+  const { buildWindowsDownloadSite } = await builder;
+  const { args, root } = await setup(t);
+  const filingNumber = '沪ICP备00000000号-1';
+  const staged = await buildWindowsDownloadSite({ output: args.output, sourceCommit: args.sourceCommit, filingNumber }, {root});
+  const html = await fs.readFile(path.join(staged.site, 'index.html'), 'utf8');
+  assert.ok(html.includes('<a href="https://beian.miit.gov.cn/" rel="noreferrer">' + filingNumber + '</a>'));
 });

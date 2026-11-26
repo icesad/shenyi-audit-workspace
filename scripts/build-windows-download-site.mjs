@@ -15,7 +15,7 @@ const repository = fileURLToPath(new URL('../', import.meta.url));
 const mandatory = ['filingNumber', 'msi', 'sha256', 'publisherSha256', 'publicKey', 'version', 'installedVersion', 'appPayloadSha256'];
 const customerFields = ['filingNumber', 'customerExe', 'sha256', 'publisherSha256', 'version'];
 const run = promisify(execFile);
-const filingPattern = /^沪ICP备[0-9]{6,12}号-[1-9][0-9]{0,5}$/;
+const filingPattern = /^[沪琼]ICP备[0-9]{6,12}号-[1-9][0-9]{0,5}$/;
 const flags = ['--output', '--release-input', '--filing-number', '--source-commit'];
 
 function replaceOnce(text, marker, replacement) {
@@ -44,7 +44,7 @@ function downloadType(input) {
       !Object.keys(input).every(key => allowed.includes(key)) || !filingPattern.test(input.filingNumber) ||
       !(customer ? path.isAbsolute(input.customerExe) : path.isAbsolute(input.msi) && path.isAbsolute(input.publicKey)) ||
       (input.scratchRoot !== undefined && (typeof input.scratchRoot !== 'string' || !path.isAbsolute(input.scratchRoot)))) {
-    throw new Error('请提供经核对的上海网站备案号及对应安装程序的独立发行参数。');
+    throw new Error('请提供经核对的网站备案号（沪ICP备或琼ICP备）及对应安装程序的独立发行参数。');
   }
   return customer ? customerDownload : windowsDownload;
 }
@@ -76,7 +76,7 @@ export async function buildWindowsDownloadSite({ output, sourceCommit, input, fi
   if (input !== undefined) {
     if (filingOnly !== undefined) throw new Error('请选择一种官网构建模式。');
   } else if (typeof filingOnly !== 'string' || !filingPattern.test(filingOnly)) {
-    throw new Error('请填写管局核准的上海网站备案号。');
+    throw new Error('请填写管局核准的网站备案号（沪ICP备或琼ICP备）。');
   }
   if (!path.isAbsolute(output) || !/^[0-9a-f]{40}$/.test(sourceCommit)) throw new Error('输出须为绝对路径，并须提供门户的 40 位 Git 提交。');
   const parent = await realpath(path.dirname(path.resolve(output)));
