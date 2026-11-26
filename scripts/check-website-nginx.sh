@@ -7,11 +7,20 @@ cd "$repo"
 scratch=$(mktemp -d /tmp/shenyi-website-nginx.XXXXXXXX)
 server_pid=''
 cleanup() {
+  status=$?
+  if [[ $status -ne 0 && -f "$scratch/nginx.log" ]]; then
+    echo 'Nginx loopback diagnostics:' >&2
+    cat "$scratch/nginx.log" >&2 || true
+    if [[ -n "$server_pid" ]]; then
+      ps -p "$server_pid" -o pid=,stat=,args= >&2 || true
+    fi
+  fi
   if [[ -n "$server_pid" ]]; then
     kill -QUIT "$server_pid" 2>/dev/null || true
     wait "$server_pid" || true
   fi
   rm -rf -- "$scratch"
+  return "$status"
 }
 trap cleanup EXIT
 out="$scratch/release"
@@ -61,7 +70,7 @@ site=(curl --silent --show-error --noproxy '*' --max-time 10 --cacert "$scratch/
 "${site[@]}" --retry 5 --retry-connrefused --retry-delay 1 --fail https://shenji.vip/ > "$scratch/home"
 grep -Fq "$filing" "$scratch/home"
 grep -Fq 'https://beian.miit.gov.cn/' "$scratch/home"
-grep -Fq '正式安装包待发布' "$scratch/home"
+grep -Eq '正式安装包待发布|正式安装包和版本说明将在交付验收后发布' "$scratch/home"
 if grep -Eq 'href="/downloads/' "$scratch/home"; then echo 'Unexpected live download link' >&2; exit 1; fi
 
 jq -e '[.assets[].route] | sort == ["/","/assets/brand-shenyi.png","/styles.css"]' "$out/baseline.json" >/dev/null
