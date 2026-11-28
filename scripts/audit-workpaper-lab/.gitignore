@@ -1,0 +1,14 @@
+.DS_Store
+__pycache__/
+.venv/
+.env*
+*.pem
+*.key
+*.xlsx
+*.xls
+*.xlsm
+*.docx
+*.pdf
+*.zip
+private/
+outputs/
