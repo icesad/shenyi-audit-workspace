@@ -214,14 +214,35 @@
   }
   const CRC=Uint32Array.from({length:256},(_,n)=>{for(let i=0;i<8;i++)n=(n>>>1)^((n&1)?0xedb88320:0);return n>>>0;});
   function crc(b){let c=0xffffffff;for(const x of b)c=CRC[(c^x)&255]^(c>>>8);return (c^0xffffffff)>>>0;}
-  function zip(files){
-    const entries=Object.entries(files).map(([n,b])=>[encoder.encode(n),typeof b==='string'?encoder.encode(b):b]);
-    const total=22+entries.reduce((n,[name,b])=>n+76+2*name.length+b.length,0);
-    if(total>12*1024*1024)throw Error('Word报价文件超过安全大小限制。');
+  function zipEntries(entries,limit){
+    const total=22+entries.reduce((n,{name,packed})=>n+76+2*name.length+packed.length,0);
+    if(total>limit)throw Error('导出文件超过大小限制，请缩小资料范围后重试。');
     const a=new Uint8Array(total),v=new DataView(a.buffer),u16=(o,n)=>v.setUint16(o,n,true),u32=(o,n)=>v.setUint32(o,n,true);let at=0;
-    const ptr=entries.map(([n,b])=>{const o=at,c=crc(b);u32(o,0x04034b50);u16(o+4,20);u16(o+6,0x800);u16(o+12,0x21);u32(o+14,c);u32(o+18,b.length);u32(o+22,b.length);u16(o+26,n.length);a.set(n,o+30);a.set(b,o+30+n.length);at+=30+n.length+b.length;return [o,n,b.length,c];});
-    const start=at;for(const [loc,n,size,c]of ptr){u32(at,0x02014b50);u16(at+4,20);u16(at+6,20);u16(at+8,0x800);u16(at+14,0x21);u32(at+16,c);u32(at+20,size);u32(at+24,size);u16(at+28,n.length);u32(at+42,loc);a.set(n,at+46);at+=46+n.length;}
+    const ptr=entries.map(({name:n,packed:b,size,c,method})=>{const o=at;u32(o,0x04034b50);u16(o+4,20);u16(o+6,0x800);u16(o+8,method);u16(o+12,0x21);u32(o+14,c);u32(o+18,b.length);u32(o+22,size);u16(o+26,n.length);a.set(n,o+30);a.set(b,o+30+n.length);at+=30+n.length+b.length;return {o,n,packed:b.length,size,c,method};});
+    const start=at;for(const {o,n,packed,size,c,method} of ptr){u32(at,0x02014b50);u16(at+4,20);u16(at+6,20);u16(at+8,0x800);u16(at+10,method);u16(at+14,0x21);u32(at+16,c);u32(at+20,packed);u32(at+24,size);u16(at+28,n.length);u32(at+42,o);a.set(n,at+46);at+=46+n.length;}
     u32(at,0x06054b50);u16(at+8,ptr.length);u16(at+10,ptr.length);u32(at+12,at-start);u32(at+16,start);return a;
+  }
+  const toBytes=value=>typeof value==='string'?encoder.encode(value):value;
+  function zip(files,limit=12*1024*1024){
+    return zipEntries(Object.entries(files).map(([n,value])=>{
+      const raw=toBytes(value);
+      return {name:encoder.encode(n),packed:raw,size:raw.length,c:crc(raw),method:0};
+    }),limit);
+  }
+  async function compressedOfficeParts(files){
+    const entries=[];
+    for(const [n,value]of Object.entries(files)){
+      const raw=toBytes(value);let packed=raw,method=0;
+      if(raw.length>=1024&&root.CompressionStream){
+        let compression;try{compression=new root.CompressionStream('deflate-raw');}catch{}
+        if(compression){
+          const candidate=new Uint8Array(await new root.Response(new root.Blob([raw]).stream().pipeThrough(compression)).arrayBuffer());
+          if(candidate.length<raw.length){packed=candidate;method=8;}
+        }
+      }
+      entries.push({name:encoder.encode(n),packed,size:raw.length,c:crc(raw),method});
+    }
+    return zipEntries(entries,160*1024*1024);
   }
   const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main',R='http://schemas.openxmlformats.org/officeDocument/2006/relationships',PKG='http://schemas.openxmlformats.org/package/2006/relationships',A='http://schemas.openxmlformats.org/drawingml/2006/main',PIC='http://schemas.openxmlformats.org/drawingml/2006/picture',WP='http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
   const XML='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
@@ -290,6 +311,6 @@
     const bytes=docxOf(layout,id,[],'报价模板 · 待填写','填写后请核对项目、金额、税率与附件。');
     return Object.freeze({name:`报价模板${'一二三'[ordinal]}.docx`,mime:MIME,bytes});
   }
-  const api=Object.freeze({catalog,styles:styles+templateStyles+signStyles,render,buildUnsignedWord,buildTemplateWord,docxMime:MIME,packOfficeParts:zip,upper});
+  const api=Object.freeze({catalog,styles:styles+templateStyles+signStyles,render,buildUnsignedWord,buildTemplateWord,docxMime:MIME,packOfficeParts:zip,packCompressedOfficeParts:compressedOfficeParts,packQuoteReferenceBundle:files=>zip(files,172*1024*1024),upper});
   if(typeof module==='object'&&module.exports)module.exports=api;else root.QuoteLayouts=api;
 })(globalThis);

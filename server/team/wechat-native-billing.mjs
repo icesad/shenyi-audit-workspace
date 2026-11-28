@@ -323,7 +323,7 @@ function connectWechatNativeBilling({db, apiV3Key, now = Date.now, ...configurat
     assertActiveSeatTerm({product, teamId, termRevision, expiresAt}, at);
     if (product === ANNUAL_PRODUCT && readSeatCapacity(db, teamId, at).usedSeats > seats) insufficientSeats();
     const id = randomUUID();
-    const description = product === ANNUAL_PRODUCT ? '审易团队年订阅' : '审易团队席位增购';
+    const description = product === ANNUAL_PRODUCT ? '审迹团队年订阅' : '审迹团队席位增购';
     const order = orderValue(db.prepare(`INSERT INTO ${ORDER}
       (order_id, team_id, actor_id, request_id, app_id, merchant_id, product, description, offer_id, offer_revision,
         seats, term_revision, amount_minor, currency, created_at, expires_at)

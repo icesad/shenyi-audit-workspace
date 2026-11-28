@@ -17,10 +17,10 @@ test('five sidebar groups and six home cards preserve unique selector entry poin
   assert.equal(f.d.querySelector('[data-nav-group=basics] summary').textContent,'资料库');
   for(const key of ['quote','audit','rules','bidders','settings'])assert.equal(f.d.querySelectorAll('.nav-item[data-view="'+key+'"]').length,1,key);
   assert.deepEqual([...f.d.querySelectorAll('[data-nav-group=quote] [data-view]')].map(n=>[n.dataset.view,n.textContent]),[['quote','招投标及记录'],['project','项目汇总表']]);assert.equal(f.d.querySelector('[data-nav-group=quote] summary'),null);assert.deepEqual([...f.d.querySelectorAll('#bidding-navigation [data-view]')].map(n=>n.dataset.view),['proposal','bid','ledger','project']);assert.equal(f.d.querySelectorAll('[data-view=history]').length,0);assert.equal(f.d.querySelector('.nav-item[data-view=settings]').closest('.nav-group'),null);
-  assert.equal(f.d.querySelectorAll('#view-basics [data-view]').length,3);
+  assert.deepEqual([...f.d.querySelectorAll('#view-basics [data-view]')].map(n=>n.dataset.view),['standards','general-templates','bidders','rules']);
   const reportGroup=f.d.querySelector('[data-nav-group=report]');
   assert.equal(reportGroup.querySelector('summary').textContent,'报告出具');
-  assert.deepEqual([...reportGroup.querySelectorAll('button')].map(n=>n.textContent),['试算平衡表9200','审计报告','审计底稿归档']);
+  assert.deepEqual([...reportGroup.querySelectorAll('button')].map(n=>n.textContent),['试算平衡表','审计报告','审计底稿归档']);
   assert.equal(f.d.querySelector('[data-home-view=report] .home-stage-state').textContent,'已接入');
   assert.equal(f.d.querySelector('[data-home-view=report] strong').textContent,'报告出具');
   assert.equal(f.d.querySelector('[data-nav-group=accounting] summary > span').textContent,'成本核算');
@@ -53,18 +53,18 @@ test('basic cards and settings lazy mount preserve legacy raw strings and do not
 test('audit sidebar invokes original step button; dirty cancellation never changes page, stage or contents',()=>{
  const f=fixture();try{
   const nav=f.d.createElement('nav');nav.className='pw-steps';let calls=0,allow=false;
-  for(let n=1;n<=7;n++){const b=f.d.createElement('button');b.dataset.auditStep=String(n);b.setAttribute('aria-pressed',String(n===3));b.onclick=()=>{calls++;if(!allow)return;for(const p of nav.children)p.setAttribute('aria-pressed',String(p===b));};nav.append(b);}
+  for(const n of [1,3,8]){const b=f.d.createElement('button');b.dataset.auditStep=String(n);b.setAttribute('aria-pressed',String(n===3));b.onclick=()=>{calls++;if(!allow)return;for(const p of nav.children)p.setAttribute('aria-pressed',String(p===b));};nav.append(b);}
   f.d.querySelector('#audit-program').append(nav);boot(f);
-  const link=f.d.querySelector('[data-nav-audit-step="2"]');link.click();assert.equal(calls,1);assert.equal(f.d.querySelector('#view-home').hidden,false);assert.equal(nav.querySelector('[aria-pressed=true]').dataset.auditStep,'3');
-  allow=true;link.click();assert.equal(calls,2);assert.equal(f.d.querySelector('#view-audit').hidden,false);assert.equal(nav.querySelector('[aria-pressed=true]').dataset.auditStep,'2');assert.equal(link.getAttribute('aria-current'),'page');
-  const before=calls;nav.querySelector('[data-audit-step="1"]').disabled=true;f.d.querySelector('[data-nav-audit-step="1"]').click();assert.equal(calls,before);assert.equal(nav.querySelector('[aria-pressed=true]').dataset.auditStep,'2');
+  const link=f.d.querySelector('[data-nav-audit-step="8"]');link.click();assert.equal(calls,1);assert.equal(f.d.querySelector('#view-home').hidden,false);assert.equal(nav.querySelector('[aria-pressed=true]').dataset.auditStep,'3');
+  allow=true;link.click();assert.equal(calls,2);assert.equal(f.d.querySelector('#view-audit').hidden,false);assert.equal(nav.querySelector('[aria-pressed=true]').dataset.auditStep,'8');assert.equal(link.getAttribute('aria-current'),'page');
+  const before=calls;nav.querySelector('[data-audit-step="1"]').disabled=true;f.d.querySelector('[data-nav-audit-step="1"]').click();assert.equal(calls,before);assert.equal(nav.querySelector('[aria-pressed=true]').dataset.auditStep,'8');
  }finally{f.dom.window.close();}
 });
-test('audit sidebar presents the overview and four requested entries with existing step identities',()=>{
+test('audit sidebar presents the overview and three requested entries with existing step identities',()=>{
  const f=fixture();try{
   const nodes=[...f.d.querySelectorAll('[data-nav-audit-step]')];
-  assert.deepEqual(nodes.map(n=>n.dataset.navAuditStep),['1','8','2','9']);
-  assert.deepEqual([...f.d.querySelectorAll('[data-nav-group=audit] button')].map(n=>n.textContent),['流程总览','资料收集与核对','账表校验','底稿目录','补充底稿']);
+  assert.deepEqual(nodes.map(n=>n.dataset.navAuditStep),['1','8','9']);
+  assert.deepEqual([...f.d.querySelectorAll('[data-nav-group=audit] button')].map(n=>n.textContent),['流程总览','资料收集与核对','账表校验','补充底稿']);
   assert.ok(nodes.every(n=>n.dataset.view==='audit'));assert.match(f.d.querySelector('.side-note .version').textContent,/v58/);
   const nav=f.d.createElement('nav');nav.className='pw-steps';let allow=false,calls=0;
   for(const n of [1,8,2,3,4,6,7,5,9]){const b=f.d.createElement('button');b.dataset.auditStep=String(n);b.setAttribute('aria-pressed',String(n===5));b.onclick=()=>{calls++;if(!allow)return;for(const p of nav.children)p.setAttribute('aria-pressed',String(p===b));};nav.append(b);}
@@ -123,8 +123,8 @@ test('desktop and 390px real browser navigation, lazy settings, brand return and
   assert.equal(await page.locator('#quote-nav-items').isVisible(),true);
   await page.locator('.nav-item[data-view=quote]').click();assert.equal(await page.locator('#view-quote').isVisible(),true);assert.equal(await page.locator('#bidding-navigation').isVisible(),false);
   await page.locator('#brand-home').click();await page.locator('[data-home-view=project]').click();assert.equal(await page.locator('#bidding-navigation').isVisible(),false);await page.locator('#bidding-navigation [data-view=proposal]').evaluate(button=>button.click());await page.locator('#quote-intake-review > summary').click();await page.locator('[name=issuer]').fill('虚构导航资料');await page.locator('#bidding-navigation [data-view=bid]').click();assert.equal(await page.locator('#view-bid').isVisible(),true);assert.equal(await page.locator('[name=issuer]').inputValue(),'虚构导航资料');
-  await page.locator('.nav-item[data-view=audit]').click();await page.locator('[data-nav-audit-step="2"]').click();assert.equal(await page.locator('.pw-steps [data-audit-step="2"]').getAttribute('aria-pressed'),'true');
-  assert.equal(await page.locator('#page-title').textContent(),'底稿目录');
+  await page.locator('.nav-item[data-view=audit]').click();
+  assert.equal(await page.locator('[data-nav-audit-step="2"]').count(),0);
   assert.equal(await page.locator('#view-audit .pw-steps').isVisible(),false);
   await page.locator('[data-nav-audit-step="8"]').focus();await page.keyboard.press('Enter');assert.equal(await page.locator('.pw-steps [data-audit-step="8"]').getAttribute('aria-pressed'),'true');assert.equal(await page.locator('[data-nav-audit-step="8"]').getAttribute('aria-current'),'page');
   assert.equal(await page.locator('#page-title').textContent(),'账表校验');

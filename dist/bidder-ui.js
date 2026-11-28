@@ -37,7 +37,7 @@
     const drop=labeled('bidder-archive-file','',archiveInput),savedFiles=el('ul',undefined,'bidder-saved-files');
     drop.className='bidder-dropzone';
     archiveInput.className='bidder-file-native';archiveInput.setAttribute('aria-label','选择基础资料文件');
-    drop.append(el('strong','拖入事务所资料'),el('span','或点击选择文件'));
+    globalThis.ShenyiFileDrop?.present(drop,archiveInput,{material:'事务所资料'});
     const lookupDetails=compactPicker?el('details',undefined,'bidder-recognition-details'):null;
     if(lookupDetails)lookupDetails.append(el('summary','查看识别结果'),archiveRows);
     archiveBox.append(drop,archiveStatus,savedFiles,lookupDetails||archiveRows,clearArchive);
@@ -89,11 +89,11 @@
       x.accept=signing?'.png,.jpg,.jpeg,image/png,image/jpeg':'.pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg';
       const s=status('bidder-file-'+kind),remove=button(signing?'移除此图片':'移除此证照','bidder-clear-'+kind,'text-button');
       const look=signing?button('查看图片','bidder-preview-'+kind,'text-button'):null,img=signing?el('img'):null;
-      const pick=labeled('bidder-edit-'+kind,'',x),pickText=el('span','选择文件','btn bidder-file-pick');
-      pick.className='bidder-file-label';pick.append(pickText);x.setAttribute('aria-label','选择'+labels[kind]+'文件');
+      const pick=labeled('bidder-edit-'+kind,'',x);
+      pick.className='bidder-file-label';globalThis.ShenyiFileDrop?.bind(pick,x,{material:labels[kind]});x.setAttribute('aria-label','选择'+labels[kind]+'文件');
       const label=el('strong',labels[kind]);
       if(signing)label.append(' ',el('small','选填','badge neutral'));
-      certControls[kind]={x,s,remove,look,img,pickText};group.append(label,s,pick);
+      certControls[kind]={x,s,remove,look,img};group.append(label,s,pick);
       if(signing){
         img.hidden=true;img.alt=labels[kind]+'原图';img.className='bidder-private-image';group.append(look,remove,img);
         look.addEventListener('click',()=>{
@@ -147,11 +147,10 @@
     }
     function describe(){
       for(const kind of KINDS){
-        const {x,s,remove,look,pickText}=certControls[kind],a=files.get(kind);closeImage(kind);x.value='';
+        const {x,s,remove,look}=certControls[kind],a=files.get(kind);closeImage(kind);x.value='';
         const imported=loadedFromArchive.has(kind)&&!!a;
         s.dataset.fileOrigin=imported?'archive':a?'editor':'none';
         s.textContent=a?(imported?'已从资料读入：':'编辑稿已有：')+a.name:'暂未添加';
-        pickText.textContent=a?'更换文件':'选择文件';
         remove.disabled=editorBusy||archiveBusy||!a;if(look)look.disabled=editorBusy||archiveBusy||!a?.bytes||!root.URL?.createObjectURL;
       }
       archiveCurrent.hidden=!archiveDraft;
@@ -242,7 +241,7 @@
       lock();
     }
     async function refreshRows(){try{rows=await db.list();listError=false;renderRows();}catch(e){listError=true;rows=[];renderRows();throw e;}}
-    async function editAction(fn,prefix=''){if(editorBusy||archiveBusy||!db)return;editorBusy=true;lock();try{await fn();}catch(e){editStatus.textContent=prefix+(e?.message||'操作失败，请重试。');}finally{editorBusy=false;describe();lock();}}
+    async function editAction(fn,prefix='',saving=false){if(editorBusy||archiveBusy||!db)return;editorBusy=true;lock();try{await fn();}catch(e){editStatus.textContent=prefix+((saving?root.SaveFeedback?.failed(e):null)||e?.message||'操作失败，请重试。');}finally{editorBusy=false;describe();lock();}}
     const clearPicker=()=>{pickEpoch++;used=null;select.value='';pickBusy=false;pickStatus.textContent=compactPicker?'':'未选用库内事务所。可先手工测算；生成报价包前请选择事务所。';if(compactPicker)use.hidden=true;lock();};
     async function pick(id){
       if(pickBusy)return;const epoch=++pickEpoch;pickBusy=true;used=null;lock();pickStatus.textContent=id?'正在读取所选事务所及其证照……':'正在解除选用……';
@@ -418,14 +417,18 @@
     select.addEventListener('change',()=>pick(select.value));use.addEventListener('click',()=>pick(select.value));unlink.addEventListener('click',()=>pick(''));
     newBtn.addEventListener('click',()=>{if(editorBusy)return;changeEditor(null);refreshIntakeForEditor();controls.name.focus();editStatus.textContent='正在新增资料。';});
     refresh.addEventListener('click',()=>editAction(async()=>{await refreshRows();editStatus.textContent='列表已刷新。';}));
+    root.SaveFeedback?.invalid(form,message=>{editStatus.textContent=message;});
     form.addEventListener('submit',e=>{e.preventDefault();if(editorBusy||archiveBusy||!db||listError||!form.reportValidity())return;
       const values=Object.fromEntries(Object.entries(controls).map(([key,x])=>[key,x.value.trim()]));const attachments=[...files.values()];const editing=current;
       if(compactPicker&&!values.kind)values.kind='own';
       const materials=[...savedOriginals,...pendingOriginals];
-      editAction(async()=>{const r=editing?await db.update(editing.id,editing.version,values,attachments,materials):await db.create(values,attachments,materials);const fromArchive=!!archiveDraft;changeEditor(r);listedFirm=r.id;await refreshRows();
+      editAction(async()=>{const r=editing?await db.update(editing.id,editing.version,values,attachments,materials):await db.create(values,attachments,materials);const fromArchive=!!archiveDraft;changeEditor(r);listedFirm=r.id;
+        const feedback='已保存 '+r.name+'。';
+        root.SaveFeedback?.saved(feedback);
+        try{await refreshRows();}catch{editStatus.textContent=feedback+' 列表刷新失败，请点击刷新。';return;}
         archiveStatus.textContent=fromArchive&&!compactPicker?'已保存：两证 '+r.credentialKinds.length+'/2 项。':'';
         clearIntakeURLs();intake=null;renderIntake();
-        editStatus.textContent='已保存 '+r.name+'。';});
+        editStatus.textContent=feedback;},'',true);
     });
     changeEditor(null);clearPicker();
     const ready=(async()=>{try{db=await root.BidderLibrary.open();await refreshRows();}catch(e){editStatus.textContent='资料库未就绪，仍可手工录入测算；无法从库内带入证照。'+(e?.message||'');pickStatus.textContent=editStatus.textContent;}finally{lock();}})();

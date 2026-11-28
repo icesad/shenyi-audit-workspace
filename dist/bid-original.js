@@ -186,7 +186,7 @@
         prepared=out;
         const x=out.stats;
         set('已识别 '+x.chapters+' 章、'+x.tables+' 张表'+(x.landscape?'（含横版分节）':'')+'。'+
-          (x.hasFormalOne?'开标一览表保留原件中的 1 元形式报价；不带入审易议价金额。':'开标一览表照录原件，不带入审易议价金额。'));
+          (x.hasFormalOne?'开标一览表保留原件中的 1 元形式报价；不带入审迹议价金额。':'开标一览表照录原件，不带入审迹议价金额。'));
       }catch(e){if(ticket===epoch)set('未生成：'+e.message,true);}
       finally{if(ticket===epoch)toggle();}
     }

@@ -113,7 +113,7 @@ async function launch() {
     exited = new Promise(resolve=>child.once('close',resolve));
     process.once('SIGINT',stop);
     process.once('SIGTERM',stop);
-    console.log('审易 · 官网下单演练。请使用演练账号登录并绑定当前电脑。');
+    console.log('审迹 · 官网下单演练。请使用演练账号登录并绑定当前电脑。');
     console.log('合成账号 '+BILLING_PREVIEW_ADMIN+'，合成密码 '+BILLING_PREVIEW_PASSWORD+'。');
     console.log('本机地址 '+run.address.url+'，本次演练记录 '+run.directory);
     console.log('官网演练地址 '+run.checkoutAddress.url);

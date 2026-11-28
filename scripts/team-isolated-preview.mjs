@@ -59,7 +59,7 @@ export async function launchIsolatedTeamPreview({billingDemo=false,pilotDemo=fal
   child=spawn(runtime?.executable??developerExecutable,[path.join(ROOT,'desktop'),'--user-data-dir='+context.desktopDataDirectory],{cwd:ROOT,windowsHide:false,stdio:['ignore','pipe','pipe'],env:candidateChildEnvironment({context})});
   exited=new Promise(resolve=>child.once('close',resolve));
   child.stdout.pipe(log,{end:false});child.stderr.pipe(log,{end:false});
-  console.log('审易 · 独立合成候选预览；每次启动新建环境，关闭后资料保留。');
+  console.log('审迹 · 独立合成候选预览；每次启动新建环境，关闭后资料保留。');
   if(owned.cases){
    console.log('模拟账务：'+BILLING_PREVIEW_ADMIN+'（技术管理员）、'+BILLING_PREVIEW_OWNER+'（退款负责人）；两者密码：'+BILLING_PREVIEW_PASSWORD+'。');
    console.log('普通成员验收可用 intern-a，采用同一合成密码。');

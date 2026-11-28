@@ -3,9 +3,9 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const DIST=path.resolve(__dirname,'../dist'),R=require('../dist/report-workspace.js'),P='99111111-1111-4111-8111-111111111111',OTHER='99222222-2222-4222-8222-222222222222',SHA='a'.repeat(64);
 async function until(fn){for(let i=0;i<150;i++){if(fn())return;await new Promise(ok=>setTimeout(ok,0));}assert.fail('UI did not settle');}
 function tbFixture({missing=false,wrongCode=false}={}){
- const dom=new JSDOM('<main id="host"></main>',{url:'https://report-inline.example/',runScripts:'outside-only'}),w=dom.window;w.confirm=()=>false;w.structuredClone=structuredClone;let rec={id:P,rev:1,answers:{[SHA]:{'原表一':{A1:'已保存甲项目',B1:'不得覆盖公式'}}}},saved=[],called=[];
+ const dom=new JSDOM('<main id="host"></main><div id="footer"></div>',{url:'https://report-inline.example/',runScripts:'outside-only'}),w=dom.window;w.confirm=()=>false;w.structuredClone=structuredClone;let rec={id:P,rev:1,answers:{[SHA]:{'原表一':{A1:'已保存甲项目',B1:'不得覆盖公式'}}}},saved=[],called=[],downloads=[],shown=[];
  const model={sheets:['原表一','原表二'].map(name=>({name,cells:{A1:{v:'原文字'},B1:{v:6,f:'SUM(A2:A3)'},C1:{v:'原链接',l:'[source.xls]A1'}},range:{s:{r:0,c:0},e:{r:0,c:2}},merges:[]}))},layout={range:{s:{r:0,c:0},e:{r:0,c:2}},cols:[120,100,100],rows:[30],styleTable:[{}],styles:{},merges:[]},target={id:'exact9200',path:'原包/9200.xls',sha256:SHA,sheet:'原表一',kind:'excel',available:true};
- w.ProjectWorkspaceStore={get:async id=>id===P?structuredClone(rec):{id,rev:1,answers:{[SHA]:{'原表一':{A1:'已保存乙项目'}}}},save:async(id,rev,patch)=>{if(rev!==rec.rev)throw Error('CAS conflict');saved.push({id,rev,patch});rec={...rec,...structuredClone(patch),id,rev:rev+1};return rec;},download(){}};w.WorkpaperDirectory={rows:[{row:246,C:wrongCode?'8400':'9200'}]};w.WorkpaperRouting={row:()=>({code:'9200'}),resolve:()=>({targets:missing?[]:[target]})};w.WorkpaperLibrary={prepare:async()=>({files:missing?[]:[target]}),fileFor:async t=>{called.push(t);assert.equal(t.path,'原包/9200.xls');assert.equal(t.sha256,SHA);return{name:t.path,sha256:SHA,file:new w.File(['synthetic'],'9200.xls')};},layout:async()=>({sheets:{'原表一':layout,'原表二':layout}}),importFiles:async()=>{throw Error('not used');}};w.WorkpaperSheets={read:async()=>structuredClone(model),ref:(r,c)=>String.fromCharCode(65+c)+(r+1)};w.eval(fs.readFileSync(path.join(DIST,'workpaper-original-sheet.js'),'utf8'));w.eval(fs.readFileSync(path.join(DIST,'report-inline-tb.js'),'utf8'));const ctl=w.ReportInlineTB.mount(w.document.querySelector('#host'));return{dom,w,ctl,saved,called,getRecord:()=>rec,setRecord:next=>{rec=next;}};
+ w.ProjectWorkspaceStore={get:async id=>id===P?structuredClone(rec):{id,rev:1,answers:{[SHA]:{'原表一':{A1:'已保存乙项目'}}}},save:async(id,rev,patch)=>{if(rev!==rec.rev)throw Error('CAS conflict');saved.push({id,rev,patch});rec={...rec,...structuredClone(patch),id,rev:rev+1};return rec;},download(_file,name){downloads.push(name);}};w.WorkpaperDirectory={rows:[{row:246,C:wrongCode?'8400':'9200'}]};w.WorkpaperRouting={row:()=>({code:'9200'}),resolve:()=>({targets:missing?[]:[target]})};w.WorkpaperLibrary={prepare:async()=>({files:missing?[]:[target]}),fileFor:async t=>{called.push(t);assert.equal(t.path,'原包/9200.xls');assert.equal(t.sha256,SHA);return{name:t.path,sha256:SHA,file:new w.File(['synthetic'],'9200.xls')};},layout:async()=>({sheets:{'原表一':layout,'原表二':layout}}),importFiles:async()=>{throw Error('not used');}};w.WorkpaperSheets={read:async()=>structuredClone(model),ref:(r,c)=>String.fromCharCode(65+c)+(r+1)};w.eval(fs.readFileSync(path.join(DIST,'workpaper-original-sheet.js'),'utf8'));w.eval(fs.readFileSync(path.join(DIST,'report-inline-tb.js'),'utf8'));const ctl=w.ReportInlineTB.mount(w.document.querySelector('#host'),{footer:w.document.querySelector('#footer'),onShowTable:()=>shown.push(true)});return{dom,w,ctl,saved,called,downloads,shown,getRecord:()=>rec,setRecord:next=>{rec=next;}};
 }
 test('inline9200 uses original sheet geometry, one sheet/page, shared answers and locked original formulas/links',async()=>{
  const f=tbFixture();try{await f.ctl.load(P);assert.equal(f.w.document.querySelectorAll('[data-original-sheet]').length,1);assert.equal(f.w.document.querySelector('[data-original-sheet]').dataset.originalSheet,'原表一');assert.match(f.w.document.querySelector('#report-tb-sheet-page').textContent,/第 1 \/ 2 张/);assert.equal(f.w.document.querySelector('[data-cell=A1]').textContent,'已保存甲项目');assert.equal(f.w.document.querySelector('[data-cell=B1]').textContent,'6');assert.equal(f.w.document.querySelector('[data-cell=B1]').dataset.locked,'true');assert.equal(f.w.document.querySelector('[data-cell=C1]').dataset.locked,'true');
@@ -25,7 +25,7 @@ test('inline9200 switches project answers and refreshes changes saved by audit w
  }finally{f.ctl.destroy();f.dom.window.close();}
 });
 test('inline9200 rejects missing source and wrong directory code without generic-grid or8400 fallback',async()=>{
- for(const opts of [{missing:true},{wrongCode:true}]){const f=tbFixture(opts);try{await f.ctl.load(P);assert.equal(f.called.length,0);assert.equal(f.w.document.querySelectorAll('[data-original-sheet]').length,0);assert.match(f.w.document.querySelector('[role=status]').textContent,opts.missing?/底稿模板未包含 9200/:/不是9200/);}finally{f.ctl.destroy();f.dom.window.close();}}
+ for(const opts of [{missing:true},{wrongCode:true}]){const f=tbFixture(opts);try{await f.ctl.load(P);assert.equal(f.called.length,0);assert.equal(f.w.document.querySelectorAll('[data-original-sheet]').length,0);assert.match(f.w.document.querySelector('[role=status]').textContent,opts.missing?/底稿模板缺少试算平衡表/:/试算平衡表索引不一致/);}finally{f.ctl.destroy();f.dom.window.close();}}
 });
 test('editable draft validation retains exact source and confirmed opening/closing numbers',()=>{
  const fileId='99333333-3333-4333-8333-333333333333',generationId='99444444-4444-4444-8444-444444444444',record={schema:2,project:{quoteId:P},revision:3,generationId,nodes:[{id:'n1',parentId:'',kind:'material',title:'上年审计报告'}],states:{n1:{status:'confirmed'}},attachments:{n1:[{id:fileId,nodeId:'n1',generationId,name:'上年.docx',sha256:SHA}]}};
@@ -108,11 +108,20 @@ test('template-based drafts distinguish key audit matters and keep native Word l
   await editor.waitFor();
   assert.match(await editor.inputValue(),/本次报告封面/);
   const fromEditor=page.waitForEvent('download');
-  await page.locator('#report-draft-download').click();
+  await page.getByRole('button',{name:'下载报告',exact:true}).click();
   const savedWord=fs.readFileSync(await (await fromEditor).path());
   const fromWorkflow=page.waitForEvent('download');
   await page.evaluate(id=>ReportWorkspace.downloadSavedDraft(id),P);
   assert.deepEqual(fs.readFileSync(await (await fromWorkflow).path()),savedWord);
+  await editor.fill('未保存的替换文字');
+  await page.evaluate(()=>{globalThis.confirm=()=>false;});
+  await page.getByRole('button',{name:'刷新报告',exact:true}).click();
+  assert.equal(await editor.inputValue(),'未保存的替换文字');
+  await page.evaluate(()=>{globalThis.confirm=()=>true;});
+  await page.getByRole('button',{name:'刷新报告',exact:true}).click();
+  await page.getByText('已刷新本项目报告和来源资料。',{exact:true}).waitFor();
+  assert.match(await editor.inputValue(),/本次报告封面/);
+  assert.equal(await page.locator('#report-audit-report').isVisible(),true);
   const parts=await page.evaluate(async bytes=>{
    const saved=await ProjectWorkspaceStore.parts(new File([Uint8Array.from(bytes)],'saved.docx'));
    return Object.fromEntries(Object.entries(saved).map(([name,data])=>[name,new TextDecoder().decode(data)]));
@@ -123,4 +132,28 @@ test('template-based drafts distinguish key audit matters and keep native Word l
   assert.doesNotMatch(parts['word/document.xml'],/INCLUDETEXT|上一年度的意见/);
   assert.doesNotMatch(parts['word/_rels/document.xml.rels'],/https:\/\/invalid\.example/);
  }finally{await browser.close();}
+});
+
+test('footer mirrors 9200 navigation and save while the 9200 toolbar keeps its own download and refresh',async()=>{
+ const f=tbFixture();try{
+  await f.ctl.load(P);
+  const buttons=Object.fromEntries([...f.w.document.querySelectorAll('[data-report-tb-footer]')].map(item=>[item.dataset.reportTbFooter,item]));
+  assert.deepEqual(Object.values(buttons).map(b=>b.textContent),['上一张表','下一张表','保存本表填写']);
+  assert.ok(buttons.previous.disabled);
+  buttons.next.click();
+  assert.equal(f.w.document.querySelector('[data-original-sheet]').dataset.originalSheet,'原表二');
+  assert.ok(buttons.next.disabled);
+  buttons.previous.click();
+  assert.equal(f.w.document.querySelector('[data-original-sheet]').dataset.originalSheet,'原表一');
+  buttons.save.click();
+  await until(()=>f.saved.length===1&&!buttons.save.disabled);
+  const toolbar=[...f.w.document.querySelectorAll('#host .rw-tb-toolbar button')];
+  toolbar.find(b=>b.textContent==='下载原件').click();
+  assert.deepEqual(f.downloads,['9200.xls']);
+  const current=f.getRecord();
+  f.setRecord({...current,rev:current.rev+1,answers:{[SHA]:{'原表一':{A1:'刷新后的已保存数据'}}}});
+  toolbar.find(b=>b.textContent==='刷新试算平衡表').click();
+  await until(()=>f.w.document.querySelector('[data-cell=A1]')?.textContent==='刷新后的已保存数据');
+  assert.equal(f.shown.length,3);
+ }finally{f.ctl.destroy();f.dom.window.close();}
 });

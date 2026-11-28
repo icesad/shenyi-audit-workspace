@@ -12,10 +12,18 @@
     let anchor;
     function close(){if(menu.matches(':popover-open'))menu.hidePopover();}
     function sync(){for(const [key,trigger] of triggers)trigger.toggleAttribute('data-filter-active',selected.has(key));}
+    function position(){
+      if(!menu.matches(':popover-open'))return;
+      const {left,right,top,bottom}=anchor.getBoundingClientRect(),bounds=scroll.getBoundingClientRect();
+      if(right<=bounds.left||left>=bounds.right||bottom<=bounds.top||top>=bounds.bottom){close();return;}
+      const {width,height}=menu.getBoundingClientRect();
+      menu.style.left=Math.max(8,Math.min(left,view.innerWidth-width-8))+'px';
+      menu.style.top=(bottom+height+5<=view.innerHeight-8?bottom+5:Math.max(8,top-height-5))+'px';
+    }
     menu.addEventListener('beforetoggle',event=>{
       if(event.newState==='closed')anchor?.setAttribute('aria-expanded','false');
     });
-    scroll.addEventListener('scroll',close);
+    scroll.addEventListener('scroll',position);
     function add(name,key,values,searchable=false){
       const trigger=element('button','estimate-filter-trigger'),label='筛选'+name;
       trigger.type='button';trigger.setAttribute('aria-label',label);
@@ -41,9 +49,7 @@
         };
         search.oninput=renderOptions;renderOptions();
         trigger.setAttribute('aria-expanded','true');menu.showPopover({source:trigger});
-        const {left,top,bottom}=trigger.getBoundingClientRect(),{width,height}=menu.getBoundingClientRect();
-        menu.style.left=Math.max(8,Math.min(left,view.innerWidth-width-8))+'px';
-        menu.style.top=(bottom+height+5<=view.innerHeight-8?bottom+5:Math.max(8,top-height-5))+'px';
+        position();
         (searchable?search:options.querySelector('[aria-pressed=true]'))?.focus({preventScroll:true});
       };
       triggers.set(key,trigger);

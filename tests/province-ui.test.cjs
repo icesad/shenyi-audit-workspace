@@ -8,14 +8,16 @@ const dist = path.resolve(__dirname, '../dist');
 function setup(t, storage = []) {
   const dom = new JSDOM(fs.readFileSync(path.join(dist, 'index.html'), 'utf8'), {url:'http://localhost/',runScripts:'outside-only'});
   const w = dom.window;
+  w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   t.after(() => w.close());
   for (const [key, value] of storage) w.localStorage.setItem(key, value);
-  for (const file of ['calc.js', 'rule-catalog.js', 'regions.js', 'backup-restore.js', 'app.js']) w.eval(fs.readFileSync(path.join(dist, file), 'utf8'));
+  for (const file of ['calc.js', 'rule-catalog.js', 'regions.js', 'backup-restore.js', 'save-feedback.js', 'app.js']) w.eval(fs.readFileSync(path.join(dist, file), 'utf8'));
   const $ = selector => w.document.querySelector(selector);
   const rows = () => [...w.document.querySelectorAll('#quote-estimates-rows tr')].filter(row => row.cells.length > 1);
   function estimate(name) {
     $('#quote-region').value = name;
     $('#comparison').dispatchEvent(new w.Event('submit', {bubbles:true,cancelable:true}));
+    $('#estimate-record-save').click();
   }
   return {w, $, rows, estimate};
 }
@@ -48,7 +50,7 @@ test('all province-level regions can be typed and scope-limited areas are saved 
     displayed.push(...rows());
   }
   assert.equal(displayed.length,34);
-  assert.equal(displayed.filter(row => row.querySelector('.quote-record-amount').textContent === '待测算').length,3);
+  assert.equal(displayed.filter(row => row.querySelector('.quote-record-amount').textContent.includes('适用范围及币种待确认')).length,3);
 });
 
 test('region history keeps repeated submissions, tax, provenance, and prices across a reload', t => {
@@ -128,7 +130,7 @@ test('local formulas keep their basis and provenance and do not silently price a
   $('#client-form [name=revenue]').dispatchEvent(new w.Event('input',{bubbles:true}));
   estimate('重庆');
   assert.match($('#quote-region-message').textContent, /双方协商/);
-  assert.ok(rows().some(row => row.cells[7].textContent === '重庆市' && row.querySelector('.quote-record-amount').textContent === '待测算'));
+  assert.ok(rows().some(row => row.cells[7].textContent === '重庆市' && row.querySelector('.quote-record-amount').textContent.includes('须双方协商')));
 });
 
 test('date, audited unit, project type and result combine before summing the visible unit prices', t => {
@@ -172,7 +174,7 @@ test('date, audited unit, project type and result combine before summing the vis
   assert.equal($('#quote-estimates-total-note').textContent,'（1 条待测算）');
   openFilter('type');
   assert.deepEqual([...$('#estimate-filter-options').querySelectorAll('button')].map(button=>button.dataset.value),
-    ['','年度财务报表审计','专项审计','报表审阅','咨询服务','内控测试','经济责任审计','验资服务','其他']);
+    ['','财务报表审计','专项审计','报表审阅','咨询服务','内控测试','经济责任审计','验资服务','其他']);
   w.document.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
   filterDate('2026-11-20');
   assert.equal(rows().length,2);
@@ -258,4 +260,16 @@ test('45 records paginate ten at a time and keep totals for all filtered rows', 
   assert.equal($('#quote-estimates-total').textContent,'¥ 1,200.00');
   $('#estimate-pagination [data-estimate-page="2"]').click();
   assert.equal(rows().length,2);
+  const size=$('#estimate-pagination select');
+  for(const value of ['15','20']){
+    size.value=value;
+    size.dispatchEvent(new size.ownerDocument.defaultView.Event('change',{bubbles:true}));
+    assert.equal(rows().length,12);
+    assert.deepEqual(pageButtons(),['上一页','1','下一页']);
+  }
+  $('#estimate-filter-clear').click();
+  assert.equal(rows().length,20);
+  assert.equal($('#quote-estimates-total').textContent,'¥ 4,500.00');
+  $('#estimate-pagination [data-estimate-page="3"]').click();
+  assert.equal(rows().length,5);
 });

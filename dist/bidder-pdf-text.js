@@ -32,11 +32,11 @@
     if((script.match(/import\.meta\.url/g)||[]).length!==2||!script.endsWith(tail))throw unavailable();
     return lockNetwork+script.slice(0,-tail.length).replaceAll('import.meta.url','globalThis.location.href');
   }
-  async function read(bytes,positioned=false){
-    if(!(bytes instanceof Uint8Array)||bytes.byteLength<8||bytes.byteLength>LIMIT||
+  async function read(bytes,positioned=false,readingCopy=false){
+    if(!(bytes instanceof Uint8Array)||bytes.byteLength<8||bytes.byteLength>(readingCopy?32*MiB:LIMIT)||
        !bytes.subarray(0,5).every((b,i)=>b==='%PDF-'.charCodeAt(i)))throw unavailable();
     let timer,task,worker,workerURL,wrapper,closed=false,fail;
-    const limit=new Promise((_,reject)=>{fail=()=>{closed=true;reject(unavailable());};timer=setTimeout(fail,positioned?5000:DEADLINE);});
+    const limit=new Promise((_,reject)=>{fail=()=>{closed=true;reject(unavailable());};timer=setTimeout(fail,positioned?5000:readingCopy?30000:DEADLINE);});
     const check=()=>{if(closed)throw unavailable();};
     const parse=async()=>{
       const pdf=await load();check();
@@ -51,7 +51,7 @@
       });
       task.onPassword=fail; // no password prompt, no attempt to decrypt
       const document=await task.promise;check();
-      if(!Number.isInteger(document.numPages)||document.numPages<1||document.numPages>(positioned?100:PAGE_LIMIT))throw unavailable();
+      if(!Number.isInteger(document.numPages)||document.numPages<1||document.numPages>(positioned?100:readingCopy?160:PAGE_LIMIT))throw unavailable();
       const lines=[],pages=[];let chars=0,count=0;
       for(let i=1;i<=document.numPages;i++){
         check();const page=await document.getPage(i),reader=page.streamTextContent({includeMarkedContent:false}).getReader();
@@ -65,7 +65,7 @@
             const {value,done}=await reader.read();check();if(done)break;
             for(const item of value.items){
               if(typeof item.str!=='string')continue;
-              if(++count>ITEM_LIMIT||(chars+=item.str.length)>TEXT_LIMIT)throw unavailable();
+              if(++count>(readingCopy?120000:ITEM_LIMIT)||(chars+=item.str.length)>(readingCopy?500000:TEXT_LIMIT))throw unavailable();
               if(positioned){
                 const t=item.transform,w=item.width,h=item.height;
                 if(usable&&item.str.trim()&&Array.isArray(t)&&t.length===6&&t.every(Number.isFinite)&&
@@ -98,6 +98,6 @@
       if(workerURL)URL.revokeObjectURL(workerURL);
     }
   }
-  root.BidderPdfText=Object.freeze({read:bytes=>read(bytes),readPositioned:bytes=>read(bytes,true)});
+  root.BidderPdfText=Object.freeze({read:bytes=>read(bytes),readPositioned:bytes=>read(bytes,true),readReadingCopy:bytes=>read(bytes,false,true)});
 })(globalThis);
 

@@ -199,7 +199,7 @@
       balanceEquation: { confirmed: false, assets: [], liabilities: [], equity: [] }
     };
   }
-  function templateDownload(scope) { return { filename: '审易-账表校验-人工映射输入模板.json', mimeType: 'application/json;charset=utf-8', content: JSON.stringify(createInputTemplate(scope), null, 2) + '\n' }; }
+  function templateDownload(scope) { return { filename: '审迹-账表校验-人工映射输入模板.json', mimeType: 'application/json;charset=utf-8', content: JSON.stringify(createInputTemplate(scope), null, 2) + '\n' }; }
   const api = Object.freeze({ schemaVersion: VERSION, reconcile, createInputTemplate, templateDownload });
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.AuditReconciliation = api;

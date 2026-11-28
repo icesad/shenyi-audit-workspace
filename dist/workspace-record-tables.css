@@ -1,0 +1,20 @@
+@media screen {
+  .record-table-scroll{max-width:100%;min-width:0;max-height:min(640px,64vh);overflow:auto;scrollbar-gutter:stable}
+  .record-table-scroll thead,.record-table-scroll>table:not(:has(thead))>tr:first-child:has(th){position:sticky;top:0;z-index:2;background:#edf3ed}
+  .record-table-scroll .record-table-total{position:sticky;bottom:0;z-index:1}
+  .record-table-scroll :is(th,td){overflow-wrap:anywhere}
+  .record-table-scroll tr[data-record-page-away]{display:none!important}
+  .record-table-scroll .record-table-total :is(th,td){padding:9px 10px;background:#edf3ed;border-top:1px solid #d4e0d7}
+  .record-table-total th[scope=row]{text-align:left}
+  .record-table-total small{font-weight:400;color:#556f62}
+  .record-table-number{white-space:nowrap;text-align:right;font-weight:650;font-variant-numeric:tabular-nums}
+  .record-table-pagination{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:5px;margin:10px 0 0}
+  :is(.record-table-pagination,.estimate-pagination) .record-page-size{display:inline-flex;flex-flow:row nowrap;align-items:center;gap:6px;margin:0 6px 0 0;white-space:nowrap;color:#405a50;font-size:13px;font-weight:400}
+  .record-page-size select{width:auto;min-width:66px;min-height:30px;margin:0;padding:3px 5px;border:1px solid #cbdcd1;border-radius:5px;background:#fff;color:inherit;font:inherit}
+  .record-page-buttons{display:contents}
+  .record-table-pagination .btn{min-width:32px;padding:5px 9px}
+  .record-table-pagination [aria-current=page]{background:#246656;border-color:#246656;color:white}
+}
+@media print {
+  .record-table-pagination{display:none}
+}

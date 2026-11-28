@@ -30,3 +30,46 @@ test('platform login links are native top-level navigation and file mode exposes
 test('restoring masked defaults keeps an empty phone editable and controlled conflict errors request explicit refresh',async t=>browser(t,async p=>{
  await p.evaluate(()=>{document.body.replaceChildren();const host=document.createElement('div');document.body.append(host);globalThis.settings=AppSettings.mount(host,{status:'signed-in',account:{displayName:'',phone:'',phoneVerified:false},updateProfile:async()=>{throw Error('账号资料已被其他页面更新，请先刷新核对后再保存。');}});settings.resetPreferences();});const phone=p.locator('[data-settings-control=phone]');assert.equal(await phone.getAttribute('readonly'),null);await phone.fill('13800138000');await p.locator('[data-settings-control=displayName]').fill('合成冲突测试');await p.getByRole('button',{name:'保存账号资料'}).click();await p.waitForFunction(()=>document.querySelector('.as-account-message')?.textContent.includes('刷新核对'));assert.equal(await p.locator('[data-account-status]').getAttribute('data-account-status'),'signed-in');assert.equal(await p.locator('[data-settings-control=displayName]').inputValue(),'合成冲突测试');
 }));
+
+test('account save distinguishes confirmed writes, connection errors and blocked requests',async t=>browser(t,async p=>{
+ await p.addScriptTag({content:fs.readFileSync(path.join(dir,'save-feedback.js'),'utf8')});
+ await p.addScriptTag({content:fs.readFileSync(path.join(dir,'account-client.js'),'utf8')});
+ await p.evaluate(()=>{
+   const changes=[];
+   const host=document.createElement('div');document.body.append(host);
+   let profile={displayName:'初始名称',phone:'',phoneVerified:false};
+   let failure='';
+   const client=AccountClient.create({fetch:async (_url,request)=>{
+     changes.push(request.method);
+     if(request.method==='PUT'&&failure==='connection')throw TypeError('Failed to fetch');
+     if(request.method==='PUT'&&failure==='permission')return new Response('',{status:403});
+     if(request.method==='PUT')profile={...JSON.parse(request.body),phoneVerified:false};
+     return Response.json({status:'signed-in',account:profile,revision:2,authentication:'platform',phoneLoginEnabled:false,profileContext:'a'.repeat(64)});
+   }});
+   document.addEventListener('shenyi:save-result',event=>{globalThis.result=event.detail;});
+   globalThis.__saveCalls=changes;
+   globalThis.__failSave=value=>{failure=value;};
+   AppSettings.mount(host,client.adapter());
+ });
+ const name=p.locator('[data-settings-control=displayName]');
+ const save=p.getByRole('button',{name:'保存账号资料'});
+ await name.fill('合成已保存');
+ await save.click();
+ await p.getByText('账号资料已保存。',{exact:true}).waitFor();
+ assert.deepEqual(await p.evaluate(()=>__saveCalls),['GET','PUT']);
+ assert.deepEqual(await p.evaluate(()=>result),{state:'saved',message:'账号资料已保存。'});
+ await p.evaluate(()=>__failSave('connection'));
+ await name.fill('合成输入留存');
+ await save.click();
+ await p.getByText(/无法连接账号服务.*未能确认/).waitFor();
+ assert.equal(await name.inputValue(),'合成输入留存');
+ await p.evaluate(()=>__failSave('permission'));
+ await save.click();
+ await p.getByText(/没有修改此资料的权限/).waitFor();
+ await p.context().setOffline(true);
+ await save.click();
+ await p.getByText(/网络无法联机/).waitFor();
+ assert.equal(await name.inputValue(),'合成输入留存');
+ assert.deepEqual(await p.evaluate(()=>__saveCalls),['GET','PUT','PUT','PUT']);
+ assert.equal((await p.evaluate(()=>result)).state,'failed');
+}));

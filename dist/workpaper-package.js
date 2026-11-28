@@ -9,6 +9,12 @@
  const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,HASH=/^[a-f0-9]{64}$/;
  const FIELDS=Object.freeze(['id','rev','updatedAt','choices','directoryRevisions','archive','index','riskArchive','riskIndex','workpaperSources','workpaperRouteSelections','answers','docAnswers','workpaperLocks','industryTag','workpaperReuseProvenance','autoFillProvenance','workpaperReuseTemplates','supplementalWorkpapers']);
  const POLICY=Object.freeze({scope:'single-project-saved-workpapers',originalArchivesPreserved:true,supplementalOriginalsPreserved:true,savedEntriesPreserved:true,existingFreezeSnapshotsPreserved:true,includesQuoteContractInvoiceReportData:false,includesMaterialOriginals:false,teamImported:false,identityAuthenticated:false,professionalApprovalClaimed:false});
+ function hasCompiledWorkpapers(record){
+  const filled=value=>typeof value==='string'?value.trim().length>0:typeof value==='number'&&Number.isFinite(value)||typeof value==='boolean';
+  const excel=Object.values(record?.answers||{}).some(book=>Object.values(book||{}).some(sheet=>Object.values(sheet||{}).some(filled)));
+  const word=Object.values(record?.docAnswers||{}).some(doc=>Object.values(doc||{}).some(filled));
+  return excel||word||(record?.supplementalWorkpapers||[]).some(entry=>entry.file?.blob instanceof root.Blob&&entry.file.blob.size>0);
+ }
  const enc=new TextEncoder(),dec=new TextDecoder('utf-8',{fatal:true}),cryptoLib=typeof module==='object'&&module.exports?require('node:crypto').webcrypto:root.crypto;
  const fail=message=>{throw Error('完整底稿包：'+message);};
  const equal=(a,b)=>a.length===b.length&&a.every((x,i)=>x===b[i]);
@@ -126,5 +132,5 @@
   const declared=new Set();let previous='';for(const file of manifest.files){exact(file,['entry','bytes','sha256']);if(typeof file.sha256!=='string'||!HASH.test(file.sha256)||file.entry!=='originals/'+file.sha256+'.bin'||file.entry<=previous||declared.has(file.entry)||!Number.isSafeInteger(file.bytes)||file.bytes<1||members.get(file.entry)?.length!==file.bytes)fail('原件清单重复、缺失或不一致。');previous=file.entry;declared.add(file.entry);}
   if(members.size!==declared.size+2)fail('存在清单外原件。');const record=await decodeRecord(stored,members,check);check();const digest=await sha(bytes);check();return{manifest,record,sha256:digest,...(storage?{storage:{recordJson:dec.decode(members.get('record.json')),recordSha256:manifest.record.sha256,manifestJson:dec.decode(members.get('manifest.json')),originals:manifest.files.map(x=>({sha256:x.sha256,byteLength:x.bytes,bytes:members.get(x.entry)}))}}:{}),summary:{projectId:record.id,workspaceRevision:record.rev,originalCount:declared.size,originalBytes:manifest.files.reduce((n,x)=>n+x.bytes,0),freezeCount:Object.keys(record.workpaperLocks||{}).length}};
  }
- return Object.freeze({FORMAT,VERSION,TRIAL_ID,LIMITS,FIELDS,POLICY,create,inspect,inspectForStorage:(input,options)=>inspect(input,options,true)});
+ return Object.freeze({FORMAT,VERSION,TRIAL_ID,LIMITS,FIELDS,POLICY,hasCompiledWorkpapers,create,inspect,inspectForStorage:(input,options)=>inspect(input,options,true)});
 });

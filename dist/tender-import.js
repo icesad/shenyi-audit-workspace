@@ -1,4 +1,4 @@
-/* Local-only invitation import: read the visible main Word body, never execute content or follow relationships. */
+/* Local-only invitation import. Inspect document text and visible worksheet values. */
 (function (root) {
   'use strict';
   const MiB = 1024 * 1024, MAX_FILE = 12 * MiB, MAX_TENDER_FILE = 100_000_000, MAX_XML = 4 * MiB;
@@ -388,7 +388,7 @@
   }
   async function readDocxBytes(file,maxFile=MAX_FILE){
     if(!file||!(/\.docx$/i.test(file.name))||!Number.isSafeInteger(file.size)||file.size<22)
-      throw new Error('请选择有效的 .docx 发标文件；不支持 .doc、扫描件或图片。');
+      throw new Error('请选择有效的 .docx 文件。');
     if(file.size>maxFile)tooLarge();
     let bytes;
     try {bytes=new Uint8Array(await file.arrayBuffer());}catch{invalid();}
@@ -404,10 +404,129 @@
       return mainPart(bytes,path,path!=='word/document.xml',path==='word/document.xml'?MAX_XML:512*1024);
     }});
   }
+  async function workbookBody(file){
+    if(!root.WorkpaperSheets?.read)throw Error('Excel 识别组件未加载。');
+    const model=await root.WorkpaperSheets.read(file),lines=[],tables=[];
+    let chars=0;
+    for(const sheet of model.sheets){
+      if(sheet.visibility)continue;
+      const rows=new Map();
+      for(const [addr,cell] of Object.entries(sheet.cells)){
+        const match=/^([A-Z]{1,3})([1-9]\d*)$/u.exec(addr);
+        if(!match||cell.v==null||cell.v===''||cell.t==='e')continue;
+        const column=[...match[1]].reduce((index,letter)=>index*26+letter.charCodeAt(0)-64,0)-1;
+        if(column>=128)continue;
+        const value=String(cell.w||cell.v).trim().slice(0,300);
+        if(!value)continue;
+        if((chars+=value.length)>200000)throw Error('Excel 内容较多，请另存包含招标信息及明细的工作表后识别。');
+        const number=Number(match[2]);
+        if(!rows.has(number))rows.set(number,[]);
+        rows.get(number)[column]=value;
+      }
+      const values=[...rows].sort((a,b)=>a[0]-b[0]).map(([,row])=>Array.from(row,value=>value||''));
+      const text=values.map(row=>row.join('\t'));
+      const firstHeader=values.findIndex(row=>row.some(value=>colKey(value)==='clientName'));
+      tables.push({rows:values,before:text.slice(Math.max(0,firstHeader-4),Math.max(0,firstHeader)),afterResponse:false});
+      for(const line of text)lines.push(line);
+    }
+    return {lines,tables};
+  }
   async function read(file){
-    const body=await readBody(file,MAX_TENDER_FILE),fields=extract(body.lines);
+    if(!file?.size||file.size>MAX_TENDER_FILE)throw Error('请选择非空且不超过 100 MB 的招标资料。');
+    const extension=file.name.split('.').at(-1).toLowerCase();
+    let body;
+    if(extension==='docx')body=await readBody(file,MAX_TENDER_FILE);
+    else if(extension==='xls'||extension==='xlsx')body=await workbookBody(file);
+    else if(extension==='doc'){
+      if(!root.LegacyDoc?.read)throw Error('旧版 Word 识别组件未加载。');
+      body={...await root.LegacyDoc.read(file),tables:[]};
+    }else if(extension==='pdf'){
+      if(!root.BidderPdfText?.read)throw Error('PDF 文字识别组件未加载。');
+      if(file.size>MAX_FILE)throw Error('PDF 大于 12 MiB，请手填招标信息或拆分后识别。');
+      body={...await root.BidderPdfText.read(new Uint8Array(await file.arrayBuffer())),tables:[]};
+    }else if(extension==='txt'&&file.size<=MAX_XML){
+      const bytes=await file.arrayBuffer();
+      let text;
+      try{text=decoder().decode(bytes);}catch{text=new TextDecoder('gb18030',{fatal:true}).decode(bytes);}
+      body={lines:text.split(/\r?\n/u).map(line=>line.trim()).filter(Boolean),tables:[]};
+    }else throw Error('请选择支持的 DOC、DOCX、XLS、XLSX、PDF 或 TXT 文件。');
+    if(!body.lines.length)throw Error('未提取到可识别文字，请手动核对原件。');
+    const fields=extract(body.lines);
     return Object.assign(fields, readAuditees(body,fields.projectName));
   }
-  const api=Object.freeze({read,readVisibleText,openBidTemplate});
+  function merge(results){
+    const take=values=>[...new Set(values.map(v=>String(v||'').normalize('NFKC').trim()).filter(Boolean))];
+    const conflicts=[],fields={};
+    for(const field of Object.keys(labels)){
+      const values=take(results.map(result=>result[field]));
+      fields[field]=values.length===1?values[0]:'';
+      if(values.length>1)conflicts.push(labels[field][0]);
+    }
+    const grouped=new Map();
+    for(const result of results)for(const row of result.auditees){
+      const key=take([row.clientName])[0];
+      if(!key)continue;
+      if(!grouped.has(key))grouped.set(key,[]);
+      grouped.get(key).push(row);
+    }
+    const auditees=[...grouped].slice(0,50).map(([clientName,rows])=>{
+      const row={clientName};
+      for(const key of ['location','year','assets','revenue','profit','dataPeriod']){
+        const values=take(rows.map(item=>item[key]));
+        row[key]=values.length===1?values[0]:key==='year'&&!values.length?fields.auditYear:'';
+        if(values.length>1&&!conflicts.includes('被审计单位明细'))conflicts.push('被审计单位明细');
+      }
+      return row;
+    });
+    return {...fields,auditees,conflicts,auditeeOverflow:grouped.size>50||results.some(result=>result.auditeeOverflow)};
+  }
+  // A typed inquiry describes one auditee. Keep amounts in 万元 for the existing pricing rules.
+  function parseInquiry(text) {
+    const source=normal(text);
+    const sentences=source.replace(/(\d{1,3}(?:,\d{3})+(?:\.\d+)?)(?=\s*[亿万千元])/g,amount=>amount.replaceAll(',',''))
+      .split(/[,。;；\n]+/).map(s=>s.trim()).filter(Boolean);
+    const fields=extract(sentences.map(s=>s.replace(/^(被审计单位(?:名称)?|询价单位|项目名称|项目类型|审计年度)\s*(?:为|是|叫作)\s*/, '$1：')));
+    const years=[...new Set([...source.matchAll(/(?<!\d)((?:20\d{2}|2100))\s*年/g)].map(m=>m[1]))];
+    const year=fields.auditYear||(years.length===1?years[0]:'');
+    const type=fields.projectType||source.match(/财务报表审计|财务决算审计|专项审计|经济责任审计|报表审阅|内控测试|验资服务|咨询服务/)?.[0]||'财务报表审计';
+    let clientName=fields.customerName;
+    if(!clientName){
+      const companies=new Set();
+      for(const line of sentences){
+        if(/^(?:询价单位|发标单位|采购单位|项目名称)\s*[:为是]/.test(line))continue;
+        const body=line.replace(/^\d{4}年度?\s*/,'').replace(/^(?:(?:审计对象[是为]|被审计单位[是为]?|客户[是为]|麻烦|请|我们|我想|帮忙|帮我|我|想询问|想咨询|咨询一下|咨询|给|为|对|拟对|委托对|需要对|本次|报价|测算一下|测算|审计)\s*)+/,'');
+        const company=body.match(/^([\p{Script=Han}A-Za-z0-9·()（）-]{1,90}?(?:公司|事务所|研究院|医院|学校|集团|合作社|银行)(?:[\p{Script=Han}]{1,10}分(?:公司|行|所))?)/u)?.[1];
+        if(company){
+          if(/(?:公司|医院|事务所|银行|集团)/.test(body.slice(company.length)))throw Error('请写明本次报价对应的一家被审计单位。');
+          companies.add(company);
+        }
+      }
+      if(companies.size===1)clientName=[...companies][0];
+    }
+    const amountFor=(label,pattern)=>{
+      const unit='(?:亿元?|万元?|千元|元)';
+      const re=new RegExp('(?:'+pattern+')\\s*(?:\\(\\s*('+unit+')\\s*\\))?\\s*[:为是=]?\\s*(?:大约|约为|约|合计|为)?\\s*(?:人民币)?\\s*([+-]?[\\d,]+(?:\\.\\d+)?)\\s*('+unit+')?','g');
+      const values=new Set();
+      for(const m of source.matchAll(re)){
+        const tail=source.slice(m.index+m[0].length).trimStart();
+        if(/^(?:[~～至到—–%美港欧日英澳台]|(?:[-＋+或和、]|以及)\s*\d|以上|以下|[零一二三四五六七八九十百千万亿\d])/.test(tail))throw Error('请在询价信息中写明单一的人民币'+label+'金额及单位。');
+        const scale=m[3]||m[1];
+        if(!scale)throw Error('请为'+label+'注明金额单位，例如 2000 万元。');
+        const amount=money(m[2],scale==='万'?'万元':scale==='亿'?'亿元':scale);
+        if(!amount||amount.startsWith('-'))throw Error('请核对询价信息中的'+label+'。');
+        values.add(amount);
+      }
+      if(values.size>1)throw Error('询价信息中有多个'+label+'金额，请明确本次计价金额。');
+      return [...values][0]||'';
+    };
+    const pricing=source.match(/(?:计价地区|计价区域)\s*[:为是]?\s*([^,。;；\n\s]+)/)?.[1]||
+      source.match(/按\s*([\p{Script=Han}]{2,12}?)\s*(?:的)?(?:标准计价|计价|收费标准|报价标准)/u)?.[1]||'';
+    return {text,clientName:clientName||'',issuer:fields.issuer||'',year,type,
+      project:fields.projectName||(year?year+'年度'+type:''),
+      assets:amountFor('资产总额','资产总额|资产总计|资产合计|总资产|资产'),
+      revenue:amountFor('营业收入','营业总收入|营业收入|主营业务收入|营收|收入'),
+      pricingRegion:province(pricing)};
+  }
+  const api=Object.freeze({read,merge,readVisibleText,openBidTemplate,parseInquiry});
   if(typeof module==='object'&&module.exports)module.exports=api;else root.TenderImport=api;
 })(globalThis);

@@ -101,9 +101,9 @@ function Write-ProfileShortcuts([string] $Root) {
 
 function Get-StartShortcut([string] $Target, [string] $BuildId='') {
     $programs = [Environment]::GetFolderPath('Programs')
-    $title = '审易工作台（内测）'
+    $title = '审迹工作台（内测）'
     $expected = if ($BuildId) {
-        Join-Path $programs "审易工作台内测版本\$title $BuildId.lnk"
+        Join-Path $programs "审迹工作台内测版本\$title $BuildId.lnk"
     } else {
         Join-Path $programs ($title + '.lnk')
     }

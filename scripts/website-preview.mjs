@@ -101,7 +101,7 @@ async function main(args) {
     return;
   }
   const { server, url } = await startWebsitePreview();
-  console.log('审易官网本地预览 ' + url);
+  console.log('审迹官网本地预览 ' + url);
   if (args[0] === '--open') openBrowser(url);
   const stop = () => server.close();
   process.once('SIGINT', stop);

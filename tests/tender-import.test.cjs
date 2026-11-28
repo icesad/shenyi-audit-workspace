@@ -2,8 +2,20 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {deflateRawSync}=require('node:zlib');
 const {JSDOM}=require('jsdom');
-const {read,readVisibleText}=require('../dist/tender-import.js');
+const {read,readVisibleText,parseInquiry}=require('../dist/tender-import.js');
 global.DOMParser=new JSDOM('').window.DOMParser;
+test('文字询价从同一单位的描述提取计费规模，保留元与万元的精度',()=>{
+  const text='请给甲公司报个价，2026年度财务报表审计，总资产1.5亿元，营收为12,345.67元，按河北省计价。';
+  const result=parseInquiry(text);
+  assert.deepEqual([result.clientName,result.project,result.year,result.assets,result.revenue,result.pricingRegion],
+    ['甲公司','2026年度财务报表审计','2026','15000','1.234567','河北省']);
+  assert.equal(result.text,text);
+  assert.throws(()=>parseInquiry('资产1000万元，资产2000万元。'),/多个资产/);
+  assert.throws(()=>parseInquiry('总资产1000至2000万元'),/金额/);
+  assert.throws(()=>parseInquiry('总资产2000万美元'),/人民币/);
+  assert.throws(()=>parseInquiry('总资产2000。'),/金额单位/);
+});
+
 const NS='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const xml=body=>'<w:document xmlns:w="'+NS+'"><w:body>'+body+'</w:body></w:document>';
 const p=s=>'<w:p><w:r><w:t>'+s+'</w:t></w:r></w:p>';

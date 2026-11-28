@@ -66,7 +66,7 @@ test('saved ledger export: real normal page, readonly data preservation and late
   const button=page.locator('[data-project-ledger-snapshot="'+f.id+'"]');await button.waitFor();await page.waitForFunction(id=>!document.querySelector('[data-project-ledger-snapshot="'+id+'"]')?.disabled,f.id);
   await observe(page);const before=await fingerprint(page);
   const [download]=await Promise.all([page.waitForEvent('download'),button.click()]);const file=await download.path(),bytes=await fsp.readFile(file),parsed=await C.parse(bytes.toString('utf8'));
-  assert.equal(download.suggestedFilename(),'审易-已保存账表校验快照-'+f.id+'.json');assert.equal(parsed.sourceProjectId,f.id);assert.equal(parsed.workspaceRevision,7);assert.deepEqual(parsed.reconciliation,f.workspace.reconciliation);assert.equal(parsed.reconciliation.result.summary.incomplete,11);
+  assert.equal(download.suggestedFilename(),'审迹-已保存账表校验快照-'+f.id+'.json');assert.equal(parsed.sourceProjectId,f.id);assert.equal(parsed.workspaceRevision,7);assert.deepEqual(parsed.reconciliation,f.workspace.reconciliation);assert.equal(parsed.reconciliation.result.summary.incomplete,11);
   assert.equal(bytes.includes(Buffer.from('UNRELATED-WORKPAPER')),false);assert.equal(bytes.includes(Buffer.from('SYNTHETIC-ORIGINAL')),false);
   const after=await fingerprint(page),stats=await page.evaluate(()=>__ledgerStats);
   if(process.env.SHENYI_LEDGER_EXPORT_EVIDENCE){const output=path.join(process.env.SHENYI_LEDGER_EXPORT_EVIDENCE,'normal-index');fs.mkdirSync(output,{recursive:true});fs.writeFileSync(path.join(output,'databases-before.json'),before);fs.writeFileSync(path.join(output,'databases-after.json'),after);}

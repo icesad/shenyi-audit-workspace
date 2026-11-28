@@ -88,62 +88,205 @@
   }
   return output;
  }
- async function fillQuotation(file,snapshot){
-  if(!file||!/\.docx$/i.test(file.name))throw Error('按参考版式生成报价，请上传可编辑的 Word（.docx）参考文件。');
+ const sourceFirm=/^(?:供应商全称|供应商名称|报价单位(?:名称)?|投标人(?:名称)?|单位名称|事务所名称)\s*[:：]\s*(.+?)(?=\s*[（(](?:盖|公章|签)|$)/u;
+ const firmNamePattern=/^[\p{L}\d·（）()]{2,45}会计师事务所(?:[（(](?:特殊普通合伙|普通合伙|有限责任公司|合伙)[）)])?/u;
+ const sectionKinds=[
+  ['brief',/^(?:公司|事务所|企业|机构)(?:简介|概况|介绍)$/u,/简介|概况|介绍/u],
+  ['business',/^(?:企业|公司)?营业执照(?:副本|复印件|扫描件)?$/u,/营业执照/u],
+  ['practice',/^(?:会计师事务所)?执业(?:证书|许可证)(?:复印件|扫描件)?$/u,/事务所执业|执业许可/u],
+  ['qualifications',/^(?:相关)?(?:资质证书(?:及许可经营文件)?|资格证明材料|资质材料|资格证明|资质证明)$/u,/资质|资格证明|经营许可/u],
+  ['legal',/^(?:法定代表人|负责人)(?:身份|资格)证明(?:书)?$/u,/(?:法定代表人|负责人)(?:身份|资格)证明/u],
+  ['authorization',/^(?:法定代表人)?(?:授权委托书|法定代表人授权书|授权书)$/u,/授权委托书|授权书/u],
+  ['experience',/^(?:财务资料[、，,及和])?(?:业绩资料|业绩证明|类似项目业绩|项目业绩|近年业绩)(?:一览表)?$|^(?:财务资料|近年财务状况)$/u,/业绩|财务资料|财务状况/u],
+  ['team',/^(?:服务团队|项目团队|人员汇总表|拟参与人员(?:资料)?|人员简历|项目组成员|人员配置一览表|人员资料|人员证书)$/u,/服务团队|项目团队|人员|简历|注册会计师/u],
+  ['compliance',/^(?:无行政处罚(?:记录)?(?:的相关资料|证明)?|无违法违规(?:记录)?(?:证明)?|信用记录|信用查询|信用证明)$/u,/行政处罚|违法违规|信用记录|信用查询|信用证明/u]
+ ];
+ const plainHeading=s=>s.replace(/^[一二三四五六七八九十百\d]+[、.．、)）]\s*/u,'').replace(/[：:]\s*$/u,'').trim();
+ function referenceSection(s){
+  const title=plainHeading(s);
+  if(/^(?:报价(?:明细)?(?:函|单|表|书)?|服务方案|技术方案|审计方案|目录|响应函|响应文件|谈判响应函|保密承诺|服务承诺|.*(?:承诺函|承诺书|声明函|声明书))$/u.test(title))return 'body';
+  return sectionKinds.find(([,heading])=>heading.test(title))?.[0];
+ }
+ function selectedReferenceFiles(bidder){
+  const credentialKinds={business_license:'business',practice_certificate:'practice'};
+  const files=[];
+  for(const file of bidder?.attachments||[]){
+   const kind=credentialKinds[file.kind];
+   if(kind)files.push({kind,name:file.name,blob:new Blob([file.bytes],{type:file.mime})});
+  }
+  for(const file of bidder?.materials||[]){
+   if(!/\.(?:pdf|docx?|xlsx?|png|jpe?g)$/iu.test(file.name)||/公章|签名图|签字图|章样/u.test(file.name))continue;
+   if(/营业执照|事务所执业|执业许可/u.test(file.name))continue;
+   const category=sectionKinds.find(([kind,,pattern])=>!['business','practice'].includes(kind)&&pattern.test(file.name));
+   if(category)files.push({kind:category[0],name:file.name,blob:file.blob});
+  }
+  return files;
+ }
+ function findReferenceValues(paragraphs,table){
+  const labels=(pattern)=>paragraphs.map(s=>pattern.exec(s)?.[1]?.trim()).find(Boolean);
+  const firm=labels(sourceFirm)||paragraphs.map(s=>firmNamePattern.exec(s)?.[0]).find(Boolean);
+  const firmStem=firm?.match(/^(.+?会计师事务所)/u)?.[1];
+  const issuer=labels(/^(?:发标单位|采购单位|招标单位|致)\s*[:：]\s*(.+?)\s*[:：！!]?$/u)||
+   labels(/^([^：:]{4,100}(?:公司|单位|机构))\s*[:：]\s*$/u);
+  const project=labels(/^项目名称\s*[:：]\s*(.+)$/u)||
+   labels(/^(.{6,200}?)(?:报价明细(?:表)?|报价单|报价函)\s*$/u);
+  const customer=labels(/^(?:被审计单位(?:名称)?|审计对象)\s*[:：]\s*(.+)$/u);
+  const tableUnits=table?table.rows.slice(table.index+1).map(row=>wordText(wordChildren(row,'tc')[table.company]||row).trim())
+   .filter(s=>s&&!/^(?:合计|总计|小计)$/u.test(s)):[];
+  const year=Number((project||'').match(/((?:19|20)\d{2})\s*年度/u)?.[1])||0;
+  return {firm,firmStem,issuer,project,customer,tableUnits,year};
+ }
+ const grossValue=String.raw`\s*(?:[：:]\s*)?(?:人民币\s*)?(?:(?:[¥￥]\s*)?\d[\d,，]*(?:\.\d+)?\s*(?:万元?|元整|圆整|圆)?|[零壹贰叁肆伍陆柒捌玖拾佰仟万亿元圆角分整正]+|[_＿]+)`;
+ function replaceReferenceParagraph(p,snapshot,old,units){
+  const source=text(p);
+  if(!source.trim())return false;
+  const contact=snapshot.bidderContact||{};
+  const money=decimalPrice(snapshot.totalCents,false);
+  const upper=root.QuoteLayouts.upper(snapshot.totalCents);
+  const values={'事务所名称':snapshot.firmName,'报价单位':snapshot.firmName,'投标人':snapshot.firmName,'供应商全称':snapshot.firmName,
+   '项目名称':snapshot.projectName,'审计年度':String(snapshot.auditYear),'发标单位':snapshot.issuer,'被审计单位':units.join('、'),
+   '报价联系人':contact.name||'待补','联系电话':contact.phone||'待补','电子邮箱':contact.email||'待补',
+   '含税报价':'¥ '+money+' 元','报价金额':'¥ '+money+' 元','金额大写':upper,'报价日期':snapshot.quoteDate};
+  const replacements=[];
+  function add(start,length,value){
+   if(length>0&&!replacements.some(item=>start<item.end&&start+length>item.start))replacements.push({start,end:start+length,value});
+  }
+  function change(match,value,group=0){
+   const segment=match[group],at=group===0?0:match[0].lastIndexOf(segment);
+   add(match.index+at,segment.length,value);
+  }
+  for(const m of source.matchAll(/\{\{\s*([^{}]+?)\s*\}\}/gu))if(Object.hasOwn(values,m[1]))change(m,values[m[1]]);
+  const bidderField=/^(?:\s*(?:供应商|投标人|报价单位|事务所))?\s*(联系方式|报价联系人|联系人|联系电话|联系手机|手机|电话|Tel\.?|投标人地址|通信地址|联系地址|地址|邮政编码|邮编|传真|电子邮件|电子邮箱|邮箱|E[- ]?mail|社会信用代码|统一社会信用代码|开户行|开户银行|银行账号|授权代表(?:[（(]签字[）)])?|法定代表人或其委托代理人|法定代表人|法人代表)\s*[:：]\s*(.*)$/iu.exec(source);
+  if(bidderField){
+   const [,label,value]=bidderField;
+   const key=/电话|手机|tel/iu.test(label)?'phone':/邮[箱件]|mail/iu.test(label)?'email':/联系人/u.test(label)?'name':'';
+   if(value)change(bidderField,key?contact[key]||'待补':/授权代表|法定代表人|法人代表/u.test(label)?'待确认并签署':'待补',2);
+  }
+  const identityFields=[
+   [/^\s*(?:项目名称)\s*[:：]\s*(.+)$/u,snapshot.projectName],
+   [/^\s*(?:被审计单位(?:名称)?|审计对象)\s*[:：]\s*(.+)$/u,units.join('、')],
+   [/^\s*(?:发标单位|采购单位|招标单位|致)\s*[:：]\s*(.+)$/u,snapshot.issuer],
+   [/^\s*(?:报价日期|日期|时间)\s*[:：]\s*(.+)$/u,snapshot.quoteDate],
+   [/^\s*(?:税率|增值税税率)\s*[:：]\s*(.+)$/u,snapshot.taxRateText]
+  ];
+  for(const [pattern,value] of identityFields){
+   const match=pattern.exec(source);if(match)change(match,value,1);
+  }
+  const standaloneDate=/^\s*(?:(?:19|20)\d{2}\s*[年./-]\s*\d{1,2}\s*[月./-]\s*\d{1,2}\s*日?)\s*$/u.exec(source);
+  if(standaloneDate)change(standaloneDate,snapshot.quoteDate);
+  const price=/(?:总体报价为|投标报价为|报价总额|含税报价(?:总额)?|总报价(?:为)?|报价金额|报价合计|小写)\s*(?:[（(]含税[）)])?/u.exec(source);
+  if(price){
+   const tailAt=price.index+price[0].length,tail=source.slice(tailAt),m=new RegExp('^'+grossValue,'u').exec(tail);
+   if(m){
+    const numeric=/[¥￥\d]/u.test(m[0]);
+    add(tailAt,m[0].length,'：'+(numeric?'¥ '+money+' 元':upper));
+    const second=/[¥￥]\s*\d[\d,，]*(?:\.\d+)?\s*元?/gu;
+    for(const amount of tail.matchAll(second))if(amount.index>=m[0].length)add(tailAt+amount.index,amount[0].length,'¥ '+money+' 元');
+   }
+  }
+  for(const m of source.matchAll(/大写\s*[:：]?\s*([人民币零壹贰叁肆伍陆柒捌玖拾佰仟万亿元圆角分整正_＿]+)/gu))change(m,upper,1);
+  if(snapshot.taxRateText)for(const m of source.matchAll(/(?:税率|增值税)\s*[:：]?\s*(\d+(?:\.\d+)?[%％])/gu))change(m,snapshot.taxRateText,1);
+  const currentShort=snapshot.firmName.split('会计师事务所')[0];
+  const oldShort=old.firmStem?.split('会计师事务所')[0];
+  const aliases=[
+   [old.project,snapshot.projectName],[old.firm,snapshot.firmName],[old.firmStem,snapshot.firmName],
+   [old.customer,units.join('、')],[old.issuer,snapshot.issuer],
+   ...old.tableUnits.map((name,i)=>[name,units[i]||'本次被审计单位']),
+   ...(oldShort&&currentShort&&oldShort.length>=2?[[oldShort,currentShort]]:[]),
+   ...(old.year&&old.year!==snapshot.auditYear?[[old.year+'年度',snapshot.auditYear+'年度']]:[])
+  ].filter(([before,after])=>before&&after&&before!==after).sort((a,b)=>b[0].length-a[0].length);
+  for(const [before,after] of aliases)for(let at=source.indexOf(before);at>=0;at=source.indexOf(before,at+before.length))add(at,before.length,after);
+  for(const item of replacements.sort((a,b)=>b.start-a.start))replace(p,item);
+  return replacements.length>0;
+ }
+ async function fillQuotation(file,snapshot,{bidder}={}){
+  if(!file||!/\.docx$/iu.test(file.name))throw Error('整套替换需要可编辑的 Word（.docx）；PDF 可查看或下载原件。');
   const parts=await root.ProjectWorkspaceStore.parts(file);
-  if(!parts['[Content_Types].xml']||!parts['word/document.xml']||Object.keys(parts).some(name=>/vbaProject|activeX|\/embeddings\//i.test(name)))throw Error('请选择可编辑且不含嵌入对象的 DOCX 报价参考文件。');
+  if(!parts['[Content_Types].xml']||!parts['word/document.xml']||Object.keys(parts).some(name=>/vbaProject|activeX|\/embeddings\//iu.test(name)))throw Error('请选择可编辑且不含嵌入对象的 DOCX 报价参考文件。');
   const units=snapshot.quoteRows||[{name:snapshot.customerName,totalCents:snapshot.totalCents}];
-  const serializer=new XMLSerializer();
+  const serializer=new XMLSerializer(),xml=raw=>root.ProjectWorkspaceStore.xml(raw);
+  const doc=xml(parts['word/document.xml']),body=doc.getElementsByTagNameNS(W,'body')[0];
+  if(!body)throw Error('参考文件没有可读取的报价正文。');
+  const knownTable=priceTable(body);
+  const paragraphs=[...body.getElementsByTagNameNS(W,'p')].map(text);
+  if(!knownTable&&!paragraphs.some(s=>quoteMoney.test(s)||/\{\{\s*(?:含税报价|报价金额)\s*\}\}/u.test(s)))
+   throw Error('未找到可复用的报价金额或明细表，请在参考文件中标明「含税报价」。');
+  const old=findReferenceValues(paragraphs,knownTable);
+  if(knownTable)knownTable.table.replaceWith(filledPriceTable(knownTable,units,snapshot.totalCents));
+  const candidates=selectedReferenceFiles(bidder),files=Object.create(null),included=new Map(),missing=new Set();
+  let replaceSection=null;
+  for(const node of [...body.children]){
+   if(node.namespaceURI!==W||node.localName==='sectPr')continue;
+   const title=node.localName==='p'?text(node).trim():'';
+   const kind=title&&referenceSection(title);
+   if(kind){
+    replaceSection=kind==='body'?null:kind;
+    if(!replaceSection)continue;
+    const matches=candidates.filter(item=>item.kind===kind||(kind==='qualifications'&&item.kind==='practice'));
+    if(matches.length){
+     const names=[];
+     for(const item of matches){
+      if(!included.has(item)){
+       const safe=item.name.replace(/[<>:"/\\|?*\u0000-\u001f]/gu,'_').replace(/[. ]+$/u,'')||'附件';
+       const path='报价单位资料/'+String(included.size+1).padStart(2,'0')+'-'+safe;
+       included.set(item,path);
+       files[path]=new Uint8Array(await item.blob.arrayBuffer());
+      }
+      names.push(included.get(item));
+     }
+     const paragraph=doc.createElementNS(W,'w:p');
+     node.after(setParagraph(paragraph,'本章节对应所选报价单位的原件：'+names.join('、')+'。'));
+    }else{
+     missing.add(plainHeading(title));
+     const paragraph=doc.createElementNS(W,'w:p');
+     node.after(setParagraph(paragraph,'待补：所选报价单位档案中未找到本章节对应原件。'));
+    }
+   }else if(replaceSection){
+    // Preserve the original section break, including its layout and page setup.
+    const section=node.localName==='p'?wordChildren(wordChildren(node,'pPr')[0]||node,'sectPr')[0]:null;
+    if(section){
+     const layout=doc.createElementNS(W,'w:p'),properties=doc.createElementNS(W,'w:pPr');
+     properties.append(section.cloneNode(true));layout.append(properties);node.replaceWith(layout);
+    }else node.remove();
+   }
+  }
+  let removedGraphics=0;
   for(const part of Object.keys(parts)){
    if(/^word\/(?:document|header\d+|footer\d+)\.xml$/u.test(part)){
-    const xml=root.ProjectWorkspaceStore.xml(parts[part]);
-    for(const tag of ['drawing','pict','object'])for(const node of [...xml.getElementsByTagNameNS(W,tag)])node.remove();
-    for(const link of [...xml.getElementsByTagNameNS(W,'hyperlink')])if(link.hasAttributeNS(WREL,'id'))link.replaceWith(...link.childNodes);
-    if(part==='word/document.xml'){
-     const body=xml.getElementsByTagNameNS(W,'body')[0];
-     if(!body)throw Error('参考文件没有可读取的报价正文。');
-     const paragraphs=wordChildren(body,'p'),table=priceTable(body);
-     const price=paragraphs.find(p=>quoteMoney.test(text(p))||/\{\{\s*(?:含税报价|报价金额)\s*\}\}/u.test(text(p)));
-     if(!table&&!price)throw Error('未找到可复用的报价金额或明细表，请在参考文件中写明「含税报价」。');
-     const title=paragraphs.find(p=>text(p).trim().length<100&&/报价(?:明细|单|函|表|书)(?:[（(].*?[）)])?\s*$/u.test(text(p)));
-     const salutation=paragraphs.find(p=>/^(?:致\s*[：:]\s*\S|[^：:]{4,100}(?:公司|单位|机构)\s*[：:]\s*$)/u.test(text(p).trim()));
-     const closing=paragraphs.find(p=>/^\s*(?:供应商全称|报价单位|投标人|单位名称|会计师事务所名称)\s*[:：]/u.test(text(p)));
-     const dated=paragraphs.find(p=>/^\s*\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日\s*$/u.test(text(p)));
-     const bodyStyle=paragraphs.find(p=>/收到.*询价|根据.*询价/u.test(text(p)))||price;
-     const make=(style,value)=>setParagraph(style?style.cloneNode(true):xml.createElementNS(W,'w:p'),value);
-     const nodes=[
-      make(title,snapshot.projectName+(title&&/报价明细|报价单/u.test(text(title))?'报价明细':'报价函')),
-      make(salutation||bodyStyle,'致：'+snapshot.issuer),
-      make(bodyStyle,'被审计单位：'+units.map(unit=>unit.name).join('、')),
-      make(bodyStyle,'项目类型：'+snapshot.projectType+'　计价地区：'+snapshot.location),
-      make(price||bodyStyle,'含税报价：¥ '+decimalPrice(snapshot.totalCents,false)+' 元（大写：'+root.QuoteLayouts.upper(snapshot.totalCents)+'）')
-     ];
-     if(table)nodes.push(filledPriceTable(table,units,snapshot.totalCents));
-     else if(units.length>1)for(const unit of units)nodes.push(make(bodyStyle,unit.name+'：¥ '+decimalPrice(unit.totalCents,false)+' 元（含税）'));
-     nodes.push(make(closing||bodyStyle,'报价单位：'+snapshot.firmName));
-     const contact=snapshot.bidderContact;
-     if(contact&&(contact.name||contact.phone||contact.email))nodes.push(make(bodyStyle,'报价联系人：'+[contact.name,contact.phone,contact.email].filter(Boolean).join(' / ')));
-     nodes.push(make(dated||closing||bodyStyle,'报价日期：'+snapshot.quoteDate),make(bodyStyle,'本报价为待审核草稿。'));
-     const section=wordChildren(body,'sectPr')[0];
-     body.replaceChildren(...nodes,...(section?[section]:[]));
-    }else{
-     // Keep header/footer placement but do not bring along another party’s text or marks.
-     xml.documentElement.replaceChildren(xml.createElementNS(W,'w:p'));
+    const content=part==='word/document.xml'?doc:xml(parts[part]);
+    for(const tag of ['drawing','pict','object','altChunk','del','moveFrom','commentRangeStart','commentRangeEnd','commentReference','footnoteReference','endnoteReference']){
+     for(const node of [...content.getElementsByTagNameNS(W,tag)]){
+      if(['drawing','pict','object'].includes(tag))removedGraphics++;
+      node.remove();
+     }
     }
-    parts[part]=enc.encode(serializer.serializeToString(xml));
+    for(const link of [...content.getElementsByTagNameNS(W,'hyperlink')])if(link.hasAttributeNS(WREL,'id'))link.replaceWith(...link.childNodes);
+    for(const node of [...content.getElementsByTagNameNS(W,'p')])replaceReferenceParagraph(node,snapshot,old,units.map(item=>item.name));
+    if(included.size||missing.size||removedGraphics){
+     if(part==='word/document.xml'){
+      const notice=setParagraph(doc.createElementNS(W,'w:p'),'报价参考资料草稿。报价、承诺和签章由所选报价单位复核确认；带「待补」的章节需补充对应原件。');
+      const section=wordChildren(body,'sectPr').at(-1);
+      body.insertBefore(notice,section||null);
+     }
+    }
+    parts[part]=enc.encode(serializer.serializeToString(content));
    }else if(/\.rels$/u.test(part)){
-    const xml=root.ProjectWorkspaceStore.xml(parts[part]);
-    for(const relation of [...xml.getElementsByTagNameNS('*','Relationship')]){
+    const relationships=xml(parts[part]);
+    for(const relation of [...relationships.getElementsByTagNameNS('*','Relationship')]){
      const type=relation.getAttribute('Type')||'';
-     if(relation.getAttribute('TargetMode')==='External'||/\/(?:image|thumbnail|comments(?:Extended|Ids)?|people|footnotes|endnotes|customXml|core-properties|extended-properties|custom-properties)$/iu.test(type))relation.remove();
+     if(relation.getAttribute('TargetMode')==='External'||/\/(?:image|thumbnail|comments(?:Extended|Ids)?|people|footnotes|endnotes|customXml|core-properties|extended-properties|custom-properties|aFChunk)$/iu.test(type))relation.remove();
     }
-    parts[part]=enc.encode(serializer.serializeToString(xml));
+    parts[part]=enc.encode(serializer.serializeToString(relationships));
    }else if(/^(?:word\/(?:media\/|comments[^/]*\.xml|people\.xml|footnotes\.xml|endnotes\.xml)|docProps\/|customXml\/)/iu.test(part))delete parts[part];
   }
-  const types=root.ProjectWorkspaceStore.xml(parts['[Content_Types].xml']);
+  const types=xml(parts['[Content_Types].xml']);
   for(const override of [...types.getElementsByTagNameNS('*','Override')])if(!parts[(override.getAttribute('PartName')||'').slice(1)])override.remove();
   parts['[Content_Types].xml']=enc.encode(serializer.serializeToString(types));
-  return {name:'本次报价-以往报价参考版.docx',mime:root.QuoteLayouts.docxMime,bytes:root.QuoteLayouts.packOfficeParts(parts)};
+  const wordName='本次报价-以往报价参考版.docx',word=root.QuoteLayouts.packOfficeParts(parts,100*1024*1024);
+  const result={missing:[...missing],materials:included.size,removedGraphics};
+  if(!included.size)return {...result,name:wordName,mime:root.QuoteLayouts.docxMime,bytes:word};
+  return {...result,name:'本次报价-整套参考资料.zip',mime:'application/zip',
+   bytes:root.QuoteLayouts.packQuoteReferenceBundle({[wordName]:word,...files})};
  }
  root.ContractTemplate=Object.freeze({inspect,fill,fillQuotation});
 })(globalThis);

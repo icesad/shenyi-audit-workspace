@@ -224,5 +224,34 @@
     if(out.reduce((n,x)=>n+x.title.length+x.description.length,0)>LIMIT)fail('大纲最多 150,000 字符（含说明）。');
     return out;
   }
-  const api=Object.freeze({read,prepare,suggest,build});if(typeof module==='object'&&module.exports)module.exports=api;else root.AuditOutline=api;
+  async function spreadsheet(file){
+    const model=await root.WorkpaperSheets.read(file,{audit:true}),paragraphs=[];
+    const titles=['资料名称','资料项','资料项目','资料清单','清单名称','项目名称','所需资料','资料内容'];
+    for(const sheet of model.sheets.filter(s=>!s.visibility)){
+      const rows=new Map();
+      for(const [address,cell] of Object.entries(sheet.cells)){
+        if(cell.t==='e'||cell.v==null||!String(cell.v).trim())continue;
+        const [,col,r]=/^([A-Z]+)(\d+)$/u.exec(address);
+        if(!rows.has(+r))rows.set(+r,new Map());rows.get(+r).set(col,String(cell.v).trim());
+      }
+      const data=[...rows].sort((a,b)=>a[0]-b[0]).map(([,row])=>row);
+      if(!data.length)continue;
+      const h=data.findIndex(row=>[...row.values()].some(v=>titles.includes(v)));
+      if(h<0){if(data.every(row=>row.size===1)){for(const row of data)paragraphs.push({text:[...row.values()][0],level:1});continue;}
+        throw Error(sheet.name+' 未找到资料名称列。请将列名设为「资料名称」。');}
+      const header=data[h],column=names=>[...header].find(([,v])=>names.includes(v))?.[0];
+      const title=column(titles),category=column(['类别','分类','资料分类']),description=column(['说明','资料说明','备注']);
+      let prior='';
+      for(const row of data.slice(h+1)){
+        const name=row.get(title);if(!name||titles.includes(name)||/^(?:合计|总计)$/u.test(name))continue;
+        const group=category&&row.get(category);
+        if(group&&group!==prior){paragraphs.push({text:group,level:1});prior=group;}
+        paragraphs.push({text:name,level:prior?2:1});
+        if(description&&row.get(description))paragraphs.push({text:row.get(description),level:null});
+      }
+    }
+    if(!paragraphs.length)throw Error('工作簿没有可导入的资料项。');
+    return result(paragraphs,'spreadsheet');
+  }
+  const api=Object.freeze({read,prepare,suggest,build,spreadsheet});if(typeof module==='object'&&module.exports)module.exports=api;else root.AuditOutline=api;
 })(globalThis);

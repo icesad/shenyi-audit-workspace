@@ -311,7 +311,7 @@
   function resetLedgerChecks(){ledgerChecks?.reset();for(const node of document.querySelectorAll('#ledger-check-panel input[type=password]'))node.value='';}
   function clearRefundIntakePassword(){const input=byId('refund-intake-password');if(input)input.value='';}
   function showLogin({keepDevice=false}={}){resetLedgerChecks();resetWorkpapers();stopTaskSubmissionPreview();if(keepDevice)clearRefundIntakePassword();else resetDevicePresentation();accountIdentityEpoch++;resetMyDeviceOverview();resetProjectMigration();resetAdministratorBusinessRole();resetProjectAccess();resetBusinessRole();resetMemberManagement();taskUploadOperation=null;resetTaskSubmissionAccess();resetTaskManagement();resetRecovery(true,true);resetAccountSessions();resetPasswordChange();resetWechat();resetActivation(true,true);resetFirstAdmin(true,true);resetProvisioning(true,true,keepDevice);resetRecoveryReviews();if(!keepDevice)clearInvitationRecoveries();resetInvitations();administrationTeams=[];invitationTeamId='';byId('invitation-team').replaceChildren();session=null;if(!keepDevice){billing?.reset();refundIntake?.reset();}teamId='';tasks=[];selected=null;submissions=[];revision=0;hasMore=false;viewEpoch++;byId('workspace-view').hidden=true;byId('session-actions').hidden=true;byId('login-view').hidden=false;for(const id of ['username','password','search'])byId(id).value='';for(const id of ['account-name','role-label','task-count','workspace-message','phone-bind-message'])byId(id).textContent='';clearPhoneProof();byId('phone-bind-panel').open=false;byId('task-list').replaceChildren();byId('team-select').replaceChildren();byId('task-detail').replaceChildren();setBusy(false);}
-  async function call(name,arg){if(!api)throw {code:'DESKTOP_REQUIRED',message:'请使用审易桌面客户端打开此页面。'};const actorAt=accountIdentityEpoch,deviceAt=deviceUiEpoch,result=await api[name](arg);if(actorAt!==accountIdentityEpoch||deviceAt!==deviceUiEpoch)throw {code:'STALE_RESPONSE'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED')showLogin();throw result?.error||{message:'操作未完成，请重试。'};}return result.value;}
+  async function call(name,arg){if(!api)throw {code:'DESKTOP_REQUIRED',message:'请使用审迹桌面客户端打开此页面。'};const actorAt=accountIdentityEpoch,deviceAt=deviceUiEpoch,result=await api[name](arg);if(actorAt!==accountIdentityEpoch||deviceAt!==deviceUiEpoch)throw {code:'STALE_RESPONSE'};if(!result?.ok){if(result?.error?.code==='SIGN_IN_REQUIRED')showLogin();throw result?.error||{message:'操作未完成，请重试。'};}return result.value;}
   async function loadIdentityMethods(){
     const at=++methodsEpoch;
     try{
@@ -1969,7 +1969,7 @@
       const heading=byId('workspace-title'),caption=byId('workspace-caption');
       if(workspace.classList.contains('management-workspace')!==managementOnly){
         workspace.classList.toggle('management-workspace',managementOnly);
-        heading.textContent=managementOnly?'审易工作台':'我的采集任务';
+        heading.textContent=managementOnly?'审迹工作台':'我的采集任务';
         caption.textContent=managementOnly?'打开模块查看可办理的团队、审核或账务事项。':'选择一项任务，核对要求，再提交资料。';
         byId('refresh').textContent=managementOnly?'刷新':'刷新任务';
         const label=managementOnly?'管理与审核':'资料采集';
@@ -2049,6 +2049,6 @@
     onDeviceUnavailable:()=>suspendDeviceView('当前设备无法通过核验。重新连接后，请在原订单中核对受理记录。')
   });
   watchWorkspaceNavigation();
-  if(!api){message('login-message','此页面需要审易桌面客户端，请从桌面启动入口打开。',true);byId('login-submit').disabled=true;}
+  if(!api){message('login-message','此页面需要审迹桌面客户端，请从桌面启动入口打开。',true);byId('login-submit').disabled=true;}
   renderIdentityService();updateIdentityControls();updateOnboardingControls();updateMemberManagementControls();if(api){void loadIdentityMethods();void loadOnboardingStatus();devicePollTimer=setInterval(()=>void pollDeviceStatus(),1000);void pollDeviceStatus();}
 })();

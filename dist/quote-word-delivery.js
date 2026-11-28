@@ -218,7 +218,7 @@
     base['word/_rels/document.xml.rels']=XML+'<Relationships xmlns="'+PKG+'"><Relationship Id="rIdStyles" Type="'+R+'/styles" Target="styles.xml"/>'+Array.from({length:media},(_,i)=>'<Relationship Id="rIdAnnex'+(i+1)+'" Type="'+R+'/image" Target="media/annex-'+(i+1)+'.png"/>').join('')+'</Relationships>';
     const bytes=L.packOfficeParts(base);check();
     if(bytes.length>LIMITS.outputBytes)fail('报价 Word 超过安全大小限制，未生成文件。');
-    return Object.freeze({blob:new root.Blob([bytes],{type:L.docxMime}),bytes,name:'审易报价单-无章含附件.docx',mime:L.docxMime,
+    return Object.freeze({blob:new root.Blob([bytes],{type:L.docxMime}),bytes,name:'审迹报价单-无章含附件.docx',mime:L.docxMime,
       unsigned:true,formats:Object.freeze(chosen),attachmentPages:media,manifest:Object.freeze(manifest)});
   }
   const api=Object.freeze({build,LIMITS});

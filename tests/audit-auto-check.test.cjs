@@ -85,3 +85,29 @@ test('same-project attachment loading, hashes, stale revisions, cancellation and
  }finally{await browser.close();}
 });
 
+test('ledger verification opens a nested ZIP with Windows Chinese names and reports an empty archive clearly',async t=>{
+ const {chromium}=require('playwright'),exe=process.env.QUOTE_LEDGER_CHROMIUM_EXECUTABLE||chromium.executablePath();
+ if(!fs.existsSync(exe))return t.skip('Chromium unavailable');
+ const browser=await chromium.launch({headless:true,executablePath:exe});
+ t.after(()=>browser.close());
+ const page=await browser.newPage();
+ await page.goto(pathToFileURL(path.join(D,'index.html')).href);
+ const result=await page.evaluate(async()=>{
+  const workbook=await LedgerStandard.workbook([{name:'合成账页',columns:['科目编号','科目名称'],rows:[['1001','合成现金']]}]);
+  const inner=QuoteLayouts.packOfficeParts({'zzzz.xlsx':workbook});
+  const view=new DataView(inner.buffer,inner.byteOffset,inner.byteLength),end=inner.length-22,central=view.getUint32(end+16,true);
+  const chinese=[0xd5,0xcb,0xd2,0xb3];
+  inner.set(chinese,30);inner.set(chinese,central+46);
+  view.setUint16(6,0,true);view.setUint16(central+8,0,true);
+  const zip=name=>new File([QuoteLayouts.packOfficeParts({'账表/内层.zip':inner,'附送/无关.zip':QuoteLayouts.packOfficeParts({'说明.txt':'合成说明'})})],name);
+  let strict=false;
+  try{(await BidderArchive.open(new File([inner],'内层.zip'))).close();}catch(e){strict=e.message.includes('不是 UTF-8');}
+  const r=await AuditAutoCheck.collect(AuditChecklist.TRIAL_ID,{files:[zip('外层.zip')]});
+  const empty=await AuditAutoCheck.collect(AuditChecklist.TRIAL_ID,{files:[new File([QuoteLayouts.packOfficeParts({'说明.txt':'合成说明'})],'空账表.zip')]});
+  return {strict,workbooks:r.workbooks,containsName:r.sources.some(source=>source.name==='外层.zip / 账表/内层.zip / 账页.xlsx'),
+   empty:empty.workbooks,hasEmptyReason:empty.checks.some(check=>check.id==='source.archive.empty')};
+ });
+ assert.deepEqual(result,{strict:true,workbooks:{read:1,skipped:0,failed:0},containsName:true,
+  empty:{read:0,skipped:0,failed:1},hasEmptyReason:true});
+});
+

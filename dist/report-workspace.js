@@ -248,7 +248,7 @@
   const bytes=root.AuditArchive?.zipStore?root.AuditArchive.zipStore(entries):root.QuoteLayouts.packOfficeParts(parts);
   return new Blob([bytes],{type:MIME});
  }
- async function downloadSavedDraft(projectId,assertContext=()=>{}){
+ async function exportSavedReport(projectId,assertContext,makeFile){
   if(!uuid(projectId)||projectId===TRIAL)throw Error('请选择已立项的审计项目。');
   const store=root.ProjectWorkspaceStore;
   const project=(await root.ProjectInitiation.listSaved()).find(item=>item.quoteId===projectId);
@@ -262,12 +262,32 @@
    const source=sourceChoices(record,projectId).find(item=>item.nodeId===draft.source.nodeId&&item.fileId===draft.source.fileId);
    const file=await db.downloadAttachment(projectId,source.nodeId,source.fileId);
    if(file.metadata.generationId!==source.generationId||file.metadata.sha256!==source.file.sha256||await store.hash(file.blob)!==source.file.sha256)throw Error('报告来源文件已变化，请重新核对生成。');
-   const report=await buildReportDocument(project.form.projectName,draft,source);
+   const {blob,name}=await makeFile(project.form.projectName,draft,source);
    if((await store.get(projectId)).rev!==rev)throw Error('项目资料已更新，请重新下载报告初版。');
    validateReportDraft(draft,await db.get(projectId),projectId);
-   assertContext();
-   store.download(report,'报告初版（待核对）.docx');
+   await assertContext();
+   store.download(blob,name);
+   return name;
   }finally{db.close();}
+ }
+ function downloadSavedDraft(projectId,assertContext=()=>{}){
+  return exportSavedReport(projectId,assertContext,async(name,draft,source)=>({
+   blob:await buildReportDocument(name,draft,source),name:'报告初版（待核对）.docx'
+  }));
+ }
+ function downloadReportWithTables(projectId,tables,assertContext){
+  return exportSavedReport(projectId,assertContext,async(projectName,draft)=>{
+   const paragraphs=draft.content.split(/\r?\n/u).filter(line=>line.trim()).map(text=>({text}));
+   const title=projectName+' · 审计报告';
+   const content=await root.QuoteBodyPdf.buildReadingCopy(title,paragraphs);
+   const body=await root.PDFLib.PDFDocument.load(content);
+   const appendix=await root.PDFLib.PDFDocument.load(await tables.blob.arrayBuffer(),{updateMetadata:false});
+   const pages=await body.copyPages(appendix,appendix.getPageIndices());
+   for(const page of pages)body.addPage(page);
+   const pending=draft.content.includes(DRAFT_NOTICE)||draft.content.includes('审计报告（待核对）');
+   const name=root.AuditArchive.safeName(projectName)+(pending?'-全套报告（待核对）.pdf':'-全套报告.pdf');
+   return {blob:new Blob([await body.save()],{type:'application/pdf'}),name};
+  });
  }
  async function readPriorText(file){const name=file.metadata.name,blob=file.blob;if(!root.ProjectWorkspaceStore?.hash||await root.ProjectWorkspaceStore.hash(blob)!==file.metadata.sha256)throw Error('上年报告实际字节与SHA256不一致，未生成草稿。');const original=new File([blob],name);let out='';if(/\.docx$/iu.test(name)){const src=await root.TenderImport.openBidTemplate(original),x=root.ProjectWorkspaceStore.xml(await src.read('word/document.xml')),W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';out=Array.from(x.getElementsByTagNameNS(W,'p'),p=>Array.from(p.getElementsByTagNameNS(W,'t'),n=>n.textContent).join('')).join('\n');}else if(/\.pdf$/iu.test(name)){if(!root.BidderPdfText)throw Error('PDF文字读取组件未加载。');out=(await root.BidderPdfText.read(new Uint8Array(await blob.arrayBuffer()))).lines.join('\n');}else if(/\.doc$/iu.test(name))out=await root.WorkpaperDocs.read(original);else throw Error('生成草稿请使用可读取文字的PDF或Word上年报告。');if(!out.trim()||out.length>150000)throw Error('未读取到完整可用文字；扫描件请先提供可读取文字的PDF或Word，不猜测报告内容。');return out;}
  function mount(host,adapter={}){
@@ -279,8 +299,13 @@
   select.id='report-project';select.setAttribute('aria-label',projectLabel.textContent);projectLabel.htmlFor=select.id;projectLabel.append(select);
   status.id='report-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
   toolbar.append(companyLabel,projectLabel,refresh);box.append(toolbar,status);host.replaceChildren(box);
-  const cards=el('div',undefined,'rw-cards'),tb=el('section',undefined,'rw-card'),audit=el('section',undefined,'rw-card');tb.id='report-trial-balance';audit.id='report-audit-report';tb.append(el('h3','9200 · TB试算平衡表'),el('p','进入所选项目工作底稿目录的9200原表。目录实际行246，原包与文件哈希由底稿目录再次核验，多工作表须明确选择；不会把8400或其他项目当9200。'));const tbOpen=button('进入本项目9200原表'),tbStatus=el('p','请选择项目；本页不会重新计算或改写原公式。');tbOpen.id='report-open-9200';tb.append(tbOpen,tbStatus);audit.append(el('h3','资料与数据衔接'));const sourceSelect=el('select'),preview=button('只读预览所选源附件'),sourceStatus=el('p'),form=el('div',undefined,'rw-draft');sourceSelect.id='report-source';sourceSelect.setAttribute('aria-label','本项目审计报告源附件');preview.id='report-preview-source';sourceStatus.id='report-source-provenance';audit.append(sourceSelect,preview,sourceStatus,form);cards.append(tb,audit);box.append(cards);
-  const tbInline=el('div'),generatedPanel=el('div',undefined,'rw-generated-panel');tb.append(tbInline);const inline=root.ReportInlineTB?.mount(tbInline)||null;if(inline){tbOpen.hidden=true;tbStatus.hidden=true;tb.querySelector('p').textContent='在本页逐张显示本项目目录9200的原工作表，保持原格式；上一张表、下一张表翻页，公式与链接只读且不重算。';}
+  const cards=el('div',undefined,'rw-cards'),tb=el('section',undefined,'rw-card'),audit=el('section',undefined,'rw-card');tb.id='report-trial-balance';audit.id='report-audit-report';tb.append(el('h3','试算平衡表原工作表'),el('p','打开所选项目的试算平衡表原件。'));const tbOpen=button('进入本项目试算平衡表'),tbStatus=el('p','请选择项目；本页不会重新计算或改写原公式。');tbOpen.id='report-open-9200';tb.append(tbOpen,tbStatus);audit.append(el('h3','资料与数据衔接'));const sourceSelect=el('select'),preview=button('只读预览所选源附件'),sourceStatus=el('p'),form=el('div',undefined,'rw-draft');sourceSelect.id='report-source';sourceSelect.setAttribute('aria-label','本项目审计报告源附件');preview.id='report-preview-source';sourceStatus.id='report-source-provenance';audit.append(sourceSelect,preview,sourceStatus,form);cards.append(tb,audit);box.append(cards);
+  const tbInline=el('div'),generatedPanel=el('div',undefined,'rw-generated-panel'),reportFooter=el('div',undefined,'rw-tb-toolbar rw-tb-footer');
+  const reportDownload=button('下载报告'),reportRefresh=button('刷新报告');
+  reportDownload.disabled=true;
+  reportFooter.setAttribute('role','group');reportFooter.setAttribute('aria-label','报告页底部操作');
+  tb.append(tbInline);
+  const inline=root.ReportInlineTB?.mount(tbInline,{footer:reportFooter,onShowTable:()=>{selectSection('trial-balance');tb.scrollIntoView?.({block:'start'});}})||null;if(inline){tbOpen.hidden=true;tbStatus.hidden=true;tb.querySelector('p').textContent='逐张查看本项目的原工作表。公式和链接为只读。';}
   let section='trial-balance';
   function refreshActiveSection(){
    if(section==='trial-balance')void inline?.refreshSaved?.();
@@ -311,6 +336,8 @@
   reportPreview.append(el('h3','报告模板正文'),reportBody);
   sourcePane.append(...Array.from(audit.childNodes));
   audit.append(reportControls,reportPreview,generatedPanel,sourcePane);
+  reportFooter.append(reportDownload,reportRefresh);
+  audit.append(reportFooter);
   function syncReportTemplate(){
    const choice=reportChoices.get(project?.quoteId||'');
    reportTypeSelect.value=choice?.type||'';
@@ -369,7 +396,8 @@
   }
   reportTypeSelect.onchange=reportTemplateSelect.onchange=changeReportTemplate;
   syncReportTemplate();
-  function canLeave(){if(reportBusy||inline&&!inline.canLeave())return false;if(reportDirty&&!(typeof root.confirm==='function'&&root.confirm('审计报告草稿有未保存修改，确定离开并丢弃？')))return false;return !dirty||typeof root.confirm==='function'&&root.confirm('数据衔接表仅暂存在当前页面，尚未保存。请先导出核对表；继续离开或切换将丢弃未导出的修改。确定继续？');}
+  function canLeave(){return !reportBusy&&(!inline||inline.canLeave())&&canLeaveReport();}
+  function canLeaveReport(){if(reportBusy)return false;if(reportDirty&&!(typeof root.confirm==='function'&&root.confirm('审计报告草稿有未保存修改，确定离开并丢弃？')))return false;return !dirty||typeof root.confirm==='function'&&root.confirm('数据衔接表仅暂存在当前页面，尚未保存。请先导出核对表；继续离开或切换将丢弃未导出的修改。确定继续？');}
   async function read(key){const api=root.AuditChecklist;if(!api)throw Error('资料清单模块未加载，请刷新后重试。');const db=await (key===TRIAL?api.openTrial():api.open());try{const r=await db.get(key);if(r){api.validate?.(r);if(r.project?.quoteId!==key)throw Error('资料项目归属不一致，未读取。');}return r;}finally{db.close();}}
   function showSourceOptions(){
    const chosen=candidates.indexOf(source);
@@ -436,14 +464,21 @@
    showProjectOptions(previous);
    await loadProject();
   }
-  async function loadProject(){const ticket=++serial,key=select.value;sourcesReady=false;project=null;record=null;workspace=null;generated=null;reportDirty=false;handoverChanged=false;candidates=[];clearDraft();renderGenerated();syncReportTemplate();if(inline)void inline.load('');sourceSelect.replaceChildren(new Option('请选择本项目上年审计报告附件',''));sourceInfo();if(!key){say('');return;}const saved=key===TRIAL?{quoteId:TRIAL,form:{projectName:'独立试用'},source:{}}:projects.find(p=>p.quoteId===key);if(!saved){say('该项目已不在已保存立项列表中，未自动选择其他项目。',true);return;}project=saved;if(inline)void inline.load(key);syncReportTemplate();sourceInfo();try{const next=await read(key);if(!alive(ticket))return;record=next;if(root.ProjectWorkspaceStore?.get){const savedWorkspace=await root.ProjectWorkspaceStore.get(key);if(!alive(ticket))return;workspace=savedWorkspace;generated=workspace.reportDraft||null;if(generated?.template&&!reportChoices.has(key)){reportChoices.set(key,{type:generated.template.opinion,template:generated.template.sha256});syncReportTemplate();}}candidates=next?sourceChoices(next,key):[];if(generated){source=candidates.find(s=>s.nodeId===generated.source?.nodeId&&s.fileId===generated.source?.fileId)||null;if(source)renderDraft();renderGenerated();}sourcesReady=true;showSourceOptions();sourceInfo();say('');}catch(e){if(alive(ticket))say(e.message,true);}}
+  async function loadProject({reloadTrialBalance=true}={}){const ticket=++serial,key=select.value;sourcesReady=false;project=null;record=null;workspace=null;generated=null;reportDirty=false;handoverChanged=false;candidates=[];clearDraft();renderGenerated();syncReportTemplate();if(reloadTrialBalance)void inline?.load('');sourceSelect.replaceChildren(new Option('请选择本项目上年审计报告附件',''));sourceInfo();if(!key){say('');return;}const saved=key===TRIAL?{quoteId:TRIAL,form:{projectName:'独立试用'},source:{}}:projects.find(p=>p.quoteId===key);if(!saved){say('该项目已不在已保存立项列表中，未自动选择其他项目。',true);return;}project=saved;if(reloadTrialBalance)void inline?.load(key);syncReportTemplate();sourceInfo();try{const next=await read(key);if(!alive(ticket))return;record=next;if(root.ProjectWorkspaceStore?.get){const savedWorkspace=await root.ProjectWorkspaceStore.get(key);if(!alive(ticket))return;workspace=savedWorkspace;generated=workspace.reportDraft||null;if(generated?.template&&(!reloadTrialBalance||!reportChoices.has(key))){reportChoices.set(key,{type:generated.template.opinion,template:generated.template.sha256});syncReportTemplate();}}candidates=next?sourceChoices(next,key):[];if(generated){source=candidates.find(s=>s.nodeId===generated.source?.nodeId&&s.fileId===generated.source?.fileId)||null;if(source)renderDraft();renderGenerated();}sourcesReady=true;showSourceOptions();sourceInfo();say(reloadTrialBalance?'':'已刷新本项目报告和来源资料。');}catch(e){if(alive(ticket))say(e.message,true);}}
   async function currentFile(snapshot,ticket){const fresh=await read(snapshot.projectId);if(!alive(ticket))throw Error('项目或源文件已经切换，未沿用旧来源。');verifySource(fresh,snapshot.projectId,snapshot);const db=await (snapshot.projectId===TRIAL?root.AuditChecklist.openTrial():root.AuditChecklist.open());try{const result=await db.downloadAttachment(snapshot.projectId,snapshot.nodeId,snapshot.fileId);if(!alive(ticket))throw Error('项目或源文件已经切换，未打开旧附件。');if(result.metadata.sha256!==snapshot.file.sha256||result.metadata.generationId!==snapshot.generationId)throw Error('源附件版本不一致，未打开。');return {record:fresh,...result};}finally{db.close();}}
-  function renderGenerated(){generatedPanel.replaceChildren();if(!generated)return;let reason='';try{validateReportDraft(generated,record,project?.quoteId);if(handoverChanged)throw Error('数据衔接内容已有修改，请重新生成后再保存或导出当前稿。');if(generated.template&&(reportTypeSelect.value!==generated.template.opinion||reportTemplateSelect.value!==generated.template.sha256))throw Error('当前草稿使用「'+generated.template.name+'」。要使用新选项，请重新生成。');}catch(e){reason=e.message;}
-   const heading=el('h3','审计报告正文 · 可编辑未签发草稿'),editor=el('textarea'),save=button('保存审计报告草稿'),download=button(generated.template?'下载审计报告草稿（Word）':'下载审计报告草稿（无章Word）');editor.id='report-editable-content';editor.setAttribute('aria-label','审计报告正文（未签发草稿）');editor.rows=30;editor.maxLength=150000;editor.value=generated.content;editor.readOnly=!!reason||reportBusy;save.id='report-draft-save';download.id='report-draft-download';save.disabled=download.disabled=!!reason||reportBusy;editor.oninput=()=>{generated={...generated,content:editor.value};reportDirty=true;};generatedPanel.append(heading);if(reason)generatedPanel.append(el('p',reason,'error'));if(generated.template)generatedPanel.append(el('p','模板：'+generated.template.name));generatedPanel.append(el('p','来源：'+generated.source.name+' · SHA256 '+generated.source.sha256+' · 清单修订 '+generated.source.recordRevision),editor,save,download);
+  function renderGenerated(){generatedPanel.replaceChildren();reportDownload.disabled=true;if(!generated)return;let reason='';try{validateReportDraft(generated,record,project?.quoteId);if(handoverChanged)throw Error('数据衔接内容已有修改，请重新生成后再保存或导出当前稿。');if(generated.template&&(reportTypeSelect.value!==generated.template.opinion||reportTemplateSelect.value!==generated.template.sha256))throw Error('当前草稿使用「'+generated.template.name+'」。要使用新选项，请重新生成。');}catch(e){reason=e.message;}
+   const heading=el('h3','审计报告正文 · 可编辑未签发草稿'),editor=el('textarea'),save=button('保存审计报告草稿'),download=button(generated.template?'下载审计报告草稿（Word）':'下载审计报告草稿（无章Word）');editor.id='report-editable-content';editor.setAttribute('aria-label','审计报告正文（未签发草稿）');editor.rows=30;editor.maxLength=150000;editor.value=generated.content;editor.readOnly=!!reason||reportBusy;save.id='report-draft-save';download.id='report-draft-download';reportDownload.disabled=save.disabled=download.disabled=!!reason||reportBusy;editor.oninput=()=>{generated={...generated,content:editor.value};reportDirty=true;};generatedPanel.append(heading);if(reason)generatedPanel.append(el('p',reason,'error'));if(generated.template)generatedPanel.append(el('p','模板：'+generated.template.name));generatedPanel.append(el('p','来源：'+generated.source.name+' · SHA256 '+generated.source.sha256+' · 清单修订 '+generated.source.recordRevision),editor,save,download);
    async function checkedGenerated(){const candidate=candidates.find(s=>s.nodeId===generated.source.nodeId&&s.fileId===generated.source.fileId);if(!candidate)throw Error('草稿来源已不存在，未保存或导出。');const fresh=await currentFile(candidate,serial);validateReportDraft(generated,fresh.record,project.quoteId);if(await root.ProjectWorkspaceStore.hash(fresh.blob)!==generated.source.sha256)throw Error('源报告实际SHA256已变化，未保存或导出。');return fresh;}
-   save.onclick=async()=>{if(reportBusy)return;const ticket=serial,key=project?.quoteId;reportBusy=true;editor.readOnly=true;save.disabled=download.disabled=true;try{if(!workspace||!root.ProjectWorkspaceStore?.save)throw Error('项目草稿保存组件未加载，请刷新。');await checkedGenerated();if(!alive(ticket))return;const next={...generated,updatedAt:new Date().toISOString()};validateReportDraft(next,record,key);const saved=await root.ProjectWorkspaceStore.save(key,workspace.rev,{reportDraft:next});if(!alive(ticket))return;workspace=saved;generated=next;reportDirty=dirty=false;say('本项目审计报告编辑草稿已保存。原报告、原底稿公式均未修改，未签发。');}catch(e){if(alive(ticket))say(e.message,true);}finally{reportBusy=false;if(alive(ticket))renderGenerated();}};
-   download.onclick=async()=>{if(reportBusy)return;const ticket=serial;reportBusy=true;editor.readOnly=true;save.disabled=download.disabled=true;try{await checkedGenerated();if(!alive(ticket))return;const draft=generated,f=await buildReportDocument(project.form.projectName,draft,candidates.find(s=>s.fileId===draft.source.fileId));if(!alive(ticket))return;validateReportDraft(draft,await read(draft.projectId),draft.projectId);if(!alive(ticket))return;root.ProjectWorkspaceStore.download(f,draft.template?'审计报告-编辑草稿-待核对.docx':'审计报告-编辑草稿-未签发无章.docx');say('已下载待核对的 Word 草稿。');}catch(e){if(alive(ticket))say(e.message,true);}finally{reportBusy=false;if(alive(ticket))renderGenerated();}};
+   save.onclick=async()=>{if(reportBusy)return;const ticket=serial,key=project?.quoteId;reportBusy=true;editor.readOnly=true;reportDownload.disabled=save.disabled=download.disabled=true;try{if(!workspace||!root.ProjectWorkspaceStore?.save)throw Error('项目草稿保存组件未加载，请刷新。');await checkedGenerated();if(!alive(ticket))return;const next={...generated,updatedAt:new Date().toISOString()};validateReportDraft(next,record,key);const saved=await root.ProjectWorkspaceStore.save(key,workspace.rev,{reportDraft:next});if(!alive(ticket))return;workspace=saved;generated=next;reportDirty=dirty=false;say(root.SaveFeedback?.saved('本项目审计报告编辑草稿已保存。原报告、原底稿公式均未修改，未签发。')??('本项目审计报告编辑草稿已保存。原报告、原底稿公式均未修改，未签发。'));}catch(e){if(alive(ticket))say(root.SaveFeedback?.failed(e,'审计报告草稿未保存。')||e?.message||'审计报告草稿未保存。',true);}finally{reportBusy=false;if(alive(ticket))renderGenerated();}};
+   download.onclick=async()=>{if(reportBusy)return;const ticket=serial;reportBusy=true;editor.readOnly=true;reportDownload.disabled=save.disabled=download.disabled=true;try{await checkedGenerated();if(!alive(ticket))return;const draft=generated,f=await buildReportDocument(project.form.projectName,draft,candidates.find(s=>s.fileId===draft.source.fileId));if(!alive(ticket))return;validateReportDraft(draft,await read(draft.projectId),draft.projectId);if(!alive(ticket))return;root.ProjectWorkspaceStore.download(f,draft.template?'审计报告-编辑草稿-待核对.docx':'审计报告-编辑草稿-未签发无章.docx');say('已下载待核对的 Word 草稿。');}catch(e){if(alive(ticket))say(e.message,true);}finally{reportBusy=false;if(alive(ticket))renderGenerated();}};
   }
+  reportDownload.onclick=()=>generatedPanel.querySelector('#report-draft-download')?.click();
+  reportRefresh.onclick=async()=>{
+   if(!select.value){say('请先选择审计项目。',true);return;}
+   if(!canLeaveReport())return;
+   reportRefresh.disabled=true;
+   try{await loadProject({reloadTrialBalance:false});}finally{reportRefresh.disabled=false;}
+  };
   function renderDraft(){handoverApi=syncHandover=null;form.replaceChildren();form.inert=false;if(!source)return;const draft={projectId:project.quoteId,projectName:project.form.projectName,source,year:String(project.source?.auditYear||''),currency:'',unit:'',reviewer:'',sourceConfirmed:false,dimensionsConfirmed:false,reviewConfirmed:false,rows:[]};
    const fields=el('div',undefined,'rw-fields'),year=el('input'),currency=el('select'),unit=el('select'),reviewer=el('input');year.id='report-year';year.inputMode='numeric';year.maxLength=4;year.value=draft.year;currency.id='report-currency';unit.id='report-unit';reviewer.id='report-reviewer';reviewer.maxLength=80;currency.append(new Option('请选择币种',''),...['CNY','HKD','USD','EUR','OTHER'].map(x=>new Option(x,x)));unit.append(new Option('请选择金额单位',''),new Option('货币单位','unit'),new Option('千货币单位','thousand'),new Option('万货币单位','ten-thousand'));for(const [name,input]of [['本年审计年度',year],['币种（不折算）',currency],['金额单位（不折算）',unit],['手工核对人（自填，非签名）',reviewer]]){const l=el('label',name);l.append(input);fields.append(l);}form.append(fields);
    const consent=(id,label)=>{const l=el('label',undefined,'rw-consent'),input=el('input');input.type='checkbox';input.id=id;l.append(input,d.createTextNode(label));form.append(l);return input;};const sourceConfirmed=consent('report-source-confirmed','我已核对该项目、该附件确为上年度审计报告；不是其他年度或其他单位的文件。'),dimensions=consent('report-dimensions-confirmed','我已核对上年期末与本年期初的年度、币种、单位一致；差异应先人工调节，本页不自动换算。');
@@ -491,7 +526,7 @@
    addRow();if(generated&&generated.source.sha256===source.file.sha256&&generated.source.fileId===source.fileId){const h=generated.handover;year.value=String(h.year);currency.value=h.currency;unit.value=h.unit;reviewer.value=h.reviewer;sourceConfirmed.checked=dimensions.checked=final.checked=true;if(h.rows.length){body.replaceChildren();draft.rows=[];for(const r of h.rows){addRow();const i=draft.rows.length-1;Object.assign(draft.rows[i],r,{confirmed:true});for(const input of body.rows[i].querySelectorAll('[data-field]')){const key=input.dataset.field;if(key==='confirmed')input.checked=true;else input.value=r[key]||'';}}}}sync();
   }
   select.onchange=()=>{if(!canLeave()){select.value=project?.quoteId||'';return;}void loadProject();};refresh.onclick=()=>{if(canLeave())void loadProjects(true).catch(e=>say(e.message,true));};sourceSelect.onchange=()=>{const selected=sourceSelect.value===''?null:candidates[Number(sourceSelect.value)]||null;if(selected===source)return;if(!canLeave()){sourceSelect.value=String(candidates.indexOf(source));return;}++serial;previewHandle?.close();previewHandle=null;source=selected;dirty=false;handoverChanged=!!generated;sourceInfo();renderDraft();renderGenerated();};preview.onclick=async()=>{const snapshot=source,ticket=serial;if(!snapshot||refreshingSources())return;try{const file=await currentFile(snapshot,ticket);if(!root.AuditAttachmentPreview?.open)throw Error('只读附件预览组件尚未加载。');if(alive(ticket))previewHandle=root.AuditAttachmentPreview.open({blob:file.blob,name:file.metadata.name,sha256:file.metadata.sha256});}catch(e){if(alive(ticket))say(e.message,true);}};
-  tbOpen.onclick=async()=>{const key=project?.quoteId;if(!key)return;if(!canLeave())return;const ticket=serial;try{if(typeof adapter.openTrialBalance!=='function')throw Error('9200原表入口尚未接通，请从本项目底稿目录选择9200。');const result=await adapter.openTrialBalance({projectId:key,index:'9200'});if(!alive(ticket))return;const labels={ready:'已进入本项目9200原表。',missing:'本项目原包尚未导入或不匹配；请在该项目目录导入准确原包，未改开其他表。',ambiguous:'已进入本项目9200目录，请明确选择原工作表；未自动挑选。',unmapped:'9200没有唯一可靠的原表对应，未猜测打开。',cancelled:'已取消进入，当前项目与未保存内容保持不变。'};if(!result||!Object.hasOwn(labels,result.state))throw Error('原表入口未返回可核对状态，请从底稿目录检查。');tbStatus.textContent=labels[result.state];}catch(e){if(alive(ticket))say(e.message,true);}};
+  tbOpen.onclick=async()=>{const key=project?.quoteId;if(!key)return;if(!canLeave())return;const ticket=serial;try{if(typeof adapter.openTrialBalance!=='function')throw Error('试算平衡表入口尚未接通，请核对本项目底稿模板。');const result=await adapter.openTrialBalance({projectId:key,index:'9200'});if(!alive(ticket))return;const labels={ready:'已进入本项目试算平衡表。',missing:'本项目原包尚未导入或不匹配；请在该项目目录导入准确原包，未改开其他表。',ambiguous:'请在本项目目录选择要打开的试算平衡表。',unmapped:'项目目录未能唯一定位试算平衡表原件。',cancelled:'已取消进入，当前项目与未保存内容保持不变。'};if(!result||!Object.hasOwn(labels,result.state))throw Error('原表入口未返回可核对状态，请从底稿目录检查。');tbStatus.textContent=labels[result.state];}catch(e){if(alive(ticket))say(e.message,true);}};
   sourceInfo();
   companySelect.append(new Option('全部被审计单位',''));
   showProjectOptions('');
@@ -521,5 +556,5 @@
     canLeave,destroy(){dead=true;++serial;++reportTemplateTicket;previewHandle?.close();inline?.destroy();project=record=source=null;candidates=[];box.remove();}
   });
  }
- return Object.freeze({mount,amount,sourceChoices,verifySource,validateDraft,validateReportDraft,reportText,wordParts,downloadSavedDraft,MIME});
+ return Object.freeze({mount,amount,sourceChoices,verifySource,validateDraft,validateReportDraft,reportText,wordParts,downloadSavedDraft,downloadReportWithTables,MIME});
 });

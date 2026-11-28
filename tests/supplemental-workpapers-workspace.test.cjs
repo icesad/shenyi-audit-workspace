@@ -13,17 +13,19 @@ test('actual WorkpaperWorkspace stage9 guards unsaved supplements once, saves re
   for(const name of ['project-workspace-store.js','workpaper-directory.js','workpaper-route-catalog.js','workpaper-routing.js','supplemental-workpapers.js','workpaper-stages.js','workpaper-workspace.js'])await page.addScriptTag({content:fs.readFileSync(path.join(dist,name),'utf8')});
   await page.addStyleTag({content:fs.readFileSync(path.join(dist,'supplemental-workpapers.css'),'utf8')});
   await page.evaluate(({id,other})=>{
-   document.body.innerHTML='<main id="workspace"><p id="collection-fixture">资料收集合成测试入口</p></main>';
+   document.body.innerHTML='<main id="workspace"><select id="ac-project"><option value=""></option><option value="'+id+'">合成旧试用项目</option></select></main>';
    globalThis.AuditChecklist=Object.freeze({TRIAL_ID:id});
    // Only the formal-project picker is a synthetic fixture. The workspace, module and IndexedDB store are production code.
-   globalThis.ProjectInitiation={listSaved:async()=>[{quoteId:other,form:{projectName:'另一个合成项目'}}]};
+   globalThis.ProjectInitiation={listSaved:async()=>[{quoteId:other,form:{projectName:'另一个合成项目'},source:{customerName:'另一合成单位',projectType:'年度财务报表审计'}}]};
    globalThis.__confirmCalls=[];globalThis.confirm=message=>{__confirmCalls.push(message);return false;};
    globalThis.__workspace=WorkpaperWorkspace.mount(document.getElementById('workspace'));
   },{id:P,other:OTHER});
   await page.waitForFunction(()=>document.querySelector('#pw-project').options.length===3);
   await page.locator('[data-audit-step="9"]').click();
-  await page.waitForFunction(()=>document.querySelector('#pw-status').textContent.includes('请先选择项目'));
-  await page.locator('#pw-project').selectOption(P);
+  await page.waitForFunction(()=>document.querySelector('#pw-status').textContent.includes('请先选择被审计单位'));
+  assert.equal(await page.getByRole('button',{name:'独立试用',exact:true}).count(),0);
+  await page.evaluate(id=>{document.querySelector('#ac-project').value=id;},P);
+  await page.locator('[data-audit-step="9"]').click();
   await page.waitForSelector('#supplemental-add');
   assert.deepEqual(await page.locator('.swp-root th').allTextContents(),['科目编码','科目名称','上传底稿']);
   assert.equal(await page.locator('#pw-archive').count(),0);
@@ -39,7 +41,7 @@ test('actual WorkpaperWorkspace stage9 guards unsaved supplements once, saves re
   assert.equal(await page.locator('[data-audit-step="9"]').getAttribute('aria-pressed'),'true');
   assert.equal(await page.locator('#supplemental-add').count(),1);
   assert.equal(await page.evaluate(()=>__confirmCalls.length),1,'parent guard delegates once without recursive prompts');
-  await page.locator('#pw-project').selectOption(OTHER);
+  await page.locator('#pw-company').selectOption('另一合成单位');
   assert.equal(await page.locator('#pw-project').inputValue(),P);
   assert.equal(await page.locator('[data-supplemental-name]').inputValue(),'货币资金');
   assert.equal(await page.evaluate(()=>__confirmCalls.length),2);
@@ -56,7 +58,7 @@ test('actual WorkpaperWorkspace stage9 guards unsaved supplements once, saves re
   assert.equal(await page.locator('[data-supplemental-code]').inputValue(),'4100');
   const [download]=await Promise.all([page.waitForEvent('download'),page.locator('[data-supplemental-download]').click()]);const stream=await download.createReadStream(),parts=[];for await(const chunk of stream)parts.push(chunk);assert.deepEqual(Buffer.concat(parts),content);
   await page.waitForFunction(()=>!document.querySelector('.swp-root').inert);
-  await page.locator('#pw-project').selectOption(OTHER);await page.waitForFunction(()=>document.querySelector('.swp-root')&&document.querySelector('.swp-root tbody input')===null);
+  await page.locator('#pw-company').selectOption('另一合成单位');await page.waitForFunction(()=>document.querySelector('.swp-root')&&document.querySelector('.swp-root tbody input')===null);
   assert.equal((await page.evaluate(id=>ProjectWorkspaceStore.get(id),OTHER)).rev,0);
   assert.equal(await page.locator('[data-supplemental-code]').count(),0);
   assert.deepEqual(errors,[]);assert.deepEqual(remote,[]);

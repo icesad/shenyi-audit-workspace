@@ -70,7 +70,7 @@
     const blob = new Blob([bytes], { type: 'application/json;charset=utf-8' }), url = root.URL.createObjectURL(blob);
     try {
       const anchor = root.document.createElement('a'); anchor.href = url;
-      anchor.download = '审易-已保存账表校验快照-' + projectId + '.json'; anchor.click();
+      anchor.download = '审迹-已保存账表校验快照-' + projectId + '.json'; anchor.click();
     } finally { root.URL.revokeObjectURL(url); }
     return { projectId, workspaceRevision: source.workspaceRevision, calculatedAt: source.reconciliation.calculatedAt, byteLength: bytes.length, sha256 };
   }

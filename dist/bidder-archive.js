@@ -70,7 +70,13 @@
           const original=zipSizes(u32(local+22),u32(local+18),local+30+n,u16(local+28));
           if(u32(local+14)!==checksum||original.packed!==packed||original.size!==size)fail();
         }
-        let raw;try{raw=utf8.decode(data.subarray(p+46,p+46+n));}catch{fail('ZIP 文件名不是 UTF-8，请用支持 UTF-8 文件名的工具重新打包。');}
+        const nameBytes=data.subarray(p+46,p+46+n);
+        let raw;
+        try{raw=utf8.decode(nameBytes);}catch{
+          if(!LIMITS.legacyZipNames||flags&0x800)fail('ZIP 文件名不是 UTF-8，请用支持 UTF-8 文件名的工具重新打包。');
+          try{raw=new TextDecoder('gb18030',{fatal:true}).decode(nameBytes);}
+          catch{fail('无法识别 ZIP 中文文件名，请用支持 UTF-8 文件名的工具重新打包。');}
+        }
         const dir=raw.endsWith('/')||raw.endsWith('\\')||unixType===0x4000||(u32(p+38)&16)!==0;
         if(dir&&(size||packed>16||checksum))fail();
         ranges.push([local,stop]);add(out,unique,{raw,dir,size,method,checksum,dataStart,stop});p=next;
@@ -208,12 +214,12 @@
       }
     };
   }
-  async function open(file,{signal,entryLimit=512}={}){
+  async function open(file,{signal,entryLimit=512,legacyZipNames=false}={}){
     if(!(file instanceof Blob)||!file.size||file.size>LIMITS.inputBytes)throw Error('请选择不超过 160 MiB 的 RAR 或 ZIP 文件。');
     if(typeof root.Worker!=='function'||typeof root.URL?.createObjectURL!=='function'||typeof root.BidderArchiveWorkerVendor!=='string')throw Error('本机解压组件未加载，请刷新或使用新版 Chrome / Edge。');
     if(signal?.aborted)throw Error('已取消读取压缩包。');
     if(![512,2048].includes(entryLimit))throw Error('压缩包条目上限无效。');
-    const code='const LIMITS='+JSON.stringify({...LIMITS,entries:entryLimit})+';\n'+root.BidderArchiveWorkerVendor+'\n;('+archiveWorker.toString()+')();';
+    const code='const LIMITS='+JSON.stringify({...LIMITS,entries:entryLimit,legacyZipNames:legacyZipNames===true})+';\n'+root.BidderArchiveWorkerVendor+'\n;('+archiveWorker.toString()+')();';
     const url=root.URL.createObjectURL(new Blob([code],{type:'text/javascript'}));let worker,pending=null,closed=false,seq=0;
     function close(message='压缩包读取已关闭。'){
       if(closed)return;closed=true;signal?.removeEventListener('abort',abort);

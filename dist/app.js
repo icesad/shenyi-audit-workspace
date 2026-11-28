@@ -47,6 +47,7 @@
   let storedRaw = null, storageReadable = true, activeRecordId = null, restoredNeedsReview = false;
   let deliveryStore=null,projectInitiation=null,auditProgram=null,selectedBidder=null,proposalBusy=false,proposalKey=null,proposalEpoch=0,ledgerRows=[],previewPacket=null,cleanAnnex=null,completePdfBusy=false,sealSource=null,signedReview=null,cleanSigned=null;
   let subjectList=null,batchQuote=null,bidderPicker=null,tenderTicket=0,tenderPending=false,intakeChanged=false,hasTender=false,activeTenderSource=null,quoteSigning=null;
+  let importedTender=null;
   const signingLabels=Object.freeze({company_seal:'公司公章',legal_representative_seal:'法人章',bidder_signature:'投标人签字'});
   const signingInputs=()=>$$('[data-quote-page-sign-kind]');
   const chosenSignKinds=()=>signingInputs().filter(el=>el.checked).map(el=>el.dataset.quotePageSignKind);
@@ -90,7 +91,29 @@
     records = saved;
   } catch { readError = true; try { storedRaw = localStorage.getItem(STORE); } catch { storageReadable = false; } }
 
-  function toast(message) { $('#toast').textContent = message; $('#toast').classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(()=>$('#toast').classList.remove('show'),3500); }
+  function toast(message) {
+    const note=$('#toast');
+    note.textContent=message;
+    note.classList.add('show');
+    clearTimeout(toast.timer);
+    toast.timer=setTimeout(()=>note.classList.remove('show'),3500);
+  }
+  const saveResultDialog=$('#save-result-dialog'),pendingSaveResults=[];
+  function showNextSaveResult(){
+    if(saveResultDialog.open||!pendingSaveResults.length)return;
+    const {state,message,operation}=pendingSaveResults.shift();
+    saveResultDialog.dataset.state=state;
+    const title=['导出','暂存','下载'].includes(operation)?operation:'保存';
+    $('#save-result-title').textContent=title+(state==='failed'?'失败':title==='下载'?'已发起':'成功');
+    $('#save-result-message').textContent=message;
+    saveResultDialog.showModal();
+  }
+  saveResultDialog.addEventListener('close',showNextSaveResult);
+  document.addEventListener('shenyi:save-result',({detail})=>{
+    if(!detail||!['saved','failed'].includes(detail.state)||typeof detail.message!=='string')return;
+    pendingSaveResults.push(detail);
+    showNextSaveResult();
+  });
   function formFill(form, values) { for(const [key,value] of Object.entries(values)) { const e = form.elements.namedItem(key); if(e) e.value = value; } }
   function formRead(form) { return Object.fromEntries(new FormData(form)); }
   function positiveNumber(value, label, max=1e12) { if(String(value).trim()==='' || !Number.isFinite(Number(value)) || Number(value)<0 || Number(value)>max) throw Error(label+'必须是有效的非负数'); return Number(value); }
@@ -112,8 +135,13 @@
   }
   const ESTIMATE_PREFIX = 'hengdu.audit.quote.estimates.v1.';
   const ESTIMATE_OUTCOME_PREFIX = 'hengdu.audit.quote.estimate-outcome.v1.';
+  const INQUIRY_CLEARED_AT='hengdu.audit.quote.inquiry-cleared-at';
+  const ESTIMATE_DELETION_PREFIX = 'hengdu.audit.quote.estimate-row-deleted.v1.';
+  const estimateDeletionKey=(id,index)=>ESTIMATE_DELETION_PREFIX+JSON.stringify([id,index]);
+  const estimateTrashIcon=$('#clear-inquiry svg').outerHTML;
   const ESTIMATE_TAX_RATES = ['1','3','6'];
-  const estimateProjectTypes = globalThis.ProjectWorkspaceStore?.PROJECT_TYPES ?? [...$('#project-type').options].map(option=>option.value);
+  const projectTypeLabel=value=>globalThis.ProjectWorkspaceStore?.projectTypeLabel?.(value)??value;
+  const estimateProjectTypes = [...$('#project-type').options].map(option=>option.textContent);
   const estimateOutcomeNames = {won:outcomeNames.won,lost:outcomeNames.lost,pending:'待确认'};
   const estimateFilters = new Map();
   const estimateFilterMenu = $('#estimate-filter-menu');
@@ -122,11 +150,14 @@
   const estimateFilterForm = $('#estimate-filter-form');
   const estimateFilterValue = $('#estimate-filter-value');
   const estimateFilterButtons = [];
-  const ESTIMATE_PAGE_SIZE=10;
   const estimatePagination=$('#estimate-pagination');
+  estimatePagination.prepend($('#record-page-size-control').content.cloneNode(true));
+  const estimatePageSize=estimatePagination.querySelector('select');
+  const estimatePageButtons=estimatePagination.querySelector('.record-page-buttons');
   const estimateScroll=$('.quote-estimates-scroll');
   let estimateFilterAnchor = null, estimateRows = [], estimatePage=1;
-  let latestRegionalEstimate=null,quoteReferenceFile=null;
+  let latestRegionalEstimate=null,regionalRecordSaved=false,quoteReferenceFile=null,roundingCarry=null;
+  let estimateProjectNumbers=new Map(),estimateNumbersTicket=0;
   const PROJECT_CODE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
   let estimateOutcomeBusy = false;
   function provinceShortName(name) {
@@ -145,11 +176,12 @@
     return `${hex.slice(0,8)}-${hex.slice(8,12)}-4${hex.slice(13,16)}-${variant}${hex.slice(17,20)}-${hex.slice(20)}`;
   }
   function readEstimates() {
-    const records = [];
+    const records = [], deletedRows = new Set();
     let unreadable = false;
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
+        if (key?.startsWith(ESTIMATE_DELETION_PREFIX)) deletedRows.add(key);
         if (!key?.startsWith(ESTIMATE_PREFIX)) continue;
         try {
           const record = JSON.parse(localStorage.getItem(key));
@@ -161,7 +193,7 @@
       }
     } catch { unreadable = true; }
     records.sort((a, b) => b.createdAt - a.createdAt);
-    return {records, unreadable};
+    return {records, unreadable, deletedRows};
   }
   function estimateProjectKey(issuer, project, year, customers = []) {
     const names = [issuer, coreProjectName(project)].map(value => value.normalize('NFKC').trim());
@@ -176,7 +208,7 @@
   }
   function matchingEstimateCode(key, totalCents) {
     if (!key) return '';
-    const {records} = readEstimates();
+    const {records,deletedRows} = readEstimates();
     const matching = new Set(records.filter(row => {
       if (!row.code || !row.projectKey) return false;
       if (row.projectKey === key) return true;
@@ -185,7 +217,8 @@
         return estimateProjectKey(issuer,project,year,audited || row.auditeeQuotes?.map(line=>line.name) || [estimateCustomerName(row)]) === key;
       } catch { return false; }
     }));
-    const rows = estimateRecordRows(records).filter(row=>row.code&&!row.multiUnit&&matching.has(row.record));
+    const rows = estimateRecordRows(records).filter(row=>row.code&&!row.multiUnit&&matching.has(row.record)&&
+      !deletedRows.has(estimateDeletionKey(row.record.id,row.index)));
     const exact = rows.filter(row=>row.unit.cents===totalCents);
     const candidates = exact.length?exact:rows;
     const winners = candidates.filter(({code})=>readEstimateOutcome(code)==='won');
@@ -207,7 +240,7 @@
       decision.awardedAt = changedAt;
       decision.snapshot = {
         origin:'estimate', projectName:record.project || '', issuer:record.issuer || '',
-        customerName:unit.name, firmName:record.firm || '',
+        customerName:unit.name, firmName:record.firm || (latestRegionalEstimate?.id===record.id?selectedBidder?.name:'') || '',
         auditYear:Number.isInteger(year) && year >= 1900 && year <= 9999 ? year : null,
         quoteDate:record.date || todayShanghai(), totalCents:Number.isSafeInteger(unit.cents) ? unit.cents : null,
         projectType:record.projectType || '', riskLevel:record.riskLevel || '', contactName:record.contact || '',
@@ -225,7 +258,7 @@
     const snapshot = {...decision.snapshot};
     if (formal) {
       // Retain the original award identity while filling gaps from the same registered quote.
-      for (const key of ['contactName','contactInfo','riskLevel','taxRateText']) if (!snapshot[key]) snapshot[key]=formal.snapshot[key] || '';
+      for (const key of ['firmName','contactName','contactInfo','riskLevel','taxRateText']) if (!snapshot[key]) snapshot[key]=formal.snapshot[key] || '';
       if (formal.snapshot.bidderContact && formal.snapshot.firmName === snapshot.firmName) snapshot.bidderContact = formal.snapshot.bidderContact;
     }
     return {id:code,lastEventNo:events.length,events,snapshot};
@@ -244,7 +277,7 @@
     const rows=records.flatMap(record=>{
       const quotes=record.auditeeQuotes;
       const multiUnit=Array.isArray(quotes)&&quotes.length>1&&quotes.length<=50&&quotes.every(line=>line&&typeof line.name==='string');
-      const units=multiUnit?quotes:[{name:estimateCustomerName(record,registered.get(record.code)),cents:record.cents}];
+      const units=regionalQuoteLines(record,record.finalQuotes,multiUnit?null:estimateCustomerName(record,registered.get(record.code)));
       counts.set(record.code,(counts.get(record.code)||0)+units.length);
       return units.map((unit,index)=>({record,unit,index,multiUnit}));
     });
@@ -283,27 +316,151 @@
     const byId=new Map(entries.map(entry=>[entry.id,entry]));
     return relevantBidProjects(records,byId).map(record=>{
       const entry=byId.get(record.quoteId);
-      return entry?{...record,source:{...record.source,totalCents:entry.snapshot.totalCents}}:record;
+      return entry?{...record,source:{...record.source,totalCents:entry.snapshot.totalCents,riskLevel:entry.snapshot.riskLevel}}:record;
     });
   }
-  function auditeeEstimateTable(lines) {
-    const amount = value => Number.isSafeInteger(value) ? fmt(value) : '—';
+  async function refreshEstimateProjectNumbers(){
+    const ticket=++estimateNumbersTicket,S=globalThis.ProjectWorkspaceStore;
+    if(!S?.ensureProjectNumbers)return;
+    const formal=new Map(ledgerRows.map(entry=>[entry.id,entry]));
+    const rows=estimateRecordRows(readEstimates().records,formal).filter(row=>row.code);
+    const won=rows.filter(row=>(formal.get(row.code)?.events.at(-1)?.outcome||readEstimateOutcome(row.code))==='won');
+    if(!won.length){estimateProjectNumbers=new Map();return;}
+    const saved=await globalThis.ProjectInitiation.listSaved();
+    const candidates=new Map(saved.map(record=>[record.quoteId,record.source.wonAt??record.createdAt]));
+    for(const code of new Set([...formal.keys(),...rows.map(row=>row.code)])){
+      const first=projectEntry(code,formal.get(code))?.events.find(event=>event.outcome==='won');
+      if(first)candidates.set(code,first.recordedAt);
+    }
+    if(candidates.size)await S.ensureProjectNumbers([...candidates].map(([projectId,firstWonAt])=>({projectId,firstWonAt})));
+    const results=await Promise.all(won.map(async row=>{
+      const workspace=await S.get(row.code),entry=projectEntry(row.code,formal.get(row.code));
+      const type=workspace.projectClassification?.projectType??entry?.snapshot.projectType??row.record.projectType;
+      const risk=workspace.projectRegister?.riskLevel??entry?.snapshot.riskLevel??row.record.riskLevel;
+      return [row.code,S.projectCode(workspace.projectIdentity,risk,type)];
+    }));
+    if(ticket===estimateNumbersTicket)estimateProjectNumbers=new Map(results);
+  }
+  function regionalQuoteLines(record,overrides=record.finalQuotes,singleName=null) {
+    const lines=singleName===null&&Array.isArray(record.auditeeQuotes)?record.auditeeQuotes:
+      [{name:singleName??record.customerName,cents:record.cents,reason:record.pending}];
+    return lines.map((line,i)=>{
+      const measuredCents=hasEstimatePrice(line.cents)?line.cents:null;
+      const finalCents=hasEstimatePrice(overrides?.[i])?overrides[i]:null;
+      return {...line,measuredCents,finalCents,cents:finalCents??measuredCents};
+    });
+  }
+  function regionalQuoteTotal(lines) {
+    const priced=lines.filter(line=>hasEstimatePrice(line.cents)).length;
+    const sum=lines.reduce((total,line)=>total+BigInt(line.cents??0),0n);
+    const overflow=sum>BigInt(Number.MAX_SAFE_INTEGER);
+    return {priced,overflow,totalCents:priced===lines.length&&!overflow?Number(sum):null};
+  }
+  function auditeeEstimateTable(lines,editable) {
     return `<div class="table-scroll"><table class="estimate-detail-table">
-      <thead><tr><th scope="col">被审计单位</th><th scope="col">含税报价</th></tr></thead>
-      <tbody>${lines.map(line => `<tr><th scope="row">${esc(line.name || '单位名称待补')}</th><td>${esc(line.reason || amount(line.cents))}</td></tr>`).join('')}</tbody>
+      <thead><tr><th scope="col">被审计单位</th><th scope="col">含税报价</th><th scope="col">最终报价（元）</th></tr></thead>
+      <tbody>${lines.map((line,i) => {
+        const name=line.name||'单位名称待补',amount=hasEstimatePrice(line.cents)?decimalCents(line.cents):'';
+        return `<tr><th scope="row">${esc(name)}</th><td>${esc(line.reason||(hasEstimatePrice(line.measuredCents)?fmt(line.measuredCents):'—'))}</td>
+          <td>${editable?`<input class="estimate-final-price" type="text" inputmode="decimal" maxlength="22" autocomplete="off"
+            aria-label="${esc(name)}的最终报价（元）" data-final-quote="${i}" data-record-amount="${amount}" value="${amount}" placeholder="待填写"${line.name?'':' disabled'}>`:'—'}</td></tr>`;
+      }).join('')}</tbody>
       </table></div>`;
   }
-  function showRegionalResult(label = '—', lines = null) {
-    const details = $('#estimate-details');
-    if (lines === null) {
-      latestRegionalEstimate=null;
-      const subjects = subjectList?.snapshot().rows || [];
-      lines = subjects.length > 1 ? subjects.map(row => ({name:row.clientName,reason:'待测算'})) : [];
+  function readRegionalPrices(record=latestRegionalEstimate) {
+    const measured=regionalQuoteLines(record),overrides=[],inputs=$$('#estimate-details [data-final-quote]');
+    let invalid=null,error='';
+    for(const [i,input] of inputs.entries()){
+      const value=input.value.normalize('NFKC').trim().replace(/^(\d{1,3}(?:,\d{3})+)(\.\d{1,2})?$/u,(_,whole,fraction='')=>whole.replaceAll(',','')+fraction);
+      let amount=null,message='';
+      try{if(value&&!input.disabled)amount=C.money(value);}catch(e){message=e.message;}
+      input.setCustomValidity(message);
+      input.setAttribute('aria-invalid',String(!!message));
+      if(message&&!invalid){invalid=input;error=(measured[i].name||'未命名单位')+'的最终报价：'+message;}
+      overrides.push(amount===measured[i].measuredCents?null:amount);
     }
-    $('#estimate-result').value = label;
-    details.hidden = lines.length < 2;
-    details.innerHTML = details.hidden ? '' : auditeeEstimateTable(lines);
-    refreshQuoteDownloadControls();
+    const lines=regionalQuoteLines(record,overrides);
+    return {lines,overrides,error,...regionalQuoteTotal(lines)};
+  }
+  function refreshRegionalPrices() {
+    if(!latestRegionalEstimate)return;
+    const result=readRegionalPrices();
+    const inputs=$$('#estimate-details [data-final-quote]');
+    for(const [i,input] of inputs.entries()){
+      const cents=input.validity.valid?result.lines[i].cents:null;
+      input.dataset.recordAmount=hasEstimatePrice(cents)?decimalCents(cents):'';
+    }
+    const note=$('#estimate-final-status');
+    const error=result.error||(result.overflow?'最终报价合计超出可处理范围。':'');
+    note.textContent=error;
+    const count=result.lines.length,manual=result.overrides.some(hasEstimatePrice);
+    $('#estimate-result').value=error?'待核对':hasEstimatePrice(result.totalCents)?fmt(result.totalCents):
+      count>1?`${result.priced}/${count} 家已${manual?'报价':'测算'}`:'待测算';
+    const unchanged=regionalRecordSaved&&result.lines.every((line,i)=>(latestRegionalEstimate.finalQuotes?.[i]??null)===line.finalCents);
+    $('#estimate-record-save').disabled=!!error||unchanged;
+    return result;
+  }
+  function showRegionalResult(record = null, saved = false) {
+    if(record!==latestRegionalEstimate)proposalEpoch++;
+    latestRegionalEstimate=record;
+    regionalRecordSaved=saved;
+    $('#estimate-record-save').disabled=true;
+    roundingCarry=null;
+    const details = $('#estimate-details');
+    const subjects=subjectList?.snapshot().rows||[],inquiry=$('#inquiry-text').value.trim();
+    $('#inquiry-source-note').hidden=!(inquiry&&(hasTender||importedTender||subjects.length>1));
+    const lines=record?regionalQuoteLines(record):
+      !inquiry&&subjects.length>1?subjects.map(row=>({name:row.clientName,reason:'待测算'})):[];
+    details.hidden=!lines.length;
+    details.innerHTML=details.hidden?'':auditeeEstimateTable(lines,!!record);
+    $('#estimate-result').value='—';
+    $('#estimate-final-status').textContent='';
+    refreshRegionalPrices();
+    refreshProposalControls();
+  }
+  function saveRegionalRecord() {
+    const record=latestRegionalEstimate;
+    if(!record)return;
+    try{
+      const result=readRegionalPrices(record);
+      if(result.error||result.overflow)throw Error(result.error||'最终报价合计超出可处理范围。');
+      const key=ESTIMATE_PREFIX+record.id,stored=JSON.parse(localStorage.getItem(key));
+      const oldLines=regionalQuoteLines(record);
+      if(regionalRecordSaved ? !stored||stored.projectCode!==record.projectCode||
+        regionalQuoteLines(stored).some((line,i)=>line.finalCents!==oldLines[i]?.finalCents) : stored!==null)
+        throw Error('本机报价记录已变化，请重新测算。');
+      const {id,code,...data}=record;
+      const next={...(stored||data),...(!stored?{firm:$('#proposal-form').elements.firmName.value.trim()}:{}),finalQuotes:result.overrides};
+      localStorage.setItem(key,JSON.stringify(next));
+      latestRegionalEstimate={...next,id,code};
+      regionalRecordSaved=true;
+      refreshRegionalPrices();
+      estimatePage=1;
+      estimateScroll.scrollTop=0;
+      renderEstimates();
+      showRegionMessage(byId(record.provinceId).name+' · 已记录'+(record.pending?' · 待测算：'+record.pending:''));
+      SaveFeedback.saved('报价记录已保存到本机。');
+    }catch(error){showRegionMessage(SaveFeedback.failed(error,'无法保存报价记录。'),true);}
+  }
+  function restoreInquiry(draft) {
+    const oldFields={clientName:'被审计单位',project:'项目名称',issuer:'询价单位',type:'项目类型',year:'审计年度',assets:'资产总额',revenue:'营业收入'};
+    $('#inquiry-text').value=typeof draft?.text==='string'?draft.text:Object.entries(oldFields)
+      .filter(([key])=>draft?.['inquiry-'+key]?.trim())
+      .map(([key,label])=>label+'：'+draft['inquiry-'+key]+(['assets','revenue'].includes(key)?'万元':'')).join('，');
+  }
+  function inquiryAmounts(inquiry,rule) {
+    const amounts={};
+    for(const [key,label] of [['assets','资产总额'],['revenue','营业收入']]){
+      if(!inquiry[key]){
+        if(rule.mode!=='fixed'&&(rule.basis===key||!['assets','revenue'].includes(rule.basis)))throw Error('请填写'+label+'（万元）。');
+        amounts[key]='0';
+      }else{
+        let value=inquiry[key].normalize('NFKC');
+        if(/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(value))value=value.replaceAll(',','');
+        try{amounts[key]=wanToYuan(value);}catch(error){throw Error(label+'：'+error.message);}
+      }
+    }
+    return amounts;
   }
   function closeEstimateFilter(restoreFocus=false){
     if(!estimateFilterAnchor)return;
@@ -400,25 +557,25 @@
     return values[column]===value;
   }
   function renderEstimatePagination(pageCount){
-    estimatePagination.hidden=pageCount<2;
-    if(pageCount<2){estimatePagination.replaceChildren();return;}
     const first=pageCount<=7?2:Math.min(Math.max(2,estimatePage-2),pageCount-5);
     const last=pageCount<=7?pageCount-1:Math.min(first+4,pageCount-1);
     const pages=[1];
     if(first>2)pages.push(null);
     for(let page=first;page<=last;page++)pages.push(page);
     if(last<pageCount-1)pages.push(null);
-    pages.push(pageCount);
+    if(pageCount>1)pages.push(pageCount);
     const button=(label,page,disabled=false,current=false)=>
       `<button type="button" class="btn" data-estimate-page="${page}"${disabled?' disabled':''}${current?' aria-current="page"':''}>${label}</button>`;
-    estimatePagination.innerHTML=button('上一页',estimatePage-1,estimatePage===1)+pages.map(page=>page===null
+    estimatePageButtons.innerHTML=button('上一页',estimatePage-1,estimatePage===1)+pages.map(page=>page===null
       ?'<span aria-hidden="true">…</span>':button(page,page,false,page===estimatePage)).join('')+button('下一页',estimatePage+1,estimatePage===pageCount);
   }
   function renderEstimates() {
-    const {records, unreadable} = readEstimates();
+    const {records, unreadable, deletedRows} = readEstimates();
     const registered = new Map(ledgerRows.map(entry => [entry.id, entry]));
     const cellValue = value => String(value || '—');
-    const allRows = estimateRecordRows(records,registered).map(row=>{
+    // Assign project codes before filtering so removing one unit cannot renumber its siblings.
+    const listed=estimateRecordRows(records,registered).filter(row=>!deletedRows.has(estimateDeletionKey(row.record.id,row.index)));
+    const allRows = listed.map(row=>{
       const entry = registered.get(row.code);
       const result = entry ? entry.events.at(-1)?.outcome : readEstimateOutcome(row.code);
       const outcome = Object.hasOwn(estimateOutcomeNames,result) ? result : 'pending';
@@ -427,18 +584,20 @@
     estimateRows = allRows.map((row,i)=>{
       const {record,unit,outcome}=row;
       return {...row,values:{
-        number:String(allRows.length-i),date:cellValue(record.date),code:cellValue(row.code),auditee:cellValue(unit.name),firm:cellValue(record.firm),
-        project:cellValue(coreProjectName(record.project)),type:cellValue(record.projectType==='内控审计'?'内控测试':record.projectType),region:byId(record.provinceId).name,
+        number:String(allRows.length-i),date:cellValue(record.date),code:estimateProjectNumbers.get(row.code)||'待核对项目编码',auditee:cellValue(unit.name),
+        firm:cellValue(outcome==='won'?projectEntry(row.code,registered.get(row.code))?.snapshot.firmName||record.firm:record.firm),
+        project:cellValue(coreProjectName(record.project)),type:cellValue(record.projectType==='内控审计'?'内控测试':projectTypeLabel(record.projectType)),region:byId(record.provinceId).name,
         amount:hasEstimatePrice(unit.cents)?fmt(unit.cents):cellValue(unit.reason||'待测算'),outcome:estimateOutcomeNames[outcome],
         contact:cellValue(record.contact),phone:cellValue(record.phone),email:cellValue(record.email)
       }};
     });
     const filters=[...estimateFilters],filtering=filters.length>0;
     const rows=filtering?estimateRows.filter(row=>filters.every(([key,value])=>matchesEstimateFilter(row,key,value))):estimateRows;
-    const pageCount=Math.max(1,Math.ceil(rows.length/ESTIMATE_PAGE_SIZE));
+    const pageSize=Number(estimatePageSize.value);
+    const pageCount=Math.max(1,Math.ceil(rows.length/pageSize));
     estimatePage=Math.min(estimatePage,pageCount);
-    const firstRow=(estimatePage-1)*ESTIMATE_PAGE_SIZE;
-    const visibleRows=rows.slice(firstRow,firstRow+ESTIMATE_PAGE_SIZE);
+    const firstRow=(estimatePage-1)*pageSize;
+    const visibleRows=rows.slice(firstRow,firstRow+pageSize);
     renderEstimatePagination(pageCount);
     $('#estimate-filter-clear').disabled = !filtering;
     for(const button of estimateFilterButtons){
@@ -458,15 +617,39 @@
     $('#quote-estimates-total').textContent = priced.length || !rows.length ? totalText : '—';
     $('#quote-estimates-total-note').textContent = pending ? `（${pending} 条待测算）` : '';
     const cell = value => `<td>${esc(value)}</td>`;
-    $('#quote-estimates-rows').innerHTML = visibleRows.length ? visibleRows.map(({record,unit,code,outcome,values}) => {
+    $('#quote-estimates-rows').innerHTML = visibleRows.length ? visibleRows.map(({record,unit,index,code,outcome,values}) => {
       const {id,detail} = record;
       const codeText = `<code>${esc(values.code)}</code>`;
       const codeLink = outcome === 'won' && PROJECT_CODE.test(code)
         ? `<a href="#project-initiation" data-project-info="${esc(code)}" data-estimate-id="${esc(id)}" title="打开立项信息表">${codeText}</a>` : '';
       const options = ['won','lost'].map(value => `<option value="${value}"${outcome === value ? ' selected' : ''}>${estimateOutcomeNames[value]}</option>`).join('');
       const selector = `<select data-estimate-outcome="${esc(code)}" data-estimate-id="${esc(id)}" aria-label="${esc(unit.name || record.project || values.region)}的投标结果" ${!code || estimateOutcomeBusy ? 'disabled' : ''}><option value="" disabled${['won','lost'].includes(outcome) ? '' : ' selected'}>${esc(values.outcome)}</option>${options}</select>`;
-      return `<tr>${cell(values.number)}${cell(values.date)}<td class="quote-estimates-code">${codeLink}</td>${cell(values.auditee)}${cell(values.firm)}${cell(values.project)}${cell(values.type)}${cell(values.region)}<td class="quote-record-amount" title="${esc(detail)}">${esc(values.amount)}</td><td>${selector}</td>${cell(values.contact)}${cell(values.phone)}${cell(values.email)}</tr>`;
+      const deleteLabel=esc('删除'+(unit.name||record.project||'第'+values.number+'行')+'的招投标记录');
+      const trash=`<button type="button" class="btn quote-clear estimate-delete" data-estimate-id="${esc(id)}" data-delete-unit="${index}" aria-label="${deleteLabel}" title="${deleteLabel}"${estimateOutcomeBusy?' disabled':''}>${estimateTrashIcon}</button>`;
+      return `<tr>${cell(values.number)}${cell(values.date)}<td class="quote-estimates-code">${codeLink}</td>${cell(values.auditee)}${cell(values.firm)}${cell(values.project)}${cell(values.type)}${cell(values.region)}<td class="quote-record-amount" title="${esc(detail)}">${esc(values.amount)}</td><td><div class="estimate-outcome-actions">${selector}${trash}</div></td>${cell(values.contact)}${cell(values.phone)}${cell(values.email)}</tr>`;
     }).join('') : `<tr><td colspan="13" class="quote-estimates-empty">${filtering ? '没有符合筛选条件的记录' : '暂无测算记录'}</td></tr>`;
+  }
+  function deleteEstimateRow(event) {
+    const button=event.target.closest('button[data-delete-unit]');
+    if(!button||estimateOutcomeBusy)return;
+    const row=estimateRows.find(({record,index})=>record.id===button.dataset.estimateId&&index===Number(button.dataset.deleteUnit));
+    if(!row)return;
+    const key=estimateDeletionKey(row.record.id,row.index),status=$('#estimate-outcome-status');
+    const token=crypto.randomUUID();
+    try{
+      localStorage.setItem(key,token);
+      renderEstimates();
+      const undo=document.createElement('button');
+      undo.type='button';undo.className='btn';undo.textContent='撤销删除';
+      undo.onclick=()=>{
+        try{
+          if(localStorage.getItem(key)===token)localStorage.removeItem(key);
+          renderEstimates();
+          status.textContent=localStorage.getItem(key)?'该记录已在其他页面重新删除。':'已恢复招投标记录。';
+        }catch(error){status.textContent='恢复失败：'+error.message;}
+      };
+      status.replaceChildren('已删除'+(row.unit.name?'「'+row.unit.name+'」的':'该条')+'招投标记录。',undo);
+    }catch(error){status.textContent='删除失败：'+error.message;}
   }
   async function changeEstimateOutcome(event) {
     const select = event.target.closest('[data-estimate-outcome]');
@@ -475,7 +658,7 @@
     if (!PROJECT_CODE.test(code) || !['won','lost'].includes(outcome)) return;
     const status = $('#estimate-outcome-status');
     estimateOutcomeBusy = true;
-    for (const control of $$('#quote-estimates-rows [data-estimate-outcome]')) control.disabled = true;
+    for (const control of $$('#quote-estimates-rows [data-estimate-outcome],#quote-estimates-rows [data-delete-unit]')) control.disabled = true;
     try {
       await withEstimateOutcome(code, async () => {
         const entries = deliveryStore ? await deliveryStore.list() : [];
@@ -536,6 +719,7 @@
   }
   function regionalAuditeeQuote(row, province, rule, quote) {
     const name = row.clientName.trim();
+    const details={name,assets:row.assets,revenue:row.revenue,profit:row.profit,period:row.dataPeriod||row.period||''};
     try {
       if (restoredNeedsReview) throw Error('请先确认历史复算结果');
       if (!name) throw Error('单位名称待补');
@@ -548,20 +732,26 @@
       const reference = regionResult(rule, {assets:needsAssets ? wanToYuan(row.assets) : '0', revenue:needsRevenue ? wanToYuan(row.revenue) : '0'});
       if (reference.error) throw Error(reference.error);
       const {totalCents} = adjustedQuote(reference.totalCents, quote, '0');
-      return {name,cents:totalCents,assets:row.assets,revenue:row.revenue,profit:row.profit,period:row.dataPeriod||row.period||''};
+      return {...details,cents:totalCents};
     } catch (error) {
-      return {name, reason:error.message};
+      return {...details,reason:error.message};
     }
   }
   function submitRegionalEstimate(event) {
     event.preventDefault();
     const field = $('#quote-region');
-    const province = typedProvince(field.value);
+    const description=$('#inquiry-text'), text=description.value.trim();
+    let inquiry=null;
+    if(text){
+      try{inquiry=globalThis.TenderImport.parseInquiry(text);}
+      catch(error){showRegionMessage(error.message,true);description.focus();return;}
+    }
+    const province = typedProvince(field.value.trim()||inquiry?.pricingRegion||'');
     field.setAttribute('aria-invalid', String(!province));
-    if (!province) { showRegionMessage('输入错误', true); field.focus(); return; }
+    if (!province) { showRegionMessage(inquiry?'请在报价参数中填写计价地区，或在询价信息中写明按哪个地区计价。':'输入错误', true); field.focus(); return; }
     if (tenderPending) { showRegionMessage('请等文件识别完成后再测算。', true); return; }
     const tax = $('#estimate-tax'), factor = $('#estimate-factor');
-    const nextQuote = {...state.quote, basis:idFor(province), tax:tax.value, pricePercent:factor.value.normalize('NFKC').trim().replace(/\s*%$/, '')};
+    const nextQuote = {...state.quote, basis:idFor(province), tax:tax.value, rounding:$('#estimate-rounding').value, pricePercent:factor.value.normalize('NFKC').trim().replace(/\s*%$/, '')};
     if (!ESTIMATE_TAX_RATES.includes(nextQuote.tax)) {
       showRegionMessage('请选择税率。', true); tax.focus(); return;
     }
@@ -572,10 +762,22 @@
     }
     const savedRule = state.rules.find(rule => rule.id === nextQuote.basis);
     const rule = savedRule && savedRule.status !== 'missing' ? savedRule : ruleDefault(province);
-    const subjects = subjectList?.snapshot().rows || [];
+    let manualAmounts;
+    if(inquiry){
+      for(const [key,problem] of [['clientName','请在询价信息中写明一家被审计单位的名称。'],['year','请在询价信息中写明本次审计年度，例如 2026 年。']]){
+        if(key==='year'? !/^\d{4}$/.test(inquiry.year)||+inquiry.year<2000||+inquiry.year>2100 : !inquiry[key]){
+          showRegionMessage(problem,true);description.focus();return;
+        }
+      }
+      if(!province.scopePending&&rule.mode!=='budget'){
+        try{manualAmounts=inquiryAmounts(inquiry,rule);}catch(error){showRegionMessage(error.message,true);description.focus();return;}
+      }
+    }
+    const subjects = inquiry?[]:subjectList?.snapshot().rows || [];
     const auditeeQuotes = subjects.length > 1 ? subjects.map(row => regionalAuditeeQuote(row, province, rule, nextQuote)) : null;
     const source = fallbackRule(rule) ? '借用河北历史口径，非当地标准' : '地区参考，待复核';
-    const terms = `${source}。${rule.document} · ${rule.version}。报价比例 ${nextQuote.pricePercent}%，税率 ${nextQuote.tax}%。`;
+    const roundingLabel=nextQuote.rounding==='hundred'?'百位取整':nextQuote.rounding==='thousand'?'千位取整':'';
+    const terms = `${source}。${rule.document} · ${rule.version}。报价比例 ${nextQuote.pricePercent}%，税率 ${nextQuote.tax}%。${roundingLabel?'各单位含税报价'+roundingLabel+'。':''}`;
     let cents = null, detail, pending = '';
     let pricedCount = 0;
     if (auditeeQuotes) {
@@ -589,40 +791,50 @@
       detail = terms;
     } else try {
       if (restoredNeedsReview) throw Error('请先确认历史复算结果。');
-      const input = province.scopePending ? null : validateClient();
+      if(inquiry&&rule.mode==='budget'&&!province.scopePending)throw Error('请先核定本项目的工时预算。');
+      const input = province.scopePending ? null : inquiry ? manualAmounts : validateClient();
       const reference = regionResult(rule, input);
       if (reference.error) throw Error(reference.error);
-      const quote = adjustedQuote(reference.totalCents, nextQuote);
+      const quote = adjustedQuote(reference.totalCents, nextQuote, inquiry?'0':nextQuote.extra);
       cents = quote.totalCents;
-      detail = `${source}。${rule.document} · ${rule.version}。${reference.baseLabel}；基准价 ${fmt(reference.totalCents)}，报价比例 ${nextQuote.pricePercent}%，另计税率 ${nextQuote.tax}%，附加费用 ${fmt(C.money(nextQuote.extra))}。`;
+      detail = `${source}。${rule.document} · ${rule.version}。${reference.baseLabel}；基准价 ${fmt(reference.totalCents)}，报价比例 ${nextQuote.pricePercent}%，另计税率 ${nextQuote.tax}%，附加费用 ${fmt(C.money(inquiry?'0':nextQuote.extra))}。`;
       if (quote.roundingUnit) detail += ` 取整前合计 ${fmt(quote.unroundedTotalCents)}。`;
     } catch (error) { pending = detail = error.message; }
 
     const form = $('#proposal-form').elements;
-    const linked = proposalKey === currentProposalKey();
-    const issuer = linked ? form.issuer.value.trim() : '', project = linked ? form.projectName.value.trim() : '';
-    const projectKey = estimateProjectKey(issuer,project,state.client.year,auditeeQuotes?.map(row=>row.name)||[state.client.clientName]);
+    const linked = !inquiry&&proposalKey === currentProposalKey();
+    const customer=inquiry?.clientName??state.client.clientName, year=inquiry?.year??state.client.year;
+    const issuer=inquiry?(inquiry.issuer||customer):linked?form.issuer.value.trim():'';
+    const project=inquiry?inquiry.project:linked?form.projectName.value.trim():'';
+    const projectKey=estimateProjectKey(issuer,project,year,auditeeQuotes?.map(row=>row.name)||[customer]);
     const record = {
-      createdAt: Date.now(), date: form.quoteDate.value || todayShanghai(), issuer, project, projectKey,
-      projectType: form.projectType.value,
+      createdAt: Date.now(), date: inquiry?todayShanghai():form.quoteDate.value || todayShanghai(), issuer, project, projectKey,
+      projectType: inquiry?(inquiry.type||'财务报表审计'):form.projectType.value,
+      ...(inquiry?{inquiry}:{}),
       riskLevel: linked ? form.riskLevel.value : '',
       customerName: auditeeQuotes
         ? ((auditeeQuotes.find(row=>row.name)?.name || '') + '等 '+auditeeQuotes.length+' 家单位')
-        : state.client.clientName,
-      auditYear: state.client.year,
+        : customer,
+      auditYear: year,
       taxRate: nextQuote.tax + '%',
       firm: form.firmName.value.trim(), provinceId: nextQuote.basis, cents,
-      detail: !auditeeQuotes && state.client.clientName.trim() ? `被审计方：${state.client.clientName.trim()}。${detail}` : detail,
+      detail: !auditeeQuotes && customer.trim() ? `被审计方：${customer.trim()}。${detail}` : detail,
       ...(auditeeQuotes ? {auditeeQuotes} : {}),
       contact: linked ? form.contactName.value.trim() : '',
       phone: linked ? form.contactInfo.value.trim() : '', email: linked ? $('#issuer-email').value.trim() : ''
     };
-    try {
-      // Independent keys let separate tabs append without overwriting each other's records.
-      record.projectCode = crypto.randomUUID();
-      localStorage.setItem(ESTIMATE_PREFIX + crypto.randomUUID(), JSON.stringify(record));
-    } catch { showRegionMessage('未能保存测算记录，请检查浏览器存储。', true); return; }
+    record.projectCode=crypto.randomUUID();
+    const recordId=crypto.randomUUID();
+    record.pricePercent=nextQuote.pricePercent;
+    record.rounding=nextQuote.rounding;
+    const lines=regionalQuoteLines(record);
+    if(roundingCarry&&roundingCarry.projectKey===projectKey&&roundingCarry.lines.length===lines.length&&
+      lines.every((line,i)=>line.name===roundingCarry.lines[i].name)){
+      record.finalQuotes=roundingCarry.lines.map(line=>line.finalCents);
+    }
+    if(!auditeeQuotes&&pending)record.pending=pending;
 
+    factor.value = `${nextQuote.pricePercent}%`;
     if (cents !== null) {
       const ids = comparisonIds();
       ids[2] = nextQuote.basis;
@@ -632,29 +844,29 @@
       activeRule = nextQuote.basis;
       ruleDraft = null;
       fillQuoteForm();
-      if (usesDefaultFactor) factor.value = `${nextQuote.pricePercent}%`;
       update();
     }
-    estimatePage=1;
-    estimateScroll.scrollTop=0;
-    renderEstimates();
     const resultLabel = cents === null ? '待测算' : fmt(cents);
-    const label = auditeeQuotes && cents === null ? `${pricedCount}/${auditeeQuotes.length} 家已测算` : resultLabel;
-    latestRegionalEstimate=cents===null?null:record;
-    showRegionalResult(label, auditeeQuotes || []);
+    showRegionalResult({...record,id:recordId,code:record.projectCode});
     const status = auditeeQuotes
-      ? `${province.name} · ${pricedCount}/${auditeeQuotes.length} 家已测算 · 已记录${pending ? ' · '+pending : ''}`
-      : pending ? `${province.name}已记录，待测算：${pending}` : `${province.name} · ${resultLabel} · 已记录`;
-    showRegionMessage(status, !!pending);
+      ? `${province.name} · ${pricedCount}/${auditeeQuotes.length} 家已测算 · 待保存${pending ? ' · '+pending : ''}`
+      : pending ? `${province.name} · 待测算：${pending}` : `${province.name} · ${resultLabel} · 待保存`;
+    showRegionMessage(status,!!pending);
   }
   function validPricePercent(v){return typeof v==='string'&&/^\d{1,5}(?:\.\d{1,2})?$/.test(v)&&Number(v)<=10000;}
   function displayedFactor(q){return q.pricePercent??String(Math.round((100-Number(q.discount))*100)/100);}
   function syncEstimateAdjustments() {
     $('#estimate-tax').value = ESTIMATE_TAX_RATES.includes(state.quote.tax) ? state.quote.tax : ESTIMATE_TAX_RATES[0];
+    $('#estimate-rounding').value=state.quote.rounding||'none';
     const factor = displayedFactor(state.quote);
     $('#estimate-factor').value = validPricePercent(factor) ? `${factor}%` : '';
   }
-  function fillQuoteForm(){formFill($('#quote-form'),{...state.quote,pricePercent:displayedFactor(state.quote)});}
+  function fillQuoteForm(){
+    formFill($('#quote-form'),{...state.quote,pricePercent:displayedFactor(state.quote)});
+    $('#rounding-enabled').checked=!!state.quote.rounding&&state.quote.rounding!=='none';
+    $('#rounding-unit').value=state.quote.rounding==='thousand'?'thousand':'hundred';
+    $('#rounding-unit').disabled=!$('#rounding-enabled').checked;
+  }
   function adjustedQuote(base,q,extra=q.extra){
     return C.applyAdjustment({baseCents:base,discountPercent:q.discount,pricePercent:q.pricePercent,extraYuan:extra,taxPercent:q.tax,roundingUnit:q.rounding||'none'});
   }
@@ -717,8 +929,10 @@
     formFill($('#rules-form'),r);$('#rules-form').elements.namedItem('fixedYuan').value=r.fixedYuan??'';
   }
   function sourceList(){const items=[['价格市场化','国家发改委 · 发改价格〔2014〕2755号','要求放开会计师事务所审计服务价格。','https://www.ndrc.gov.cn/xxgk/zcfb/tz/201501/t20150104_963719.html'],['工时预算依据','财政部 · 会计师事务所一体化管理办法','第八条：业务收费以项目工时预算和人员级差费率为基础。第十五条涉及境内服务器与数据存储要求。','https://www.mof.gov.cn/jrttts/202205/P020220531557195020769.pdf'],['上海收费口径','沪发改价费〔2011〕001号','实行市场调节价，由事务所综合成本、难易、风险等制定标准。','https://czj.sh.gov.cn/zys_8908/zcfg_8983/zcfb_8985/hj_9035/hjssws_9041/20110201/0017-157508.html'],['广西参考实例','桂林理工大学 · 2026年协审服务采购','该采购参考2012年标准并采用下浮率，不代表全省统一现行报价。','https://shenji.glut.edu.cn/info/1007/1787.htm'],['河北参考实例','河北省体育局 · 2022年中标公示','该采购使用2012年历史标准的折扣价，不代表全省平均成交价。','https://sport.hebei.gov.cn/tongzhigonggao/2022/0119/17582.html']];$('#source-list').innerHTML=items.map(([tag,title,note,url])=>`<div class="source-item"><span class="badge neutral">${esc(tag)}</span> <a href="${url}" target="_blank" rel="noopener noreferrer">${esc(title)} ↗</a><p>${esc(note)}</p></div>`).join('');}
-  let settingsPanel=null,workspaceNavigation=null,workpaperWorkspace=null,reportWorkspace=null,archiveWorkspace=null,templateWorkspace=null;
+  let settingsPanel=null,workspaceNavigation=null,workpaperWorkspace=null,reportWorkspace=null,archiveWorkspace=null,templateWorkspace=null,commonTemplateWorkspace=null,standardsWorkspace=null;
+  const readOnlyHeaderViews=new Set(['home','standards','general-templates']);
   let projectActivity=null,travelExpenses=null,projectCosts=null,pageDrafts=null,deliveryReady=null;const draftRestored=new Set();let projectPageReady=null,auditPageReady=null;const draftQuoteEpoch={value:null};
+  let materialDraftReady=null,materialInputEpoch=0;
   function showSettings(){
     const host=$('#app-settings');if(!host)return;
     if(settingsPanel)return;
@@ -751,10 +965,13 @@
     const step=$('.pw-steps [data-audit-step][aria-pressed=true]');
     const entry=step&&$(`[data-nav-audit-step="${step.dataset.auditStep}"]`);
     const title=$('#audit-flow').hidden?(entry?.textContent||step?.textContent.replace(/^[①-⑨]\s*/, '')||'资料收集与核对'):'流程总览';
+    const checklistExport=$('#audit-checklist-export');
+    checklistExport.hidden=!$('#audit-flow').hidden||!!step&&step.dataset.auditStep!=='1';
+    if(checklistExport.hidden)checklistExport.open=false;
     $('#page-title').textContent=title;
     $('#breadcrumb').textContent='审计程序 / '+title;
   }
-  function reportSectionTitle(section){return section==='audit-report'?'审计报告':'试算平衡表9200';}
+  function reportSectionTitle(section){return section==='audit-report'?'审计报告':'试算平衡表';}
   function updateReportHeading(section){
     if(view!=='report')return;
     const title=reportSectionTitle(section);
@@ -775,7 +992,7 @@
   function assertAuditDownloadContext(projectId){
     if(view!=='audit'||$('#audit-flow').hidden||auditWorkflow.selectedProject()!==projectId)throw Error('已离开当前审计项目，未执行下载。');
   }
-  async function openAuditWorkflowStage(stage,projectId){
+  async function openAuditWorkflowStage(stage,projectId,beforeLoad){
     if(stage==='client'){
       const step=$('.pw-steps [data-audit-step="1"]');
       if(step?.disabled)throw Error('当前审计资料正在处理，请稍后重试。');
@@ -785,12 +1002,11 @@
       if(projectId)await auditProgram?.selectProject(projectId);
       return $('#ac-project')?.value===projectId;
     }
-    if(stage==='template'){setView('templates');return;}
-    if(stage==='export'){
-      if(!globalThis.WorkpaperPackageExport?.download)throw Error('底稿导出组件尚未就绪。');
-      const result=await globalThis.WorkpaperPackageExport.download(projectId,{assertContext:()=>assertAuditDownloadContext(projectId)});
-      $('#audit-flow-status').textContent='已导出 '+result.originalCount+' 份已保存底稿原件。';
-      return true;
+    const workpaperStep={initial:3,risk:4,ledger:8}[stage];
+    if(workpaperStep){
+      if(!workpaperWorkspace?.openProjectStage)throw Error('项目底稿工作区尚未就绪。');
+      if(!await workpaperWorkspace.openProjectStage(projectId,workpaperStep,beforeLoad))return false;
+      return setView('audit',{auditStepSelected:true,auditDetail:true});
     }
     if(stage==='report-download'){
       if(!globalThis.ReportWorkspace?.downloadSavedDraft)throw Error('报告下载组件尚未就绪。');
@@ -808,12 +1024,14 @@
     if(projectId)await archiveWorkspace?.selectProject?.(projectId);
     return $('#audit-archive-project')?.value===projectId;
   }
-  function setView(name,{openProject=false,projectInfo=false,auditStepSelected=false,auditDetail=auditStepSelected}={}){
+  function setView(name,{openProject=false,projectInfo=false,auditStepSelected=false,auditDetail=auditStepSelected,overviewProject}={}){
     const labels={
-      home:['首页','审计项目工作台','从招投标到成本核算，按项目推进。'],
+      home:['首页','审计项目工作台',''],
       templates:['资料库 / 审计底稿模板','审计底稿模板','本机维护模板原件，按项目选用，不上传模板正文。'],
+      'general-templates':['资料库 / 通用模板','通用模板',''],
+      standards:['资料库 / 准则查询','准则查询',''],
       archive:['报告出具 / 审计底稿归档','审计底稿归档','按原工作底稿目录整理原件、填写记录和明确关联的附件。'],
-      basics:['资料库','资料库','统一维护投标方、审计底稿模板与收费依据，业务资料保存在本设备浏览器。'],
+      basics:['资料库','资料库',''],
       settings:['设置','账号与设置','平台账号资料、显示偏好与本机数据说明。'],
       bidders:['资料库 / 投标方信息库','投标方信息库','保存本所及获授权合作所的基础资料和证照，报价时按所选用。'],
       quote:['招投标及立项 / 招投标','招投标',''],
@@ -825,27 +1043,31 @@
       travel:['成本核算 / 费用报销填报','费用报销填报','关联已立项项目，登记费用、发票及支付记录。'],
       costs:['成本核算 / 项目成本核算','项目成本核算',''],
       audit:['审计程序 / 流程总览','流程总览',''],
-      report:['报告出具 / 试算平衡表9200','试算平衡表9200','']
+      report:['报告出具 / 试算平衡表','试算平衡表','']
     };
     if(!Object.hasOwn(labels,name))return false;
     const detailsOpen=projectInitiation?.isDetailsOpen?.();
     if(view==='project'&&detailsOpen&&(name!=='project'||!openProject)&&!projectInitiation.canLeave())return false;
     if(name!=='quote')closeEstimateFilter();
-    if(name!==view&&pageDrafts)void pageDrafts.checkpoint(['proposal','bid'].includes(view)?'quote':view).catch(err=>draftNotice('切页暂存未完成：'+err.message,true));view=name;$('main').dataset.workspaceView=name;
+    if(name!==view&&pageDrafts&&!readOnlyHeaderViews.has(view))void pageDrafts.checkpoint(['proposal','bid'].includes(view)?'quote':view).catch(err=>draftNotice('切页暂存未完成：'+err.message,true));view=name;$('main').dataset.workspaceView=name;
     $$('.view').forEach(e=>e.hidden=e.id!=='view-'+name);
     $$('[data-view]').forEach(e=>{const active=e.dataset.view===name;e.classList.toggle('active',active);if(active)e.setAttribute('aria-current','page');else e.removeAttribute('aria-current');});
     $('#workspace-eyebrow').textContent=name==='quote'?'BIDDING WORKBENCH':'AUDIT WORKSPACE';
     $('#bidding-navigation').hidden=!['proposal','bid','ledger'].includes(name);
     if(name==='project')$('#view-project').dataset.mode=projectInfo?'details':'summary';
-    const clearProjectFilters=$('#project-summary-clear');
-    if(clearProjectFilters)clearProjectFilters.hidden=name!=='project'||projectInfo;
+    $('#page-save').hidden=name==='project'&&projectInfo;
+    for(const id of ['project-summary-clear','project-summary-new','project-summary-export'])$('#'+id).hidden=name!=='project'||projectInfo;
+    $('#page-save-status').hidden=name==='project'&&!projectInfo;
+    if(name!=='audit'){$('#audit-checklist-export').open=false;$('#audit-checklist-export').hidden=true;}
     $('#breadcrumb').textContent=labels[name][0];$('#page-title').textContent=labels[name][1];
     const subtitle=$('#page-subtitle');subtitle.textContent=labels[name][2];subtitle.hidden=!subtitle.textContent;
-    if(name==='rules'&&!$('#rules-form'))renderRules();if(name==='ledger')reloadLedger();
+    const draftToolbar=$('.page-draft-toolbar');
+    if(draftToolbar)draftToolbar.hidden=readOnlyHeaderViews.has(name);
+    if(name==='rules'&&!$('#rules-form'))renderRules();if(name==='ledger'||name==='quote'&&deliveryStore)void reloadLedger();
     if(name==='project'&&!openProject)projectPageReady=Promise.resolve(projectInitiation?.show({leaveApproved:!!detailsOpen}));
     if(name==='audit'&&auditWorkflow){
       $('#audit-flow').hidden=auditDetail;$('#audit-program').hidden=!auditDetail;
-      if(!auditDetail)auditPageReady=auditWorkflow.show();
+      if(!auditDetail)auditPageReady=auditWorkflow.show(overviewProject);
       else if(!auditStepSelected)auditPageReady=Promise.resolve(auditProgram?.show());
     }else if(name==='audit'&&!auditStepSelected&&!$('#audit-program').querySelector('#ac-project'))auditPageReady=Promise.resolve(auditProgram?.show());
     if(name==='settings')showSettings();if(name==='travel')showTravel();if(name==='costs')showCosts();
@@ -854,12 +1076,21 @@
       showReport();updateReportHeading($('#report-audit-report')?.hidden===false?'audit-report':'trial-balance');
       reportWorkspace?.refreshActiveSection?.();
     }
-    if(name==='archive'&&!archiveWorkspace&&globalThis.AuditArchiveUI)archiveWorkspace=globalThis.AuditArchiveUI.mount($('#audit-archive'));
+    if(name==='archive'&&!archiveWorkspace&&globalThis.AuditArchiveUI)archiveWorkspace=globalThis.AuditArchiveUI.mount($('#audit-archive'),{listProjects:async()=>{
+      const projects=await globalThis.ProjectInitiation.listSaved();
+      return Promise.all(projects.map(async project=>({...project,companyName:(await globalThis.ProjectWorkspaceStore.get(project.quoteId)).projectInitiationDetails?.companyName})));
+    }});
     if(name==='templates'&&globalThis.AuditTemplates){
       if(templateWorkspace)templateWorkspace.show();
       else templateWorkspace=globalThis.AuditTemplates.mount($('#audit-templates'));
     }
-    workspaceNavigation?.sync(name);projectActivity?.refreshContext().catch(()=>{});if(pageDrafts&&!draftRestored.has(name)&&!(name==='project'&&openProject)){draftRestored.add(name);void restorePageDraft(name);}return true;
+    if(name==='general-templates'&&globalThis.AuditTemplates){
+      if(commonTemplateWorkspace)commonTemplateWorkspace.show();
+      else commonTemplateWorkspace=globalThis.AuditTemplates.mount($('#general-templates'),{common:true});
+    }
+    if(name==='standards'&&!standardsWorkspace)
+      standardsWorkspace=globalThis.StandardsLookup?.mount($('#standards-lookup'));
+    workspaceNavigation?.sync(name);projectActivity?.refreshContext().catch(()=>{});if(pageDrafts&&!readOnlyHeaderViews.has(name)&&!draftRestored.has(name)&&!(name==='project'&&openProject)){draftRestored.add(name);void restorePageDraft(name);}return true;
   }
   function connectProjectInitiation(){
     const host=$('#project-initiation');
@@ -869,8 +1100,15 @@
       listWon:bidProjectEntries,
       onOpenDetails:id=>openProjectInformation(id,'project'),
       summaryClearButton:$('#project-summary-clear'),
+      summaryNewButton:$('#project-summary-new'),
+      summaryExportButton:$('#project-summary-export'),
       summaryRecords:relevantBidProjects,
       projectNameForDisplay:coreProjectName,
+      onCheckpoint:scope=>checkpointPageDraft(scope),
+      async onCommitted(scope){
+        if(!pageDrafts?.peek('project',{scope}))return true;
+        try{await pageDrafts.discard('project',{scope});return true;}catch{return false;}
+      },
       lookup:async id=>{
         if(!deliveryStore)throw Error('本机报价台账暂不可用；请稍候重新进入。');
         const row=projectEntry(id,(await deliveryStore.list()).find(entry=>entry.id===id));
@@ -880,21 +1118,21 @@
       onBack:()=>{$('#ledger-filter').value='won';setView('ledger');}
     });
   }
-  function hydrate(){selectOptions();if(!byId(state.selectedProvince))state.selectedProvince=provinceForLocation(state.client.location);if(state.client.location&&!provinceForLocation(state.client.location))state.client.location='其他地区';ensureSelected();activeRule=selectedId();ruleDraft=null;formFill($('#client-form'),state.client);fillQuoteForm();syncEstimateAdjustments();$('#rounding-enabled').checked=!!state.quote.rounding&&state.quote.rounding!=='none';$('#rounding-unit').value=state.quote.rounding==='thousand'?'thousand':'hundred';$('#rounding-unit').disabled=!$('#rounding-enabled').checked;update();if(view==='rules')renderRules();}
+  function hydrate(){selectOptions();if(!byId(state.selectedProvince))state.selectedProvince=provinceForLocation(state.client.location);if(state.client.location&&!provinceForLocation(state.client.location))state.client.location='其他地区';ensureSelected();activeRule=selectedId();ruleDraft=null;formFill($('#client-form'),state.client);fillQuoteForm();syncEstimateAdjustments();update();if(view==='rules')renderRules();}
   function persistRecords(next){
-    if(!validateChains(next)){toast('修订链不完整，未写入');return false;}
-    if(readError){toast('本机记录不兼容或已损坏，已禁止写入和删除；请先导出原始备份。');return false;}
+    if(!validateChains(next)){SaveFeedback.failed('修订链不完整，未写入。');return false;}
+    if(readError){SaveFeedback.failed('本机记录不兼容或已损坏，请先导出原始备份。');return false;}
     try {
       // Detect other-tab updates and refuse to overwrite an unseen newer value.
-      if(localStorage.getItem(STORE)!==storedRaw){readError=true;storedRaw=localStorage.getItem(STORE);renderHistory();toast('本机记录已被其他页面修改，请导出原始备份并重新载入。');return false;}
+      if(localStorage.getItem(STORE)!==storedRaw){readError=true;storedRaw=localStorage.getItem(STORE);renderHistory();SaveFeedback.failed('本机记录已被其他页面修改，请导出原始备份并重新载入。');return false;}
       const raw=JSON.stringify(next);localStorage.setItem(STORE,raw);storedRaw=raw;records=next;return true;
-    }catch{toast('无法写入本机存储，记录未保存。请导出备份或检查浏览器权限。');return false;}
+    }catch(error){SaveFeedback.failed(error,'无法写入本机记录，请检查浏览器存储权限。');return false;}
   }
-  function save(asRevision=false){if(!finalResult)return;if(restoredNeedsReview){toast('历史复算待确认，请先明确确认采用当前重新测算结果');return;}if(readError){toast('已有存储无法读取；为避免覆盖，请先检查浏览器本机数据。');return;}
+  function save(asRevision=false){if(!finalResult){SaveFeedback.failed('缺少测算结果，请先填写报价参数并完成测算。');return;}if(restoredNeedsReview){SaveFeedback.failed('历史复算待确认，请先明确确认采用当前重新测算结果。');return;}if(readError){toast('已有存储无法读取；为避免覆盖，请先检查浏览器本机数据。');return;}
     const id=crypto.randomUUID?crypto.randomUUID():String(Date.now());if(records.some(r=>r.id===id)){toast('记录编号冲突，未保存，请重试');return;}
     const record={id,savedAt:new Date().toISOString(),totalCents:finalResult.totalCents,snapshot:clone(state),calculation:clone({regions:outputs,budget:budgetResult,quote:finalResult}),appVersion:'0.1'};
-    if(asRevision){const loaded=records.find(r=>r.id===activeRecordId);if(!loaded){toast('请先恢复最新修订');return;}const root=rootId(loaded),head=chainHead(root);if(!head||head.id!==loaded.id){toast('当前不是最新修订，请恢复最新版本后再保存');return;}if(customerKey(head)!==customerKey(record)){toast('客户名称、年度或业务类型已改变，请保存为新报价');return;}record.revisionRoot=root;record.revisionNo=chainVersion(head)+1;if(!confirm('将当前草稿另存为第 '+record.revisionNo+' 版？原版本不会覆盖。'))return;}
-    if(persistRecords([record,...records])){activeRecordId=record.id;restoredNeedsReview=false;showRestoreReview();$('#preview').disabled=!finalResult;$('#csv').disabled=!finalResult;$('#save-revision').disabled=!finalResult;toast(asRevision?'已新增修订 · 仅本机':'已保存计算草稿 · 仅本机');renderHistory();refreshProposalControls();}}
+    if(asRevision){const loaded=records.find(r=>r.id===activeRecordId);if(!loaded){toast('请先恢复最新修订');return;}const root=rootId(loaded),head=chainHead(root);if(!head||head.id!==loaded.id){SaveFeedback.failed('当前不是最新修订，请恢复最新版本后再保存。');return;}if(customerKey(head)!==customerKey(record)){toast('客户名称、年度或业务类型已改变，请保存为新报价');return;}record.revisionRoot=root;record.revisionNo=chainVersion(head)+1;if(!confirm('将当前草稿另存为第 '+record.revisionNo+' 版？原版本不会覆盖。'))return;}
+    if(persistRecords([record,...records])){activeRecordId=record.id;restoredNeedsReview=false;showRestoreReview();$('#preview').disabled=!finalResult;$('#csv').disabled=!finalResult;$('#save-revision').disabled=!finalResult;SaveFeedback.saved(asRevision?'已新增修订 · 仅本机':'已保存计算草稿 · 仅本机');renderHistory();refreshProposalControls();}}
 
   function renderHistory(){const list=$('#history-list');if(readError){list.innerHTML='<p class="error">本机记录不兼容、已损坏或被其他页面修改。已禁止写入和删除；请先导出原始备份，再联系维护人员。</p>';return;}list.innerHTML=records.length?records.map(r=>`<div class="record"><div><strong>${esc(r.snapshot.client?.clientName||'未命名客户')}</strong><p>${esc(r.snapshot.client?.year||'')} 年度 · ${esc(new Date(r.savedAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}))} · 草稿 · 第 ${esc(chainVersion(r))} 版 · 报价编号 ${esc(rootId(r))}</p></div><div class="record-actions"><strong>${esc(fmt(r.totalCents))}</strong><button class="btn" data-load="${esc(r.id)}">恢复草稿</button>${isLinked(r)?'<span class="muted">修订链保护</span>':`<button class="text-button" data-delete="${esc(r.id)}">删除</button>`}</div></div>`).join(''):'<div class="empty-state">还没有保存的报价。<br><small>完成测算后点击“保存到本机”，留存输入与规则快照。</small></div>';}
   function download(name,content,type){const blob=new Blob(['\ufeff',content],{type});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);}
@@ -921,6 +1159,7 @@
   function tenderProjectType(value){
     const select=$('#project-type');
     select.querySelector('[data-tender-type]')?.remove();
+    value=[...select.options].find(option=>option.textContent===value)?.value??value;
     if(value&&!Array.from(select.options).some(option=>option.value===value)){
       const option=new Option(value,value);
       option.dataset.tenderType='';
@@ -935,11 +1174,44 @@
     if(!selectedBidder || $('#proposal-form').elements.firmName.value!==selectedBidder.name)return [];
     return Object.keys(credentialLabels).map(kind=>selectedBidder.attachments.find(a=>a.kind===kind)).filter(Boolean);
   }
+  function regionalDocumentRows(lines){
+    const metric=(value,signed=false)=>{
+      const amount=String(value??'').normalize('NFKC').trim().replace(/^(-?)0+(?=\d)/u,'$1');
+      const allowed=signed?/^-?\d{1,9}(?:\.\d{1,6})?$/u:/^\d{1,9}(?:\.\d{1,6})?$/u;
+      return allowed.test(amount)?amount:'';
+    };
+    return lines.map(({name,cents,assets,revenue,profit,period=''})=>({
+      name,assets:metric(assets),revenue:metric(revenue),profit:metric(profit,true),period,totalCents:cents
+    }));
+  }
+  function manualRegionalAmount(){
+    const record=latestRegionalEstimate;
+    if(!record||record.inquiry)return null;
+    const result=readRegionalPrices(record);
+    if(result.error)throw Error(result.error);
+    if(!result.overrides.some(hasEstimatePrice))return null;
+    const subjects=subjectList?.snapshot();
+    const batch=!!batchQuote?.active();
+    const lines=batch?result.lines:[result.lines[subjects?.active??0]||result.lines[0]];
+    const {totalCents,overflow}=regionalQuoteTotal(lines);
+    if(overflow)throw Error('最终报价合计超出可处理范围。');
+    if(totalCents===null)throw Error('请填齐最终报价。');
+    const years=new Set(batch?subjects.rows.map(row=>row.year):[state.client.year]);
+    if(years.size!==1)throw Error('同一张汇总报价单须使用同一审计年度。');
+    const denominator=100n+BigInt(record.taxRate.slice(0,-1));
+    const subtotalCents=Number(lines.reduce((total,line)=>total+(BigInt(line.cents)*100n+denominator/2n)/denominator,0n));
+    return {totalCents,subtotalCents,taxCents:totalCents-subtotalCents,taxRate:record.taxRate,auditYear:Number([...years][0]),
+      ...(batch?{quoteRows:regionalDocumentRows(lines)}:{})};
+  }
   function previewBlockers(pair,matched){
     const reasons=[];
     const batch=!!batchQuote?.active();
-    if(!batch&&!finalResult)reasons.push('客户或报价输入尚不完整，请检查上方错误提示');
-    if(batch){try{batchQuote.capture();}catch(e){reasons.push(e.message);}}
+    let regional;
+    try{regional=manualRegionalAmount();}catch(e){reasons.push(e.message);}
+    if(!reasons.length&&!regional){
+      if(!batch&&!finalResult)reasons.push('客户或报价输入尚不完整，请检查上方错误提示');
+      if(batch){try{batchQuote.capture();}catch(e){reasons.push(e.message);}}
+    }
     if(restoredNeedsReview)reasons.push('历史报价复算结果待明确确认');
     if(!matched)reasons.push('客户、年度或业务已改变，请点击“按当前客户重填登记信息”');
     if(!globalThis.QuotePacket)reasons.push('附件组件未能加载，请重新打开完整文件或刷新页面');
@@ -948,7 +1220,7 @@
       const missing=Object.entries(credentialLabels).filter(([kind])=>!pair.some(a=>a.kind===kind)).map(([,label])=>label);
       if(missing.length)reasons.push('所选事务所缺少'+missing.join('、')+'，请到投标方信息库补齐并重新带入');
     }
-    if(selectedBidder&&(batch||finalResult)&&!restoredNeedsReview&&matched&&globalThis.QuotePacket&&!reasons.length){
+    if(selectedBidder&&(regional||batch||finalResult)&&!restoredNeedsReview&&matched&&globalThis.QuotePacket&&!reasons.length){
       try{snapshotForProposal();}catch(e){reasons.push(e.message||'请核对报价登记信息');}
     }
     if(quoteExtras?.isPending())reasons.push('正在检查附加文件');
@@ -962,7 +1234,7 @@
     const batchOn=!!batchQuote?.active(),batchTotal=$('#quote-batch-total-box');
     if(batchTotal){
       batchTotal.hidden=!batchOn;batchTotal.closest('.quote-summary').dataset.quoteScope=batchOn?'batch':'single';
-      if(batchOn){try{$('#quote-batch-total').textContent=fmt(batchQuote.capture().totalCents);}catch{$('#quote-batch-total').textContent='待填齐';}}
+      if(batchOn){try{$('#quote-batch-total').textContent=fmt((manualRegionalAmount()||batchQuote.capture()).totalCents);}catch{$('#quote-batch-total').textContent='待填齐';}}
     }
     if(proposalKey!==currentProposalKey())proposalKey=null;
     const pair=selectedPair(),matched=proposalKey===currentProposalKey(),blockers=previewBlockers(pair,matched);
@@ -1005,7 +1277,8 @@
   function snapshotForProposal(){
     if(!globalThis.QuotePacket)throw Error('附件模块未加载，客户导出不可用');
     if(restoredNeedsReview)throw Error('请先核对有效报价');
-    const batch=batchQuote?.active()?batchQuote.capture():null,amount=batch||finalResult;
+    const regional=manualRegionalAmount();
+    const batch=batchQuote?.active()?(regional||batchQuote.capture()):null,amount=regional||batch||finalResult;
     if(!amount)throw Error('请先核对有效报价');
     if(proposalKey!==currentProposalKey())throw Error('请先按当前客户重填登记信息');
     const {riskLevel,...p}=formRead($('#proposal-form'));if(!p.projectType)throw Error('请填写项目类型');
@@ -1016,11 +1289,11 @@
     return globalThis.QuotePacket.normalizeSnapshot({...p,
       customerName:batch?batch.quoteRows[0].name+'等 '+batch.quoteRows.length+' 家单位':state.client.clientName,
       auditYear:batch?batch.auditYear:Number(state.client.year),location:batch?'多单位（见报价明细）':state.client.location,service:state.client.service,
-      subtotalCents:amount.subtotalCents,taxCents:amount.taxCents,totalCents:amount.totalCents,taxRateText:state.quote.tax+'%（税务口径待确认）',
+      subtotalCents:amount.subtotalCents,taxCents:amount.taxCents,totalCents:amount.totalCents,taxRateText:(regional?.taxRate||state.quote.tax+'%')+'（税务口径待确认）',
       ...(batch?{quoteRows:batch.quoteRows}:{}),...(riskLevel?{riskLevel}:{})
     });
   }
-  async function proposalAction(work,target='#proposal-status'){if(proposalBusy)return;proposalBusy=true;refreshProposalControls();try{await work();}catch(e){if(target==='#quote-pdf-status')pdfStatus(e.message||'操作失败，未自动重试',true);else $(target).textContent=e.message||'操作失败，未自动重试';toast(e.message||'操作失败，未自动重试');}finally{proposalBusy=false;refreshProposalControls();}}
+  async function proposalAction(work,target='#proposal-status',onError){if(proposalBusy)return;proposalBusy=true;refreshProposalControls();try{await work();}catch(e){if(target==='#quote-pdf-status')pdfStatus(e.message||'操作失败，未自动重试',true);else $(target).textContent=e.message||'操作失败，未自动重试';if(onError)onError(e);else toast(e.message||'操作失败，未自动重试');}finally{proposalBusy=false;refreshProposalControls();}}
   function selectedLayouts(){return quoteSigning?.selection()||{formats:[],options:{}};}
   function signContext(){
     const {formats,options}=selectedLayouts(),b=selectedBidder,snapshot=snapshotForProposal(),rows=snapshot.quoteRows;
@@ -1205,44 +1478,49 @@
     return proposalAction(async()=>{const ctx=signContext();if(quoteExtras?.isPending())throw Error('正在检查附加文件');$('#preview-status').textContent='正在本机生成 Word 并逐页附入两证和所选附件…';const file=await wordFile(ctx,()=>signContextIsCurrent(ctx));$('#preview-status').textContent='已生成 Word · '+file.attachmentPages+' 页附件；请核对后使用。';toast('已下载报价单 Word · 未发送');},'#preview-status');
   }
   function refreshQuoteDownloadControls(){
-    const ready=!!latestRegionalEstimate&&!!selectedBidder&&!proposalBusy&&!tenderPending;
+    $('#clear-tender').disabled=!(hasTender||tenderPending||importedTender);
+    $('#clear-inquiry').disabled=!$('#inquiry-text').value;
+    $('#clear-quote-reference').disabled=!quoteReferenceFile;
+    const price=latestRegionalEstimate&&readRegionalPrices();
+    const ready=!!price&&!price.error&&hasEstimatePrice(price.totalCents)&&!!selectedBidder&&!proposalBusy&&!tenderPending;
     $('#quote-download-layout').disabled=!ready||!globalThis.QuoteLayouts?.buildUnsignedWord;
-    $('#quote-download-reference').disabled=!ready||!quoteReferenceFile||!globalThis.ContractTemplate?.fillQuotation;
+    $('#quote-download-reference').disabled=!ready||!/\.docx$/iu.test(quoteReferenceFile?.name||'')||!globalThis.ContractTemplate?.fillQuotation;
   }
   async function downloadRegionalQuote(useReference,format){
-    const chosen=selectedBidder,record=latestRegionalEstimate,reference=quoteReferenceFile;
-    if(!chosen||!record)return;
+    const chosen=selectedBidder,reference=quoteReferenceFile;
+    if(!chosen||!latestRegionalEstimate)return;
     return proposalAction(async()=>{
+      const {lines,totalCents,error}=readRegionalPrices();
+      if(error)throw Error(error);
+      if(!hasEstimatePrice(totalCents))throw Error('请填齐最终报价。');
+      const record=latestRegionalEstimate,epoch=proposalEpoch,key=ESTIMATE_PREFIX+record.id;
+      const saved=localStorage.getItem(key);
       const picker=$('#bidder-picker-select'),status=$('#quote-template-status');
       const isCurrent=()=>selectedBidder===chosen&&picker?.value===chosen.id&&latestRegionalEstimate===record&&
-        (!useReference||quoteReferenceFile===reference)&&!tenderPending;
+        proposalEpoch===epoch&&localStorage.getItem(key)===saved&&(!useReference||quoteReferenceFile===reference)&&!tenderPending;
       status.textContent='正在生成本次报价…';
       const db=await globalThis.BidderLibrary.open();
       try{
         const latest=await db.get(chosen.id);
         if(!isCurrent()||latest?.version!==chosen.version)throw Error('报价单位或测算结果已变化，请重新生成。');
-        const financialMetric=(value,signed=false)=>{
-          const amount=String(value??'').normalize('NFKC').trim().replace(/^(-?)0+(?=\d)/u,'$1');
-          const allowed=signed?/^-?\d{1,9}(?:\.\d{1,6})?$/u:/^\d{1,9}(?:\.\d{1,6})?$/u;
-          return allowed.test(amount)?amount:'';
-        };
-        const rows=record.auditeeQuotes?.map(({name,cents,assets,revenue,profit,period=''})=>({
-          name,assets:financialMetric(assets),revenue:financialMetric(revenue),profit:financialMetric(profit,true),period,totalCents:cents
-        }));
+        const rows=record.auditeeQuotes?regionalDocumentRows(lines):null;
         const audited=rows?.map(row=>row.name)||[record.customerName];
         const snapshot=globalThis.QuotePacket.normalizeSnapshot({firmName:latest.name,customerName:rows?audited[0]:record.customerName,
           auditYear:Number(record.auditYear),location:byId(record.provinceId).name,service:record.projectType,quoteDate:record.date,
           issuer:record.issuer,projectName:coreProjectName(record.project),projectType:record.projectType,
           contactName:record.contact||'',contactInfo:[record.phone,record.email].filter(Boolean).join(' / '),
-          subtotalCents:record.cents,taxCents:0,totalCents:record.cents,taxRateText:record.taxRate,
+          subtotalCents:totalCents,taxCents:0,totalCents,taxRateText:record.taxRate,
           bidderContact:{name:latest.contactName||'',phone:latest.phone||'',email:latest.email||''},...(rows?{quoteRows:rows}:{})});
-        const file=useReference?await globalThis.ContractTemplate.fillQuotation(reference,snapshot):
+        const file=useReference?await globalThis.ContractTemplate.fillQuotation(reference,snapshot,{bidder:latest}):
           await globalThis.QuoteLayouts.buildUnsignedWord(snapshot,[format],{grossOnly:true});
-        if(!isCurrent())throw Error('报价资料已变化，请重新生成。');
+        const currentBidder=useReference?await db.get(chosen.id):latest;
+        if(!isCurrent()||currentBidder?.version!==latest.version)throw Error('报价资料或报价单位档案已变化，请重新生成。');
         blobDownload(file.name,file.bytes,file.mime);
-        status.textContent='已下载 '+file.name;
+        const detail=useReference?' · '+file.materials+' 份所选单位附件'+
+          (file.missing.length?' · 待补：'+file.missing.join('、'):'')+(file.removedGraphics?' · 请复核原图和签章位置':''):'';
+        status.textContent=SaveFeedback.downloaded('已发起下载 '+file.name+detail);
       }finally{db.close();}
-    },'#quote-template-status');
+    },'#quote-template-status',SaveFeedback.downloadFailed);
   }
   async function downloadUnsignedWord(){const packet=previewPacket;if(!packet||!previewIsCurrent(packet))return;return proposalAction(async()=>{await wordFile(packet,()=>previewIsCurrent(packet));pdfStatus('已下载包含必带附件的报价单 Word。');},'#quote-pdf-status');}
 
@@ -1351,7 +1629,16 @@
     }finally{try{db?.close?.();}finally{proposalBusy=false;refreshProposalControls();}}
   }
   function blobDownload(name,bytes,type){const blob=new Blob([bytes],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);}
-  async function reloadLedger(){if(!deliveryStore){$('#ledger-status').textContent='本机台账不可用，请检查浏览器存储权限。';return;}try{ledgerRows=await deliveryStore.list();renderLedger();$('#ledger-status').textContent='已读取 '+ledgerRows.length+' 条本机报价登记。';}catch(e){$('#ledger-status').textContent='读取失败，未重置或覆盖旧数据：'+e.message;}finally{renderEstimates();}}
+  async function reloadLedger(){
+    const status=$('#ledger-status');
+    if(!deliveryStore){status.textContent='本机台账不可用，请检查浏览器存储权限。';return;}
+    try{
+      ledgerRows=await deliveryStore.list();renderLedger();status.textContent='已读取 '+ledgerRows.length+' 条本机报价登记。';
+    }catch(e){status.textContent='读取失败，未重置或覆盖旧数据：'+e.message;}
+    try{await refreshEstimateProjectNumbers();}
+    catch(e){estimateProjectNumbers=new Map();status.textContent='项目编码待核对：'+e.message;}
+    finally{renderEstimates();}
+  }
   function renderLedger(){const query=$('#ledger-search').value.trim().toLowerCase(),filter=$('#ledger-filter').value;const rows=ledgerRows.filter(e=>{const o=e.events.at(-1)?.outcome||'pending',v=e.snapshot;return (filter==='all'||filter===o)&&(!query||[v.issuer,v.projectName,v.projectType,v.contactName,v.contactInfo,v.customerName].some(x=>x.toLowerCase().includes(query)));});$('#ledger-empty').hidden=rows.length>0;$('#ledger-rows').innerHTML=rows.map((e,i)=>{const v=e.snapshot,o=e.events.at(-1)?.outcome||'pending';return '<tr><td>'+(i+1)+'</td><td>'+esc(v.quoteDate)+'</td><td>'+esc(v.issuer)+'</td><td>'+esc(v.projectName)+'</td><td>'+esc(v.projectType)+'</td><td>'+esc(C.formatMoney(v.totalCents))+'</td><td><span class="status-chip">'+outcomeNames[o]+'</span></td><td>'+esc(v.contactName||'—')+'</td><td>'+esc(v.contactInfo||'—')+'</td><td><div class="ledger-actions"><button class="btn" data-packet-id="'+esc(e.id)+'">下载报价 Word</button><label class="ledger-result-select">登记结果<select data-result-select="'+esc(e.id)+'" aria-label="登记报价结果">'+(o==='pending'?'<option value="" disabled selected hidden>登记结果</option>':'')+['won','lost','cancelled'].map(k=>'<option value="'+k+'"'+(o===k?' selected':'')+'>'+outcomeNames[k]+'</option>').join('')+'</select></label>'+(o==='won'&&projectInitiation?'<button type="button" class="btn primary" data-initiation-id="'+esc(e.id)+'">填立项信息表</button>':'')+'</div><details><summary>结果留痕 '+e.events.length+' 次</summary>'+e.events.map(t=>'<p>#'+t.eventNo+' '+outcomeNames[t.outcome]+' · '+esc(t.recordedAt)+'<br>'+esc(t.note||'未填写说明')+'</p>').join('')+'<small>登记编号 '+esc(e.id)+'</small></details></td></tr>';}).join('');}
   async function openLedgerPacket(id){return proposalAction(async()=>{const data=await deliveryStore.get(id),ctx={snapshot:data.entry.snapshot,pair:data.attachments,extras:data.extras||[],formats:['format1'],options:data.entry.snapshot.quoteRows?{quoteRows:data.entry.snapshot.quoteRows}:{}};await wordFile(ctx,()=>true);$('#ledger-status').textContent='已下载该条已登记报价 Word，含两项必带附件。';},'#ledger-status');}
   function connectProposal(){if(!$('#proposal-form'))return;resetProposal();$('#proposal-form').addEventListener('submit',e=>e.preventDefault());$('#proposal-form').addEventListener('input',e=>{proposalEpoch++;if(e.target.name==='firmName'&&selectedBidder){const name=e.target.value;clearBidder();e.target.value=name;bidderPicker?.clearPicker();}if(['issuer','projectName','contactName','contactInfo'].includes(e.target.name)||e.target.id==='issuer-email')intakeChanged=true;refreshProposalControls();});$('#keep-issuer').addEventListener('click',()=>{if(confirm('确认沿用当前发标单位、项目与联系方式，关联至所选被审计方？')){proposalKey=currentProposalKey();proposalEpoch++;refreshProposalControls();}});$('#complete-proposal').addEventListener('click',()=>{const review=$('#quote-intake-review');review.open=true;review.scrollIntoView?.({behavior:'smooth',block:'start'});});$('#sync-proposal').addEventListener('click',()=>{if(confirm('按当前客户重填项目和日期，并清空旧联系人？事务所名称及资质附件保留。'))resetProposal();});
@@ -1403,8 +1690,37 @@
   }
   function captureRuleForm(){const r=clone(ruleDraft), form=$('#rules-form'),values=formRead(form);r.basis=values.basis;r.mode=values.mode;r.minimumYuan=values.minimumYuan;r.fixedYuan=values.fixedYuan===''?null:values.fixedYuan;for(const el of $$('[data-tier]',form)){let val=el.value;if(el.dataset.field==='upToYuan')val=val===''?null:wanToYuan(val);r.tiers[+el.dataset.tier][el.dataset.field]=val;}return r;}
   $('#comparison').addEventListener('submit', submitRegionalEstimate);
+  $('#estimate-record-save').addEventListener('click',saveRegionalRecord);
+  $('#quote-inquiry').addEventListener('input',()=>{
+    showRegionalResult();
+    showRegionMessage($('#inquiry-text').value.trim()?'本次按手填询价信息测算。':'');
+  });
+  $('#quote-inquiry').addEventListener('submit',event=>{event.preventDefault();$('#comparison').requestSubmit();});
   $('#quote-estimates-rows').addEventListener('change', changeEstimateOutcome);
   $('#quote-estimates-rows').addEventListener('click', openEstimateProject);
+  $('#quote-estimates-rows').addEventListener('click', deleteEstimateRow);
+  const regionalDetails=$('#estimate-details');
+  regionalDetails.addEventListener('input',event=>{
+    if(!event.target.matches('[data-final-quote]'))return;
+    proposalEpoch++;
+    refreshRegionalPrices();
+    showRegionMessage($('#estimate-record-save').disabled?'':'最终报价已修改，待保存。');
+    refreshProposalControls();
+  });
+  regionalDetails.addEventListener('change',event=>{
+    const input=event.target;
+    if(!input.matches('[data-final-quote]'))return;
+    const result=refreshRegionalPrices();
+    if(result&&!result.error){
+      const cents=result.lines[Number(input.dataset.finalQuote)].cents;
+      input.value=hasEstimatePrice(cents)?decimalCents(cents):'';
+    }
+  });
+  regionalDetails.addEventListener('keydown',event=>{
+    if(event.key==='Enter'&&!event.isComposing&&event.target.matches('[data-final-quote]')){
+      event.preventDefault();event.target.blur();
+    }
+  });
   document.body.append(estimateFilterMenu);
   for(const heading of $$('[data-estimate-column]')){
     const button=document.createElement('button'),label='筛选'+heading.textContent;
@@ -1449,6 +1765,12 @@
     estimateScroll.scrollTop=0;
     renderEstimates();
   });
+  estimatePageSize.addEventListener('change',()=>{
+    closeEstimateFilter();
+    estimatePage=1;
+    estimateScroll.scrollTop=0;
+    renderEstimates();
+  });
   estimatePagination.addEventListener('click',event=>{
     const button=event.target.closest('button[data-estimate-page]');
     if(!button||button.disabled)return;
@@ -1461,12 +1783,27 @@
     estimatePagination.querySelector('[aria-current=page]')?.focus({preventScroll:true});
   });
   $('#comparison').addEventListener('input', event => {
+    if(event.target.id==='estimate-rounding'){
+      const carry=latestRegionalEstimate?{projectKey:latestRegionalEstimate.projectKey,lines:readRegionalPrices().lines}:roundingCarry;
+      state.quote.rounding=event.target.value;
+      fillQuoteForm();
+      showRegionalResult();
+      roundingCarry=carry;
+      showRegionMessage('');
+      update();
+      return;
+    }
     if (!['quote-region','estimate-tax','estimate-factor'].includes(event.target.id)) return;
     $('#quote-region').removeAttribute('aria-invalid');
     showRegionalResult();
     showRegionMessage('');
   });
+  $('#estimate-factor').addEventListener('blur',event=>{
+    const input=event.currentTarget,number=input.value.normalize('NFKC').trim().replace(/\s*%$/u,'');
+    if(validPricePercent(number))input.value=number+'%';
+  });
   globalThis.addEventListener('storage', event => {
+    if(event.key?.startsWith(ESTIMATE_DELETION_PREFIX)){renderEstimates();return;}
     if (!event.key || event.key.startsWith(ESTIMATE_PREFIX) || event.key.startsWith(ESTIMATE_OUTCOME_PREFIX)) {
       if (deliveryStore) void reloadLedger();
       else renderEstimates();
@@ -1490,7 +1827,9 @@
     event.currentTarget.setAttribute('aria-expanded',String(!items.hidden));
   });
   $$('[data-home-view]').forEach(b=>b.addEventListener('click',()=>{setView(b.dataset.homeView);$('#page-title').scrollIntoView?.({block:'start'});}));
-  $$('[data-back-home]').forEach(b=>b.addEventListener('click',()=>setView('home')));
+  $('#report-back-to-overview').addEventListener('click',()=>{
+    if(setView('audit',{overviewProject:$('#report-project')?.value||''}))$('#page-title').scrollIntoView({block:'start'});
+  });
 
   $('#clear-client').addEventListener('click',()=>{if(!confirm('清空当前客户名称和财务金额？'))return;Object.assign(state.client,{clientName:'',assets:'',revenue:'',profit:''});intakeChanged=true;syncList();hydrate();});
   function pickRule(id){
@@ -1601,9 +1940,11 @@
     formFill($('#client-form'),c);if(bind)proposalKey=currentProposalKey();update();
   }
   function resetIntakeView(){
+    $('#quote-inquiry').reset();
     quoteExtras?.clear();batchQuote?.reset();
-    tenderTicket++;tenderPending=false;hasTender=false;activeTenderSource=null;intakeChanged=!!state.auditeeRegister;
+    tenderTicket++;tenderPending=false;hasTender=false;activeTenderSource=null;importedTender=null;intakeChanged=!!state.auditeeRegister;
     $('#tender-file').value='';$('#tender-status').textContent='';
+    renderTenderFiles([]);
     $('#quote-region').value='';$('#quote-region').removeAttribute('aria-invalid');showRegionMessage('');
     const reg=state.auditeeRegister;if(subjectList)subjectList.load(reg?reg.rows:[projectRow(state.client)],reg?reg.active:0);
     showRegionalResult();
@@ -1623,8 +1964,14 @@
     proposalEpoch++;refreshProposalControls();
   }
   function connectQuoteDrop(input,dropzone,status,onFile){
-    const choose = file => { if(file)onFile(file); };
-    input.addEventListener('change',()=>choose(input.files?.[0]));
+    const choose=files=>{
+      const selected=Array.from(files||[]);
+      if(!selected.length)return;
+      if(input.multiple)onFile(selected);
+      else if(selected.length===1)onFile(selected[0]);
+      else status.textContent='请每次拖入一个文件。';
+    };
+    input.addEventListener('change',()=>choose(input.files));
     dropzone.addEventListener('dragover',event=>{
       if(!Array.from(event.dataTransfer?.types||[]).includes('Files'))return;
       event.preventDefault();event.dataTransfer.dropEffect='copy';dropzone.classList.add('is-dragover');
@@ -1632,10 +1979,24 @@
     dropzone.addEventListener('dragleave',()=>dropzone.classList.remove('is-dragover'));
     dropzone.addEventListener('drop',event=>{
       event.preventDefault();dropzone.classList.remove('is-dragover');
-      const files=event.dataTransfer?.files;
-      if(files?.length===1)choose(files[0]);
-      else if(files?.length>1)status.textContent='请每次拖入一个文件。';
+      choose(event.dataTransfer?.files);
     });
+  }
+  function renderTenderFiles(entries){
+    const list=$('#tender-files');
+    list.hidden=!entries.length;
+    list.replaceChildren(...entries.map(({file,message,accepted})=>{
+      const item=document.createElement('li'),name=document.createElement('strong'),note=document.createElement('small');
+      name.textContent=file.name;note.className='muted';note.textContent=message;item.append(name,note);
+      if(accepted){
+        const download=document.createElement('button');
+        download.type='button';download.className='btn';download.textContent='下载原件';
+        download.setAttribute('aria-label','下载招标原件 '+file.name);
+        download.onclick=()=>blobDownload(file.name,file,file.type||'application/octet-stream');
+        item.append(download);
+      }
+      return item;
+    }));
   }
   function connectQuoteReference(){
     const input=$('#quote-reference-input'),status=$('#quote-reference-status');
@@ -1648,7 +2009,7 @@
       $('#quote-reference-name').textContent=file.name;
       $('#quote-reference-file').hidden=false;
       preview.hidden=!globalThis.AuditAttachmentPreview||(!/\.docx$/iu.test(file.name)&&file.size>12*1024*1024);
-      status.textContent='上传成功';
+      status.textContent=/\.docx$/iu.test(file.name)?'上传成功':'已保存 PDF 供参考。整套替换请上传可编辑的 .docx。';
       refreshQuoteDownloadControls();
     });
     preview.addEventListener('click',()=>{
@@ -1660,32 +2021,121 @@
       if(reference)blobDownload(reference.name,reference,reference.type||'application/octet-stream');
     });
   }
+  function clearTenderModule(){
+    tenderTicket++;proposalEpoch++;tenderPending=false;hasTender=false;activeTenderSource=null;
+    $('#tender-file').value='';
+    renderTenderFiles([]);
+    const source=importedTender;
+    importedTender=null;
+    if(source){
+      const {rows,active}=subjectList.snapshot();
+      const importedRows=new Set(source.rows.map(canonical));
+      const remaining=rows.filter(row=>!importedRows.has(canonical(row)));
+      const next=remaining.length?remaining:[projectRow({})];
+      const index=Math.max(0,next.indexOf(rows[active]));
+      batchQuote?.reset();
+      subjectList.load(next,index);
+      state.auditeeRegister=subjectList.snapshot();
+      const form=$('#proposal-form').elements;
+      for(const key of ['issuer','projectName','contactName','contactInfo','riskLevel','projectType']){
+        if(form[key].value!==source.fields[key])continue;
+        if(key==='projectType')tenderProjectType();else form[key].value='';
+      }
+      if($('#issuer-email').value===source.email)$('#issuer-email').value='';
+      chooseSubject(next[index],true);
+      if(!latestRegionalEstimate?.inquiry){showRegionalResult();showRegionMessage('');}
+    }
+    $('#inquiry-source-note').hidden=!$('#inquiry-text').value.trim()||(subjectList?.snapshot().rows.length||0)<2;
+    $('#tender-status').textContent='已清空招标资料。';
+    refreshProposalControls();
+  }
+  function connectQuoteClearButtons(){
+    const onClear=(id,confirmationLabel,clear,checkpoint=false)=>{
+      $(id).addEventListener('click',async()=>{
+        if(confirmationLabel&&!confirm('确认清空本轮'+confirmationLabel+'？'))return;
+        clear();
+        if(checkpoint&&pageDrafts){
+          try{await pageDrafts.checkpoint('quote');}
+          catch(error){SaveFeedback.failed(error,'已清空当前输入，本机暂存更新失败。');}
+        }
+      });
+    };
+    onClear('#clear-tender','招标资料及其带入的信息',clearTenderModule,true);
+    onClear('#clear-inquiry',null,()=>{
+      // A reload can interrupt the asynchronous draft write after the field has cleared.
+      try{sessionStorage.setItem(INQUIRY_CLEARED_AT,String(Date.now()));}catch{}
+      const input=$('#inquiry-text');
+      input.value='';
+      input.dispatchEvent(new Event('input',{bubbles:true}));
+      input.focus();
+    },true);
+    onClear('#clear-quote-reference','以往报价参考资料',()=>{
+      quoteReferenceFile=null;
+      $('#quote-reference-input').value='';
+      $('#quote-reference-name').textContent='';
+      $('#quote-reference-file').hidden=true;
+      $('#quote-reference-status').textContent='已清空以往报价参考资料。';
+      $('#quote-template-status').textContent='';
+      refreshQuoteDownloadControls();
+    });
+  }
   function connectIntake(){
     if(globalThis.AuditeeRows)subjectList=globalThis.AuditeeRows.mount({getClient:()=>state.client,onSelect:row=>{const linked=(hasTender||subjectList.snapshot().rows.length>1)&&proposalKey===currentProposalKey();chooseSubject(row,linked);},onEdit:()=>{intakeChanged=true;proposalEpoch++;state.auditeeRegister=subjectList.snapshot();showRegionalResult();showRegionMessage('');refreshProposalControls();}});
     if(globalThis.BidderUI)bidderPicker=globalThis.BidderUI.connect({apply:applyBidder,detach:clearBidder,compactPicker:true});
     const picker=$('#tender-file');
     connectQuoteDrop(picker,$('#tender-dropzone'),$('#tender-status'),importTender);
     connectQuoteReference();
-    async function importTender(file){
-      if(!file)return;const ticket=++tenderTicket,epoch=proposalEpoch,status=$('#tender-status');
+    connectQuoteClearButtons();
+    async function importTender(files){
+      if(!files.length)return;const ticket=++tenderTicket,epoch=proposalEpoch,status=$('#tender-status');
       tenderPending=true;refreshProposalControls();status.textContent='正在识别…';
       try{
         if(!globalThis.TenderImport||!subjectList)throw Error('识别组件未加载，请打开完整版本。');
-        const found=await globalThis.TenderImport.read(file);if(ticket!==tenderTicket)return;
+        const entries=[],results=[];
+        const hasFields=result=>result.auditees.length||[result.issuer,result.projectName,result.customerName,result.contactName,result.phone,result.email,result.auditYear,result.riskLevel,result.projectType].some(Boolean);
+        for(const file of files){
+          if(ticket!==tenderTicket)return;
+          const accepted=/\.(?:docx?|xlsx?|pdf|txt)$/iu.test(file.name)&&file.size>0&&file.size<=100_000_000;
+          let message='未加入，请选择支持的非空文件，单份不超过 100 MB。';
+          if(accepted){
+            try{
+              const found=await globalThis.TenderImport.read(file);
+              if(hasFields(found)){results.push(found);message='已识别招标信息';}
+              else message='原件已加入，请手填未识别的招标信息。';
+            }catch(error){message='原件已加入。'+error.message;}
+          }
+          entries.push({file,accepted,message});
+        }
+        if(ticket!==tenderTicket)return;
         if(epoch!==proposalEpoch)throw Error('读取期间表单已改变，请再次选择文件。');
-        const rows=found.auditees.map(r=>({...r,location:normalPlace(r.location)}));
-        const hasFields=[found.issuer,found.projectName,found.customerName,found.contactName,found.phone,found.email].some(Boolean);
-        if(!rows.length&&!hasFields)throw Error('未识别到可用信息，请选择含文字的 Word 文件。');
-        if(rows.length&&!globalThis.AuditeeRows.valid({rows,active:0}))throw Error('主体字段超过表单支持的长度或格式，请人工检查；未改动表单。');
+        if(!entries.some(entry=>entry.accepted))throw Error(entries.map(entry=>entry.file.name+'：'+entry.message).join(' '));
         if((intakeChanged||hasTender||activeRecordId)&&!confirm('替换当前招标资料？')){status.textContent='已取消上传';return;}
-        // Do not leave demo / previous project identities next to the new issuer.
-        const project=coreProjectName(found.projectName),year=found.auditYear||/^((?:19|20)\d{2})年/.exec(project)?.[1]||'';
-        const subjects=rows.length?rows:[projectRow({clientName:found.customerName,year})];
-        batchQuote?.reset();subjectList.load(subjects,0);state.auditeeRegister=subjectList.snapshot();
-        chooseSubject(subjects[0],true);tenderProjectType(found.projectType);formFill($('#proposal-form'),{issuer:found.issuer,projectName:project,contactName:found.contactName,contactInfo:found.phone,riskLevel:found.riskLevel||''});$('#issuer-email').value=found.email;
-        quoteExtras?.clear();hasTender=true;activeTenderSource=file;intakeChanged=false;activeRecordId=null;proposalEpoch++;refreshProposalControls();
+        const found=results.length===1?{...results[0],conflicts:[]}:globalThis.TenderImport.merge(results);
+        const identityConflict=found.conflicts.some(field=>['发标单位','项目名称','审计年度'].includes(field));
+        const rows=found.auditees.map(row=>({...row,location:normalPlace(row.location),year:row.year||found.auditYear}));
+        const validRows=!rows.length||globalThis.AuditeeRows.valid({rows,active:0});
+        if(results.length&&!identityConflict&&validRows){
+          const project=coreProjectName(found.projectName),year=found.auditYear||/^((?:19|20)\d{2})年/.exec(project)?.[1]||'';
+          const subjects=rows.length?rows:[projectRow({clientName:found.customerName,year})];
+          batchQuote?.reset();subjectList.load(subjects,0);state.auditeeRegister=subjectList.snapshot();
+          chooseSubject(subjects[0],true);tenderProjectType(found.projectType);
+          formFill($('#proposal-form'),{issuer:found.issuer,projectName:project,contactName:found.contactName,contactInfo:found.phone,riskLevel:found.riskLevel||''});
+          $('#issuer-email').value=found.email;
+          const form=$('#proposal-form').elements;
+          importedTender={rows:subjectList.snapshot().rows,fields:{
+            issuer:form.issuer.value,projectName:form.projectName.value,contactName:form.contactName.value,
+            contactInfo:form.contactInfo.value,riskLevel:form.riskLevel.value,projectType:form.projectType.value
+          },email:$('#issuer-email').value};
+          quoteExtras?.clear();intakeChanged=false;activeRecordId=null;
+        }
+        hasTender=true;
+        activeTenderSource=entries.find(entry=>entry.accepted&&/\.docx$/iu.test(entry.file.name))?.file||null;
+        proposalEpoch++;renderTenderFiles(entries);
         showRegionalResult();showRegionMessage('');
-        status.textContent=found.auditeeOverflow?'上传成功，仅保留前 50 家单位。':'上传成功';
+        const note=identityConflict?'招标身份信息有冲突，表单保留原输入。':!validRows?'主体字段超出表单范围，请手动核对。':
+          !results.length?'请手填招标信息。':found.conflicts.length?'请核对：'+found.conflicts.join('、')+'。':'';
+        const summary=entries.length===1&&results.length?'上传成功':'已加入 '+entries.filter(entry=>entry.accepted).length+' 份招标资料，识别 '+results.length+' 份。';
+        status.textContent=summary+(found.auditeeOverflow?'，仅带入前 50 家单位。':'')+note;
       }catch(err){if(ticket===tenderTicket)status.textContent='未导入，原有资料未改变：'+err.message;}
       finally{if(ticket===tenderTicket){picker.value='';tenderPending=false;refreshProposalControls();}}
     }
@@ -1693,6 +2143,7 @@
   sourceList();hydrate();renderHistory();connectProposal();connectIntake();renderEstimates();
   if(subjectList&&globalThis.BatchQuote)batchQuote=globalThis.BatchQuote.mount($('#quote-batch'),{getRegister:()=>subjectList.snapshot(),estimateRow:estimateBatchRow,getEstimateKey:batchEstimateKey,getFinal:()=>restoredNeedsReview?null:finalResult,getTax:()=>state.quote.tax,onChange:()=>{proposalEpoch++;refreshProposalControls();},format:fmt});
   refreshProposalControls();connectProjectInitiation();setView('home');
+  globalThis.WorkspaceRecordTables?.mount($('main'));
   /* v56 project activity integration begin */
   function activityProject(){
     const visibleValue=selector=>{const node=document.querySelector(selector);return node&&!node.disabled&&node.getClientRects().length?node.value:'';};
@@ -1717,7 +2168,25 @@
     capture:signContext,isCurrent:signContextIsCurrent,apply:emitSignedPacket,
     onChange:message=>{if(message){toast(message);return;}proposalEpoch++;refreshProposalControls();}
   });
-  if(globalThis.AuditProgram&&globalThis.ProjectInitiation?.listSaved)auditProgram=globalThis.AuditProgram.mount($('#audit-program'),{listProjects:()=>globalThis.ProjectInitiation.listSaved()});
+  if(globalThis.AuditProgram&&globalThis.ProjectInitiation?.listSaved)auditProgram=globalThis.AuditProgram.mount($('#audit-program'),{
+    compact:true,
+    async listProjects(){
+      const projects=await globalThis.ProjectInitiation.listSaved();
+      const workspaces=await Promise.allSettled(projects.map(project=>globalThis.ProjectWorkspaceStore?.get(project.quoteId)));
+      return projects.map((project,index)=>({...project,companyName:workspaces[index].value?.projectInitiationDetails?.companyName}));
+    },
+    onProjectReady:restoreMaterialDraft
+  });
+  $('#audit-checklist-export').addEventListener('click',async event=>{
+    const mode=event.target.closest('[data-checklist-export]')?.dataset.checklistExport;
+    if(!mode)return;
+    event.currentTarget.open=false;
+    try{
+      if(!auditProgram?.exportChecklist)throw Error('资料清单组件尚未加载。');
+      const count=await auditProgram.exportChecklist(mode);
+      SaveFeedback.exported('已导出 '+count+' 项资料。');
+    }catch(error){SaveFeedback.exportFailed(error);}
+  });
   if(globalThis.WorkpaperWorkspace&&auditProgram)workpaperWorkspace=globalThis.WorkpaperWorkspace.mount($('#audit-program'));
   if(globalThis.AuditWorkflow&&globalThis.AuditChecklist&&globalThis.ProjectWorkspaceStore)auditWorkflow=globalThis.AuditWorkflow.mount($('#audit-flow'),{
     listProjects:listBidProjects,openStage:openAuditWorkflowStage
@@ -1728,12 +2197,39 @@
     return result;
   }});
   if(globalThis.AppSettings)try{globalThis.AppSettings.applyPreferences(globalThis.AppSettings.readPreferences(),document);}catch{}
-  function draftNotice(text,bad=false){const e=$('#page-save-status');if(e){e.textContent=text;e.classList.toggle('error',bad);}}
+  function draftNotice(text,bad=false){const e=$('#page-save-status');if(e&&!e.hidden){e.textContent=text;e.classList.toggle('error',bad);}}
+  function materialDraftScope(){
+    const selector=$('#ac-project');
+    return selector?.value&&!selector.closest('[hidden]')?{kind:'audit-fields',projectId:selector.value,stage:'1'}:null;
+  }
+  const materialDraftIds=['ac-reviewer','ac-search'];
+  const materialDraftFields={accept:input=>materialDraftIds.includes(input.id)};
+  $('#audit-program').addEventListener('input',event=>{if(materialDraftFields.accept(event.target))materialInputEpoch++;});
+  function restoreMaterialDraft(projectId){
+    const scope=materialDraftScope();
+    if(!pageDrafts||scope?.projectId!==projectId)return;
+    if(materialDraftReady?.projectId===projectId)return materialDraftReady.promise;
+    const task={projectId,epoch:materialInputEpoch};
+    materialDraftReady=task;
+    task.promise=pageDrafts.restore('audit',{scope}).then(result=>{
+      if(result.restored&&materialDraftScope()?.projectId===projectId)draftNotice('已恢复本项目暂存');
+    }).catch(error=>{
+      if(materialDraftScope()?.projectId===projectId)draftNotice(error.message,true);
+    });
+    return task.promise;
+  }
   async function pageScope(name){
     if(['quote','proposal','bid'].includes(name))return {kind:'quote-input',instanceId:'current-quote'};
     if(name==='rules')return {kind:'fee-rule',recordId:activeRule};
     if(name==='project')return projectInitiation?.detailsScope?.()||null;
-    if(name==='audit'){const c=await workpaperWorkspace?.capturePending?.();if(c)return c.scope;const project=$('#pw-project')?.value||$('#ac-project')?.value;if(!project)return null;return {kind:'audit-fields',projectId:project,stage:$('.pw-steps [aria-pressed=true]')?.dataset.auditStep||'1'};}
+    if(name==='audit'){
+      const collection=materialDraftScope();
+      if(collection)return collection;
+      if(!$('#audit-flow').hidden)return null;
+      const c=await workpaperWorkspace?.capturePending?.();if(c)return c.scope;
+      const project=$('#pw-project')?.value,stage=$('.pw-steps [aria-pressed=true]')?.dataset.auditStep;
+      return project&&stage&&stage!=='1'?{kind:'audit-fields',projectId:project,stage}:null;
+    }
     if(name==='costs')return projectCosts?.draftScope?.()||{kind:'project-costs',instanceId:'current-device'};
     if(name==='travel')return travelExpenses?.draftScope?.()||{kind:'travel-expenses',instanceId:'current-device'};
     if(name==='bidders')return bidderPicker?.draftScope?.()||null;
@@ -1742,26 +2238,112 @@
     return {kind:'page-fields',instanceId:name};
   }
   function captureQuoteDraft(){
+    const estimateControls={region:$('#quote-region').value,tax:$('#estimate-tax').value,factor:$('#estimate-factor').value,rounding:$('#estimate-rounding').value};
+    const record=latestRegionalEstimate;
+    const previewState={
+      estimateId:record?.id||'',projectCode:record?.projectCode||'',
+      previewOnly:record&&!regionalRecordSaved?'yes':'',baseFinalQuotes:record?.finalQuotes||[],
+      finalInputs:$$('#estimate-details [data-final-quote]').map(input=>input.value)
+    };
     syncList();const rows=$$('[data-batch-amount]').map(e=>({row:e.dataset.batchAmount,value:e.value}));
-    return {scope:{kind:'quote-input',instanceId:'current-quote'},values:{snapshot:JSON.stringify(state),proposal:formRead($('#proposal-form')),issuerEmail:$('#issuer-email').value,bidderContact:$('#bidder-contact').value,bidderPhone:$('#bidder-phone').value,bidderEmail:$('#bidder-email').value,bidderId:selectedBidder?.id||'',bidderVersion:selectedBidder?.version||0,layouts:JSON.stringify(selectedLayouts()),batchRows:rows}};
+    return {scope:{kind:'quote-input',instanceId:'current-quote'},values:{snapshot:JSON.stringify(state),proposal:formRead($('#proposal-form')),issuerEmail:$('#issuer-email').value,bidderContact:$('#bidder-contact').value,bidderPhone:$('#bidder-phone').value,bidderEmail:$('#bidder-email').value,bidderId:selectedBidder?.id||'',bidderVersion:selectedBidder?.version||0,layouts:JSON.stringify(selectedLayouts()),batchRows:rows,inquiry:formRead($('#quote-inquiry')),importedTender,estimateControls,...previewState}};
   }
-  async function restoreQuoteDraft(value){
+  async function restoreQuoteDraft(value,{savedAt}){
     if(draftQuoteEpoch.value!==null&&draftQuoteEpoch.value!==proposalEpoch)throw Error('你已修改当前报价，未用旧暂存覆盖新输入。');const next=JSON.parse(value.snapshot||'null');if(!validStoredRecord({id:'temporary',savedAt:new Date().toISOString(),totalCents:0,appVersion:'0.1',snapshot:next,calculation:{quote:{totalCents:0}}}))throw Error('报价暂存格式不兼容，原数据未覆盖。');
     if(!value.proposal||typeof value.proposal!=='object'||Object.values(value.proposal).some(v=>typeof v!=='string'||v.length>2000))throw Error('报价登记暂存字段无效。');
     state=next;activeRecordId=null;restoredNeedsReview=false;hydrate();resetIntakeView();tenderProjectType(value.proposal.projectType);formFill($('#proposal-form'),{riskLevel:'',...value.proposal});$('#issuer-email').value=value.issuerEmail||'';$('#bidder-contact').value=value.bidderContact||'';$('#bidder-phone').value=value.bidderPhone||'';$('#bidder-email').value=value.bidderEmail||'';
     selectedBidder=null;if(value.bidderId){let db;try{db=await globalThis.BidderLibrary.open();const bidder=await db.get(value.bidderId);if(!bidder||bidder.version!==value.bidderVersion)throw Error('暂存的事务所版本已更新，请重新选择事务所；手填信息已保留。');selectedBidder={id:bidder.id,name:bidder.name,version:bidder.version,signingKinds:[],attachments:bidder.attachments.filter(a=>Object.hasOwn(credentialLabels,a.kind))};}finally{db?.close?.();}}
-    bidderPicker?.restorePicker?.(selectedBidder);quoteSigning?.restore?.(JSON.parse(value.layouts||'{}'));proposalKey=currentProposalKey();proposalEpoch++;batchQuote?.refresh();for(const row of value.batchRows||[]){const e=$('[data-batch-amount="'+String(row.row).replace(/[^0-9]/g,'')+'"]');if(e&&typeof row.value==='string'){e.value=row.value;e.dispatchEvent(new Event('input',{bubbles:true}));}}refreshProposalControls();
+    bidderPicker?.restorePicker?.(selectedBidder);quoteSigning?.restore?.(JSON.parse(value.layouts||'{}'));proposalKey=currentProposalKey();proposalEpoch++;batchQuote?.refresh();for(const row of value.batchRows||[]){const e=$('[data-batch-amount="'+String(row.row).replace(/[^0-9]/g,'')+'"]');if(e&&typeof row.value==='string'){e.value=row.value;e.dispatchEvent(new Event('input',{bubbles:true}));}}
+    restoreInquiry(value.inquiry);
+    try{
+      const clearedAt=Number(sessionStorage.getItem(INQUIRY_CLEARED_AT));
+      if(clearedAt&&Date.parse(savedAt)<=clearedAt&&$('#inquiry-text').value){
+        $('#inquiry-text').value='';
+        value={...value,estimateId:'',previewOnly:'',finalInputs:[]};
+      }else if(clearedAt&&Date.parse(savedAt)>clearedAt){
+        sessionStorage.removeItem(INQUIRY_CLEARED_AT);
+      }
+    }catch{}
+    if(value.importedTender?.fields&&globalThis.AuditeeRows?.valid({rows:value.importedTender.rows,active:0})){
+      importedTender=value.importedTender;
+    }
+    const estimate=value.estimateId&&readEstimates().records.find(record=>record.id===value.estimateId);
+    if(estimate){
+      $('#quote-region').value=byId(estimate.provinceId).name;
+      const tax=estimate.taxRate?.replace(/%$/u,'');
+      if(ESTIMATE_TAX_RATES.includes(tax))$('#estimate-tax').value=tax;
+      $('#estimate-rounding').value=estimate.rounding??state.quote.rounding??'none';
+      if(validPricePercent(estimate.pricePercent))$('#estimate-factor').value=estimate.pricePercent+'%';
+      showRegionalResult(estimate,true);
+    }else refreshProposalControls();
+    if(value.estimateControls){
+      const {region,tax,factor,rounding}=value.estimateControls;
+      $('#quote-region').value=region;$('#estimate-tax').value=tax;$('#estimate-factor').value=factor;$('#estimate-rounding').value=rounding;
+      if(!estimate&&value.previewOnly==='yes'){
+        $('#comparison').requestSubmit();
+        if(latestRegionalEstimate&&PROJECT_CODE.test(value.projectCode)&&PROJECT_CODE.test(value.estimateId)){
+          Object.assign(latestRegionalEstimate,{id:value.estimateId,code:value.projectCode,projectCode:value.projectCode});
+        }
+      }
+    }
+    const samePrices=!estimate||(value.previewOnly!=='yes'&&JSON.stringify(estimate.finalQuotes||[])===JSON.stringify(value.baseFinalQuotes));
+    if(latestRegionalEstimate&&samePrices&&Array.isArray(value.finalInputs)){
+      $$('#estimate-details [data-final-quote]').forEach((input,i)=>{if(typeof value.finalInputs[i]==='string')input.value=value.finalInputs[i];});
+      refreshRegionalPrices();
+      refreshProposalControls();
+    }
   }
-  async function restorePageDraft(name){try{if(name==='project')await projectPageReady;if(name==='audit')await auditPageReady;if(name==='costs')await projectCosts?.ready;if(name==='travel')await travelExpenses?.ready;const storageView=['proposal','bid'].includes(name)?'quote':name;if(storageView==='quote'){if(draftRestored.has('quote-restored'))return;draftRestored.add('quote-restored');draftQuoteEpoch.value=proposalEpoch;}const scope=await pageScope(name);if(!scope)return;const result=await pageDrafts.restore(storageView,{scope});draftQuoteEpoch.value=null;if(view===name&&result.restored)draftNotice('已恢复暂存 · '+new Date(result.savedAt).toLocaleString('zh-CN'));}catch(err){draftQuoteEpoch.value=null;if(view===name)draftNotice(err.message,true);}}
+  async function restorePageDraft(name){try{if(name==='project')await projectPageReady;if(name==='audit')await auditPageReady;if(name==='costs')await projectCosts?.ready;if(name==='travel')await travelExpenses?.ready;const storageView=['proposal','bid'].includes(name)?'quote':name;if(storageView==='quote'){if(draftRestored.has('quote-restored'))return;draftRestored.add('quote-restored');draftQuoteEpoch.value=proposalEpoch;}const scope=await pageScope(name);if(!scope)return;if(name==='audit'&&scope.kind==='audit-fields'&&scope.stage==='1')return restoreMaterialDraft(scope.projectId);const result=await pageDrafts.restore(storageView,{scope});draftQuoteEpoch.value=null;if(view===name&&result.restored)draftNotice('已恢复暂存 · '+new Date(result.savedAt).toLocaleString('zh-CN'));}catch(err){draftQuoteEpoch.value=null;if(view===name)draftNotice(err.message,true);}}
+  function noDraftReason(name){
+    if(name==='audit'&&!$('#pw-project')?.value&&!$('#ac-project')?.value&&!auditWorkflow?.selectedProject())return '请先选择审计项目。';
+    if(name==='report'&&!$('#report-project')?.value)return '请先选择审计项目。';
+    if(name==='archive')return '请在归档页选择项目，并使用「保存明确的附件关联」。';
+    if(name==='templates')return '请选择模板文件，并使用「保存所选原件」。';
+    if(name==='project')return '请打开已立项项目并填写或修改立项资料。';
+    return '当前页面没有可暂存的输入。';
+  }
   if(globalThis.PageDrafts)try{
     pageDrafts=globalThis.PageDrafts.create();
     for(const name of ['home','quote','proposal','bid','rules','ledger','project','audit','report','archive','templates','travel','costs','accounting','basics','bidders','settings'])pageDrafts.registerAdapter(name,{
       scope:()=>pageScope(name)||{},
-      async capture(){if(['quote','proposal','bid'].includes(name))return captureQuoteDraft();if(name==='project')return projectInitiation?.capturePending?.()||null;if(name==='audit'){const c=await workpaperWorkspace?.capturePending?.();if(c)return c;}if(name==='costs'&&projectCosts?.capturePending)return projectCosts.capturePending();if(name==='travel'&&travelExpenses?.capturePending)return travelExpenses.capturePending();if(name==='bidders'&&bidderPicker?.capturePending)return bidderPicker.capturePending();if(name==='rules'&&$('#rules-form'))return {scope:await pageScope(name),values:{rule:JSON.stringify(ruleDraft),form:JSON.stringify(formRead($('#rules-form'))),tiers:$$('[data-tier]',$('#rules-form')).map(x=>({index:x.dataset.tier,field:x.dataset.field,value:x.value}))}};const scope=await pageScope(name),host=$('#view-'+name);if(!scope||!host)return null;const values=globalThis.PageDrafts.captureFields(host);return values?{scope,values:{fields:values}}:null;},
-      async restore(values,meta){if(['quote','proposal','bid'].includes(name))return restoreQuoteDraft(values);if(name==='project')return projectInitiation.restorePending(values,meta);if(name==='audit'&&['workpaper-input','workpaper-directory'].includes(meta.scope.kind))return workpaperWorkspace.restorePending(values,meta);if(name==='costs'&&projectCosts?.restorePending)return projectCosts.restorePending(values,meta);if(name==='travel'&&travelExpenses?.restorePending)return travelExpenses.restorePending(values,meta);if(name==='bidders'&&bidderPicker?.restorePending)return bidderPicker.restorePending(values,meta);if(name==='rules'){if(meta.scope.recordId!==activeRule)throw Error('收费地区已变化，未恢复其他省份的暂存。');const rule=JSON.parse(values.rule);if(!rule||rule.id!==activeRule||!Array.isArray(rule.tiers))throw Error('规则暂存格式不匹配。');ruleDraft=rule;renderRules(true);formFill($('#rules-form'),JSON.parse(values.form));for(const t of values.tiers){const node=$('[data-tier="'+String(t.index).replace(/[^0-9]/g,'')+'"][data-field="'+String(t.field).replace(/[^a-zA-Z]/g,'')+'"]',$('#rules-form'));if(node)node.value=t.value;}return {restored:1};}if(globalThis.PageDrafts.scopeKey(name,await pageScope(name)||{})!==globalThis.PageDrafts.scopeKey(name,meta.scope))throw Error('项目或页面范围已变化，未恢复旧字段。');return globalThis.PageDrafts.restoreFields($('#view-'+name),values.fields);}
+      async capture(){if(['quote','proposal','bid'].includes(name))return captureQuoteDraft();if(name==='project')return projectInitiation?.capturePending?.()||null;if(name==='audit'){const scope=materialDraftScope();if(scope){const fields=PageDrafts.captureFields($('#audit-program'),materialDraftFields);return fields?{scope,values:{fields}}:null;}const c=await workpaperWorkspace?.capturePending?.();if(c)return c;}if(name==='costs'&&projectCosts?.capturePending)return projectCosts.capturePending();if(name==='travel'&&travelExpenses?.capturePending)return travelExpenses.capturePending();if(name==='bidders'&&bidderPicker?.capturePending)return bidderPicker.capturePending();if(name==='rules'&&$('#rules-form'))return {scope:await pageScope(name),values:{rule:JSON.stringify(ruleDraft),form:JSON.stringify(formRead($('#rules-form'))),tiers:$$('[data-tier]',$('#rules-form')).map(x=>({index:x.dataset.tier,field:x.dataset.field,value:x.value}))}};const scope=await pageScope(name),host=$('#view-'+name);if(!scope||!host)return null;const values=globalThis.PageDrafts.captureFields(host);return values?{scope,values:{fields:values}}:null;},
+      async restore(values,meta){if(['quote','proposal','bid'].includes(name))return restoreQuoteDraft(values,meta);if(name==='project')return projectInitiation.restorePending(values,meta);if(name==='audit'&&['workpaper-input','workpaper-directory'].includes(meta.scope.kind))return workpaperWorkspace.restorePending(values,meta);if(name==='audit'&&meta.scope.kind==='audit-fields'&&meta.scope.stage==='1'){const scope=materialDraftScope();if(scope?.projectId!==meta.scope.projectId||materialDraftReady?.epoch!==materialInputEpoch)throw Error('当前资料核对输入已变化，旧暂存仍保留。');const fields={};for(const id of materialDraftIds){const key=JSON.stringify({id,row:[]});if(Object.hasOwn(values.fields,key))fields[key]=values.fields[key];}return PageDrafts.restoreFields($('#audit-program'),fields,materialDraftFields);}if(name==='costs'&&projectCosts?.restorePending)return projectCosts.restorePending(values,meta);if(name==='travel'&&travelExpenses?.restorePending)return travelExpenses.restorePending(values,meta);if(name==='bidders'&&bidderPicker?.restorePending)return bidderPicker.restorePending(values,meta);if(name==='rules'){if(meta.scope.recordId!==activeRule)throw Error('收费地区已变化，未恢复其他省份的暂存。');const rule=JSON.parse(values.rule);if(!rule||rule.id!==activeRule||!Array.isArray(rule.tiers))throw Error('规则暂存格式不匹配。');ruleDraft=rule;renderRules(true);formFill($('#rules-form'),JSON.parse(values.form));for(const t of values.tiers){const node=$('[data-tier="'+String(t.index).replace(/[^0-9]/g,'')+'"][data-field="'+String(t.field).replace(/[^a-zA-Z]/g,'')+'"]',$('#rules-form'));if(node)node.value=t.value;}return {restored:1};}if(globalThis.PageDrafts.scopeKey(name,await pageScope(name)||{})!==globalThis.PageDrafts.scopeKey(name,meta.scope))throw Error('项目或页面范围已变化，未恢复旧字段。');return globalThis.PageDrafts.restoreFields($('#view-'+name),values.fields);}
     });
-    $('#page-save').onclick=async()=>{const name=['proposal','bid'].includes(view)?'quote':view,b=$('#page-save');if(b.disabled)return;b.disabled=true;try{if(name==='costs')await projectCosts?.ready;if(name==='travel')await travelExpenses?.ready;const result=await pageDrafts.checkpoint(name);if(result.saved){draftNotice('已暂存 · '+new Date(result.savedAt).toLocaleString('zh-CN')+' · 仅本机');toast('已暂存输入；不等于登记、核对或签发。');}else draftNotice('暂无未提交输入；已上传资料以页面原保存状态为准。');}catch(err){draftNotice(err.message,true);toast('暂存未完成：'+err.message);}finally{b.disabled=false;}};
+    $('#page-save').onclick=()=>{
+      const detail=view==='project'&&$('#project-info-draft');
+      if(detail)detail.click();else void checkpointPageDraft();
+    };
     draftRestored.add('quote');void restorePageDraft('quote');
-  }catch(err){draftNotice('暂存不可用：'+err.message,true);}
+  }catch(err){
+    const unavailable=()=>draftNotice('保存失败 · '+SaveFeedback.failed(err),true);
+    unavailable();
+    $('#page-save').onclick=unavailable;
+  }
+  async function checkpointPageDraft(scope){
+    const page=view,name=['proposal','bid'].includes(page)?'quote':page,b=$('#page-save');
+    const isProjectDraft=scope?.kind==='project-information';
+    const saveFeedback=isProjectDraft?SaveFeedback.drafted:SaveFeedback.saved;
+    const failFeedback=isProjectDraft?SaveFeedback.draftFailed:SaveFeedback.failed;
+    if(b.disabled)return false;
+    b.disabled=true;
+    draftNotice('正在暂存到本机…');
+    try{
+      if(!pageDrafts)throw Error('本机暂存组件不可用。');
+      if(name==='costs')await projectCosts?.ready;
+      if(name==='travel')await travelExpenses?.ready;
+      const collection=name==='audit'&&materialDraftScope();
+      if(collection)await restoreMaterialDraft(collection.projectId);
+      const requestedScope=collection||scope;
+      const result=await pageDrafts.checkpoint(name,requestedScope?{scope:requestedScope}:{});
+      if(!result.saved)throw Error(isProjectDraft?'请先填写或修改立项资料，再暂存。':noDraftReason(name));
+      const message=saveFeedback('已暂存本页输入 · '+new Date(result.savedAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})+' · 仅本机');
+      if(view===page)draftNotice(message);
+      return true;
+    }catch(error){
+      const reason=failFeedback(error);
+      if(view===page)draftNotice((isProjectDraft?'暂存失败':'保存失败')+' · '+reason,true);
+      return false;
+    }finally{b.disabled=false;}
+  }
   syncDocumentScope();refreshProposalControls();
 })();

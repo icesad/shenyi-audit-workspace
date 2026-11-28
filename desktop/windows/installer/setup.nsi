@@ -5,14 +5,14 @@ SetCompressor zlib
 CRCCheck force
 !include "MUI2.nsh"
 !include "x64.nsh"
-!define TITLE "审易工作台（内测）"
+!define TITLE "审迹工作台（内测）"
 !define VERSION_TITLE "${TITLE} ${BUILD_ID}"
 !define ARP "Software\Microsoft\Windows\CurrentVersion\Uninstall\ShenyiWorkbenchPreview-${BUILD_ID}"
 !define ACTIVE "Software\Shenyi\WorkbenchLocalReviewInstaller"
 !define ROOT "$LOCALAPPDATA\Programs\ShenyiWorkbenchPreview"
 !define APP "${ROOT}\${BUILD_ID}"
 !define CURRENT_LINK "$SMPROGRAMS\${TITLE}.lnk"
-!define VERSIONS_MENU "$SMPROGRAMS\审易工作台内测版本"
+!define VERSIONS_MENU "$SMPROGRAMS\审迹工作台内测版本"
 
 Name "${TITLE}"
 OutFile "${OUTPUT}"
@@ -21,12 +21,12 @@ ShowInstDetails show
 ShowUninstDetails show
 VIProductVersion "${APP_VERSION}.0"
 VIAddVersionKey /LANG=2052 "ProductName" "${TITLE}"
-VIAddVersionKey /LANG=2052 "FileDescription" "审易六模块本机体验版安装程序"
+VIAddVersionKey /LANG=2052 "FileDescription" "审迹六模块本机体验版安装程序"
 VIAddVersionKey /LANG=2052 "FileVersion" "${APP_VERSION}.0"
 VIAddVersionKey /LANG=2052 "ProductVersion" "${APP_VERSION}"
-VIAddVersionKey /LANG=2052 "LegalCopyright" "审易工作台内测版。第三方组件遵循随附许可。"
+VIAddVersionKey /LANG=2052 "LegalCopyright" "审迹工作台内测版。第三方组件遵循随附许可。"
 
-!define MUI_WELCOMEPAGE_TITLE "安装审易工作台（内测）"
+!define MUI_WELCOMEPAGE_TITLE "安装审迹工作台（内测）"
 !define MUI_WELCOMEPAGE_TEXT "供负责人在本机核对六个业务模块，请使用测试资料。程序安装到当前 Windows 用户的目录，业务数据保存在独立的体验工作区。"
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_INSTFILES
@@ -67,7 +67,7 @@ Function un.onInit
   !insertmacro LockMaintenance
 FunctionEnd
 
-Section "审易工作台"
+Section "审迹工作台"
   SetOutPath "$INSTDIR"
   SetOverwrite on
   File /r "${PAYLOAD}\*.*"
@@ -117,6 +117,6 @@ Section "Uninstall"
   Goto finished
   busy:
     SetErrorLevel 2
-    Abort "请先关闭此版本的审易工作台，再重新卸载。"
+    Abort "请先关闭此版本的审迹工作台，再重新卸载。"
   finished:
 SectionEnd

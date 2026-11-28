@@ -5,9 +5,14 @@
  KEYS.add('projectInitiationDetails');
  KEYS.add('auditWorkflow');
  const PROJECT_TYPES=Object.freeze(['年度财务报表审计','专项审计','报表审阅','咨询服务','内控测试','经济责任审计','验资服务','其他']),NUMBER_DB='hengdu.project.numbering.v1';
+ const projectTypeLabel=value=>value==='年度财务报表审计'?'财务报表审计':value;
+ const projectTypeInitials=new Map([['财务报表审计','CWBB'],['专项审计','ZXSJ'],['报表审阅','BBSY'],['咨询服务','ZXFW'],
+  ['内控测试','NKCS'],['经济责任审计','JJZR'],['验资服务','YZFW'],['其他','QT']]);
+ const riskInitials=new Map([['A类','A'],['B类','B'],['C类','C']]);
  const PROCUREMENT_METHODS=Object.freeze(['询价函','邀请招标','公开招标','内部推荐']);
  const INITIATION_FIELDS=Object.freeze({companyName:6000,contactName:100,contactInfo:300,taxRate:8,siteStart:10,siteEnd:10,
    teamMembers:250,procurementMethod:20,reportDate:10,reportCopies:6,mailingAddress:500,regulated:1,listed:1,ipoPlan:1});
+ const INITIATION_OPTIONAL_FIELDS=Object.freeze({engagementOwner:100,engagementFirm:200});
  function exactNumber(v,keys){if(!v||Object.getPrototypeOf(v)!==Object.prototype||Reflect.ownKeys(v).length!==keys.length||keys.some(k=>!Object.hasOwn(v,k)||!Object.hasOwn(Object.getOwnPropertyDescriptor(v,k),'value')))throw Error('项目编号元数据格式无效，原记录未覆盖。');}
  function numberId(v){if(typeof v!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(v))throw Error('项目编号的内部关联ID无效。');return v;}
  function wonTime(v){if(typeof v!=='string'||!Number.isFinite(Date.parse(v))||new Date(v).toISOString()!==v)throw Error('首次中标登记时间无效，未编造年度。');return v;}
@@ -24,7 +29,19 @@
  async function getProjectNumber(projectId){numberId(projectId);const db=await numberDb(true);try{return await new Promise((ok,no)=>{const t=db.transaction('numbers','readonly'),q=t.objectStore('numbers').get(projectId);t.oncomplete=()=>{try{ok(q.result?identity(q.result,projectId):null);}catch(e){no(e);}};t.onabort=()=>no(Error('固定项目编号读取失败，原编号未改变。'));});}finally{db.close();}}
  async function exportProjectNumbers(){const identities=await claimNumbers(),classifications=[];for(const v of identities){const w=await get(v.projectId);if(w.projectClassification!==undefined)classifications.push({projectId:v.projectId,value:classification(w.projectClassification)});}return {format:'shenyi-project-number-backup',schemaVersion:1,identities,classifications};}
  async function importProjectNumbers(value){exactNumber(value,['format','schemaVersion','identities','classifications']);if(value.format!=='shenyi-project-number-backup'||value.schemaVersion!==1||!Array.isArray(value.identities)||value.identities.length>5000||!Array.isArray(value.classifications)||value.classifications.length>5000)throw Error('不是受支持的固定项目编号备份。');const identities=value.identities.map(v=>identity(v)),ids=new Set(),slots=new Set(),kinds=new Map();for(const v of identities){const slot=v.year+':'+v.sequence;if(ids.has(v.projectId)||slots.has(slot))throw Error('编号备份有重复项目或年度顺序号。');ids.add(v.projectId);slots.add(slot);}for(const c of value.classifications){exactNumber(c,['projectId','value']);if(!ids.has(numberId(c.projectId))||kinds.has(c.projectId))throw Error('编号备份的分类关联无效。');kinds.set(c.projectId,classification(c.value));}for(const v of identities){const w=await get(v.projectId);if(w.projectIdentity&&!sameIdentity(identity(w.projectIdentity,v.projectId),v))throw Error('工作区已有不同编号，导入已拒绝，未覆盖。');}await claimNumbers(identities);for(const v of identities)await preserveIdentity(v,kinds.get(v.projectId));return {count:identities.length};}
- function businessNumber(v,risk,type){if(!v)return '待核对首次中标登记';identity(v);const letter={'A类':'A','B类':'B','C类':'C'}[risk],valid=PROJECT_TYPES.includes(type);if(!letter||!valid)return '待补齐：'+[!letter?'风险等级':'',!valid?'项目类型':''].filter(Boolean).join('、');return v.year+'-'+letter+'-'+type+'-'+String(v.sequence).padStart(4,'0');}
+ function projectCode(v,risk,type){
+  if(!v)return '待核对首次中标登记';
+  identity(v);
+  const letter=riskInitials.get(risk),initials=projectTypeInitials.get(projectTypeLabel(type));
+  if(!letter||!initials)return '待补齐：'+[!letter?'风险等级':'',!initials?'项目类型':''].filter(Boolean).join('、');
+  return [initials,v.year,letter,String(v.sequence).padStart(4,'0')].join('-');
+ }
+ function businessNumber(v,risk,type){
+  const label=projectCode(v,risk,type);
+  if(!v||!riskInitials.has(risk)||!PROJECT_TYPES.includes(type))return label;
+  // Legacy source files verify the code using their original format.
+  return [v.year,riskInitials.get(risk),type,String(v.sequence).padStart(4,'0')].join('-');
+ }
  function open(){return new Promise((ok,no)=>{const q=indexedDB.open(NAME,1);q.onupgradeneeded=()=>q.result.createObjectStore('workspaces',{keyPath:'id'});q.onsuccess=()=>ok(q.result);q.onerror=()=>no(Error('本机工作区不可用'));q.onblocked=()=>no(Error('工作区被旧页面占用，请关闭旧页'));});}
  async function get(id){valid(id);const db=await open();try{return await new Promise((ok,no)=>{const t=db.transaction('workspaces'),q=t.objectStore('workspaces').get(id);t.oncomplete=()=>ok(q.result||{id,rev:0,amountCents:null,firm:null,contract:null,choices:{},directoryRevisions:{},archive:null,index:[],riskArchive:null,riskIndex:[],workpaperSources:{},workpaperRouteSelections:{},answers:{},docAnswers:{}});t.onabort=()=>no(Error('工作区读取失败'));});}finally{db.close();}}
  const REGISTER_KEYS=['schemaVersion','riskLevel','manager','siteTime','workpaperReportTime','preparationTime','preparer','reviewer','financialStatementDate'];
@@ -38,9 +55,11 @@
   if(!value||typeof value!=='object'||Array.isArray(value)||value.schemaVersion!==1||Object.keys(value).length!==3||Object.keys(value).some(k=>!['schemaVersion','status','paymentReceived'].includes(k))||!['','已完成','进行中','已取消'].includes(value.status)||!['','是','否'].includes(value.paymentReceived))throw Error('项目状态或回款字段无效，原记录未覆盖。');
  }
  function initiationDetails(value){
-  exactNumber(value,['schemaVersion',...Object.keys(INITIATION_FIELDS)]);
+  const fields={...INITIATION_FIELDS};
+  for(const [key,max] of Object.entries(INITIATION_OPTIONAL_FIELDS))if(Object.hasOwn(value||{},key))fields[key]=max;
+  exactNumber(value,['schemaVersion',...Object.keys(fields)]);
   if(value.schemaVersion!==1)throw Error('立项信息格式不受支持。');
-  for(const [key,max] of Object.entries(INITIATION_FIELDS)){
+  for(const [key,max] of Object.entries(fields)){
    const field=value[key];
    if(typeof field!=='string'||field.length>max||!field.isWellFormed()||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(field))throw Error('立项信息内容无效或过长。');
   }
@@ -112,7 +131,7 @@
  const candidates=[];for(const name of ['archive','riskArchive'])if(patch[name])candidates.push(patch[name]);for(const source of Object.values(patch.workpaperSources||{}))if(source?.archive)candidates.push(source.archive);
  if(Object.hasOwn(patch,'workpaperLocks')&&Object.keys(patch.workpaperLocks||{}).length){const prior=await get(id);if(prior.rev!==expected)throw Error('此项目已被另一处更新，请刷新后重试；未覆盖。');const merged={...prior,...patch};for(const name of ['archive','riskArchive'])if(merged[name])candidates.push(merged[name]);for(const source of Object.values(merged.workpaperSources||{}))if(source?.archive)candidates.push(source.archive);}
  const seen=new Map();for(const archive of candidates){if(!archive.blob||typeof archive.blob.arrayBuffer!=='function'||!/^[a-f0-9]{64}$/.test(archive.hash||''))throw Error('底稿原包缺少有效字节或SHA256，未保存。');if(!seen.has(archive.blob))seen.set(archive.blob,await hash(archive.blob));if(seen.get(archive.blob)!==archive.hash)throw Error('底稿原包实际字节与SHA256不一致，已禁止保存；原记录未改变。');}
- const db=await open();try{return await new Promise((ok,no)=>{let value,error;const t=db.transaction('workspaces','readwrite'),st=t.objectStore('workspaces'),q=st.get(id);q.onsuccess=()=>{if((q.result?.rev||0)!==expected){error=Error('此项目已被另一处更新，请先刷新工作区再保存；未覆盖旧记录。');t.abort();return;}try{if(q.result?.projectIdentity&&Object.hasOwn(patch,'projectIdentity')&&!sameIdentity(identity(q.result.projectIdentity,id),patch.projectIdentity))throw Error('固定项目编号不可更换或删除，未覆盖原记录。');}catch(e){error=e;t.abort();return;}value={...(q.result||{id}),...patch,rev:expected+1,updatedAt:new Date().toISOString()};try{if(root.WorkpaperGovernance?.assertTransition)root.WorkpaperGovernance.assertTransition(q.result||{id},value);else if(Object.keys(q.result?.workpaperLocks||{}).length||Object.keys(value.workpaperLocks||{}).length)throw Error('冻结校验组件未载入，已禁止写入，原记录未改变。');}catch(e){error=e;t.abort();return;}st.put(value);};t.oncomplete=()=>ok(value);t.onabort=()=>no(error||Error('本机空间不足或保存失败；旧记录未改变'));});}finally{db.close();}}
+ const db=await open();try{return await new Promise((ok,no)=>{let value,error;const t=db.transaction('workspaces','readwrite'),st=t.objectStore('workspaces'),q=st.get(id);q.onsuccess=()=>{if((q.result?.rev||0)!==expected){error=Error('此项目已被另一处更新，请先刷新工作区再保存；未覆盖旧记录。');t.abort();return;}try{if(q.result?.projectIdentity&&Object.hasOwn(patch,'projectIdentity')&&!sameIdentity(identity(q.result.projectIdentity,id),patch.projectIdentity))throw Error('固定项目编号不可更换或删除，未覆盖原记录。');}catch(e){error=e;t.abort();return;}value={...(q.result||{id}),...patch,rev:expected+1,updatedAt:new Date().toISOString()};try{if(root.WorkpaperGovernance?.assertTransition)root.WorkpaperGovernance.assertTransition(q.result||{id},value);else if(Object.keys(q.result?.workpaperLocks||{}).length||Object.keys(value.workpaperLocks||{}).length)throw Error('冻结校验组件未载入，已禁止写入，原记录未改变。');}catch(e){error=e;t.abort();return;}st.put(value);};t.oncomplete=()=>ok(value);t.onabort=()=>no(error||root.SaveFeedback?.storageError(t.error,'本机项目写入失败，旧记录未改变。')||Error('本机项目写入失败，旧记录未改变。'));});}finally{db.close();}}
  async function hash(blob){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer())),x=>x.toString(16).padStart(2,'0')).join('');}
  function download(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),30000);}
  async function parts(file){const a=await root.BidderArchive.open(new File([file],file.name||'source.zip'),{entryLimit:2048});try{const entries=a.entries.filter(e=>!e.name.endsWith('/'));if(entries.length>2048)throw Error('文件部件过多');const out=Object.create(null);for(let i=0;i<entries.length;i+=32){const got=await a.read(entries.slice(i,i+32).map(e=>e.name));for(const [n,b]of got)out[n]=b;}return out;}finally{a.close();}}
@@ -120,6 +139,6 @@
  function xml(raw){const s=typeof raw==='string'?raw:decoder.decode(raw);if(/<!DOCTYPE|<!ENTITY/i.test(s))throw Error('文档包含不支持的实体');const x=new DOMParser().parseFromString(s,'application/xml');if(x.querySelector('parsererror'))throw Error('文档XML损坏');return x;}
  function contractReplace(raw,fields){const x=xml(raw),W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';let matches=0;for(const p of x.getElementsByTagNameNS(W,'p')){const ts=Array.from(p.getElementsByTagNameNS(W,'t')),all=ts.map(n=>n.textContent).join('');const found=[...all.matchAll(/\{\{([^{}]+)\}\}/g)].filter(m=>Object.hasOwn(fields,m[1]));for(const m of found.reverse()){let start=0;for(const n of ts){const t=n.textContent,end=start+t.length;const a=Math.max(m.index,start),b=Math.min(m.index+m[0].length,end);if(a<b){n.textContent=t.slice(0,a-start)+(start<=m.index&&m.index<end?fields[m[1]]:'')+t.slice(b-start);n.setAttribute('xml:space','preserve');}start=end;}matches++;}}return {bytes:encoder.encode(new XMLSerializer().serializeToString(x)),matches};}
  async function contract(file,fields){const ps=await parts(file);let count=0;for(const n of Object.keys(ps))if(/^word\/(?:document|header\d+|footer\d+)\.xml$/.test(n)){const r=contractReplace(ps[n],fields);ps[n]=r.bytes;count+=r.matches;}if(!count)throw Error('模板未找到可填字段。请用 {{事务所名称}}、{{中标金额}} 等字段标记后再上传；不擅自猜改合同条款。');return {bytes:root.QuoteLayouts.packOfficeParts(ps),count};}
- root.ProjectWorkspaceStore=Object.freeze({get,save,hash,download,parts,xml,contract,contractReplace,validateSignedContract,PROJECT_TYPES,PROCUREMENT_METHODS,INITIATION_FIELDS,initiationDetails,ensureProjectNumbers,exportProjectNumbers,importProjectNumbers,businessNumber,projectAmount,validateContractTemplate,getProjectNumber,validateProjectIdentity:identity,validateProjectRegister:registerShape});
+ root.ProjectWorkspaceStore=Object.freeze({get,save,hash,download,parts,xml,contract,contractReplace,validateSignedContract,PROJECT_TYPES,projectTypeLabel,PROCUREMENT_METHODS,INITIATION_FIELDS,INITIATION_OPTIONAL_FIELDS,initiationDetails,ensureProjectNumbers,exportProjectNumbers,importProjectNumbers,businessNumber,projectCode,projectAmount,validateContractTemplate,getProjectNumber,validateProjectIdentity:identity,validateProjectRegister:registerShape});
  if(typeof module==='object'&&module.exports)module.exports=root.ProjectWorkspaceStore;
 })(globalThis);

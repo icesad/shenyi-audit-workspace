@@ -24,7 +24,7 @@ async function main(){
    },{schema,pr});
    const q=s=>p.locator(s),wait=(s,n)=>p.waitForFunction(([s,n])=>document.querySelector(s)?.textContent.includes(n),[s,n]),idle=()=>p.waitForFunction(()=>document.querySelector('#ac-project')?.disabled===false);
    const get=()=>p.evaluate(async id=>{const d=await AuditChecklist.openTrial();try{return await d.get(id);}finally{d.close();}},TRIAL);
-   const enter=async()=>{await q('[data-view=home]').click();await q('[data-home-view=audit]').click();await q('#ac-trial').click();await wait('#ac-status','已进入独立试用');await idle();};await enter();
+   const enter=async()=>{await q('[data-view=home]').click();await q('[data-home-view=audit]').click();await q('#ac-project').selectOption('00000000-0000-4000-8000-000000000033');await wait('#ac-status','已进入独立试用');await idle();};await enter();
    const click=async selector=>{await q(selector).click();await idle();},save=id=>click('[data-save-item='+id+']'),confirm=id=>click('[data-confirm-item='+id+']');
    return {ctx,p,q,get,wait,idle,enter,click,save,confirm,snapshot};
   }

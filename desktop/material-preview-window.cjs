@@ -20,7 +20,7 @@ function createMaterialPreviewWindow({parent,getSource,authorize,onClosed=()=>{}
  const isolated=session.fromPartition('shenyi-material-preview-'+randomUUID());
  let closed=false,sourceUsed=false,sourceDelivered=false,revealUsed=false,revealed=false,firstNavigation=true,sourceBytes=null,timer,resolveShown,rejectShown;
  const shown=new Promise((resolve,reject)=>{resolveShown=resolve;rejectShown=reject;});shown.catch(()=>{});
- const win=new BrowserWindow({parent,show:false,width:1180,height:840,minWidth:640,minHeight:480,title:'审易 · 资料原件只读预览',backgroundColor:'#f5f6f2',autoHideMenuBar:true,
+ const win=new BrowserWindow({parent,show:false,width:1180,height:840,minWidth:640,minHeight:480,title:'审迹 · 资料原件只读预览',backgroundColor:'#f5f6f2',autoHideMenuBar:true,
   webPreferences:{session:isolated,nodeIntegration:false,nodeIntegrationInWorker:false,contextIsolation:true,sandbox:true,webSecurity:true,allowRunningInsecureContent:false,webviewTag:false,devTools:false}});
  const listeners=[];
  function listen(target,event,fn){target.on(event,fn);listeners.push([target,event,fn]);}

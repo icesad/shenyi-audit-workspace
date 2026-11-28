@@ -43,3 +43,17 @@ test('packet is deterministic independent STORE ZIP with fixed UTF8 Chinese path
 test('JPEG original extension maps only to fixed .jpg ZIP path; missing firm prints explicit pending label',async()=>{const p=[attachment('business_license','jpeg'),attachment('practice_certificate','pdf')],s={...S(),firmName:''},e=unzip(await Q.buildPacket(s,p));assert.deepEqual(e.map(x=>x.name),['报价草稿.html','附件/营业执照.jpg','附件/执业证书.pdf','附件清单.json']);assert.match(e[0].data.toString('utf8'),/事务所名称：<strong>待填写<\/strong>/);});
 test('buildPacket and renderDocument do not trust a previously verified object after byte/hash alteration',async()=>{const p=await Q.verifyPair(pair());p[1].bytes[10]^=1;await assert.rejects(Q.buildPacket(S(),p),fail);await assert.rejects(Q.renderDocument(S(),p),fail);});
 test('fallback SHA-256 works without crypto/window/Buffer/require in a browser UMD realm',async()=>{const code=fs.readFileSync(path.join(__dirname,'../dist/quote-packet.js'),'utf8'),context=vm.createContext({Uint8Array,ArrayBuffer,DataView,TextEncoder,console});vm.runInContext(code,context);const api=context.QuotePacket;assert.ok(api);for(const b of [pdf(),pdf(512),png(),jpeg()]){const ext=b[0]===137?'png':b[0]===255?'jpg':'pdf',a=attachment('business_license',ext,b);context.inputJson=JSON.stringify({...a,bytes:null});const input=vm.runInContext('JSON.parse(inputJson)',context);input.bytes=b;const got=await api.verifyAttachment(input);assert.equal(got.sha256,sha(b));assert.deepEqual(got.bytes,b);}});
+
+test('large Blob SHA-256 checks fixed-size chunks across both padding lengths',async()=>{
+  const {createHash}=require('node:crypto');
+  for(const tail of [55,56,63,64]){
+    const bytes=Buffer.alloc(16*1024*1024+tail,0x37);
+    bytes[2*1024*1024-1]=0x7f;
+    const original=new Blob([bytes]);
+    const input={size:original.size,arrayBuffer(){assert.fail('large Blob must not load all its bytes');},slice(a,b){
+      assert.ok(b-a<=2*1024*1024);
+      return original.slice(a,b);
+    }};
+    assert.equal(await Q.sha256Blob(input),createHash('sha256').update(bytes).digest('hex'));
+  }
+});

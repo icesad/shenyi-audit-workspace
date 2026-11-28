@@ -27,7 +27,7 @@ function setup(raw){
   w.URL.createObjectURL=()=> 'blob:three-card-test';
   w.URL.revokeObjectURL=()=>{};
   if(raw!==undefined)w.localStorage.setItem(KEY,raw);
-  for(const file of ['calc.js','rule-catalog.js','regions.js','backup-restore.js','app.js']){
+  for(const file of ['calc.js','rule-catalog.js','regions.js','backup-restore.js','save-feedback.js','app.js']){
     let source=fs.readFileSync(path.join(DIR,file),'utf8');
     // The former selectors are gone. Set ordered historical fixtures without
     // bringing back the old UI or adding a production test hook.
@@ -48,7 +48,7 @@ function input(x,selector,value,event='input'){
 }
 function selectSlot(x,index,id){x.w.legacyComparisonFixture.set(index,id);}
 function displayedIds(x){return Array.from(x.w.legacyComparisonFixture.ids());}
-function estimate(x,province){input(x,'#quote-region',province);x.d.querySelector('#comparison').dispatchEvent(new x.w.Event('submit',{bubbles:true,cancelable:true}));}
+function estimate(x,province){input(x,'#quote-region',province);x.d.querySelector('#comparison').dispatchEvent(new x.w.Event('submit',{bubbles:true,cancelable:true}));x.d.querySelector('#estimate-record-save').click();}
 function load(x,id){assert.equal(x.d.querySelector('[data-view="history"]'),null);const button=x.d.querySelector(`#history-list [data-load="${id}"]`);assert.ok(button,'saved record can be restored');button.click();}
 function seed(edit){
   const x=setup();

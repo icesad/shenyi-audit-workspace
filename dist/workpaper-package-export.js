@@ -44,14 +44,19 @@
  }
  async function build(projectId,{assertContext=()=>{}}={}){
   const original=await load(projectId,assertContext);
+  const record=original.workspace;
+  if(!record.archive&&!record.riskArchive&&!Object.values(record.workpaperSources||{}).some(source=>source?.archive)&&!root.WorkpaperPackage.hasCompiledWorkpapers(record)&&!Object.keys(record.workpaperLocks||{}).length)throw Error('本项目尚无可导出的底稿，请先保存底稿填写或生成补充底稿。');
   const result=await root.WorkpaperPackage.create({record:original.workspace,assertCurrent:assertContext,readCurrent:async()=>{const fresh=await load(projectId,assertContext);if(fresh.proof!==original.proof)throw changed();return fresh.workspace;}});
   assertContext();const fresh=await load(projectId,assertContext);if(fresh.proof!==original.proof)throw changed();assertContext();return result;
  }
- async function download(projectId,{assertContext=()=>{}}={}){
-  const original=await load(projectId,assertContext),result=await build(projectId,{assertContext});assertContext();const fresh=await load(projectId,assertContext);if(fresh.proof!==original.proof)throw changed();assertContext();
+ async function download(projectId,{assertContext=()=>{},requireCompilation=false}={}){
+  const checkCompilation=workspace=>{if(requireCompilation&&!root.AuditWorkflow?.canDownload(workspace))throw Error('请先保存底稿并确认编制完成。');};
+  const original=await load(projectId,assertContext);checkCompilation(original.workspace);
+  const result=await build(projectId,{assertContext});assertContext();
+  const fresh=await load(projectId,assertContext);if(fresh.proof!==original.proof)throw changed();checkCompilation(fresh.workspace);assertContext();
   // The last settled read is followed only by synchronous publication. Separate
   // local databases still do not constitute a globally serializable transaction.
-  const url=root.URL.createObjectURL(result.blob);try{const anchor=root.document.createElement('a');anchor.href=url;anchor.download='审易-完整项目底稿包-'+projectId+'.zip';anchor.click();}finally{root.URL.revokeObjectURL(url);}
+  const url=root.URL.createObjectURL(result.blob);try{const anchor=root.document.createElement('a');anchor.href=url;anchor.download='审迹-完整项目底稿包-'+projectId+'.zip';anchor.click();}finally{root.URL.revokeObjectURL(url);}
   return {...result.summary,byteLength:result.bytes.length,sha256:result.sha256};
  }
  root.WorkpaperPackageExport=Object.freeze({build,download});

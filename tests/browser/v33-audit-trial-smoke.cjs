@@ -37,7 +37,7 @@ async function main(){
     await audit();
     assert.deepEqual(await businessCounts(),{projects:0,quotes:0});
     assert.equal(await q('#ac-import').isDisabled(),true);
-    await q('#ac-trial').click();await p.waitForFunction(()=>document.querySelector('#ac-import')?.disabled===false);
+    await q('#ac-project').selectOption('00000000-0000-4000-8000-000000000033');await p.waitForFunction(()=>document.querySelector('#ac-import')?.disabled===false);
     assert.match(await q('#ac-project option:checked').textContent(),/独立试用.*不关联立项/u);
     assert.equal(await q('#ac-trial-note').isVisible(),true);
     assert.equal(await q('#ac-project').inputValue(),trialId);
@@ -81,7 +81,7 @@ async function main(){
     assert.equal(await noTrialInMain(),null);
     steps.push('trial obeys the same evidence/exclusion gate, explicit close, frozen closed state and reasoned reopen; JSON identifies only the trial');
 
-    await p.reload();await audit();await q('#ac-trial').click();await wait('#ac-status','已进入独立试用');
+    await p.reload();await audit();await q('#ac-project').selectOption('00000000-0000-4000-8000-000000000033');await wait('#ac-status','已进入独立试用');
     assert.deepEqual(await get(trialId),trialSnapshot);
     assert.equal(await q('[data-item-status=i1]').inputValue(),'pending');assert.match(await q('[data-record-state=i1]').textContent(),/核对通过/);
     assert.equal(await q('#ac-evidence-i1').inputValue(),'TRIAL-WP-01');
@@ -114,7 +114,7 @@ async function main(){
     await wait('#ac-status','已导入 1 项');
     const real=await get(projectId);assert.equal(real.items[0].text,'只属于正式项目');assert.equal(real.project.quoteId,projectId);
     assert.deepEqual(await get(trialId),trialSnapshot);
-    await q('#ac-trial').click();await wait('#ac-status','已进入独立试用');
+    await q('#ac-project').selectOption('00000000-0000-4000-8000-000000000033');await wait('#ac-status','已进入独立试用');
     assert.equal(await q('#ac-trial-note').isVisible(),true);
     assert.deepEqual(await get(trialId),trialSnapshot);
     assert.deepEqual(await q('[data-material-id] strong').allTextContents(),['1、执业证书','2、银行函证']);

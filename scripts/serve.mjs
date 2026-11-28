@@ -113,14 +113,14 @@ async function main() {
   }
   try {
     const server = await startServer();
-    console.log(`审易本机预览：http://${HOST}:${PORT}/`);
+    console.log(`审迹本机预览：http://${HOST}:${PORT}/`);
     console.log('仅监听本机；不自动打开浏览器、不上传数据。停止：Ctrl+C。请保持此地址和端口，以免切换到另一份浏览器数据。');
     const stop = () => server.close(() => { process.exitCode = 0; });
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
   } catch (error) {
     if (error.code === 'EADDRINUSE') {
-      console.error(`端口 ${PORT} 已占用。不会自动更换端口；请确认已有审易预览是否正在运行，或由开发者停止占用进程后重试。不要删除浏览器数据。`);
+      console.error(`端口 ${PORT} 已占用。不会自动更换端口；请确认已有审迹预览是否正在运行，或由开发者停止占用进程后重试。不要删除浏览器数据。`);
     } else if (error.code === 'ENOENT') {
       console.error('找不到 dist 静态源码目录。请确认已完整克隆仓库，并在本仓库运行。');
     } else {

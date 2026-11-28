@@ -2,6 +2,11 @@
  * balances, implicit confirmation, or write-back to a project/workpaper. */
 (function(root){'use strict';
  const LIMITS=Object.freeze({sources:512,rows:20000,detailRows:100000,cells:2500000,checks:40000,refs:64,archiveBytes:64*1024*1024});
+ const ROLES=Object.freeze({ledger:'三栏账',trial:'科目余额表',statements:'未审报表'});
+ const isWorkbookSource=name=>typeof name==='string'&&/\.(?:xlsx?|zip)$/iu.test(name);
+ const clientWorkbooks=workspace=>(workspace.auditWorkflow?.files?.client||[]).filter(file=>isWorkbookSource(file.name));
+ const fileStamp=files=>JSON.stringify(files.map(file=>[file.name,file.sha256,file.size]));
+ const roleFor=type=>({ledger:'ledger',accountDetail:'ledger',trial:'trial',balance:'statements',profit:'statements',cash:'statements'})[type];
  const norm=s=>String(s??'').normalize('NFKC').replace(/\s+/gu,'').replace(/[：:]/g,':');
  const address=(r,c)=>{let a='';for(c++;c;c=Math.floor((c-1)/26))a=String.fromCharCode(65+(c-1)%26)+a;return a+(r+1);};
  const value=(s,r,c)=>s.cells?.[address(r,c)]?.v;
@@ -13,16 +18,18 @@
   const n=BigInt(a)*100n+BigInt(b.padEnd(2,'0'));return s.startsWith('-')?-n:n;
  }
  const money=n=>n===null?null:(n<0n?'-':'')+(String(n<0n?-n:n).padStart(3,'0').slice(0,-2))+'.'+String(n<0n?-n:n).padStart(3,'0').slice(-2);
- const entity=s=>norm(s).replace(/^单位(?:名称)?:/,'').replace(/有限公司本部$/u,'有限公司').replace(/事务所本部$/u,'事务所');
+ const entity=s=>norm(s).replace(/^(?:单位(?:名称)?|核算单位|编制单位|被审计单位):/u,'').replace(/有限公司本部$/u,'有限公司').replace(/事务所本部$/u,'事务所');
  function period(s){const m=/(20\d{2})[-年/](0?[1-9]|1[0-2])(?:月)?(?:$|\D)/.exec(String(s));return m?m[1]+'-'+m[2].padStart(2,'0'):'';}
  function meta(source,s){
   const found={entity:'',period:'',unit:'',currency:'',metadataRefs:[],conflictingPeriods:[]},dates=[];
   for(let r=0;r<=Math.min(4,s.range.e.r);r++)for(let c=0;c<=Math.min(20,s.range.e.c);c++){
    const v=text(s,r,c),n=norm(v);if(!n)continue;
    if(/^责任中心:/.test(n)){const p=v.split(/[／/]/u).at(-1).replace(/^责任中心[:：]\s*[\da-z]+\s*/iu,'');found.entity=entity(p);found.metadataRefs.push(address(r,c));}
-   else if(/^(?:单位|单位名称|被审计单位|核算单位):/.test(n)){found.entity=entity(v);found.metadataRefs.push(address(r,c));}
+   else if(/^(?:单位|单位名称|编制单位|被审计单位|核算单位):/.test(n)&&!/^单位:(?:人民币)?(?:元|万元|千元)$/.test(n)){
+    found.entity=entity(v);found.metadataRefs.push(address(r,c));
+   }
    if(/^会计期间:/.test(n)){found.period=period(n);found.metadataRefs.push(address(r,c));}
-   else if(/^20\d{2}年\d{1,2}月$/.test(n)||/^20\d{2}-\d{2}$/.test(n)){dates.push({v:period(n),cell:address(r,c)});}
+   else if(/^20\d{2}(?:年\d{1,2}月(?:\d{1,2}日)?|-\d{2}(?:-\d{2})?)$/.test(n)&&period(n)){dates.push({v:period(n),cell:address(r,c)});}
    if(/^(?:金额单位|单位):(?:人民币)?(?:元|万元|千元)$/.test(n)){found.unit=n.split(':').at(-1);found.metadataRefs.push(address(r,c));}
    if(/^(?:币种|货币):/.test(n)){found.currency=n.split(':').at(-1);found.metadataRefs.push(address(r,c));}
   }
@@ -55,10 +62,11 @@
    }
   }
   const title=[0,1,2].flatMap(r=>[0,1,2].map(c=>norm(text(s,r,c))));
-  for(const [name,type]of [['资产负债表','balance'],['利润表','profit'],['现金流量表','cash']])if(title.includes(name))return {type,s,source,meta:meta(source,s)};
+  for(const [name,type]of [['资产负债表','balance'],['利润表','profit'],['现金流量表','cash']])
+   if(title.some(value=>value===name||value==='未审'+name||value===name+'(未审)'))return {type,s,source,meta:meta(source,s)};
   return null;
  }
- function analyze(sources=[]){
+ function analyze(sources=[],{entity:expectedEntity=''}={}){
   if(!Array.isArray(sources)||sources.length>LIMITS.sources)throw Error('自动校验最多读取 '+LIMITS.sources+' 份账表。');
   const checks=[],models=[],summaries=[],seen=new Set(),sameNames=new Map();
   let omittedChecks=0;
@@ -67,7 +75,8 @@
   const compare=(id,label,a,b,refs,ready=true)=>add(id,label,a===null||b===null||!ready?'pending':a===b?'pass':'difference',refs,{actual:money(a),expected:money(b),difference:a===null||b===null?null:money(a-b)});
   for(const source of sources){
    if(!source?.model?.sheets||typeof source.name!=='string')throw Error('账表读取模型无效。');
-   if(source.sha256&&seen.has(source.sha256)){add('duplicate','同内容副本已去重，不重复累计：'+source.name,'pass');continue;}if(source.sha256)seen.add(source.sha256);
+   const stamp=source.sha256+'|'+(source.role||'');
+   if(source.sha256&&seen.has(stamp)){add('duplicate','同内容副本已去重，不重复累计：'+source.name,'pass');continue;}if(source.sha256)seen.add(stamp);
    const n=source.name.normalize('NFKC').toLowerCase();if(!sameNames.has(n))sameNames.set(n,new Set());sameNames.get(n).add(source.sha256||source);
    let recognized=0;
    for(const s of source.model.sheets){
@@ -78,6 +87,10 @@
     const formulaCells=Object.entries(s.cells).filter(([,c])=>c.f).map(([a])=>a);
     if(formulaCells.length)add('source.cachedFormula','源表含公式，仅读取原缓存；没有执行、重算或更新外链，需核对缓存是否最新','pending',[{name:source.name,sha256:source.sha256,sheet:s.name,cells:formulaCells.slice(0,32)}]);
     const m=recognize(source,s);if(m){
+     if(source.role&&roleFor(m.type)!==source.role)continue;
+     if(expectedEntity&&m.meta.entity&&m.meta.entity!==entity(expectedEntity)){
+      add('scope.project','此表的编制单位与所选项目不一致，未纳入本项目核验。','pending',[ref(m,m.meta.metadataRefs)]);continue;
+     }
      const maxRows=m.type==='accountDetail'?LIMITS.detailRows:LIMITS.rows;
      if(m.header!==undefined&&s.range.e.r-m.header>maxRows){
       add('source.rowLimit','此工作表超过 '+maxRows+' 行，须单独核对。','pending',[ref(m,address(m.header,0))]);
@@ -88,7 +101,9 @@
     else if(!/^目录$/.test(norm(text(s,0,0)))&&!/目录/.test(s.name))add('unknown','未识别明确账表表头，未猜测列映射：'+source.name+' / '+s.name,'pending',[{name:source.name,sha256:source.sha256,sheet:s.name,cells:['A1']}]);
    }
    summaries.push({name:source.name,sha256:source.sha256,recognizedSheets:recognized});
-   if(!recognized)add('source.unrecognized','这份工作簿没有明确可识别的自动账表模板，未开展猜测核验：'+source.name,'pending');
+   if(!recognized)add('source.unrecognized',source.role?
+    '未从此文件识别出「'+ROLES[source.role]+'」，请核对所选类型和表头。':
+    '这份工作簿没有明确可识别的账表，请核对表头。','pending',[{name:source.name,sha256:source.sha256,sheet:'',cells:[]}]);
   }
   for(const [n,hashes]of sameNames)if(hashes.size>1)add('same-name','同名文件存在不同内容，未任意选择：'+n,'pending');
   function scope(m){
@@ -239,81 +254,239 @@
   const summary={pass:checks.filter(c=>c.status==='pass').length,difference:checks.filter(c=>c.status==='difference').length,pending:checks.filter(c=>c.status==='pending').length};
   return {schemaVersion:1,readOnly:true,summary,checks,sources:summaries,groups,models:models.map(m=>m.summary),notice:'仅为所上传原数值的技术算术核验；不代表资料完整、审计通过或审定数，不自动确认任何资料或底稿。'};
  }
- async function collect(key,{signal,isCurrent}={}){
-  const A=root.AuditChecklist,S=root.ProjectWorkspaceStore,check=()=>{if(signal?.aborted||isCurrent&&isCurrent()!==true){const e=Error('项目/资料已变化，旧校验已取消。');e.name='AbortError';throw e;}};
-  check();const db=await(key===A.TRIAL_ID?A.openTrial():A.open()),sources=[],notes=[],hashes=new Set();
-  let cells=0,skipped=0,failed=0;
+ async function collect(key,{signal,isCurrent,files=[],entity,workbooksOnly=false}={}){
+  const A=root.AuditChecklist,S=root.ProjectWorkspaceStore,check=()=>{if(signal?.aborted||isCurrent&&isCurrent()!==true){const e=Error('项目或资料已变化，本轮校验已取消。');e.name='AbortError';throw e;}};
+  check();const sources=[],notes=[],hashes=new Set();
+  let cells=0,skipped=0,failed=0,record;
   const pending=(id,label,name,sha256)=>notes.push({id,status:'pending',label:name+' · '+label,refs:[{name,sha256,sheet:'',cells:[]}]});
-  async function read(blob,name,sha){
+  async function read(blob,name,sha,role){
    check();
-   if(hashes.has(sha)){notes.push({id:'source.duplicate',status:'pass',label:'同内容副本已去重：'+name,refs:[]});return;}
+   const stamp=sha+'|'+(role||'');
+   if(hashes.has(stamp)){notes.push({id:'source.duplicate',status:'pass',label:'同内容副本已去重：'+name,refs:[]});return;}
    if(hashes.size>=LIMITS.sources||cells>=LIMITS.cells){skipped++;return;}
-   hashes.add(sha);
+   hashes.add(stamp);
    try{
     const model=await root.WorkpaperSheets.read(new root.File([blob],name),{signal,audit:true});check();
     const count=model.sheets.reduce((sum,sheet)=>sum+Object.keys(sheet.cells||{}).length,0);
     if(cells+count>LIMITS.cells){skipped++;pending('source.cellLimit','超过本轮单元格容量，须单独核对。',name,sha);return;}
-    cells+=count;sources.push({name,sha256:sha,model});
+    cells+=count;sources.push({name,sha256:sha,model,role});
    }catch(error){check();failed++;pending('source.unreadable',error.message||'工作簿读取失败，待核对。',name,sha);}
   }
-  try{
-   const record=await db.get(key);check();if(!record||record.schema!==2||record.project?.quoteId!==key)throw Error('本项目尚无当前标题清单附件。');
-   const refs=Object.entries(record.attachments||{}).flatMap(([node,items])=>items.filter(m=>m.nodeId===node&&m.generationId===record.generationId).map(m=>({node,m})));
-   for(const {node,m}of refs){
-    check();if(!/\.(?:xlsx?|zip)$/iu.test(m.name))continue;
-    const got=await db.downloadAttachment(key,node,m.id);check();
-    if(got.metadata.sha256!==m.sha256||got.metadata.id!==m.id||got.metadata.nodeId!==node||got.metadata.generationId!==record.generationId)throw Error('资料原件身份与登记不符，未继续校验。');
-    if(await S.hash(got.blob)!==m.sha256)throw Error('资料原件SHA256不符，已阻止校验。');check();
-    if(/\.zip$/iu.test(m.name)){
-     let archive;
+  async function readArchive(blob,name,sha,role,budget,depth=0){
+   let archive;
+   let found=false;
+   try{
+    archive=await root.BidderArchive.open(new root.File([blob],name),{signal,entryLimit:2048,legacyZipNames:true});
+    const entries=archive.entries.filter(e=>isWorkbookSource(e.name)&&!e.directory&&!e.name.split(/[\\/]/u)
+     .some(part=>part==='__MACOSX'||/^(?:\._|~\$|\.~|~lock\.)/iu.test(part)));
+    for(const entry of entries){
+     check();
+     const fullName=name+' / '+entry.name;
+     const nested=/\.zip$/iu.test(entry.name);
+     if(hashes.size>=LIMITS.sources||cells>=LIMITS.cells||budget.bytes+entry.size>LIMITS.archiveBytes||nested&&depth>=3){
+      found=true;skipped++;pending('source.member','超过本轮解包或读取容量，请将该成员单独上传核对。',fullName,sha);continue;
+     }
+     budget.bytes+=entry.size;
      try{
-      archive=await root.BidderArchive.open(new root.File([got.blob],m.name),{signal});
-      const entries=archive.entries.filter(e=>/\.xlsx?$/iu.test(e.name)&&!e.directory&&!e.name.split(/[\\/]/u).some(part=>part==='__MACOSX'||part.startsWith('._')));
-      let expanded=0;
-      for(const e of entries){
-       check();
-       if(hashes.size>=LIMITS.sources||cells>=LIMITS.cells||expanded+e.size>LIMITS.archiveBytes){skipped++;continue;}
-       expanded+=e.size;
-       const name=m.name+' / '+e.name;
-       try{
-        const bytes=(await archive.read([e.name])).get(e.name),blob=new root.Blob([bytes]);
-        await read(blob,name,await S.hash(blob));
-       }catch(error){check();failed++;pending('source.member',error.message||'ZIP 内工作簿读取失败。',name,m.sha256);}
-      }
-     }catch(error){check();pending('source.archive',error.message||'压缩包读取失败。',m.name,m.sha256);}
-     finally{archive?.close();}
-    }else await read(got.blob,m.name,m.sha256);
+      const bytes=(await archive.read([entry.name])).get(entry.name),source=new root.Blob([bytes]);
+      const sourceHash=await S.hash(source);
+      if(nested){if(await readArchive(source,fullName,sourceHash,role,budget,depth+1))found=true;}
+      else{found=true;await read(source,fullName,sourceHash,role);}
+     }catch(error){check();found=true;failed++;pending('source.member',error.message||'ZIP 成员读取失败。',fullName,sha);}
+    }
+   }catch(error){check();found=true;failed++;pending('source.archive',error.message||'压缩包读取失败。',name,sha);}
+   finally{archive?.close();}
+   return found;
+  }
+  async function readSource(blob,name,sha,role){
+   if(!/\.zip$/iu.test(name)){await read(blob,name,sha,role);return;}
+   if(!await readArchive(blob,name,sha,role,{bytes:0})){
+    failed++;pending('source.archive.empty','ZIP 及其内层压缩包没有 XLS/XLSX 工作簿。',name,sha);
    }
-   const latest=await db.get(key);check();if(latest?.revision!==record.revision||latest?.generationId!==record.generationId)throw Error('资料清单已更新，本轮结果作废，请重新校验。');
-   const result=analyze(sources);result.checks.unshift(...notes);for(const n of notes)result.summary[n.status]++;result.materialRevision=record.revision;result.generationId=record.generationId;
-   if(skipped){result.checks.push({id:'source.limit',label:'有 '+skipped+' 份账表超出本轮读取容量，已保留其余账表结果；请将这些来源单独核对。',status:'pending',refs:[]});result.summary.pending++;}
-   result.workbooks={read:sources.length,skipped,failed};
-   if(!sources.length){result.checks.push({id:'source.empty',label:'本项目还没有可读取的XLS/XLSX账表附件，未从其他项目借用。',status:'pending',refs:[]});result.summary.pending++;}
-   return result;
-  }finally{db.close();}
+  }
+  if(files.length){
+   if(files.length>LIMITS.sources)throw Error('单次最多选择 '+LIMITS.sources+' 份文件。');
+   for(const input of files){
+    const f=input.file||input,role=Object.hasOwn(ROLES,input.role)?input.role:undefined;
+    check();
+    if(!isWorkbookSource(f.name)||!f.size||f.size>100*1024*1024){
+     failed++;pending('source.unsupported','请选择 100 MiB 以内有效 XLS/XLSX/ZIP。',f.name,'');continue;
+    }
+    await readSource(f,f.name,await S.hash(f),role);
+   }
+  }else{
+   const workspace=await S.get(key);check();
+   if(workspace.id!==key)throw Error('当前项目资料的归属无法核对。');
+   const uploaded=clientWorkbooks(workspace);
+   const db=await(key===A.TRIAL_ID?A.openTrial():A.open());
+   try{
+    const saved=await db.get(key);check();
+    if(saved?.schema===2&&saved.project?.quoteId!==key)throw Error('资料清单附件的项目归属无法核对。');
+    if(saved?.schema===2)record=saved;
+    if(!record&&!uploaded.length)throw Error('本项目尚无已上传的账表资料。可在本页选择三栏账、科目余额表和未审报表。');
+    const refs=Object.entries(record?.attachments||{}).flatMap(([node,items])=>items.filter(m=>m.nodeId===node&&m.generationId===record.generationId).map(m=>({node,m})));
+    for(const {node,m} of refs){
+     check();
+     if(!isWorkbookSource(m.name))continue;
+     const got=await db.downloadAttachment(key,node,m.id);check();
+     if(got.metadata.sha256!==m.sha256||got.metadata.id!==m.id||got.metadata.nodeId!==node||got.metadata.generationId!==record.generationId)throw Error('资料原件身份与登记不符，未继续校验。');
+     if(await S.hash(got.blob)!==m.sha256)throw Error('资料原件 SHA256 不符，已阻止校验。');
+     check();await readSource(got.blob,m.name,m.sha256);
+    }
+    for(const file of uploaded){
+     check();
+     if(file.blob?.size!==file.size||await S.hash(file.blob)!==file.sha256)
+      throw Error('客户资料的文件校验失败，请重新上传：'+file.name);
+     await readSource(file.blob,file.name,file.sha256);
+    }
+    const [latest,latestWorkspace]=await Promise.all([db.get(key),S.get(key)]);check();
+    if(latest?.revision!==saved?.revision||latest?.generationId!==saved?.generationId||
+       fileStamp(clientWorkbooks(latestWorkspace))!==fileStamp(uploaded))
+     throw Error('项目资料已更新，本轮结果作废，请重新核验。');
+   }finally{db.close();}
+  }
+  if(workbooksOnly){
+   if(failed||skipped)throw Error(notes.find(note=>note.status==='pending')?.label||'部分三栏账未能读取，请核对上传资料。');
+   return sources;
+  }
+  const result=analyze(sources,{entity});
+  result.standard=root.LedgerStandard?.build(sources,{entity,blocked:!!(failed||skipped)});
+  if(!result.models.some(model=>roleFor(model.type)==='statements')){
+   result.checks.push({id:'statement.missing',status:'pending',label:'未识别到未审报表。请补充本项目的资产负债表、利润表或现金流量表 Excel。',refs:[]});
+   result.summary.pending++;
+  }
+  if(result.standard){
+   const covered=new Set([...result.standard.origins.map(row=>row[7]),...result.standard.balance.map(row=>row[16])]);
+   result.checks=result.checks.filter(check=>!['unknown','source.unrecognized'].includes(check.id)||!covered.has(check.refs[0]?.name));
+   result.summary.pending=result.checks.filter(check=>check.status==='pending').length;
+  }
+  if(result.standard)for(const note of notes.filter(item=>item.status==='pending'))
+   result.standard.issues.push(['待核',entity||'','','','读取来源','','','',note.label,note.refs[0].name,'']);
+  result.checks.unshift(...notes);for(const n of notes)result.summary[n.status]++;
+  result.materialRevision=record?.revision??null;result.generationId=record?.generationId??null;
+  if(skipped){result.checks.push({id:'source.limit',label:'有 '+skipped+' 份账表超出本轮读取容量，须另行核对。',status:'pending',refs:[]});result.summary.pending++;}
+  result.workbooks={read:sources.length,skipped,failed};
+  if(!sources.length){result.checks.push({id:'source.empty',label:'本轮没有可读取的 XLS/XLSX 账表附件。',status:'pending',refs:[]});result.summary.pending++;}
+  return result;
  }
  function mount(host,ctx){
-  const d=host.ownerDocument,el=(t,s)=>{const n=d.createElement(t);if(s!==undefined)n.textContent=s;return n;},box=el('section'),title=el('h3','自动账表校验'),status=el('p','正在从本项目资料收集读取账表…'),run=el('button','重新校验'),output=el('div');
-  box.className='ap-card';box.dataset.auditAutoCheck='';status.setAttribute('role','status');run.type='button';box.append(title,el('p','进入页面自动读取同项目XLS/XLSX（也读取ZIP内账表），复核SHA并按真实表头识别。未知格式/单位/主体/科目映射列为待核，不猜测、不填0、不改原件或底稿。'),run,status,output);host.append(box);
-  let alive=true,controller,epoch=0,busy=false,lastRevision=null;
+  const d=host.ownerDocument,el=(t,s)=>{const n=d.createElement(t);if(s!==undefined)n.textContent=s;return n;};
+  const box=el('section'),title=el('h3','三栏账、科目余额表、未审报表核验'),status=el('p'),output=el('div'),actions=el('div');
+  const button=(text,action)=>{const node=el('button',text);node.type='button';node.className='btn';node.onclick=action;return node;};
+  const fileBoxes=el('div'),selected=new Map(),captions=new Map();
+  fileBoxes.className='ledger-file-boxes';
+  for(const [role,label]of Object.entries(ROLES)){
+   const upload=el('input'),drop=el('label'),chosen=el('span');
+   upload.type='file';upload.multiple=true;upload.accept='.xls,.xlsx,.zip';upload.setAttribute('aria-label',label);
+   drop.className='quote-file-drop';
+   drop.append(upload,chosen);
+   globalThis.ShenyiFileDrop?.present(drop,upload,{material:label,before:chosen});
+   fileBoxes.append(drop);captions.set(role,chosen);
+   upload.onchange=()=>{choose(role,upload.files);upload.value='';};
+   drop.ondragover=event=>{if(Array.from(event.dataTransfer?.types||[]).includes('Files')){event.preventDefault();drop.classList.add('is-dragover');}};
+   drop.ondragleave=()=>drop.classList.remove('is-dragover');
+   drop.ondrop=event=>{event.preventDefault();drop.classList.remove('is-dragover');choose(role,event.dataTransfer?.files);};
+  }
+  const run=button('核验',()=>void refresh()),useSaved=button('使用已上传资料',()=>{
+   selected.clear();for(const caption of captions.values())caption.textContent='';
+   void refresh();
+  });
+  actions.className='ledger-standard-actions';
+  actions.append(useSaved,run);box.className='ap-card';box.dataset.auditAutoCheck='';status.setAttribute('role','status');
+  box.append(title,fileBoxes,actions,status,output);host.append(box);
+  let alive=true,controller,epoch=0,busy=false,lastRevision=null,lastGeneration=null,standard=null;
   const current=()=>alive&&(!ctx.isCurrent||ctx.isCurrent())&&ctx.getRecord()?.id===ctx.key;
+  function choose(role,files){
+   if(!current()||!files?.length)return;
+   selected.set(role,Array.from(files,file=>({file,role})));
+   captions.get(role).textContent=files.length===1?files[0].name:'已选 '+files.length+' 份文件';
+   controller?.abort();epoch++;busy=false;run.disabled=false;standard=null;output.replaceChildren();
+   status.textContent='文件已选好，点击「核验」查看结果。';
+  }
   function refsText(c){return c.refs.map(r=>r.name+(r.sha256?' · SHA '+r.sha256.slice(0,12):'')+' / '+r.sheet+'!'+r.cells.filter(Boolean).join(', ')).join('；');}
   function list(parent,items){let shown=0;const more=el('button','继续显示'),rows=el('div');more.type='button';parent.append(rows,more);const append=()=>{for(const c of items.slice(shown,shown+100)){const p=el('p',(c.status==='difference'?'差异':c.status==='pending'?'待核':'算术一致')+' · '+c.label+(c.difference!==undefined&&c.difference!==null?' · 差额 '+c.difference:''));if(c.refs.length)p.append(el('small',' 来源：'+refsText(c)+(c.sourceRefsTruncated?'（本项地址较多，显示前64条）':'')));p.className=c.status==='pass'?'ap-pass':'ap-warning';rows.append(p);}shown+=100;more.hidden=shown>=items.length;};more.onclick=append;append();}
+  function showStandard(result){
+   if(!result)return;
+   const heading=el('h4','标准表下载'),line=el('p','已整理 '+result.journal.length+' 行凭证流水、'+result.balance.length+' 行余额表。');
+   const wrap=el('div');wrap.className='ledger-standard-actions';output.append(heading,line,wrap);
+   async function download(kind){
+    if(!current()||busy||!wrap.isConnected)return;
+    try{
+     const file=await root.LedgerStandard.exportFile(result,kind);
+     if(!current()||busy||!wrap.isConnected)return;
+     root.ProjectWorkspaceStore.download(new Blob([file.bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),file.name);
+    }catch(error){status.textContent=error.message;}
+   }
+   const journal=button('下载标准版凭证流水查询',()=>download('journal')),balance=button('下载标准版科目余额表',()=>download('balance'));
+   journal.disabled=!result.journal.length;balance.disabled=!result.balance.length;
+   wrap.append(journal,balance);
+  }
+  function showDifferences(result,checks,workbooks){
+   output.append(el('h4','差异及待核事项'));
+   const issues=result?.issues||[],alerts=checks.filter(check=>check.status!=='pass'&&
+    !['source.unreadable','source.member','source.archive','source.archive.empty','source.unsupported','source.cellLimit'].includes(check.id));
+   const differences=issues.filter(r=>r[0]==='差异').length+alerts.filter(check=>check.status==='difference').length;
+   if(!workbooks.read)output.append(el('p','未读取到工作簿，本轮未完成核验。'));
+   else if(!issues.length&&!alerts.length){output.append(el('p','已识别范围内未发现差异或待核事项。'));return;}
+   else output.append(el('p',(workbooks.failed||workbooks.skipped?'已读取范围内发现差异 ':'差异 ')+differences+' 项。其他问题、待核依据和口径说明见下方。'));
+   let count=0;
+   const rows=el('div'),more=button('继续显示差异及待核',append);
+   output.append(rows,more);
+   function append(){
+    for(const [stat,unit,period,account,metric,a,b,delta,note,file,comparison]of issues.slice(count,count+100)){
+     const p=el('p',[stat,unit,period,account,metric].filter(Boolean).join(' · ')+(delta!==''?' · 差额 '+delta+'（账页 '+a+'／余额表 '+b+'）':'')+'。'+note);
+     if(file||comparison)p.append(el('small',' 来源：'+[file,comparison].filter(Boolean).join('；')));
+     p.className='ap-warning';rows.append(p);
+    }
+    count+=100;more.hidden=count>=issues.length;
+   }
+   append();
+   if(alerts.length){const details=el('div');output.append(details);list(details,alerts);}
+  }
   function display(result){
-   output.replaceChildren();status.textContent='已读取 '+result.workbooks.read+' 份工作簿'+(result.workbooks.skipped||result.workbooks.failed?' · 另有 '+(result.workbooks.skipped+result.workbooks.failed)+' 份待读取':'')+' · 原数值算术一致 '+result.summary.pass+' 项 · 差异 '+result.summary.difference+' 项 · 待核 '+result.summary.pending+' 项';
-   output.append(el('p',result.notice));for(const group of result.groups)output.append(el('p','资料分组：'+group));
-   const issues=result.checks.filter(c=>c.status!=='pass');if(issues.length){const details=el('div');output.append(details);list(details,issues);}else output.append(el('p','已识别范围内未发现算术差异；仍须人工核对主体、金额单位、期间和完整性。'));
-   const passed=el('details');passed.append(el('summary','查看算术一致项及源地址（'+result.summary.pass+'）'));output.append(passed);list(passed,result.checks.filter(c=>c.status==='pass'));
+   standard=result.standard;
+   output.replaceChildren();
+   status.textContent='已读取 '+result.workbooks.read+' 份工作簿'+(result.workbooks.skipped||result.workbooks.failed?' · 另有 '+(result.workbooks.skipped+result.workbooks.failed)+' 份待读取':'');
+   showDifferences(result.standard,result.checks,result.workbooks);
+   showStandard(result.standard);
+   const details=el('details');
+   details.append(el('summary','其他账表算术核验'),el('p',result.notice));
+   for(const group of result.groups)details.append(el('p','资料分组：'+group));
+   list(details,result.checks.filter(check=>check.status==='pass'));
+   output.append(details);
   }
   async function refresh(){
-   if(!current())return;controller?.abort();controller=new AbortController();const ticket=++epoch;busy=true;run.disabled=true;status.textContent='正在本机读取并核验…';output.replaceChildren();
-   try{const result=await collect(ctx.key,{signal:controller.signal,isCurrent:()=>current()&&ticket===epoch});if(!current()||ticket!==epoch)return;lastRevision=result.materialRevision;display(result);}
-   catch(e){if(current()&&ticket===epoch){status.textContent='未完成自动校验：'+(e.message||'读取失败。')+' 原件与原有手动映射均未改动。';}}
+   if(!current())return;
+   controller?.abort();controller=new AbortController();const ticket=++epoch;
+   busy=true;standard=null;run.disabled=true;status.textContent='正在本机读取并核对…';output.replaceChildren();
+   try{
+    const result=await collect(ctx.key,{signal:controller.signal,isCurrent:()=>current()&&ticket===epoch,files:[...selected.values()].flat(),entity:ctx.entity});
+    if(!current()||ticket!==epoch)return;lastRevision=result.materialRevision;lastGeneration=result.generationId;display(result);
+   }catch(e){if(current()&&ticket===epoch)status.textContent=e.message||'账表读取失败。';}
    finally{if(current()&&ticket===epoch){busy=false;run.disabled=false;}}
   }
-  run.onclick=()=>void refresh();void refresh();
-  const timer=setInterval(async()=>{if(!current()||busy||lastRevision===null)return;let db;try{const A=root.AuditChecklist;db=await(ctx.key===A.TRIAL_ID?A.openTrial():A.open());const r=await db.get(ctx.key);if(current()&&r?.revision!==lastRevision)void refresh();}catch{}finally{db?.close();}},5000);
-  return {refresh,destroy(){alive=false;epoch++;controller?.abort();clearInterval(timer);box.remove();}};
+  void refresh();
+  const timer=setInterval(async()=>{
+   if(!current()||busy||selected.size||lastRevision===null)return;
+   let db;
+   try{
+    const A=root.AuditChecklist;db=await(ctx.key===A.TRIAL_ID?A.openTrial():A.open());
+    const r=await db.get(ctx.key);
+    if(current()&&(r?.revision!==lastRevision||r?.generationId!==lastGeneration))void refresh();
+   }catch{}finally{db?.close();}
+  },5000);
+  async function exportLedger(mode){
+   if(busy)throw Error('账表正在读取和校验，请完成后再导出。');
+   if(!standard||!standard.journal.length&&!standard.balance.length)
+    throw Error('请先选择账表资料并点击「核验」。');
+   if(mode==='journal'&&!standard.journal.length)throw Error('本轮只有科目余额表，请补充凭证流水或三栏账。');
+   const ticket=epoch;
+   const file=mode==='journal'?await root.LedgerStandard.exportFile(standard,'journal'):
+    await root.LedgerStandard.exportPrivacyCopy(standard,mode,ctx.entity);
+   if(!current()||ticket!==epoch)return null;
+   return mode==='journal'?{...file,name:'序时账.xlsx'}:file;
+  }
+  return {refresh,exportLedger,destroy(){alive=false;epoch++;controller?.abort();clearInterval(timer);box.remove();}};
  }
  const api=Object.freeze({analyze,collect,mount,cents,money,LIMITS});root.AuditAutoCheck=api;if(typeof module==='object'&&module.exports)module.exports=api;
 })(globalThis);

@@ -24,7 +24,7 @@ const messages = {
   AUTHENTICODE_BUNDLE_INVALID: '发行包状态、文件清单或 Ed25519 发布签名无效。',
   AUTHENTICODE_MSI_INVALID: '请提供指定位置的有效 Windows MSI 文件。',
   AUTHENTICODE_MSI_MISMATCH: '最终 MSI 的文件摘要不符合经确认的 SHA-256，或文件在核验期间发生变化。',
-  CUSTOMER_INSTALLER_INVALID: '客户安装程序须为经批准的审易 EXE，且程序版本、发布者和文件摘要均须匹配。',
+  CUSTOMER_INSTALLER_INVALID: '客户安装程序须为经批准的审迹 EXE，且程序版本、发布者和文件摘要均须匹配。',
   AUTHENTICODE_OUTPUT_INVALID: '请在两个输入及仓库之外使用尚未存在的输出目录。',
   AUTHENTICODE_OPERATION_FAILED: 'Windows Authenticode 发行操作未完成。',
 };
@@ -160,7 +160,7 @@ export { resolveSystemPowerShell };
 export function matchesCustomerInstallerMetadata(result, version) {
   if (typeof result?.productName !== 'string' || result.executableImage !== true || result.productVersion !== version) return false;
   const name = result.productName.normalize('NFKC').replace(/[\s\p{Cf}]+/gu, '');
-  return /审易|shenyi/i.test(name) && !/本机体验|本機體驗|内测|內測|内部测试|內部測試/.test(name);
+  return /审迹|审易|shenyi/i.test(name) && !/本机体验|本機體驗|内测|內測|内部测试|內部測試/.test(name);
 }
 
 async function verifyEmbeddedSignature(filename, publisherCertificateSha256, expected, { msi = false, customerVersion } = {}) {

@@ -13,7 +13,7 @@ const opaque=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{43}$/.test(value)&&
 const unavailable=()=>{throw new ApiError(503,'WECHAT_UNAVAILABLE','微信扫码登录尚未开通。');};
 const conflict=()=>{throw new ApiError(409,'IDENTITY_CONFLICT','账号关联状态已改变，请重新核对。');};
 const goodId=value=>typeof value==='string'&&value.length>0&&value.length<=128&&!/[\x00-\x20\x7f]/.test(value);
-const callbackMessage=()=>new Response('授权结果已接收，请返回审易客户端。',{headers:{...PRIVATE_HEADERS,'Content-Type':'text/plain; charset=utf-8','Content-Security-Policy':"default-src 'none'"}});
+const callbackMessage=()=>new Response('授权结果已接收，请返回审迹客户端。',{headers:{...PRIVATE_HEADERS,'Content-Type':'text/plain; charset=utf-8','Content-Security-Policy':"default-src 'none'"}});
 
 export function isWechatConfigured(identityProviders={}) {
   const provider=identityProviders.wechat;

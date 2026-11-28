@@ -8,7 +8,7 @@ const path = require('node:path');
 const scheme = 'shenyi-workbench';
 const origin = scheme + '://local';
 const home = origin + '/index.html';
-const title = '审易工作台 · 六模块本机体验（测试资料专用）';
+const title = '审迹工作台 · 六模块本机体验（测试资料专用）';
 const contentTypes = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.txt': 'text/plain; charset=utf-8'
@@ -77,7 +77,7 @@ if (app.requestSingleInstanceLock()) {
     if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
   });
   app.whenReady().then(openWorkspace).catch(() => {
-    require('electron').dialog.showErrorBox('审易工作台', '本机体验未能启动。请将完整压缩包解压到新文件夹后重试。');
+    require('electron').dialog.showErrorBox('审迹工作台', '本机体验未能启动。请将完整压缩包解压到新文件夹后重试。');
     app.exit(1);
   });
   app.on('window-all-closed', () => app.quit());

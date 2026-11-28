@@ -152,7 +152,7 @@ async function preservationBytes(response,limit,check,signal,label='资料保全
 
 function createTeamClient({baseUrl = API_BASE, fetchImpl = globalThis.fetch,wechatPolicy,openAuthorization,openCheckoutExternal,
   openNativeCheckoutExternal,nativeCheckoutIntents,now=Date.now,deviceIdentity,trustedService,isolatedPreview} = {}) {
-  if (baseUrl !== API_BASE || typeof fetchImpl !== 'function') throw failure('INVALID_SERVER', '预览版只连接本机审易服务。');
+  if (baseUrl !== API_BASE || typeof fetchImpl !== 'function') throw failure('INVALID_SERVER', '预览版只连接本机审迹服务。');
   if(trustedService!==undefined&&isolatedPreview!==undefined)throw failure('INVALID_SERVER','团队服务配置不能混用。');
   const trusted=isolatedPreview!==undefined?createIsolatedPreviewTransport({profile:isolatedPreview,fetchImpl,boundedBytes,error:failure}):trustedService===undefined?null:createTrustedTeamServiceTransport({profile:trustedService,fetchImpl,boundedBytes,error:failure});
   if(trusted&&(!deviceIdentity||!['win32','darwin'].includes(deviceIdentity.platform)||!deviceIdentity.vault||!['getPublicIdentity','signChallenge','signRequest'].every(name=>typeof deviceIdentity.vault[name]==='function')))throw failure('DEVICE_VAULT_UNAVAILABLE','受信团队服务需要系统保护的设备密钥。');

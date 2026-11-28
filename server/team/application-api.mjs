@@ -82,7 +82,7 @@ async function applicationResponse(request, {db, now = Date.now,identityProvider
     if(url.pathname==='/api/auth/wechat/callback'&&request.method==='GET')return await handleWechatRequest(request,options);
     const origin = request.headers.get('Origin');
     if (request.headers.get('Sec-Fetch-Site') === 'cross-site' || (origin && ![new URL(request.url).origin,'shenyi://app'].includes(origin))) {
-      return json({error:{code:'CROSS_SITE_DENIED',message:'请在审易客户端中操作。'}},403);
+      return json({error:{code:'CROSS_SITE_DENIED',message:'请在审迹客户端中操作。'}},403);
     }
     if(url.pathname==='/api/auth/methods'){
       if(url.search)return json({error:{code:'INVALID_QUERY',message:'查询参数无效。'}},400);

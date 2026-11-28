@@ -30,9 +30,9 @@
   const states = {
     pending: ['待付款', '扫码付款后，可在此查询服务端确认结果。'],
     pending_fulfilment: ['付款已核实，等待到账', '收款已经核实，订阅或席位尚在处理。可稍后再次查询。'],
-    fulfilled: ['权益已到账', '服务端已确认订阅或席位生效，可返回审易客户端查看。'],
+    fulfilled: ['权益已到账', '服务端已确认订阅或席位生效，可返回审迹客户端查看。'],
     needs_review: ['订单待复核', '请保留订单编号并联系团队管理员核对。'],
-    closed: ['订单已关闭', '需要继续购买时，请返回审易客户端处理。'],
+    closed: ['订单已关闭', '需要继续购买时，请返回审迹客户端处理。'],
     expired: ['已过付款截止', '请核对这笔订单的最终状态。'],
   };
   const numberFormat = new Intl.NumberFormat('zh-CN');
@@ -171,7 +171,7 @@
     if (handoffDeadline === null || performance.now() < handoffDeadline) return false;
     activeController?.abort();
     activeController = null;
-    reset('订单页授权已失效', '请返回已绑定的审易客户端，重新打开这笔订单。');
+    reset('订单页授权已失效', '请返回已绑定的审迹客户端，重新打开这笔订单。');
     return true;
   }
 
@@ -334,7 +334,7 @@
     if (!exact(result, keys) || !validOrder(next) || !sameLockedOrder(next) ||
       (checkout && next.product !== checkout.product) || (action === 'close' && next.status === 'pending')) {
       if (attempt || action === 'close') throw new Error();
-      reset('无法核对原订单', '请返回审易客户端，重新打开原订单后再试。');
+      reset('无法核对原订单', '请返回审迹客户端，重新打开原订单后再试。');
       return null;
     }
     const quoteDiffers = attempt?.quote && !matchesAttempt(next, attempt);
@@ -398,7 +398,7 @@
       });
       if (closed || activeController !== controller) return;
       if (response.status === 401 || response.status === 403) {
-        reset('订单页授权已失效', '请返回已绑定的审易客户端，重新打开这笔订单。');
+        reset('订单页授权已失效', '请返回已绑定的审迹客户端，重新打开这笔订单。');
         return;
       }
       if (response.status === 409 && (action === 'code' || action === 'quote' || action === 'order')) {
@@ -430,7 +430,7 @@
       const {handoffExpiresInMs} = result ?? {};
       if (!boundedInteger(handoffExpiresInMs, 1, 120_000)) {
         if (confirmation || uncertain || action === 'quote' || action === 'close') throw new Error();
-        reset('无法核对原订单', '请返回审易客户端，重新打开原订单后再试。');
+        reset('无法核对原订单', '请返回审迹客户端，重新打开原订单后再试。');
         return;
       }
       if (!setHandoffDeadline(requestStartedAt, handoffExpiresInMs)) return;
@@ -455,7 +455,7 @@
       } else if (order) {
         notice('暂时无法确认付款结果', '请先查询同一订单，再决定是否扫码。', 'review');
       } else {
-        notice('暂时无法读取订单', '可重新核对原订单，或回审易客户端重新打开。', 'review');
+        notice('暂时无法读取订单', '可重新核对原订单，或回审迹客户端重新打开。', 'review');
       }
     } finally {
       clearTimeout(timeout);
@@ -499,7 +499,7 @@
     const replacement = takeHandoff();
     activeController?.abort();
     activeController = null;
-    reset('请从审易客户端打开订单', '使用已绑定的审易客户端打开要支付的原订单。');
+    reset('请从审迹客户端打开订单', '使用已绑定的审迹客户端打开要支付的原订单。');
     if (replacement && !closed) {
       handoff = replacement;
       notice('正在核对订单页授权', '请稍候。');
@@ -510,9 +510,9 @@
     closed = true;
     activeController?.abort();
     activeController = null;
-    reset('请从审易客户端打开订单', '订单页授权随页面关闭而清除。');
+    reset('请从审迹客户端打开订单', '订单页授权随页面关闭而清除。');
   });
 
   if (handoff) request('order');
-  else reset('请从审易客户端打开订单', '使用已绑定的审易客户端打开要支付的原订单。');
+  else reset('请从审迹客户端打开订单', '使用已绑定的审迹客户端打开要支付的原订单。');
 })();

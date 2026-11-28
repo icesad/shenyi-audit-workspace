@@ -289,7 +289,7 @@
     if(total>LIMITS.inputBytes)die('完整报价输入超过 60 MiB，请适当缩小文件。');
     const bodyBytes=certificatesOnly?null:new Uint8Array(body),records=attachments.map(cloneRecord);
     const companyRecord=seal?cloneRecord(seal):null,signingRecords=bodySigningAssets.map(cloneRecord);
-    const out=await L.PDFDocument.create();out.setTitle(certificatesOnly?'营业执照及执业证书':'审计报价（待复核）');out.setCreator('审易审计报价工作台');
+    const out=await L.PDFDocument.create();out.setTitle(certificatesOnly?'营业执照及执业证书':'审计报价（待复核）');out.setCreator('审迹审计报价工作台');
     const embedMark=async record=>{
       try{
         const shape=(await checkedFile({...record,kind:CERTS[0]})).pages[0];
