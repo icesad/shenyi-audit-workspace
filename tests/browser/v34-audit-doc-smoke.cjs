@@ -16,7 +16,7 @@ async function main(){
    await q('#ac-import').setInputFiles({name,mimeType,buffer:bytes});
    await p.waitForFunction(()=>document.querySelector('#ac-import')?.disabled===false);
   };
-  await q('[data-view=home]').click();await q('[data-home-view=audit]').click();await q('#ac-import-mode').selectOption('legacy');await q('#ac-trial').click();await wait('#ac-status','已进入独立试用');
+  await q('[data-view=home]').click();await q('[data-home-view=audit]').click();await q('#ac-import-mode').selectOption('legacy');await q('#ac-project').selectOption('00000000-0000-4000-8000-000000000033');await wait('#ac-status','已进入独立试用');
   assert.deepEqual((await q('#ac-import').getAttribute('accept')).split(',').map(x=>x.trim()).sort(),['.doc','.docx','.txt']);
   await q('#ac-reviewer').fill('虚构旧版Word核对人');await q('#ac-reason').fill('使用合成旧版Word资料清单替换试用示例');
   const pieces=[{text:'资料清单2026\r一、基础资料\r',fc:4608},{text:'9. Revenue statement\r',compressed:true,fc:2304},{text:'29. 银行函证\r① 其他资料（正文②保留）\r',fc:1024}];
@@ -68,7 +68,7 @@ async function main(){
   const full=await get();assert.equal(full.items.length,105);assert.equal(full.items.at(-1).number,105);assert.ok(full.items.at(-1).text.startsWith('虚构资料105：'));
   assert.ok(Object.values(full.states).every(s=>s.status==='pending'));assert.equal(full.events.at(-1).oldStates.i1.evidence,'DOC-WP-01');
   assert.equal(await q('#ac-close').isDisabled(),true);
-  await p.reload();await q('[data-view=home]').click();await q('[data-home-view=audit]').click();await q('#ac-trial').click();await wait('#ac-status','已进入独立试用');assert.deepEqual(await get(),full);
+  await p.reload();await q('[data-view=home]').click();await q('[data-home-view=audit]').click();await q('#ac-project').selectOption('00000000-0000-4000-8000-000000000033');await wait('#ac-status','已进入独立试用');assert.deepEqual(await get(),full);
   const counts=await p.evaluate(async id=>{const m=await AuditChecklist.open(),l=await QuoteLedger.open();try{return {main:await m.get(id),projects:(await ProjectInitiation.listSaved()).length,quotes:(await l.list()).length};}finally{m.close();l.close();}},TRIAL);
   assert.deepEqual(counts,{main:null,projects:0,quotes:0});assert.deepEqual(requests,[]);assert.deepEqual(errors,[]);
   steps.push('105-item long DOC imports with continuous numbering and reset current states, preserves prior audit evidence in history and reloads without formal-project side effects');

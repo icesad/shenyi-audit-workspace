@@ -6,7 +6,7 @@
   <meta name="shenyi-team-service-mode" content="local-preview">
   <meta name="shenyi-team-service-origin" content="http://127.0.0.1:8774">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
-  <title>审易 · 团队采集预览</title>
+  <title>审迹 · 团队采集预览</title>
   <link rel="stylesheet" href="team-ui.css">
   <script src="project-materials.js" defer></script>
   <script src="ledger-checks.js" defer></script>
@@ -21,7 +21,7 @@
 </head>
 <body>
   <aside class="sidebar">
-    <div class="brand"><img src="brand-shenyi.png" alt="审易标识" width="64" height="52"><span>审易<small>AUDIT WORKSPACE</small></span></div>
+    <div class="brand"><img src="brand-shenyi.png" alt="审迹标识" width="64" height="52"><span>审迹<small>AUDIT WORKSPACE</small></span></div>
     <div class="workspace-label">团队工作空间</div>
     <div class="nav-active" id="workspace-sidebar-label">资料采集</div>
     <div class="scope-note">你只能查看当前账号获授权的任务和业务记录。</div>
@@ -320,7 +320,7 @@
         <details id="password-change-panel" class="identity-panel password-change-panel"><summary>修改账号密码</summary><p id="password-change-guidance" class="identity-note">修改成功后，包括当前窗口在内的全部旧登录都会退出，请使用新密码重新登录。这里通过当前密码验证，不是短信找回。</p><form id="password-change-form" class="password-change-form"><div class="password-change-fields"><div><label for="password-change-current">当前密码</label><input id="password-change-current" type="password" autocomplete="current-password" maxlength="512" placeholder="输入当前账号密码" aria-describedby="password-change-guidance"></div><div><label for="password-change-new">新密码</label><input id="password-change-new" type="password" autocomplete="new-password" maxlength="512" placeholder="12至128个字符，保留首尾空格" aria-describedby="password-change-policy"></div><div><label for="password-change-confirm">确认新密码</label><input id="password-change-confirm" type="password" autocomplete="new-password" maxlength="512" placeholder="再次输入相同的新密码" aria-describedby="password-change-policy"></div></div><p id="password-change-policy" class="identity-note">新密码需12至128个字符，首尾空格和大小写按原样保留。请自行妥善保管。</p><div class="password-change-actions"><button id="password-change-submit" class="button primary" type="submit" disabled>修改密码并退出全部登录</button><button id="password-change-clear" class="button" type="button">清空并收起</button></div></form><p id="password-change-message" class="feedback" role="status" aria-live="polite"></p></details>
       </section>
     </section>
-    <footer><span>审易 · 团队采集工作空间</span><span>授权范围由服务端判定</span></footer>
+    <footer><span>审迹 · 团队采集工作空间</span><span>授权范围由服务端判定</span></footer>
   </main>
 </body>
 </html>

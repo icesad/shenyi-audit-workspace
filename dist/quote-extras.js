@@ -6,7 +6,7 @@
     const doc=container.ownerDocument,make=(tag,cls,value)=>{const e=doc.createElement(tag);if(cls)e.className=cls;if(value)e.textContent=value;return e;};
     const section=make('div','quote-extras'),head=make('div','qe-head'),title=make('h3','','其他附件'),counter=make('span','badge neutral');
     const hint=make('p','muted','可多选，最多 10 份，不占营业执照和执业证书的名额。可选 PDF、PNG、JPG、DOCX、XLSX；每份最大 3 MiB。文件只在本机读取，在报价包中单列，不合并进打印正文。');
-    const label=make('label','qe-label','选择其他附件'),input=make('input','');input.type='file';input.multiple=true;input.accept='.pdf,.png,.jpg,.jpeg,.docx,.xlsx';label.append(input);
+    const label=make('label','qe-label','选择其他附件'),input=make('input','');input.type='file';input.multiple=true;input.accept='.pdf,.png,.jpg,.jpeg,.docx,.xlsx';label.append(input);globalThis.ShenyiFileDrop?.bind(label,input,{material:'其他报价附件',limit:'单份最多 3 MiB'});
     const list=make('ol','qe-list'),status=make('p','qe-status');status.setAttribute('role','status');status.setAttribute('aria-live','polite');
     head.append(title,counter);section.append(head,hint,label,list,status);container.replaceChildren(section);
     let saved=[],busy=false,generation=0;

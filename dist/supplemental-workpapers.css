@@ -1,1 +1,13 @@
 .swp-root{min-width:0}.swp-help,.swp-summary,.swp-status{font-size:12px;line-height:1.8;overflow-wrap:anywhere}.swp-actions{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}.swp-table-wrap{max-width:100%;overflow:auto;border:1px solid #d4e2d9;border-radius:8px}.swp-table-wrap table{border-collapse:collapse;width:100%;min-width:670px;background:#fff}.swp-table-wrap th,.swp-table-wrap td{padding:12px;border:1px solid #e0e8e2;vertical-align:top;text-align:left}.swp-table-wrap th{background:#eff5f0}.swp-table-wrap td:first-child{width:23%}.swp-table-wrap td:nth-child(2){width:25%}.swp-table-wrap input[type=text]{box-sizing:border-box;width:100%;min-width:0;height:40px;padding:8px 10px;border:1px solid #d0ddd4;border-radius:5px;background:#fafcf9;color:inherit}.swp-table-wrap input[type=file]{display:block;max-width:100%;font-size:12px}.swp-table-wrap .btn{margin:5px 8px 3px 0}.swp-mapping{display:block;line-height:1.7;color:#43715b;margin-top:8px;overflow-wrap:anywhere}.swp-unmatched{color:#96713c}.swp-file-info{font-size:11px;line-height:1.8;word-break:break-word;overflow-wrap:anywhere;max-width:550px}.swp-status{padding:10px 12px;border-left:3px solid #86ae96;background:#f1f7f2}.swp-status.error{border-color:#a94646;background:#fff3f0}@media(max-width:600px){.swp-actions .btn{white-space:normal;max-width:100%}.swp-table-wrap table{min-width:620px}.swp-table-wrap input[type=text]{height:44px}}
+
+.swp-generate{min-width:0;display:grid;gap:16px}.swp-generate-form{display:grid;gap:10px}.swp-generate-form>label{display:grid;gap:6px;max-width:620px}.swp-generate-form input[type=text]{padding:9px 11px;border:1px solid #cfddd5;border-radius:6px;background:#f6f8f5;color:inherit}.swp-generate-files{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.swp-generate-files .quote-file-drop{min-height:125px;overflow-wrap:anywhere}.swp-generate-files .swp-selected{max-width:100%;overflow-wrap:anywhere}.swp-generate-form>.btn{justify-self:start}.swp-generate summary{cursor:pointer}@media(max-width:620px){.swp-generate-files{grid-template-columns:1fr}}
+
+.swp-directory{min-width:0}
+.swp-directory .swp-table-wrap table{min-width:290px}
+.swp-directory .swp-table-wrap :is(th,td){padding:8px 10px;vertical-align:middle}
+.swp-directory .swp-table-wrap td{width:auto}
+.swp-directory :is(th,td):not(:nth-child(2)):not([colspan]){width:1%;white-space:nowrap}
+.swp-directory td:nth-child(2){overflow-wrap:anywhere}
+.swp-directory .btn{margin:0}
+.swp-directory details{margin-top:4px;font-size:.875em}
+.swp-directory details ul{max-height:240px;overflow:auto}

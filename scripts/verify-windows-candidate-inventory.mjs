@@ -270,7 +270,7 @@ function validateAppPackage(bytes, manifest) {
   const data = readJson(bytes, inventoryError);
   exact(data, ['name', 'productName', 'version', 'private', 'main', 'dependencies'], inventoryError);
   exact(data.dependencies, ['jsdom'], inventoryError);
-  if (data.name !== 'shenyi-team-desktop' || data.productName !== '审易' || data.version !== manifest.version ||
+  if (data.name !== 'shenyi-team-desktop' || !['审迹','审易'].includes(data.productName) || data.version !== manifest.version ||
       data.private !== true || data.main !== 'desktop/main.cjs') invalid(inventoryError);
   parseCandidateVersion(data.dependencies.jsdom);
 }

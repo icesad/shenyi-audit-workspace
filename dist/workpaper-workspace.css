@@ -25,3 +25,13 @@
 /* Saved-input coverage replaces revision editing; index actions stay compact. */
 .pw-directory-sources{border:1px solid #cfddd3;background:#f6faf6;border-radius:8px;padding:14px;margin:15px 0}.pw-directory-sources label{display:grid;gap:10px;font-size:12px}.pw-directory-sources input{max-width:100%;min-height:40px}.pw-directory-sources p{font-size:12px;margin:9px 0 0}
 .pw-directory .pw-index-link{border:0;background:transparent;color:#246859;text-decoration:underline;text-underline-offset:3px;padding:5px 0;font:inherit;max-width:190px;white-space:normal;text-align:left}.pw-index-link:disabled{color:#81948b;text-decoration:none}.pw-directory-progress strong{display:block;color:#265c46;font-size:17px}.pw-directory-progress progress{width:155px;max-width:100%;height:10px;accent-color:#3a8265;display:block;margin:6px 0}.pw-directory-progress small{display:block;line-height:1.6;font-size:10px;color:#6d8176}.pw-directory-progress[data-progress-state=unmapped],.pw-directory-progress[data-progress-state=unknown],.pw-directory-progress[data-progress-state=ambiguous]{color:#936b32}.pw-route-picker{padding:16px;border:1px solid #a9c3b0;background:#f6faf5;border-radius:8px;margin:12px 0}.pw-route-option{border-bottom:1px solid #d9e5dc;padding:8px 0 14px}.pw-route-option p{font-size:12px;overflow-wrap:anywhere;white-space:pre-wrap}.pw-form-progress{font-size:12px;margin:14px 0}.pw-form-progress progress{display:block;width:240px;max-width:100%;height:12px;accent-color:#3a8265}.pw-form-progress small{margin-left:12px}
+
+.pw-scoped-toolbar{align-items:end}.pw-scoped-toolbar label:not([hidden]){display:grid;gap:5px;flex:1 1 160px;max-width:360px;min-width:0}.pw-scoped-toolbar label select{width:100%;min-width:0;padding:9px 10px;border:1px solid #cfddd5;border-radius:6px;background:#f6f8f5}.pw-scoped-toolbar label[hidden]{display:none}
+.pw-privacy-tools{position:relative;width:max-content}
+.pw-privacy-tools>summary{display:flex;align-items:center;gap:8px;list-style:none}
+.pw-privacy-tools>summary::-webkit-details-marker{display:none}
+.pw-privacy-tools>summary::after{content:"";width:6px;height:6px;border:solid currentColor;border-width:0 1px 1px 0;transform:translateY(-2px) rotate(45deg)}
+.pw-privacy-tools>div{position:absolute;z-index:5;top:calc(100% + 6px);left:0;display:grid;gap:4px;min-width:max-content;padding:5px;border:1px solid #cfddd5;border-radius:8px;background:white;box-shadow:0 4px 16px #15352c1a}
+.pw-privacy-tools:not([open])>div{display:none}
+.pw-privacy-tools>div>.btn{text-align:left;justify-content:start}
+#pw-status:empty{display:none}

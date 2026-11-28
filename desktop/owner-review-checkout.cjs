@@ -73,7 +73,7 @@ function createOwnerReviewCheckoutWindows({context,parent,BrowserWindow,session,
  const expiry=setTimeoutImpl(closeAll,Math.max(1,certificate.endsAt-now()));expiry?.unref?.();
  async function open(raw){
   if(!current())throw fail();let target;try{if(typeof raw!=='string')throw fail();target=new URL(raw);const code=/^#handoff=([A-Za-z0-9_-]{43})$/.exec(target.hash);if(target.origin!==context.profile.checkoutOrigin||target.username||target.password||target.search||!['/checkout/','/checkout/seats/'].includes(target.pathname)||!code||Buffer.from(code[1],'base64url').length!==32||Buffer.from(code[1],'base64url').toString('base64url')!==code[1]||target.href!==raw||raw!==target.origin+target.pathname+target.hash)throw fail();}catch{throw fail();}
-  const pagePath=target.pathname,title=pagePath==='/checkout/seats/'?'审易 · 官网席位走查（合成）':'审易 · 官网年费走查（合成）',isolated=session.fromPartition('shenyi-owner-checkout-'+randomUUID(),{cache:false});
+  const pagePath=target.pathname,title=pagePath==='/checkout/seats/'?'审迹 · 官网席位走查（合成）':'审迹 · 官网年费走查（合成）',isolated=session.fromPartition('shenyi-owner-checkout-'+randomUUID(),{cache:false});
   let ended=false,departed=false,startupTimer,rejectStartup;const listeners=[];
   const listen=(object,event,handler)=>{object.on(event,handler);listeners.push([object,event,handler]);};
   const win=new BrowserWindow({parent,show:false,width:1160,height:900,minWidth:760,minHeight:640,title,backgroundColor:'#f5f6f2',autoHideMenuBar:true,webPreferences:{session:isolated,nodeIntegration:false,nodeIntegrationInWorker:false,contextIsolation:true,sandbox:true,webSecurity:true,allowRunningInsecureContent:false,webviewTag:false,devTools:false}});

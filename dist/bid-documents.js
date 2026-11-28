@@ -90,7 +90,7 @@
     buildBtn.id='bd-build-download';buildBtn.disabled=true;buildBtn.setAttribute('aria-describedby','bd-build-status');
     buildStatus.id='bd-build-status';buildStatus.setAttribute('role','status');
     formal.type='checkbox';formal.id='bd-build-formal-one';
-    formalLabel.append(formal,make('span',null,'我已核对本项目要求，开标一览表使用 1 元形式报价（不带入审易议价金额）'));
+    formalLabel.append(formal,make('span',null,'我已核对本项目要求，开标一览表使用 1 元形式报价（不带入审迹议价金额）'));
     function builderField(id,label,placeholder){
       const wrap=make('label','bd-name',label),control=make('input');control.id=id;control.type='text';control.maxLength=100;control.placeholder=placeholder;
       wrap.append(control);buildFields.append(wrap);return control;
@@ -132,11 +132,11 @@
     function tile(scope,slot){
       const slotName='标书 '+slot,controlId='bd-slot-'+slot;
       const card=make('div','bd-tile'),heading=make('h3',null,slotName),badge=make('span','bd-file-status'),
-        header=make('div','bd-top'),label=make('label','bd-file-label'),file=make('input'),pick=make('span',null,'选择文件'),
+        header=make('div','bd-top'),label=make('label','bd-file-label'),file=make('input'),
         description=make('p','bd-description'),actions=make('div','bd-actions'),download=btn('下载原件'),del=btn('移除文件','text-button'),
         nameLine=make('div','bd-name-row'),nameField=make('label','bd-name','自定义名称'),name=make('input'),rename=btn('保存名称','text-button');
       card.dataset.bidSlot=String(slot);heading.id=controlId+'-title';card.setAttribute('aria-labelledby',heading.id);
-      header.append(heading,badge);file.type='file';file.id=controlId+'-file';file.accept='.docx,.pdf';file.setAttribute('aria-label','为'+slotName+'选择文件');label.append(pick,file);
+      header.append(heading,badge);file.type='file';file.id=controlId+'-file';file.accept='.docx,.pdf';file.setAttribute('aria-label','为'+slotName+'选择文件');label.append(file);globalThis.ShenyiFileDrop?.bind(label,file,{material:slotName,limit:'单份最多 12 MiB'});
       download.id=controlId+'-download';del.id=controlId+'-remove';
       download.setAttribute('aria-label','下载'+slotName+'原件');del.setAttribute('aria-label','移除'+slotName+'文件');actions.append(download,del);
       name.id=controlId+'-name';name.type='text';name.maxLength=60;name.placeholder=slotName;
@@ -152,24 +152,24 @@
         description.textContent=row?.file?row.file.name+' · '+(row.file.size/1024).toFixed(1)+' KB':'此上传位还没有保存文件。';controls();
       }
       function current(){return card.isConnected&&scope===active&&scope===context(project())?.scope;}
-      async function run(fn){if(!enabled()||busy||!current())return;busy=true;controls();try{await fn();}catch(e){if(current())info(e?.message||'操作失败，未清空原件。',true);}finally{busy=false;if(current())controls();}}
+      async function run(fn,saving=false){if(!enabled()||busy||!current())return;busy=true;controls();try{await fn();}catch(e){if(current())info((saving?root.SaveFeedback?.failed(e):null)||e?.message||'操作失败，未清空原件。',true);}finally{busy=false;if(current())controls();}}
       function commit(f,note,patch={}){if(!current())return;return change(db,scope,slot,record?.version||0,patch,f).then(row=>{
         if(current()){
           const pendingName=name.value,prior=clean(record?.label,60);
           update(row);if(!Object.hasOwn(patch,'label')&&pendingName!==prior)name.value=pendingName;
-          tell(note);
+          tell(Object.hasOwn(patch,'label')||f?root.SaveFeedback?.saved(note)??note:note);
         }
       });}
       file.addEventListener('change',()=>{const f=file.files[0];file.value='';if(!f)return;run(async()=>{
         if(record?.file&&!root.confirm('用所选文件替换「'+slotName+'」的原件？其他上传位不变。'))return;
         const checked=await inspect(f);await commit(checked,'已保存'+slotName+'：'+checked.name);
-      });});
+      },true);});
       del.onclick=()=>run(async()=>{if(root.confirm('仅移除「'+slotName+'」的文件？其他上传位、项目和报价历史不变。'))await commit(null,'已移除'+slotName+'的文件。');});
       download.onclick=()=>run(async()=>{const o=await original(db,scope,slot,record?.version||0);if(current())saveDownload(o);});
       rename.onclick=()=>run(async()=>{
         const label=clean(name.value,60);if(name.value.trim()&&!label)fail('名称过长或含不支持的字符。');
         await commit(undefined,slotName+'的位置名称已保存。',{label});
-      });
+      },true);
       update();loaded=false;controls();return {update};
     }
     function legacyRow(row,epoch){

@@ -106,7 +106,7 @@ async function main() {
   const client=createTeamClient({baseUrl:API_BASE,...(serviceConfiguration.profile?{trustedService:serviceConfiguration.profile}:{}),...(isolatedPreview?{isolatedPreview:isolatedPreview.profile}:{}),wechatPolicy,openAuthorization:url=>shell.openExternal(url),openCheckoutExternal:url=>ownerReviewCheckout?ownerReviewWindows.open(url):shell.openExternal(url),
     openNativeCheckoutExternal:url=>shell.openExternal(url),nativeCheckoutIntents:createNativeCheckoutIntents(dataRoot),
     deviceIdentity:{vault,platform:process.platform,displayName:process.platform==='darwin'?'我的Mac电脑':'我的Windows电脑'}});
-  const win=new BrowserWindow({width:1210,height:800,minWidth:840,minHeight:600,show:false,title:ownerReviewManagedPilot?'审易 · 受管试点评审':'审易 · 团队采集预览',backgroundColor:'#f5f6f2',
+  const win=new BrowserWindow({width:1210,height:800,minWidth:840,minHeight:600,show:false,title:ownerReviewManagedPilot?'审迹 · 受管试点评审':'审迹 · 团队采集预览',backgroundColor:'#f5f6f2',
     webPreferences:{preload:path.join(__dirname,'preload.cjs'),session:isolated,nodeIntegration:false,nodeIntegrationInWorker:false,contextIsolation:true,sandbox:true,webSecurity:true,allowRunningInsecureContent:false,webviewTag:false,devTools:!app.isPackaged}});
   if(ownerReviewCheckout)ownerReviewWindows=ownerReviewSupport.createOwnerReviewCheckoutWindows({context:ownerReviewCheckout,parent:win,BrowserWindow,session});
   if(isolatedPreview||ownerReviewCheckout||ownerReviewManagedPilot)win.on('page-title-updated',event=>event.preventDefault());
@@ -123,12 +123,12 @@ async function main() {
   powerMonitor.on('suspend',pauseConnection);powerMonitor.on('resume',resumeConnection);
   win.on('closed',()=>{ownerReviewWindows?.closeAll();clearInterval(heartbeat);powerMonitor.removeListener('suspend',pauseConnection);powerMonitor.removeListener('resume',resumeConnection);dispose();vault.dispose();app.quit();});
   app.on('second-instance',()=>{if(win.isMinimized())win.restore();win.show();win.focus();});
-  await win.loadURL(APP_URL);if(isolatedPreview)win.setTitle('审易 · 独立合成候选预览 · '+isolatedPreview.candidateId.slice(0,8));if(ownerReviewCheckout)win.setTitle('审易 · 独立官网账务评审 · '+ownerReviewCheckout.candidateId.slice(0,8));win.show();
+  await win.loadURL(APP_URL);if(isolatedPreview)win.setTitle('审迹 · 独立合成候选预览 · '+isolatedPreview.candidateId.slice(0,8));if(ownerReviewCheckout)win.setTitle('审迹 · 独立官网账务评审 · '+ownerReviewCheckout.candidateId.slice(0,8));win.show();
 }
 main().catch(error=>{
-  console.error('审易团队客户端启动失败。请检查本机环境与配置。');
+  console.error('审迹团队客户端启动失败。请检查本机环境与配置。');
   if(app.isPackaged===true&&process.platform==='darwin'&&error?.code==='TEAM_SERVICE_CONFIGURATION_INVALID'){
-    try{dialog.showErrorBox('审易无法启动','请联系管理员检查此电脑的团队服务配置。');}catch{}
+    try{dialog.showErrorBox('审迹无法启动','请联系管理员检查此电脑的团队服务配置。');}catch{}
   }
   if(app.isPackaged===true||Object.hasOwn(process.env,'SHENYI_ISOLATED_PREVIEW_CONFIG')||Object.hasOwn(process.env,'SHENYI_OWNER_REVIEW_WEBSITE_CHECKOUT')||Object.hasOwn(process.env,'SHENYI_OWNER_REVIEW_MANAGED_PILOT'))app.exit(1);else app.quit();
 });

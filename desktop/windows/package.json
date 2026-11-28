@@ -1,0 +1,7 @@
+{
+  "name": "shenyi-workbench-local-review",
+  "productName": "审迹工作台本机体验",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.cjs"
+}

@@ -58,7 +58,7 @@ async function launch() {
 
     const {ownerPhone, ownerPassword, adminPhone, assistantPhone, internPhone,
       managerCandidatePhone, partnerCandidatePhone} = run.credentials;
-    console.log('审易 · 受管试点演练。请使用本轮合成资料。');
+    console.log('审迹 · 受管试点演练。请使用本轮合成资料。');
     console.log('合成产品负责人 '+ownerPhone);
     console.log('本轮负责人密码 '+ownerPassword);
     console.log('合成首管理员 '+adminPhone+'，合成助理 '+assistantPhone+'，合成实习生 '+internPhone+'。');

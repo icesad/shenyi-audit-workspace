@@ -172,8 +172,8 @@
       assertCurrent(); if (ctx.getRecord().rev !== revision) throw Error('工作区版本已改变，未覆盖。');
       if (JSON.stringify(collect()) !== JSON.stringify(snapshot)) throw Error('当前数据、列映射或确认已变化，请重新校验。');
       const value = { schemaVersion: 1, ...snapshot, result: checked, inputHash, mappingHash, calculatedAt: new Date().toISOString() };
-      await ctx.save({ reconciliation: value }); assertCurrent(); last = value; renderResult(value); say('已保存本项目的技术校验结果；不代表审计通过。');
-    }));
+      await ctx.save({ reconciliation: value }); assertCurrent(); last = value; renderResult(value); const feedback='已保存本项目的技术校验结果；不代表审计通过。';say(root.SaveFeedback?.saved(feedback)??feedback);
+    },true));
     const template = button('下载规范化校验输入模板（无业务数据）', () => { try { assertCurrent(); const t = root.AuditReconciliation.templateDownload(readScope()); S.download(new Blob([t.content], { type: t.mimeType }), t.filename); } catch (e) { say(e.message, true); } });
     actions.append(checkButton, template);
     const suggestion = el('section', undefined, 'ap-card'); suggestion.append(el('h4', '有来源的辅助填写（淡黄色，待人工复核）'));
@@ -249,8 +249,9 @@
       };
       const patch = writePatch(record, t, loc, choice[1], entry);
       await ctx.save(patch); assertCurrent(); approve.checked = false;
-      say('已写入一个淡黄色待复核建议；原模板、公式与其他填写未改变。');
-    }));
+      const feedback='已写入一个淡黄色待复核建议；原模板、公式与其他填写未改变。';
+      say(root.SaveFeedback?.saved(feedback)??feedback);
+    },true));
     suggestion.append(addSuggestion);
     async function load() {
       try {
@@ -262,7 +263,7 @@
       } catch (e) { say(e.message, true); }
     }
     void load();
-    return { destroy() { alive = false; automatic?.destroy(); for (const st of Object.values(roles)) ++st.ticket; shell.remove(); } };
+    return { exportLedger:automatic?.exportLedger, destroy() { alive = false; automatic?.destroy(); for (const st of Object.values(roles)) ++st.ticket; shell.remove(); } };
   }
   root.AuditPreparation = Object.freeze({ mount });
 })(globalThis);

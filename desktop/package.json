@@ -2,7 +2,7 @@
   "name": "shenyi-team-desktop-preview",
   "version": "0.2.0",
   "private": true,
-  "description": "审易团队采集桌面端：隔离的本机合成演示，未用于生产",
+  "description": "审迹团队采集桌面端：隔离的本机合成演示，未用于生产",
   "main": "main.cjs",
   "engines": {"node": "^24.15.0"},
   "scripts": {

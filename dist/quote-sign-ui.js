@@ -55,6 +55,7 @@
     const generate=button('确认应用章签并导出 ZIP','quote-sign-generate',true);
     const footer=create('div',undefined,'qs-confirm');footer.append(agree,generate);
     body.append(caption,create('p','识别仅作建议。没有明确对象、要求「签字或盖章」、骑缝章或电子签章时需人工核对；报价模板的图样只放到对应角色区。PDF 或图片必须选定页和位置，原件不修改；未勾选章签的附件按原件入包。','muted'),labeled('读取采购或附件要求（DOCX、PDF、TXT）',file),useTender,labeled('章签要求文字',text),analyse,notice,rows,create('p','生成的是带图片章签的待复核副本，不是审批、电子签名或自动递交。报价历史仅保留通用无章草稿与原附件；所选格式和章签副本请另存本次 ZIP。','tiny'),footer);
+    globalThis.ShenyiFileDrop?.bind(file.parentElement,file,{material:'采购文件或章签要求附件'});
     dialog.append(head,body);document.body.append(dialog);
     let data=null,items=[],widgets=[],busy=false,ticket=0,sourceReadNotes=[];
     const clearAck=()=>{ack.checked=false;sync();};

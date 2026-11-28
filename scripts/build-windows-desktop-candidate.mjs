@@ -176,7 +176,7 @@ export async function loadBuildInventory(checkout = root, { platform = 'win32', 
   const archiveHash = checksums[zipName];
   if (!archiveHashPattern.test(archiveHash ?? '')) throw new Error('Electron 包中没有目标平台的官方归档校验值。');
   const appPackage = {
-    name: 'shenyi-team-desktop', productName: '审易', version: appSource.version, private: true,
+    name: 'shenyi-team-desktop', productName: '审迹', version: appSource.version, private: true,
     main: 'desktop/main.cjs', dependencies: { jsdom: appSource.dependencies.jsdom },
   };
   const lockRoot = appLock.packages[''];

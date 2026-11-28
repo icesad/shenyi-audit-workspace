@@ -167,7 +167,7 @@ def bundle_changes(archive, entries, arch, version):
     if original_id != 'com.github.Electron' or settings.get('CFBundleExecutable') != 'Electron':
         raise ValueError('Unexpected main Electron bundle configuration')
     settings.update(CFBundleIdentifier=BUNDLE_ID, CFBundleExecutable='Shenyi', CFBundleName='Shenyi',
-                    CFBundleDisplayName='审易', CFBundleShortVersionString=version, CFBundleVersion=version)
+                    CFBundleDisplayName='审迹', CFBundleShortVersionString=version, CFBundleVersion=version)
     integrity = settings.get('ElectronAsarIntegrity')
     if isinstance(integrity, dict) and '/'.join(DEFAULT_APP[2:]) in integrity:
         del integrity['/'.join(DEFAULT_APP[2:])]

@@ -9,8 +9,10 @@
   .pi-summary-table th {background:#edf3ed;color:#355143;white-space:nowrap}
   .pi-summary-table :is(th,td) {padding:.65rem .7rem;vertical-align:top;overflow-wrap:anywhere}
   .pi-summary-table td:nth-child(2) {min-width:136px;font-size:.8125rem}
-  .pi-summary-table .pi-initiation-status {white-space:nowrap}
-  .pi-summary-table td:nth-child(4) {min-width:160px}
+  .pi-summary-table [data-project-column=initiationStatus] {white-space:nowrap}
+  .pi-summary-table td[data-project-column=company] {min-width:160px}
+  .pi-summary-table [data-project-column=amountCents] {text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .pi-summary-table .pi-download-cell .btn {white-space:nowrap;padding:.35rem .55rem;font-size:.75rem}
   .pi-summary-table a {color:var(--accent);text-underline-offset:2px}
   .pi-summary-table tbody tr:last-child td {border-bottom:0}
   .pi-summary-table .pi-summary-empty {padding:1rem;color:var(--muted)}
@@ -31,6 +33,12 @@
   .pi-fields input[readonly],.pi-fields textarea[readonly] {color:var(--muted)}
   .pi-form-actions {display:flex;align-items:center;gap:.65rem .9rem;flex-wrap:wrap;margin:1rem 0 0}
   .pi-form-actions p {margin:0}
+  .pi-required-status {flex:0 0 100%;color:var(--muted);font-size:.875rem}
+  .pi-required-status:empty {display:none}
+  .pi-download-dialog {width:min(510px,calc(100vw - 32px));box-sizing:border-box;padding:22px;border:1px solid #cfddd5;border-radius:14px;color:inherit}
+  .pi-download-dialog::backdrop {background:#132e3666}
+  .pi-download-dialog h2 {margin:0 0 12px}
+  .pi-download-dialog [role=alert]:empty {display:none}
   .pi-detail>.pi-head {margin-bottom:1.25rem}
   .pi-project-meta {display:flex;flex:1 1 auto;flex-wrap:wrap;align-items:baseline;gap:.4rem 1rem;margin:0;overflow-wrap:anywhere}
   .pi-project-meta code {color:var(--muted);font-size:.78rem}

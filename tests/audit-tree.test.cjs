@@ -36,7 +36,10 @@ test('schema1 stays exact and readable; explicit conversion retains original sta
 test('uploads always reset reviewed/NA leaves to received and removal resets received or pending',()=>{
  let r=review(tree(),'n2','na',{reason:'原不适用'});r=attach(r);assert.equal(r.states.n2.status,'received');assert.equal(r.attachments.n2.length,1);
  r=review(r,'n2','confirmed',{evidence:'FILE-WP'});r=attach(r);assert.equal(r.states.n2.status,'received');assert.equal(r.attachments.n2.length,2);
- const first=r.attachments.n2[0].id;r=A.apply(r,{type:'attachment-remove',nodeId:'n2',fileId:first,reviewer:'虚构人员',reason:'解除旧版关联'});assert.equal(r.states.n2.status,'received');
+ const first=r.attachments.n2[0].id;
+ assert.throws(()=>A.apply(r,{type:'attachment-remove',nodeId:'n2',fileId:first,reviewer:'虚构人员',reason:'解除旧版关联'}),/先打回/);
+ r=review(r,'n2','problem',{reason:'核对后需重新提供'});
+ r=A.apply(r,{type:'attachment-remove',nodeId:'n2',fileId:first,reviewer:'虚构人员',reason:'解除旧版关联'});assert.equal(r.states.n2.status,'received');
  r=A.apply(r,{type:'attachment-remove',nodeId:'n2',fileId:r.attachments.n2[0].id,reviewer:'虚构人员',reason:'解除第二版关联'});assert.equal(r.states.n2.status,'pending');assert.equal(r.attachments.n2.length,0);assert.equal(r.events.filter(x=>x.type==='attachment-add').length,2);
 });
 

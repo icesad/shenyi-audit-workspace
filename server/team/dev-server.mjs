@@ -40,7 +40,7 @@ async function main() {
   try {
     initializeTeamDatabase(db);await seedDemoTeamData(db);
     const service=await startTeamServer({db});
-    console.log(`审易合成团队服务 ${service.address.url}；仅本机、仅演示资料，不用于生产。`);
+    console.log(`审迹合成团队服务 ${service.address.url}；仅本机、仅演示资料，不用于生产。`);
     const stop=async()=>{await service.close();db.close();};
     process.once('SIGINT',stop);process.once('SIGTERM',stop);
   } catch (error) { db.close();throw error; }

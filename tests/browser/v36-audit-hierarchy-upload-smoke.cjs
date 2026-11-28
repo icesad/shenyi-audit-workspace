@@ -1,5 +1,6 @@
 /* Native file chooser and local file persistence regression. Fictional Word/materials only. */
 'use strict';
+const readRetainedFile=require('./read-retained-checklist-file.cjs');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{pathToFileURL}=require('node:url'),{chromium}=require('playwright');
 const entry=path.resolve(process.argv[2]||path.join(__dirname,'../../dist/index.html')),TRIAL='00000000-0000-4000-8000-000000000033',W='http://schemas.openxmlformats.org/wordprocessingml/2006/main',MIME='application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 function crc(b){let n=0xffffffff;for(const x of b){n^=x;for(let i=0;i<8;i++)n=n&1?0xedb88320^(n>>>1):n>>>1;}return(n^0xffffffff)>>>0;}
@@ -19,7 +20,7 @@ async function main(){
   const p=await ctx.newPage();p.setDefaultTimeout(12000);p.on('pageerror',e=>errors.push(e.message));p.on('dialog',d=>d.accept());await p.goto(pathToFileURL(entry).href);
   const q=s=>p.locator(s),wait=(s,n)=>p.waitForFunction(([s,n])=>document.querySelector(s)?.textContent.includes(n),[s,n]),idle=()=>p.waitForFunction(()=>document.querySelector('#ac-import')?.disabled===false);
   const get=()=>p.evaluate(async id=>{const db=await AuditChecklist.openTrial();try{return await db.get(id);}finally{db.close();}},TRIAL);
-  const enter=async()=>{await q('[data-view=home]').click();await q('[data-home-view=audit]').click();await q('#ac-import-mode').selectOption('legacy');await q('#ac-trial').click();await wait('#ac-status','已进入独立试用');await idle();};
+  const enter=async()=>{await q('[data-view=home]').click();await q('[data-home-view=audit]').click();await q('#ac-import-mode').selectOption('legacy');await q('#ac-project').selectOption('00000000-0000-4000-8000-000000000033');await wait('#ac-status','已进入独立试用');await idle();};
   const review=async(id,status,reason='')=>{await q('[data-item-status='+id+']').selectOption(status==='confirmed'?'pending':status);await q('#ac-item-reason-'+id).fill(reason);await q('['+(status==='confirmed'?'data-confirm-item':'data-save-item')+'='+id+']').click();await idle();await wait('#ac-status',status==='confirmed'?'已保存本项核对':'已保存本项选择');};
   const choose=async(id,files)=>{const [chooser]=await Promise.all([p.waitForEvent('filechooser'),q('[data-upload-node='+id+']').click()]);assert.equal(await chooser.element().getAttribute('id'),'ac-file-'+id);assert.equal(chooser.isMultiple(),true);await chooser.setFiles(files);await idle();};
   const downloaded=async id=>{const [d]=await Promise.all([p.waitForEvent('download'),q('[data-material-download="'+id+'"]').click()]);assert.equal(await d.failure(),null);return fs.readFileSync(await d.path());};
@@ -57,8 +58,8 @@ async function main(){
 
   await q('#ac-close').click();await wait('#ac-status','已明确执行资料关门');r=await get();assert.ok(r.closed);
   assert.equal(await q('[data-upload-node=n4]').isDisabled(),true);assert.equal(await q('#ac-file-n4').isDisabled(),true);assert.equal(await q('[data-material-remove="'+txtId+'"]').isDisabled(),true);assert.equal(await q('[data-material-download="'+txtId+'"]').isEnabled(),true);assert.deepEqual(await downloaded(txtId),txt);
-  await q('.ac-history').evaluate(e=>e.open=true);assert.equal(await q('[data-history-download="'+pdfId+'"]').isEnabled(),true);
-  const [historical]=await Promise.all([p.waitForEvent('download'),q('[data-history-download="'+pdfId+'"]').click()]);assert.equal(await historical.failure(),null);assert.deepEqual(fs.readFileSync(await historical.path()),pdf,'detached historical PDF remains downloadable byte-for-byte while closed');
+  assert.equal(await q('.ac-history,[data-history-download]').count(),0);
+  assert.deepEqual(await readRetainedFile(p,TRIAL,pdfId,true),pdf,'detached PDF is preserved while closed');
   await q('#ac-reason').fill('');await q('#ac-reopen').click();await wait('#ac-status','操作理由');assert.ok((await get()).closed);await q('#ac-reason').fill('收到新版资料后继续核对');await q('#ac-reopen').click();await wait('#ac-status','已重新开门');const reopened=await get();assert.equal(reopened.closed,null);assert.equal(await q('[data-upload-node=n4]').isEnabled(),true);
   await p.reload();await enter();assert.deepEqual(await get(),reopened);assert.deepEqual(await downloaded(txtId),txt);
   const [json]=await Promise.all([p.waitForEvent('download'),q('#ac-export').click()]);const raw=fs.readFileSync(await json.path(),'utf8'),exported=JSON.parse(raw);assert.deepEqual(exported.record,reopened);assert.ok(!raw.includes('SYNTHETIC_BODY_ONLY_NOT_IN_JSON_36'));assert.ok(!/"blob"|data:application\//u.test(raw));await wait('#ac-status','JSON 不含文件正文');

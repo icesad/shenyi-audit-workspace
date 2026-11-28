@@ -1,6 +1,6 @@
-# 审易团队采集桌面预览（M2/M3/M4A–M4E）
+# 审迹团队采集桌面预览（M2/M3/M4A–M4E）
 
-独立的Electron候选壳，沿用现有审易品牌。普通入口连接本机`http://127.0.0.1:8774`合成服务；另有[独立合成候选入口](../docs/ISOLATED_CANDIDATE_PREVIEW.md)，每次建立独立动态端口和全新数据，供保留旧预览时查看当前分支；不接原浏览器业务库，不用于正式客户资料。[正常设备会话](../docs/DESKTOP_DEVICE_SESSION.md)与[员工/管理员换机审批](../docs/DEVICE_REPLACEMENT.md)已通过Windows本地验收；生产HTTPS、签名/安装/更新、Mac实机、最高审核账号自身恢复及商业化能力仍未完成。
+独立的Electron候选壳，沿用现有审迹品牌。普通入口连接本机`http://127.0.0.1:8774`合成服务；另有[独立合成候选入口](../docs/ISOLATED_CANDIDATE_PREVIEW.md)，每次建立独立动态端口和全新数据，供保留旧预览时查看当前分支；不接原浏览器业务库，不用于正式客户资料。[正常设备会话](../docs/DESKTOP_DEVICE_SESSION.md)与[员工/管理员换机审批](../docs/DEVICE_REPLACEMENT.md)已通过Windows本地验收；生产HTTPS、签名/安装/更新、Mac实机、最高审核账号自身恢复及商业化能力仍未完成。
 
 ## 保留旧预览时查看当前候选
 

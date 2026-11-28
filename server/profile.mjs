@@ -38,11 +38,11 @@ export async function handleAccountRequest(request,user,db){
   if(!validId(user?.userId))return problem(401,'SIGN_IN_REQUIRED','请先通过平台登录，再查看或修改账号资料。');
   if(!['GET','PUT'].includes(request.method))return reply({error:{code:'METHOD_NOT_ALLOWED',message:'不支持此操作。'}},405,{Allow:'GET, PUT'});
   const url=new URL(request.url);
-  if(request.headers.get('Sec-Fetch-Site')==='cross-site')return problem(403,'SAME_ORIGIN_REQUIRED','请在审易页面内操作。');
+  if(request.headers.get('Sec-Fetch-Site')==='cross-site')return problem(403,'SAME_ORIGIN_REQUIRED','请在审迹页面内操作。');
   const context=await profileContext(user.userId);
   let body;
   if(request.method==='PUT'){
-    if(request.headers.get('Origin')!==url.origin)return problem(403,'SAME_ORIGIN_REQUIRED','请在审易页面内保存资料。');
+    if(request.headers.get('Origin')!==url.origin)return problem(403,'SAME_ORIGIN_REQUIRED','请在审迹页面内保存资料。');
     if(!/^application\/json(?:\s*;|$)/i.test(request.headers.get('Content-Type')||''))return problem(415,'JSON_REQUIRED','请使用JSON资料格式。');
     const declared=request.headers.get('Content-Length');
     if(declared!==null&&(!/^\d+$/.test(declared)||Number(declared)>MAX_BYTES))return problem(413,'PROFILE_TOO_LARGE','资料超过大小限制。');

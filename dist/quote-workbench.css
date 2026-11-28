@@ -3,9 +3,14 @@
   #bidding-navigation { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
   #bidding-navigation .btn[aria-current=page] { background: #edf5ee; border-color: #8eaf9c; color: var(--accent); }
   .quote-setup { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; }
-  .quote-file-stack { display: grid; align-content: start; min-width: 0; gap: 12px; }
+  .quote-file-stack { display: grid; align-content: stretch; min-width: 0; gap: 12px; }
   :is(.quote-setup,.quote-file-stack) > .panel { min-width: 0; margin: 0; padding: 19px 22px; }
   .quote-setup h2, .quote-estimates h2 { font-size: 1rem; margin: 0 0 11px; }
+  .quote-input-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
+  .quote-input-heading h2 { margin: 0; }
+  .quote-input-heading .quote-clear { flex: none; display: grid; place-items: center; width: 32px; height: 32px; min-height: 0; padding: 0; color: #7d433e; border-color: #dbcac7; background: transparent; }
+  .quote-clear svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .quote-clear:enabled:hover { color: #962c25; background: #fff1ef; }
   .quote-file-drop {
     position: relative; display: grid; place-items: center; align-content: center; gap: 5px;
     min-height: 94px; padding: 9px; border: 1px dashed #80a69a; border-radius: 8px;
@@ -18,11 +23,16 @@
   .quote-file-drop span:last-child, #tender-status { font-size: .8125rem; }
   #tender-status { margin: 9px 0 0; overflow-wrap: anywhere; }
   #tender-status:empty { margin: 0; }
+  .tender-files { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+  .tender-files li { display: grid; gap: 4px; padding-top: 6px; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+  .tender-files .btn { justify-self: start; padding: 3px 7px; font-size: .75rem; }
   .quote-region-entry { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-bottom: 11px; }
   .quote-region-panel label { display: grid; min-width: 0; gap: 4px; font-size: .875rem; }
-  .quote-region-panel :is(input,select) { width: 100%; min-width: 0; min-height: var(--form-control-height, 40px); padding: 7px 10px; border: 1px solid #d7e4db; border-radius: 6px; color: var(--ink); background-color: #f8faf7; }
-  .quote-region-panel :is(input,select):focus-visible { outline: 2px solid #80a69a; outline-offset: 1px; }
-  .quote-region-panel #comparison > button { min-height: var(--form-control-height, 40px); white-space: nowrap; }
+  .quote-region-panel :is(input,select), #inquiry-text { width: 100%; min-width: 0; min-height: var(--form-control-height, 40px); padding: 7px 10px; border: 1px solid #d7e4db; border-radius: 6px; color: var(--ink); background-color: #f8faf7; }
+  .quote-region-panel :is(input,select):focus-visible, #inquiry-text:focus-visible { outline: 2px solid #80a69a; outline-offset: 1px; }
+  #inquiry-text { display: block; box-sizing: border-box; resize: vertical; font: inherit; line-height: 1.6; }
+  .estimate-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .estimate-actions button { min-height: var(--form-control-height, 40px); white-space: nowrap; }
   #quote-region[aria-invalid=true] { border-color: var(--red); }
   .quote-region-message, .quote-result-status { margin: 7px 0 0; color: var(--accent); font-size: .8125rem; }
   .quote-region-message:empty, .quote-result-status:empty { display: none; }
@@ -31,10 +41,18 @@
   #estimate-result { display: block; margin: 5px 0 0; color: var(--accent); font-size: clamp(1.35rem, 2.2vw, 1.8rem); font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
   .estimate-details { margin-top: 14px; }
   .estimate-details .table-scroll { max-height: 25rem; overflow: auto; }
-  .estimate-detail-table { width: 100%; font-size: .8125rem; }
+  .estimate-detail-table { width: 100%; table-layout: fixed; font-size: .8125rem; }
   .estimate-detail-table th, .estimate-detail-table td { padding: 8px; }
   .estimate-details .estimate-detail-table :is(th,td) { padding-inline: 6px; }
-  .estimate-detail-table thead th { white-space: nowrap; background: #f2f6f3; }
+  .estimate-detail-table thead th { white-space: normal; background: #f2f6f3; }
+  .estimate-detail-table thead th:first-child { width: 40%; }
+  .estimate-detail-table .estimate-final-price {
+    width: 100%; min-width: 0; min-height: 32px; padding: 4px 6px;
+    border: 1px solid #aec9bf; border-radius: 5px; background: #fff; color: var(--ink);
+    font: inherit; text-align: right; font-variant-numeric: tabular-nums;
+  }
+  .estimate-final-price[aria-invalid=true] { border-color: var(--red); }
+  .estimate-detail-table .record-table-number { white-space: normal; }
   .estimate-detail-table tbody th { color: var(--ink); overflow-wrap: anywhere; font-weight: 500; }
   .estimate-detail-table td { font-variant-numeric: tabular-nums; }
   .estimate-detail-table tbody th, .estimate-detail-table td { white-space: normal; }
@@ -90,6 +108,10 @@
   .estimate-filter-options button { padding: 7px 8px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
   .estimate-filter-options button:is(:hover,[aria-pressed=true]) { background: #e8f3eb; color: var(--accent); }
   .estimate-filter-options p { margin: 5px 8px; }
+  .estimate-outcome-actions { display: grid; justify-items: start; gap: 5px; }
+  .estimate-outcome-actions .estimate-delete { display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 0; color: #7d433e; border-color: #dbcac7; }
+  .estimate-delete svg { width: 15px; height: 15px; }
+  #estimate-outcome-status .btn { padding: 3px 8px; margin-left: 6px; }
   .quote-estimates-table tbody td:nth-child(2) { white-space: nowrap; }
   .quote-estimates-table tbody td:nth-child(12) { min-width: 108px; }
   .quote-estimates-table tbody td:nth-child(13) { min-width: 145px; }
@@ -130,5 +152,5 @@ main > .page-heading { display: block; }
 .page-draft-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; font-size: 12px; color: var(--muted,#6b7f79); }
 .page-draft-toolbar .btn { white-space: nowrap; }
 #page-save-status { max-width: min(260px,34vw); overflow-wrap: anywhere; }
-.page-draft-toolbar .error { color: #ad3535; }
+#page-save-status.error { display: none; }
 .ledger-result-select{display:grid;gap:5px;font-size:12px}.ledger-result-select select{min-height:40px;width:130px}

@@ -15,7 +15,7 @@ async function main(){
   const get=()=>p.evaluate(async id=>{const db=await AuditChecklist.openTrial();try{return await db.get(id);}finally{db.close();}},TRIAL);
   const pending=()=>q('#ac-import-pending'),resume=()=>q('#ac-import-continue');
   const uploadTxt=async(name,text)=>{await q('#ac-import').setInputFiles({name,mimeType:'text/plain',buffer:Buffer.from(text)});await idle();};
-  await q('[data-view=home]').click();await q('[data-home-view=audit]').click();await q('#ac-import-mode').selectOption('legacy');await q('#ac-trial').click();await wait('#ac-status','已进入独立试用');
+  await q('[data-view=home]').click();await q('[data-home-view=audit]').click();await q('#ac-import-mode').selectOption('legacy');await q('#ac-project').selectOption('00000000-0000-4000-8000-000000000033');await wait('#ac-status','已进入独立试用');
   const initial=await get();assert.equal(initial.items.length,3);assert.equal(await q('#ac-reviewer').inputValue(),'');assert.equal(await q('#ac-reason').inputValue(),'');
   const text='资料清单2026\r一、虚构基础资料\r'+Array.from({length:105},(_,i)=>`${i+9}. 虚构资料${i+1}\r`).join('');
   await q('#ac-import').setInputFiles({name:'synthetic-105.doc',mimeType:'application/msword',buffer:buildLegacyDoc({pieces:[{text}]})});await idle();
@@ -57,7 +57,7 @@ async function main(){
 
   await q('#ac-reviewer').fill('');await uploadTxt('synthetic-switched.txt','一、修订资料\n77. 不应跨项目写入');assert.equal(await pending().isVisible(),true);
   await q('#ac-project').selectOption('');assert.equal(await pending().isVisible(),false);assert.equal(await q('#ac-import').isDisabled(),true);
-  await q('#ac-trial').click();await wait('#ac-status','已进入独立试用');await idle();assert.equal(await pending().isVisible(),false);assert.deepEqual(await get(),concurrent);
+  await q('#ac-project').selectOption('00000000-0000-4000-8000-000000000033');await wait('#ac-status','已进入独立试用');await idle();assert.equal(await pending().isVisible(),false);assert.deepEqual(await get(),concurrent);
   const counts=await p.evaluate(async()=>{const l=await QuoteLedger.open();try{return {quotes:(await l.list()).length,projects:(await ProjectInitiation.listSaved()).length};}finally{l.close();}});
   assert.deepEqual(counts,{quotes:0,projects:0});assert.deepEqual(requests,[]);assert.deepEqual(errors,[]);
   steps.push('switching context discards pending import without applying it elsewhere or creating procurement/initiation data');

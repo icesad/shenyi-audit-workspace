@@ -254,6 +254,19 @@
     return validateV2({schema:2,project:pr,revision:(old?.revision||0)+1,generationId,nodes:ns,states:mapBlank(ns),attachments:mapFiles(ns),closed:null,
       events:[{type:'tree-import',at,reviewer:actor,reason:why,generationId,nodes:copy(ns)}],legacy:old});
   }
+  function approvedAttachment(record,nodeId,fileId){
+    if(record.states[nodeId]?.status==='confirmed')return true;
+    for(let i=record.events.length-1;i>=0;i--){
+      const event=record.events[i];
+      if(event.type==='tree-import'||event.type==='tree-replace')break;
+      if(event.type==='attachment-add'&&event.file?.id===fileId)break;
+      if(event.type==='item'&&event.id===nodeId){
+        if(event.after.status==='problem')return false;
+        if(event.after.status==='confirmed')return true;
+      }
+    }
+    return false;
+  }
   function applyTree(input,cmd){
     validateV2(input);if(!cmd||typeof cmd!=='object')fail('操作无效。');const r=copy(input),at=new Date().toISOString(),actor=str(cmd.reviewer,100,true);
     if(r.events.length>=5000)fail('资料留痕已达上限，请归档后联系维护。');
@@ -279,6 +292,7 @@
           const f={...cmd.file,at,reviewer:actor};fileMeta(f);if(f.nodeId!==id||f.generationId!==r.generationId)fail('文件不属于当前标题版本。');
           r.attachments[id].push(f);after=receipt(r.attachments[id],actor,at);r.events.push({type:'attachment-add',nodeId:id,at,reviewer:actor,file:copy(f),before,after});
         }else if(cmd.type==='attachment-remove'){
+          if(approvedAttachment(r,id,cmd.fileId))fail('该附件已核对通过，请先打回并填写原因，再移除。');
           const reason=str(cmd.reason,1000,true),index=r.attachments[id].findIndex(f=>f.id===cmd.fileId);if(index<0)fail('当前附件不存在。');
           r.attachments[id].splice(index,1);after=receipt(r.attachments[id],actor,at);r.events.push({type:'attachment-remove',nodeId:id,at,reviewer:actor,fileId:cmd.fileId,reason,before,after});
         }else fail('操作类型无效。');
@@ -372,7 +386,7 @@
         function transact(key,expected,make,blobFile=null){
           return new Promise((ok,no)=>{
             const t=db.transaction(make?[STORE,FILE_STORE]:[STORE],make?'readwrite':'readonly'),s=t.objectStore(STORE);let result,reason;
-            const abort=e=>{reason=e;try{t.abort();}catch{}};t.oncomplete=()=>ok(result);t.onabort=()=>no(reason||Error('本机操作失败，原记录与文件保留。'));
+            const abort=e=>{reason=e;try{t.abort();}catch{}};t.oncomplete=()=>ok(result);t.onabort=()=>no(reason||root.SaveFeedback?.storageError(t.error,'本机资料写入失败，原记录与文件保留。')||Error('本机资料写入失败，原记录与文件保留。'));
             const q=s.get(key);q.onsuccess=()=>{try{
               if(trialOnly&&key!==TRIAL_ID||!trialOnly&&make&&key===TRIAL_ID)fail('独立试用与正式项目资料库不能混用。');
               const old=q.result;if(old){if(old.quoteId!==key||old.record?.project.quoteId!==key)fail('资料归属不一致。');validate(old.record);}
@@ -448,6 +462,6 @@
     });
   }
   const open=()=>openDatabase(DB),openTrial=()=>openDatabase(TRIAL_DB,true);
-  const api=Object.freeze({parse,create,createTree,apply,gate,validate,open,openTrial,TRIAL_ID,STATES,FILE_TYPES,fileLimit,prepareFile:preparedFile,leafNodes:r=>r?.schema===2?copy(leafNodesOf(validateV2(r).nodes)):copy(validateV1(r).items)});
+  const api=Object.freeze({parse,create,createTree,apply,gate,validate,approvedAttachment,open,openTrial,TRIAL_ID,STATES,FILE_TYPES,fileLimit,prepareFile:preparedFile,leafNodes:r=>r?.schema===2?copy(leafNodesOf(validateV2(r).nodes)):copy(validateV1(r).items)});
   if(typeof module==='object'&&module.exports)module.exports=api;else root.AuditChecklist=api;
 })(globalThis);

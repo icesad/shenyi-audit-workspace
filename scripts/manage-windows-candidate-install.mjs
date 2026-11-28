@@ -39,8 +39,8 @@ const messages = {
   AUTHENTICODE_UNTRUSTED: 'Windows 未确认候选程序的内嵌签名、时间戳或指定发布者。',
   AUTHENTICODE_BUNDLE_INVALID: '候选包或实际安装文件无法通过 Authenticode 发行核验。',
   TEAM_SERVICE_CONFIGURATION_INVALID: '团队服务配置无效，请联系管理员核对。',
-  WINDOWS_LAUNCH_UNAVAILABLE: '请在 Windows 中启动已安装的审易。',
-  WINDOWS_LAUNCH_FAILED: '系统未能启动已验签的审易程序。',
+  WINDOWS_LAUNCH_UNAVAILABLE: '请在 Windows 中启动已安装的审迹。',
+  WINDOWS_LAUNCH_FAILED: '系统未能启动已验签的审迹程序。',
 };
 
 function invalidArguments() {

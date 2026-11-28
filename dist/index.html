@@ -3,14 +3,21 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="审计服务地区参考测算与报价工作台。历史参考规则需人工核验，非现行统一收费标准。">
-  <title>审易 · 审计报价工作台</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="bidder-ui.css"><link rel="stylesheet" href="document-workbench.css"><link rel="stylesheet" href="quote-extras.css"><link rel="stylesheet" href="bid-documents.css"><link rel="stylesheet" href="quote-sign-ui.css"><link rel="stylesheet" href="quote-annex-preview.css"><link rel="stylesheet" href="quote-complete-ui.css"><link rel="stylesheet" href="workspace-home.css"><link rel="stylesheet" href="project-initiation.css"><link rel="stylesheet" href="project-register.css"><link rel="stylesheet" href="supplemental-workpapers.css"><link rel="stylesheet" href="travel-expenses.css"><link rel="stylesheet" href="project-costs.css"><link rel="stylesheet" href="audit-program.css">
+  <title>审迹 · 审计报价工作台</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="bidder-ui.css"><link rel="stylesheet" href="document-workbench.css"><link rel="stylesheet" href="quote-extras.css"><link rel="stylesheet" href="bid-documents.css"><link rel="stylesheet" href="quote-sign-ui.css"><link rel="stylesheet" href="quote-annex-preview.css"><link rel="stylesheet" href="quote-complete-ui.css"><link rel="stylesheet" href="workspace-home.css"><link rel="stylesheet" href="project-initiation.css"><link rel="stylesheet" href="project-register.css"><link rel="stylesheet" href="supplemental-workpapers.css"><link rel="stylesheet" href="travel-expenses.css"><link rel="stylesheet" href="project-costs.css"><link rel="stylesheet" href="audit-program.css">
 <link rel="stylesheet" href="workpaper-workspace.css"><link rel="stylesheet" href="brand-shenyi.css">
 <link rel="stylesheet" href="app-settings.css"><link rel="stylesheet" href="workspace-navigation.css"><link rel="stylesheet" href="report-workspace.css"><link rel="stylesheet" href="workpaper-governance.css"><link rel="stylesheet" href="workpaper-reuse-ui.css"><link rel="stylesheet" href="audit-preparation.css"><link rel="stylesheet" href="audit-archive.css"><link rel="stylesheet" href="audit-templates.css"><link rel="stylesheet" href="quote-workbench.css"><link rel="stylesheet" href="audit-preview-ui.css">
+<link rel="stylesheet" href="standards-lookup.css">
+<link rel="stylesheet" href="workspace-record-tables.css">
+<link rel="stylesheet" href="file-drop.css">
+<script src="file-drop.js"></script>
+<script src="standards-data.js"></script><script src="standards-lookup.js"></script><script src="vendor-pinyin-pro.js"></script>
+<script src="workspace-record-tables.js"></script>
+<script src="project-downloads.js"></script>
 </head>
 <body>
 <div class="shell">
   <aside class="sidebar">
-    <button type="button" id="brand-home" class="brand brand-home active" data-view="home" aria-current="page" aria-label="审易 · 返回首页" title="返回首页"><img class="brand-logo" src="brand-shenyi.png" alt="" width="64" height="52"><span class="brand-name">审易<small>AUDIT WORKSPACE</small></span></button>
+    <button type="button" id="brand-home" class="brand brand-home active" data-view="home" aria-current="page" aria-label="审迹 · 返回首页" title="返回首页"><img class="brand-logo" src="brand-shenyi.png" alt="" width="64" height="52"><span class="brand-name">审迹<small>AUDIT WORKSPACE</small></span></button>
     <div class="workspace-label">事务所工作空间</div>
     <nav class="workspace-navigation" aria-label="工作台导航">
       <div class="nav-group" data-nav-group="quote">
@@ -29,14 +36,13 @@
           <button type="button" class="nav-sub-item" data-view="audit" data-audit-overview>流程总览</button>
           <button type="button" class="nav-item" data-view="audit" data-nav-audit-step="1">资料收集与核对</button>
           <button type="button" class="nav-sub-item" data-view="audit" data-nav-audit-step="8">账表校验</button>
-          <button type="button" class="nav-sub-item" data-view="audit" data-nav-audit-step="2">底稿目录</button>
           <button type="button" class="nav-sub-item" data-view="audit" data-nav-audit-step="9">补充底稿</button>
         </div>
       </details>
       <details class="nav-group" data-nav-group="report" open>
         <summary><span>报告出具</span></summary>
         <div class="nav-group-items">
-          <button type="button" class="nav-item" data-view="report" data-report-section="trial-balance">试算平衡表9200</button>
+          <button type="button" class="nav-item" data-view="report" data-report-section="trial-balance">试算平衡表</button>
           <button type="button" class="nav-sub-item" data-view="report" data-report-section="audit-report">审计报告</button><button type="button" class="nav-item" data-view="archive">审计底稿归档</button>
         </div>
       </details>
@@ -50,7 +56,8 @@
       <details class="nav-group" data-nav-group="basics" open>
         <summary><span>资料库</span></summary>
         <div class="nav-group-items">
-          <button type="button" class="nav-item" data-view="bidders">投标方信息库</button><button type="button" class="nav-item" data-view="templates">审计底稿模板</button>
+          <button type="button" class="nav-item" data-view="bidders">投标方信息库</button><button type="button" class="nav-item" data-view="standards">准则查询</button>
+          <button type="button" class="nav-item" data-view="general-templates">通用模板</button>
           <button type="button" class="nav-item" data-view="rules">收费依据</button>
         </div>
       </details>
@@ -64,9 +71,9 @@
       <div id="workspace-eyebrow" class="eyebrow">AUDIT WORKSPACE</div>
       <div class="page-title-row">
         <h1 id="page-title">审计项目工作台</h1>
-        <div class="page-draft-toolbar"><button type="button" class="btn" id="project-summary-clear" aria-controls="project-init-list" hidden disabled>清空筛选</button><button type="button" class="btn" id="page-save">保存</button><span id="page-save-status" role="status" aria-live="polite">未暂存 · 仅本机</span><button class="btn" id="save-revision" hidden disabled>另存修订</button><button class="btn primary" id="save" hidden>保存计算草稿 <span>↗</span></button></div>
+        <div class="page-draft-toolbar" hidden><button type="button" class="btn" id="project-summary-clear" aria-controls="project-init-list" hidden disabled>清空筛选</button><button type="button" class="btn" id="project-summary-new" hidden>新增项目</button><button type="button" class="btn" id="page-save">保存</button><button type="button" class="btn" id="project-summary-export" hidden disabled>导出</button><details id="audit-checklist-export" class="ac-export-menu" hidden><summary class="btn">导出</summary><div><button type="button" class="btn" data-checklist-export="all">导出全部清单</button><button type="button" class="btn" data-checklist-export="missing">导出未上传清单</button></div></details><span id="page-save-status" role="status" aria-live="polite">未暂存 · 仅本机</span><button class="btn" id="save-revision" hidden disabled>另存修订</button><button class="btn primary" id="save" hidden>保存计算草稿 <span>↗</span></button></div>
       </div>
-      <p id="page-subtitle">从招投标到成本核算，按项目推进。</p>
+      <p id="page-subtitle" hidden></p>
     </section>
     <div id="restore-recalc-warning" class="notice" role="alert" hidden><span>!</span><div><strong>历史复算待确认。</strong> 当前重新计算结果与保存时的预算、地区明细或报价不一致，可能是历史数据变化、算法或规则版本变化；原始记录没有改动。请核对并明确确认采用当前重新计算结果，之后才可保存新报价或修订。<br><button class="btn" type="button" id="accept-recalculation">确认采用当前重新测算</button></div></div>
     <nav id="bidding-navigation" aria-label="招投标及立项功能" hidden>
@@ -81,13 +88,14 @@
         <button type="button" class="home-stage home-stage-current" data-home-view="quote"><span class="home-stage-number">01</span><span class="home-stage-state">已接入</span><strong>招投标</strong><span class="home-stage-description">报价单、标书与报价历史</span><span class="home-stage-go">进入招投标 <span aria-hidden="true">↗</span></span></button>
         <button type="button" class="home-stage" data-home-view="project"><span class="home-stage-number">02</span><span class="home-stage-state">可试用</span><strong>立项</strong><span class="home-stage-description">从已中标记录填写立项信息表</span><span class="home-stage-go">查看立项 <span aria-hidden="true">↗</span></span></button>
         <button type="button" class="home-stage" data-home-view="audit"><span class="home-stage-number">03</span><span class="home-stage-state">可试用</span><strong>审计程序</strong><span class="home-stage-description">资料清单、逐项核对与资料关门</span><span class="home-stage-go">进入审计程序 <span aria-hidden="true">↗</span></span></button>
-        <button type="button" class="home-stage" data-home-view="report"><span class="home-stage-number">04</span><span class="home-stage-state">已接入</span><strong>报告出具</strong><span class="home-stage-description">试算平衡表9200与审计报告</span><span class="home-stage-go">进入报告出具 <span aria-hidden="true">↗</span></span></button>
+        <button type="button" class="home-stage" data-home-view="report"><span class="home-stage-number">04</span><span class="home-stage-state">已接入</span><strong>报告出具</strong><span class="home-stage-description">试算平衡表与审计报告</span><span class="home-stage-go">进入报告出具 <span aria-hidden="true">↗</span></span></button>
         <button type="button" class="home-stage" data-home-view="costs"><span class="home-stage-number">05</span><span class="home-stage-state planned">可试用</span><strong>成本核算</strong><span class="home-stage-description">项目成本核算</span><span class="home-stage-go">进入项目成本核算 <span aria-hidden="true">↗</span></span></button>
         <button type="button" class="home-stage" data-home-view="basics"><span class="home-stage-number">06</span><span class="home-stage-state">已接入</span><strong>资料库</strong><span class="home-stage-description">投标方信息库与收费依据</span><span class="home-stage-go">进入资料库 <span aria-hidden="true">↗</span></span></button>
       </div>
     </section>
     <section id="view-basics" class="view" hidden aria-label="资料库">
-      <div class="basics-grid"><button type="button" class="basics-card" data-view="templates"><span class="basics-card-icon" aria-hidden="true">▥</span><strong>审计底稿模板</strong><span>本机保存原始模板包，按索引核验版本后用于项目；原公式与格式不改写。</span><b>管理底稿模板 ↗</b></button>
+      <div class="basics-grid"><button type="button" class="basics-card" data-view="standards"><span class="basics-card-icon" aria-hidden="true">▥</span><strong>准则查询</strong><span>按类别、编号或名称查找准则正文。</span><b>查询准则 ↗</b></button>
+        <button type="button" class="basics-card" data-view="general-templates"><span class="basics-card-icon" aria-hidden="true">▥</span><strong>通用模板</strong><span>上传和下载本机通用模板。</span><b>管理通用模板 ↗</b></button>
         <button type="button" class="basics-card" data-view="bidders"><span class="basics-card-icon" aria-hidden="true">▧</span><strong>投标方信息库</strong><span>维护事务所信息、联系人与证照，报价时按所选用。</span><b>管理投标方资料 ↗</b></button>
         <button type="button" class="basics-card" data-view="rules"><span class="basics-card-icon" aria-hidden="true">▤</span><strong>收费依据</strong><span>核对地区参考、计费口径和原始出处；正式适用性由业务确认。</span><b>查看收费依据 ↗</b></button>
       </div>
@@ -96,29 +104,40 @@
     <section id="view-settings" class="view" hidden><div id="app-settings"></div></section>
     <section id="view-project" class="view" hidden><div id="project-initiation"></div></section>
     <section id="view-audit" class="view" hidden><div id="audit-flow" hidden></div><div id="audit-program"></div></section>
-    <section id="view-report" class="view" hidden><div id="report-workspace"><div class="panel"><h2>报告工作区</h2></div></div><button type="button" class="btn" data-back-home>返回首页</button></section>
+    <section id="view-report" class="view" hidden><div id="report-workspace"><div class="panel"><h2>报告工作区</h2></div></div><button type="button" class="btn" id="report-back-to-overview">返回</button></section>
     <section id="view-travel" class="view" hidden><div id="travel-expenses-host"></div></section>
     <section id="view-costs" class="view" hidden><div id="project-costs"></div></section>
-    <section id="view-templates" class="view" hidden><div id="audit-templates"></div></section><section id="view-archive" class="view" hidden><div id="audit-archive"></div></section><section id="view-quote" class="view" hidden>
+    <section id="view-templates" class="view" hidden><div id="audit-templates"></div></section><section id="view-general-templates" class="view" hidden><div id="general-templates"></div></section><section id="view-standards" class="view" hidden><div id="standards-lookup"></div></section><section id="view-archive" class="view" hidden><div id="audit-archive"></div></section><section id="view-quote" class="view" hidden>
       <div class="quote-setup">
         <div class="quote-file-stack">
           <section class="panel quote-file-panel" aria-labelledby="quote-file-title">
-            <h2 id="quote-file-title">招标资料</h2>
+            <div class="quote-input-heading">
+              <h2 id="quote-file-title">招标资料</h2>
+              <button type="button" class="btn quote-clear" id="clear-tender" aria-label="清空招标资料" title="清空招标资料" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M9 6V4h6v2M6 6l1 14h10l1-14M10 10v6m4-6v6"/></svg></button>
+            </div>
             <label class="quote-file-drop" id="tender-dropzone" for="tender-file">
-              <input type="file" id="tender-file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" aria-describedby="tender-status">
-              <span class="quote-file-icon" aria-hidden="true">＋</span>
-              <strong>拖入招标文件或询价函</strong>
-              <span>或点击选择 .docx 文件 · 最多 100 MB</span>
+              <input type="file" id="tender-file" multiple accept=".doc,.docx,.xls,.xlsx,.pdf,.txt" aria-label="拖入招标文件或询价函" aria-describedby="tender-status">
             </label>
             <p class="muted" id="tender-status" role="status"></p>
+            <ul id="tender-files" class="tender-files" aria-label="本轮招标资料" hidden></ul>
+          </section>
+          <section class="panel quote-inquiry-panel" aria-labelledby="quote-inquiry-title">
+            <div class="quote-input-heading">
+              <h2 id="quote-inquiry-title">询价信息</h2>
+              <button type="button" class="btn quote-clear" id="clear-inquiry" aria-label="清空询价信息" title="清空询价信息" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M9 6V4h6v2M6 6l1 14h10l1-14M10 10v6m4-6v6"/></svg></button>
+            </div>
+            <form id="quote-inquiry" aria-labelledby="quote-inquiry-title">
+              <textarea name="text" id="inquiry-text" aria-labelledby="quote-inquiry-title" rows="5" maxlength="5000" placeholder="例如：河北华明有限公司需要做2026年度财务报表审计，资产总额2000万元，营业收入1500万元，按河北省计价。"></textarea>
+            </form>
+            <p class="quote-result-status" id="inquiry-source-note" hidden>本次按手填信息测算。清空询价信息可使用招标资料。</p>
           </section>
           <section class="panel quote-reference-panel" aria-labelledby="quote-reference-title">
-            <h2 id="quote-reference-title">以往报价参考资料</h2>
+            <div class="quote-input-heading">
+              <h2 id="quote-reference-title">以往报价参考资料</h2>
+              <button type="button" class="btn quote-clear" id="clear-quote-reference" aria-label="清空以往报价参考资料" title="清空以往报价参考资料" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M9 6V4h6v2M6 6l1 14h10l1-14M10 10v6m4-6v6"/></svg></button>
+            </div>
             <label class="quote-file-drop" id="quote-reference-dropzone" for="quote-reference-input">
-              <input type="file" id="quote-reference-input" accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" aria-describedby="quote-reference-status">
-              <span class="quote-file-icon" aria-hidden="true">＋</span>
-              <strong>拖入以往报价文件</strong>
-              <span>或点击选择 .docx、.pdf · 最多 100 MB</span>
+              <input type="file" id="quote-reference-input" accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" aria-label="拖入以往报价文件" aria-describedby="quote-reference-status">
             </label>
             <p class="quote-result-status" id="quote-reference-status" role="status"></p>
             <div class="quote-reference-file" id="quote-reference-file" hidden>
@@ -137,8 +156,9 @@
               <label for="quote-region">计价地区<input id="quote-region" type="text" autocomplete="off" maxlength="40" placeholder="例如：广西、河北省、上海市" aria-describedby="quote-region-message"></label>
               <label for="estimate-tax">税率<select id="estimate-tax"><option value="1">1%</option><option value="3">3%</option><option value="6">6%</option></select></label>
               <label for="estimate-factor">报价比例<input id="estimate-factor" type="text" inputmode="decimal" maxlength="10" autocomplete="off" placeholder="例如：10%"></label>
+              <label for="estimate-rounding">取整数<select id="estimate-rounding" aria-label="取整数"><option value="none">不取整</option><option value="hundred">百位取整</option><option value="thousand">千位取整</option></select></label>
             </div>
-            <button class="btn primary" type="submit">测算并记录</button>
+            <div class="estimate-actions"><button class="btn primary" type="submit">测算</button><button class="btn" type="button" id="estimate-record-save" disabled>保存记录</button></div>
             <div id="quote-region-message" class="quote-region-message" role="status" aria-live="polite"></div>
           </form>
         </section>
@@ -146,6 +166,7 @@
           <h2 id="estimate-result-title">最终报价（含税）</h2>
           <output id="estimate-result" for="quote-region estimate-tax estimate-factor">—</output>
           <section id="estimate-details" class="estimate-details" aria-label="各单位报价明细" hidden></section>
+          <p id="estimate-final-status" class="quote-region-message error" role="status"></p>
         </section>
       </div>
       <section class="panel quote-unit-panel" aria-label="选择报价单位并下载报价">
@@ -175,7 +196,12 @@
             </tfoot>
           </table>
         </div>
-        <nav id="estimate-pagination" class="estimate-pagination" aria-label="招投标记录分页" hidden></nav>
+        <template id="record-page-size-control">
+          <label class="record-page-size" data-no-page-draft>每页显示
+            <select aria-label="每页显示条数"><option value="10">10 条</option><option value="15">15 条</option><option value="20">20 条</option></select>
+          </label>
+        </template>
+        <nav id="estimate-pagination" class="estimate-pagination" aria-label="招投标记录分页"><span class="record-page-buttons"></span></nav>
         <p class="quote-result-status" id="estimate-outcome-status" role="status"></p>
         <section id="estimate-filter-menu" class="estimate-filter-menu" role="dialog" aria-labelledby="estimate-filter-title" hidden>
           <h3 id="estimate-filter-title"></h3>
@@ -207,7 +233,7 @@
         <section id="bidder-column" class="panel proposal-panel quote-intake-column"><div class="section-title"><h3>投标方信息</h3></div><div class="quote-column-body">
           <div class="fields client-fields">
             <label>投标单位（事务所名称）<input name="firmName" maxlength="150" placeholder="从信息库带入，或手工填写"></label><label>投标 / 报价日期<input name="quoteDate" type="date"></label>
-            <label>项目类型<select id="project-type" name="projectType" required aria-describedby="project-type-scope"><option>年度财务报表审计</option><option>专项审计</option><option>报表审阅</option><option>咨询服务</option><option>内控测试</option><option>经济责任审计</option><option>验资服务</option><option>其他</option></select></label>
+            <label>项目类型<select id="project-type" name="projectType" required aria-describedby="project-type-scope"><option value="年度财务报表审计">财务报表审计</option><option>专项审计</option><option>报表审阅</option><option>咨询服务</option><option>内控测试</option><option>经济责任审计</option><option>验资服务</option><option>其他</option></select></label>
             <label>风险等级<select name="riskLevel"><option value="">请选择</option><option>A类</option><option>B类</option><option>C类</option></select></label>
             <label>执行团队所在地<select form="client-form" name="team"></select></label>
             <label>投标方联系人<input id="bidder-contact" maxlength="100"></label><label>投标方电话<input id="bidder-phone" type="tel" maxlength="80"></label><label>投标方邮箱<input id="bidder-email" type="email" maxlength="150"></label>
@@ -311,7 +337,12 @@
   <div id="quote-preview-attachments"></div>
 </dialog>
 <dialog id="ledger-result-dialog"><div class="dialog-toolbar"><h2>登记报价结果</h2><button type="button" class="btn" id="close-result">关闭</button></div><form id="ledger-result-form"><input type="hidden" name="entryId"><input type="hidden" name="expectedEventNo"><label>结果<select name="outcome"><option value="won">中标</option><option value="lost">未中标</option><option value="cancelled">已取消</option></select></label><label>说明或更正原因<textarea name="note" maxlength="2000" rows="3" placeholder="例如：收到结果通知。此处是人工声明，不代表审批。"></textarea></label><p id="result-status" role="status"></p><button class="btn primary" type="submit">明确追加结果记录</button></form></dialog>
+<dialog id="save-result-dialog" aria-labelledby="save-result-title" aria-describedby="save-result-message">
+  <h2 id="save-result-title"></h2>
+  <p id="save-result-message"></p>
+  <form method="dialog"><button class="btn primary" type="submit" autofocus>确定</button></form>
+</dialog>
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="workspace-table-filters.js"></script>
-<script src="calc.js"></script><script src="rule-catalog.js"></script><script src="regions.js"></script><script src="backup-restore.js"></script><script src="quote-packet.js"></script><script src="quote-ledger.js"></script><script src="auditee-rows.js"></script><script src="tender-import.js"></script><script src="bidder-library.js"></script><script src="bidder-archive-vendor.js"></script><script src="bidder-archive.js"></script><script src="vendor-bidder-pdf.js"></script><script src="bidder-pdf-text.js"></script><script src="bidder-intake.js"></script><script src="bidder-ui.js"></script><script src="quote-extras.js"></script><script src="bid-documents.js"></script><script src="vendor-quote-pdf-lib.js"></script><script src="quote-layouts.js"></script><script src="bid-draft.js"></script><script src="bid-original.js"></script><script src="quote-attachment-stamps.js"></script><script src="quote-sign-requirements.js"></script><script src="quote-word-ui.js"></script><script src="quote-word-delivery.js"></script><script src="quote-sign-ui.js"></script><script src="quote-annex-preview.js"></script><script src="quote-body-pdf.js"></script><script src="quote-complete-pdf.js"></script><script src="project-workspace-store.js"></script><script src="project-activity.js"></script><script src="contract-template.js"></script><script src="project-contract.js"></script><script src="project-register.js"></script><script src="project-initiation.js"></script><script src="legacy-project-source.js"></script><script src="legacy-project-source-export.js"></script><script src="ledger-check-snapshot.js"></script><script src="ledger-check-snapshot-export.js"></script><script src="vendor-legacy-doc.js"></script><script src="legacy-doc.js"></script><script src="audit-checklist.js"></script><script src="material-preservation.js"></script><script src="audit-outline.js"></script><script src="audit-template.js"></script><script src="audit-preview-readers.js"></script><script src="audit-attachment-preview.js"></script><script src="audit-program.js"></script><script src="batch-quote.js"></script><script src="workpaper-directory.js"></script><script src="workpaper-xlsx-source.js"></script><script src="workpaper-sheets.js"></script><script src="workpaper-docs.js"></script><script src="workpaper-file-tree.js"></script><script src="initial-word-layout-catalog.js"></script><script src="initial-layout-catalog.js"></script><script src="workpaper-original-sheet.js"></script><script src="workpaper-original-word.js"></script><script src="risk-layout-catalog.js"></script><script src="risk-word-layout-catalog.js"></script><script src="vendor-wmfjs.js"></script><script src="vendor-emfjs.js"></script><script src="workpaper-vector-images.js"></script><script src="workpaper-sheet-images.js"></script><script src="workpaper-stages.js"></script><script src="workpaper-layout-manifest.js"></script><script src="workpaper-word-manifest.js"></script><script src="workpaper-route-catalog.js"></script><script src="workpaper-routing.js"></script><script src="workpaper-library.js"></script><script src="workpaper-governance.js"></script><script src="workpaper-reuse-ui.js"></script><script src="workpaper-directory-ui.js"></script><script src="workpaper-workspace.js"></script><script src="app-settings.js"></script><script src="account-client.js"></script><script src="workspace-navigation.js"></script><script src="report-inline-tb.js"></script><script src="report-workspace.js"></script><script src="audit-reconciliation.js"></script><script src="audit-auto-check.js"></script><script src="audit-preparation.js"></script><script src="supplemental-workpapers.js"></script><script src="workpaper-package.js"></script><script src="workpaper-package-export.js"></script><script src="audit-archive.js"></script><script src="audit-archive-ui.js"></script><script src="audit-templates.js"></script><script src="travel-expenses.js"></script><script src="project-costs.js"></script><script src="page-drafts.js"></script><script src="audit-workflow.js"></script><script src="app.js"></script>
+<script src="calc.js"></script><script src="rule-catalog.js"></script><script src="regions.js"></script><script src="backup-restore.js"></script><script src="quote-packet.js"></script><script src="quote-ledger.js"></script><script src="auditee-rows.js"></script><script src="tender-import.js"></script><script src="bidder-library.js"></script><script src="bidder-archive-vendor.js"></script><script src="bidder-archive.js"></script><script src="vendor-bidder-pdf.js"></script><script src="bidder-pdf-text.js"></script><script src="bidder-intake.js"></script><script src="bidder-ui.js"></script><script src="quote-extras.js"></script><script src="bid-documents.js"></script><script src="vendor-quote-pdf-lib.js"></script><script src="quote-layouts.js"></script><script src="bid-draft.js"></script><script src="bid-original.js"></script><script src="quote-attachment-stamps.js"></script><script src="quote-sign-requirements.js"></script><script src="quote-word-ui.js"></script><script src="quote-word-delivery.js"></script><script src="quote-sign-ui.js"></script><script src="quote-annex-preview.js"></script><script src="quote-body-pdf.js"></script><script src="quote-complete-pdf.js"></script><script src="project-workspace-store.js"></script><script src="project-activity.js"></script><script src="contract-template.js"></script><script src="project-contract.js"></script><script src="project-register.js"></script><script src="project-initiation.js"></script><script src="legacy-project-source.js"></script><script src="legacy-project-source-export.js"></script><script src="ledger-check-snapshot.js"></script><script src="ledger-check-snapshot-export.js"></script><script src="vendor-legacy-doc.js"></script><script src="legacy-doc.js"></script><script src="audit-checklist.js"></script><script src="material-preservation.js"></script><script src="audit-outline.js"></script><script src="audit-template.js"></script><script src="audit-preview-readers.js"></script><script src="audit-attachment-preview.js"></script><script src="audit-program.js"></script><script src="batch-quote.js"></script><script src="workpaper-directory.js"></script><script src="workpaper-xlsx-source.js"></script><script src="workpaper-sheets.js"></script><script src="workpaper-docs.js"></script><script src="workpaper-file-tree.js"></script><script src="initial-word-layout-catalog.js"></script><script src="initial-layout-catalog.js"></script><script src="workpaper-original-sheet.js"></script><script src="workpaper-original-word.js"></script><script src="risk-layout-catalog.js"></script><script src="risk-word-layout-catalog.js"></script><script src="vendor-wmfjs.js"></script><script src="vendor-emfjs.js"></script><script src="workpaper-vector-images.js"></script><script src="workpaper-sheet-images.js"></script><script src="workpaper-stages.js"></script><script src="workpaper-layout-manifest.js"></script><script src="workpaper-word-manifest.js"></script><script src="workpaper-route-catalog.js"></script><script src="workpaper-routing.js"></script><script src="workpaper-library.js"></script><script src="workpaper-governance.js"></script><script src="workpaper-reuse-ui.js"></script><script src="workpaper-directory-ui.js"></script><script src="workpaper-workspace.js"></script><script src="app-settings.js"></script><script src="account-client.js"></script><script src="workspace-navigation.js"></script><script src="report-inline-tb.js"></script><script src="report-workspace.js"></script><script src="audit-reconciliation.js"></script><script src="ledger-standard.js"></script><script src="audit-auto-check.js"></script><script src="audit-preparation.js"></script><script src="supplemental-generator.js"></script><script src="supplemental-workpapers.js"></script><script src="workpaper-package.js"></script><script src="workpaper-package-export.js"></script><script src="audit-archive.js"></script><script src="audit-archive-ui.js"></script><script src="audit-templates.js"></script><script src="travel-expenses.js"></script><script src="project-costs.js"></script><script src="save-feedback.js"></script><script src="page-drafts.js"></script><script src="confirmation-letters.js"></script><script src="confirmation-pdf.js"></script><script src="audit-workflow.js"></script><script src="app.js"></script>
 </body></html>

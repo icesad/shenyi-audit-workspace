@@ -66,7 +66,7 @@ async function handleCollectionRequest(request, {db, now = Date.now} = {}) {
     if (!Number.isSafeInteger(at) || at < 0) throw new Error('Invalid server clock');
     const identity = readSession(db, token, at);
     if (!identity) return problem(401, 'SIGN_IN_REQUIRED', '请登录后重试。');
-    if (request.headers.get('Sec-Fetch-Site') === 'cross-site') return problem(403, 'CROSS_SITE_DENIED', '请在审易客户端中操作。');
+    if (request.headers.get('Sec-Fetch-Site') === 'cross-site') return problem(403, 'CROSS_SITE_DENIED', '请在审迹客户端中操作。');
     const url = new URL(request.url);
     let route;
     try { route = readRoute(url); } catch {}

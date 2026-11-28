@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "审易 · 审计工作台",
+  title: "审迹 · 审计工作台",
   description: "保留平台登录，以稳定平台身份保存账号资料；现有业务仍由本机浏览器保管。",
 };
 

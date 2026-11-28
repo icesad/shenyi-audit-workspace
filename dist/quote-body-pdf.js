@@ -274,5 +274,34 @@
   }
   async function build(fragments){return (await renderPdf(fragments,false)).body;}
   async function buildWithAnchors(fragments,signingKinds){return renderPdf(fragments,true,signingKinds);}
-  root.QuoteBodyPdf=Object.freeze({build,buildWithAnchors});
+  async function buildReadingCopy(title,paragraphs){
+    const pdf=await root.PDFLib.PDFDocument.create();
+    pdf.setTitle(title);
+    let page=canvasPage();
+    async function finish(){
+      typography(page.ctx,{size:9,font:UI,color:'#52625c'});
+      page.ctx.fillText('第 '+(pdf.getPageCount()+1)+' 页',LEFT,HEIGHT-43);
+      const image=await pdf.embedPng(await raster(page.canvas));
+      pdf.addPage([WIDTH,HEIGHT]).drawImage(image,{x:0,y:0,width:WIDTH,height:HEIGHT});
+      page.canvas.width=1;page.canvas.height=1;
+    }
+    async function paragraph(value,style){
+      const {line}=typography(page.ctx,style),rows=wraps(page.ctx,value,DRAW);
+      for(const row of rows){
+        if(page.y+line>HEIGHT-68){
+          if(pdf.getPageCount()>=199)throw Error('PDF 超过 200 页，请分册整理制度文件。');
+          await finish();page=canvasPage();typography(page.ctx,style);
+        }
+        page.ctx.fillText(row,LEFT,page.y);page.y+=line;
+      }
+      page.y+=style.space||0;
+    }
+    await paragraph(title,{size:20,line:29,space:20,font:UI,bold:true,color:'#183b34'});
+    for(const {text,heading} of paragraphs)if(text.trim())await paragraph(text,heading
+      ?{size:13,line:20,space:7,font:UI,bold:true,color:'#255b52'}
+      :{size:11.5,line:19,space:7});
+    await finish();
+    return pdf.save();
+  }
+  root.QuoteBodyPdf=Object.freeze({build,buildWithAnchors,buildReadingCopy});
 })(globalThis);

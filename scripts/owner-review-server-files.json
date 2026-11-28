@@ -79,6 +79,7 @@
   "server/team/project-review-api.mjs",
   "server/team/provisioning-api.mjs",
   "server/team/provisioning-schema.sql",
+  "server/team/rate-limit-pool-schema.sql",
   "server/team/recovery-review-api.mjs",
   "server/team/recovery-review-epochs.mjs",
   "server/team/recovery-review-policy.mjs",

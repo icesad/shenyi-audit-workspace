@@ -14,3 +14,108 @@ await t.test('owner restore failures do not delete draft; changed asynchronous s
 await t.test('local quota/storage failures are visible and never drop current input or change business data',async()=>{const x=await page.evaluate(async()=>{let messages=[],values={amount:'retain invalid amount'};const c=PageDrafts.create({notify:(...x)=>messages.push(x)});c.registerAdapter('costs',{capture:()=>({scope:{kind:'costs',projectId:'p-quota'},values}),restore:()=>{}});await c.restore('costs');const original=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(){throw new DOMException('synthetic quota','QuotaExceededError');};let error;try{await c.checkpoint('costs');}catch(e){error=e.message;}finally{IDBObjectStore.prototype.put=original;}const pending=c.peek('costs',{scope:{kind:'costs',projectId:'p-quota'}});c.close();return{error,messages,pending,values};});assert.ok(x.error);assert.equal(x.messages.at(-1)[1],true);assert.equal(x.pending.values.amount,'retain invalid amount');assert.equal(x.values.amount,'retain invalid amount');});
 await t.test('discard uses CAS tombstones to prevent stale ABA overwrite; explicit scope mandatory',async()=>{const x=await page.evaluate(async()=>{const s={kind:'delete',projectId:'p-delete'};a.registerAdapter('templates',{capture:()=>({scope:s,values:{text:'keep'}}),restore:()=>{}});b.registerAdapter('templates',{capture:()=>({scope:s,values:{text:'stale'}}),restore:()=>{}});await a.restore('templates',{scope:s});await a.checkpoint('templates');await b.restore('templates',{scope:s});const removed=await a.discard('templates',{scope:s});let error;try{await b.checkpoint('templates');}catch(e){error=e.message;}const empty=await a.restore('templates',{scope:s});await a.checkpoint('templates');return{removed,error,empty,list:await a.list('templates')};});assert.match(x.error,/其他页面更新/);assert.equal(x.removed.revision,2);assert.equal(x.empty.restored,false);assert.equal(x.list[0].revision,3);});
 assert.deepEqual(errors,[]);assert.deepEqual(requests,[]);await page.evaluate(()=>{a.close();b.close();});fs.writeFileSync(path.join(QA,'browser.json'),JSON.stringify({errors,requests,scope:'Synthetic IndexedDB data only; not business records'},null,2));await context.close();}finally{await browser.close();}});
+
+test('the app reports real local save results and names required fields even when offline',async t=>{
+  const {chromium}=require('playwright');
+  const executablePath=process.env.QUOTE_LEDGER_CHROMIUM_EXECUTABLE||chromium.executablePath();
+  if(!fs.existsSync(executablePath))return t.skip('Existing Chromium unavailable');
+  const browser=await chromium.launch({headless:true,executablePath});
+  t.after(()=>browser.close());
+  const context=await browser.newContext({viewport:{width:1280,height:900}});
+  const page=await context.newPage();
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(pathToFileURL(path.join(D,'index.html')).href);
+  const save=page.locator('#page-save'),feedback=page.locator('#page-save-status');
+  const dialog=page.locator('#save-result-dialog'),title=dialog.locator('h2'),body=dialog.locator('p');
+  const dismiss=()=>dialog.getByRole('button',{name:'确定'}).click();
+  assert.equal(await save.isVisible(),false);
+  assert.equal(await page.locator('#page-subtitle').isVisible(),false);
+  await page.locator('[data-home-view="project"]').evaluate(node=>node.click());
+  await save.click();
+  await dialog.getByRole('heading',{name:'保存失败'}).waitFor();
+  assert.match(await body.textContent(),/请打开已立项项目/);
+  assert.equal(await dialog.getByRole('button',{name:'确定'}).evaluate(button=>document.activeElement===button),true);
+  await dismiss();
+  await page.locator('.workspace-navigation [data-view="quote"]').evaluate(node=>node.click());
+  await context.setOffline(true);
+  await save.click();
+  await dialog.getByRole('heading',{name:'保存成功'}).waitFor();
+  assert.match(await body.textContent(),/已暂存本页输入/);
+  assert.match(await feedback.textContent(),/仅本机/);
+  await dismiss();
+  await page.evaluate(()=>{
+    const original=IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put=function(value,...args){
+      if(this.transaction.db.name===PageDrafts.DATABASE)throw new DOMException('injected quota','QuotaExceededError');
+      return original.call(this,value,...args);
+    };
+    const field=document.querySelector('#bidder-contact');
+    field.value='合成输入保留';
+    field.dispatchEvent(new Event('input',{bubbles:true}));
+  });
+  await save.click();
+  await page.waitForFunction(()=>document.querySelector('#page-save-status').textContent.includes('本机存储空间不足'));
+  assert.match(await feedback.textContent(),/保存失败.*本机存储空间不足/);
+  assert.equal(await feedback.isVisible(),false);
+  assert.match(await body.textContent(),/本机存储空间不足/);
+  await dismiss();
+  assert.equal(await page.locator('#bidder-contact').inputValue(),'合成输入保留');
+  await page.locator('.workspace-navigation [data-view="bidders"]').evaluate(node=>node.click());
+  await page.locator('#view-bidders #bidder-save:enabled').click();
+  await dialog.getByRole('heading',{name:'保存失败'}).waitFor();
+  assert.match(await body.textContent(),/缺少必要资料.*事务所/);
+  await dismiss();
+  assert.equal(await dialog.isVisible(),false);
+  assert.deepEqual(errors,[]);
+});
+
+test('material collection restores its project draft after reload and protects a real concurrent edit',async t=>{
+  const {chromium}=require('playwright');
+  const executablePath=process.env.QUOTE_LEDGER_CHROMIUM_EXECUTABLE||chromium.executablePath();
+  if(!fs.existsSync(executablePath))return t.skip('Existing Chromium unavailable');
+  const browser=await chromium.launch({headless:true,executablePath});
+  t.after(()=>browser.close());
+  const context=await browser.newContext(),page=await context.newPage();
+  const url=pathToFileURL(path.join(D,'index.html')).href;
+  await page.goto(url);
+  const projectId=await page.evaluate(async()=>{
+    const id=crypto.randomUUID(),now=new Date().toISOString();
+    await ProjectInitiation.ensureWon({id,lastEventNo:1,events:[{eventNo:1,outcome:'won',recordedAt:now}],
+      snapshot:{projectName:'合成暂存项目',issuer:'合成委托方',customerName:'合成被审计方',firmName:'合成事务所',
+        auditYear:2026,quoteDate:'2026-11-28',totalCents:12000,projectType:'专项审计'}});
+    return id;
+  });
+  async function open(tab){
+    await tab.locator('[data-audit-overview]').evaluate(button=>button.click());
+    await tab.locator('[data-nav-audit-step="1"]').click();
+    await tab.locator('#ac-project').selectOption(projectId);
+    await tab.locator('#ac-reviewer:enabled').waitFor();
+  }
+  async function save(tab,title){
+    await tab.locator('#page-save').click();
+    const dialog=tab.locator('#save-result-dialog');
+    await dialog.getByRole('heading',{name:title,exact:true}).waitFor();
+    const result=await dialog.locator('p').textContent();
+    await dialog.getByRole('button',{name:'确定',exact:true}).click();
+    return result;
+  }
+  await open(page);
+  await page.locator('#ac-reviewer').fill('合成核对人');
+  assert.equal(await page.locator('#ac-reason').count(),0);
+  assert.match(await save(page,'保存成功'),/已暂存本页输入/);
+  await page.reload();
+  await open(page);
+  await page.waitForFunction(()=>document.querySelector('#ac-reviewer').value==='合成核对人');
+  assert.equal(await page.locator('#ac-reviewer').inputValue(),'合成核对人');
+  await page.locator('#ac-reviewer').fill('合成核对人乙');
+  assert.match(await save(page,'保存成功'),/已暂存本页输入/);
+  const other=await context.newPage();
+  await other.goto(url);await open(other);
+  await other.waitForFunction(()=>document.querySelector('#ac-reviewer').value==='合成核对人乙');
+  await other.locator('#ac-reviewer').fill('另一窗口核对人');
+  assert.match(await save(other,'保存成功'),/已暂存本页输入/);
+  await page.locator('#ac-reviewer').fill('本页核对人');
+  assert.match(await save(page,'保存失败'),/临时草稿已被其他页面更新/);
+  assert.equal(await page.locator('#ac-reviewer').inputValue(),'本页核对人');
+  assert.equal(await page.evaluate(async id=>{const db=await AuditChecklist.open();try{return await db.get(id);}finally{db.close();}},projectId),null);
+});

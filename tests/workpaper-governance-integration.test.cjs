@@ -146,7 +146,7 @@ test('governance renderer/store/workspace integration', async t => {
       await p.locator('[data-audit-step="1"]').click(); assert.equal(await p.evaluate(() => Q.prepDestroyed), 1); assert.equal(await p.evaluate(() => Q.prep.isCurrent()), false);
       await p.locator('[data-audit-step="8"]').click(); await p.waitForFunction(() => Q.prepMounted === 2);
       await p.evaluate(() => { Q.previousPrep = Q.prep; });
-      await p.locator('#pw-project').selectOption('4a502e25-69a2-4ff6-b37f-d06a1598eb12'); await p.waitForFunction(() => Q.prepDestroyed === 2 && Q.prepMounted === 3);
+      await p.locator('#pw-company').selectOption('未填写被审计单位'); await p.waitForFunction(() => Q.prepDestroyed === 2 && Q.prepMounted === 3);
       assert.equal(await p.evaluate(() => Q.previousPrep.isCurrent()), false); assert.equal(await p.evaluate(() => Q.prep.isCurrent()), true);
       assert.equal(await p.evaluate(() => Q.prep.key), '4a502e25-69a2-4ff6-b37f-d06a1598eb12');
     });
@@ -176,15 +176,15 @@ test('governance renderer/store/workspace integration', async t => {
       assert.equal(await p.locator('#pw-project').inputValue(), '00000000-0000-4000-8000-000000000033');
       assert.equal(await p.evaluate(() => Q.directory.key), '00000000-0000-4000-8000-000000000033');
     });
-    await t.test('first startup pending lists still allow immediate trial button and keep selection after release', async () => {
+    await t.test('first startup pending lists keep an existing trial selection after release', async () => {
       const f = await setup({ initialPending: true }), p = f.p;
       try {
         await p.waitForFunction(() => Q.initialListReleases.length === 1);
-        // Stage8 reveals the trial button; keep BOTH initial and stage-list requests pending.
+        // Keep both initial and stage-list requests pending before choosing the existing trial option.
         await p.locator('[data-audit-step="8"]').click();
         await p.waitForFunction(() => Q.initialListReleases.length === 2);
         assert.equal(await p.locator('#pw-project').inputValue(), '');
-        await p.getByRole('button', { name: '独立试用', exact: true }).click();
+        await p.locator('#pw-project').evaluate((select,id)=>{select.value=id;select.dispatchEvent(new Event('change'));},'00000000-0000-4000-8000-000000000033');
         await p.waitForFunction(() => Q.prep?.key === Q.id && Q.prep.isCurrent());
         assert.equal(await p.locator('#pw-project').inputValue(), '00000000-0000-4000-8000-000000000033');
         await p.evaluate(async () => {

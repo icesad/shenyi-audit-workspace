@@ -4,7 +4,7 @@
   if(!D||typeof setView!=='function'||typeof getView!=='function')throw Error('Navigation not ready');
   let selected=null;
   const nav=D.querySelector('.workspace-navigation');
-  const groups={quote:'quote',proposal:'quote',bid:'quote',ledger:'quote',project:'quote',audit:'audit',report:'report',archive:'report',templates:'basics',travel:'accounting',costs:'accounting',basics:'basics',bidders:'basics',rules:'basics'};
+  const groups={quote:'quote',proposal:'quote',bid:'quote',ledger:'quote',project:'quote',audit:'audit',report:'report',archive:'report',templates:'basics','general-templates':'basics',standards:'basics',travel:'accounting',costs:'accounting',basics:'basics',bidders:'basics',rules:'basics'};
   function sync(name,choice=null){
    selected=choice;
    for(const group of D.querySelectorAll('.nav-group')){
